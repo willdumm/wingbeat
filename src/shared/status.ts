@@ -33,7 +33,8 @@ export function statusStyles(): string {
       flex: none;
     }
     .wb-dot--live    { background: var(--live-dot); animation: wb-pulse 1.8s var(--ease-standard) infinite; }
-    .wb-dot--ok      { background: var(--success-fg); }
+    /* Dots use the brighter --success-dot: --success-fg is a text color, too dark to read as green at 7px. */
+    .wb-dot--ok      { background: var(--success-dot); }
     .wb-dot--neutral { background: var(--text-faint); }
     .wb-dot--warn    { background: var(--warning-fg); }
     .wb-dot--danger  { background: var(--danger); }

@@ -45,6 +45,7 @@ export function themeVars(): string {
       /* Status — closed set: green on time, amber delayed, red cancelled */
       --success-fg:     #0E6B4E;
       --success-surface: #E9F6F1;
+      --success-dot:    #2FBE8E;
       --warning-fg:     #96600A;
       --warning-surface: #FDF4E3;
       --danger:         #D0453B;
@@ -158,6 +159,7 @@ export function themeVars(): string {
       --accent-surface: rgba(43, 127, 196, 0.18);
       --success-fg:     #2FBE8E;
       --success-surface: rgba(47, 190, 142, 0.16);
+      --success-dot:    #2FBE8E;
       --warning-fg:     #E8A23A;
       --warning-surface: rgba(232, 162, 58, 0.16);
       --danger:         #E0574C;
