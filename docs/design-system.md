@@ -16,3 +16,10 @@ Unzip it to browse:
 
 If a future rebrand or token change touches this system again, re-export a fresh
 zip here rather than leaving stale guidance for whoever reads this next.
+
+The 2026-10 accessibility pass edited this export by hand rather than re-exporting it:
+`--action-primary` moved to sky-600 (hover sky-700, press sky-800), `--ring-focus` became a
+solid 2px sky-500 ring with a 2px page-colour gap, and the readme now limits `--text-subtle`
+to disabled/decorative text. (These are `--accent-solid`, `--ring-focus` and
+`--text-muted`/`--text-faint` in `src/shared/theme.ts`.) The claude.ai design-system project
+it came from doesn't have these changes yet; sync it with `/design-sync`.
