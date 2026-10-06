@@ -1,7 +1,7 @@
 {{- /* A live demo inside a {{< hero >}} or {{< feature >}}, which places it. Params:
        name (a mount in src/showcase/scripts.ts: status, flights, maintenance, duty,
        analytics; or "notifications" for the phone mockup), caption (optional), label
-       (optional accessible description of the demo). */ -}}
+       (optional accessible name for the demo, which stays a group so its own text is read). */ -}}
 {{- $name := .Get "name" -}}
 {{- $html := "" -}}
 {{- with .Get "caption" }}{{ $html = printf `<div class="sc-demo-caption"><span>%s</span></div>` . }}{{ end -}}
@@ -9,7 +9,7 @@
   {{- $html = printf `<div class="sc-phone-demo">%s%s</div>` $html hugo.Data.showcase.phone -}}
 {{- else -}}
   {{- $label := "" -}}
-  {{- with .Get "label" }}{{ $label = printf ` role="img" aria-label="%s"` (htmlEscape .) }}{{ end -}}
+  {{- with .Get "label" }}{{ $label = printf ` role="group" aria-label="%s"` (htmlEscape .) }}{{ end -}}
   {{- $html = printf `%s<div class="sc-demo sc-demo--%s" data-demo="%s"%s></div>` $html $name $name $label -}}
 {{- end -}}
 {{- .Parent.Store.Set "demo" ($html | safeHTML) -}}

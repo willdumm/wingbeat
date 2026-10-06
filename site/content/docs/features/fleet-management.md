@@ -1,5 +1,6 @@
 ---
 title: Fleet Management
+description: "How Wingbeat separates trackers, aircraft, and pilots, and how assignments change over time."
 weight: 2
 ---
 

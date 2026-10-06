@@ -1,5 +1,6 @@
 ---
 title: Settings
+description: "Wingbeat's settings, split into per-user settings and admin-only settings."
 weight: 3
 bookCollapseSection: false
 ---

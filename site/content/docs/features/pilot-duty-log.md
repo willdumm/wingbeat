@@ -1,5 +1,6 @@
 ---
 title: Pilot Duty Log
+description: "The per-pilot monthly flight log: the flight table, rolling totals, and PDF export."
 weight: 4
 ---
 

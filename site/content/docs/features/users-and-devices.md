@@ -1,5 +1,6 @@
 ---
 title: Users & Devices
+description: "Invite-only accounts, Admin and Viewer roles, and per-device sessions in Wingbeat."
 weight: 8
 ---
 

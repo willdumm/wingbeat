@@ -1,8 +1,11 @@
 {{- /* A call-to-action button in a {{< hero >}} or {{< plan >}}. Params: href,
-       style ("primary", the default, or "secondary"), icon (optional Lucide name).
-       Inner: the label. */ -}}
+       style ("primary", the default, or "secondary"), icon (optional Lucide name),
+       name (optional accessible name, for buttons whose visible label repeats; it
+       should start with that label). Inner: the label. */ -}}
 {{- $icon := "" -}}
 {{- with .Get "icon" }}{{ $icon = partial "showcase/icon.html" (dict "name" . "size" 18) }}{{ end -}}
 {{- $label := .Page.RenderString (trim .Inner " \n") -}}
-{{- $html := printf `<a class="btn-%s sc-btn-lg" href="%s">%s%s</a>` (.Get "style" | default "primary") (.Get "href") $icon $label -}}
+{{- $name := "" -}}
+{{- with .Get "name" }}{{ $name = printf ` aria-label="%s"` (htmlEscape .) }}{{ end -}}
+{{- $html := printf `<a class="btn-%s sc-btn-lg" href="%s"%s>%s%s</a>` (.Get "style" | default "primary") (.Get "href") $name $icon $label -}}
 {{- .Parent.Store.Add "actions" (slice $html) -}}

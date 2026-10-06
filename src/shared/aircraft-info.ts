@@ -101,7 +101,7 @@ export function aircraftInfoStyles(): string {
     }
 
     :is(.ac-save-btn, .aircraft-info-cf-update-btn) {
-      background: var(--accent);
+      background: var(--accent-solid);
       border: none;
       border-radius: var(--radius-pill);
       color: var(--accent-fg);
@@ -109,7 +109,7 @@ export function aircraftInfoStyles(): string {
       white-space: nowrap;
       transition: background 0.15s;
     }
-    :is(.ac-save-btn, .aircraft-info-cf-update-btn):hover { background: var(--accent-hover); }
+    :is(.ac-save-btn, .aircraft-info-cf-update-btn):hover { background: var(--accent-solid-hover); }
     .ac-save-btn { padding: 0.35rem 0.75rem; font-size: 0.8rem; font-weight: 500; }
 
     :is(.ac-cancel-btn, .ac-action-btn, .ac-link-btn, .ac-toggle-btn, .aircraft-info-cf-keep-btn) {

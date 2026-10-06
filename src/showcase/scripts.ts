@@ -241,8 +241,6 @@ function showcaseDriverScript(): string {
       const root = attachDemo(host, 'dashboard', DEMO_MARKUP.status);
       const bar = root.getElementById('aircraft-status-bar');
       const container = root.getElementById('aircraft-cards');
-      const refreshTime = root.getElementById('refresh-time');
-      if (refreshTime) refreshTime.textContent = relTime(NOW - 20);
 
       function render() {
         container.innerHTML = '';
@@ -546,9 +544,10 @@ function showcaseDriverScript(): string {
       [['', 'All'], ...SAMPLE.aircraft.map(a => [a.tail_number, a.tail_number])].forEach(([tail, label]) => {
         const btn = document.createElement('button');
         btn.className = 'page-nav-tab' + (tail === '' ? ' active' : '');
+        btn.setAttribute('aria-pressed', tail === '' ? 'true' : 'false');
         btn.textContent = label;
         btn.addEventListener('click', () => {
-          filterRow.querySelectorAll('.page-nav-tab').forEach(b => b.classList.toggle('active', b === btn));
+          filterRow.querySelectorAll('.page-nav-tab').forEach(b => { b.classList.toggle('active', b === btn); b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
           filters = { ...filters, aircraftTails: tail ? [tail] : [] };
           rerender();
         });
@@ -561,7 +560,7 @@ function showcaseDriverScript(): string {
         layerControls.style.display = isMap ? '' : 'none';
         // Like the analytics page: the stream graph covers the map, not its controls bar.
         root.getElementById('map-controls').style.display = isMap ? '' : 'none';
-        root.querySelectorAll('.view-tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
+        root.querySelectorAll('.view-tab').forEach(t => { t.classList.toggle('active', t.dataset.view === view); t.setAttribute('aria-pressed', t.dataset.view === view ? 'true' : 'false'); });
         if (isMap) analyticsMap.invalidateSize();
         else updateStreamGraph();
       }

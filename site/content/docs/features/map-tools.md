@@ -1,5 +1,6 @@
 ---
 title: Map Tools
+description: "Basemaps, overlays, the elevation tool, and regions and named points on Wingbeat's maps."
 weight: 7
 ---
 

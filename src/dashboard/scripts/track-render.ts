@@ -202,6 +202,7 @@ export function dashboardScriptsTrackRender(): string {
               icon: makePlaneIcon(pos.course_deg ?? 0, color),
               zIndexOffset: 1000,
               interactive: false,
+              keyboard: false,
             }).addTo(mapObj);
           }
         }
@@ -248,6 +249,7 @@ export function dashboardScriptsTrackRender(): string {
             icon: makePlaneIcon(plane.course_deg ?? 0, plane.color),
             zIndexOffset: 1000,
             interactive: false,
+            keyboard: false,
           }).addTo(mapObj)
         : null;
 

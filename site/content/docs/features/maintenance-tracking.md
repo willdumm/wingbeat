@@ -1,5 +1,6 @@
 ---
 title: Maintenance Tracking
+description: "Hobbs and tach timers, maintenance schedules, and due alerts for each aircraft."
 weight: 3
 ---
 

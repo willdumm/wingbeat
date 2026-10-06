@@ -10,7 +10,7 @@ export function sharedButtonStyles(): string {
       justify-content: center;
       gap: 0.4rem;
       min-height: var(--control-h-sm);
-      background: var(--accent);
+      background: var(--accent-solid);
       border: 1px solid transparent;
       border-radius: var(--radius-md);
       box-shadow: var(--shadow-sm);
@@ -20,7 +20,7 @@ export function sharedButtonStyles(): string {
       cursor: pointer;
       transition: background-color var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
     }
-    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-solid-hover); }
     .btn-primary:active:not(:disabled) { transform: scale(var(--press-scale)); }
     .btn-primary:focus-visible { outline: none; box-shadow: var(--ring-focus); }
     .btn-primary:disabled { background: var(--surface-2); color: var(--text-faint); box-shadow: none; cursor: not-allowed; }
@@ -67,5 +67,14 @@ export function sharedButtonStyles(): string {
       transition: transform var(--duration-fast) var(--ease-standard);
     }
     .chevron[data-open="true"] { transform: rotate(90deg); }
+    /* A chevron that is itself the disclosure control (flight day headings). */
+    button.chevron {
+      padding: 0;
+      background: none;
+      border: none;
+      border-radius: var(--radius-xs);
+      cursor: pointer;
+    }
+    button.chevron:focus-visible { outline: none; box-shadow: var(--ring-focus); }
   `;
 }

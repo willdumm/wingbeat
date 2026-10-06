@@ -1,5 +1,6 @@
 ---
 title: User Settings
+description: "Settings any signed-in Wingbeat user can change: theme, map layers, data, and their devices."
 weight: 1
 ---
 

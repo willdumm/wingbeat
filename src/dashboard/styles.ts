@@ -145,7 +145,7 @@ export function dashboardStyles(): string {
     }
 
     .ac-card-status { font-size: 0.72rem; display: flex; align-items: center; gap: 4px; white-space: nowrap; }
-    .ac-card-gps { font-size: 0.68rem; color: var(--text-faint); display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+    .ac-card-gps { font-size: 0.68rem; color: var(--text-muted); display: flex; align-items: center; gap: 4px; white-space: nowrap; }
     .ac-card-metrics { font-size: 0.68rem; color: var(--text-muted); white-space: nowrap; }
     /* Only a card narrower than its location (the phone carousel) ellipsizes it. */
     .ac-card-location {
@@ -310,6 +310,7 @@ export function dashboardStyles(): string {
     }
 
     .flight-item:hover { background: var(--surface-hover); }
+    .flight-item:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
 
     .flight-item.active {
       background: var(--accent-surface);
@@ -338,7 +339,7 @@ export function dashboardStyles(): string {
 
     .flight-assign {
       font-size: 0.72rem;
-      color: var(--text-faint);
+      color: var(--text-muted);
       margin-top: 0.1rem;
     }
 

@@ -54,3 +54,9 @@ pre, code, kbd, samp {
   border-radius: 10px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
+
+// Body links are underlined, so they are not distinguished by color alone (WCAG 1.4.1).
+.markdown a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

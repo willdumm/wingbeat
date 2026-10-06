@@ -205,7 +205,7 @@ export function analyticsStyles(): string {
     .region-name { flex: 1; min-width: 0; }
     .region-hours { flex-shrink: 0; color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem; }
     .region-stops { flex-shrink: 0; color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem; min-width: 4rem; justify-content: flex-end; }
-    .region-pct { color: var(--text-faint); font-size: 0.75rem; min-width: 2.2rem; text-align: right; }
+    .region-pct { color: var(--text-muted); font-size: 0.75rem; min-width: 2.2rem; text-align: right; }
 
     .totals-total {
       display: flex;

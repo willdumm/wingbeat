@@ -42,6 +42,9 @@ export function themeVars(): string {
       --accent-fg:      #FFFFFF;
       --accent-text:    #2166A0;
       --accent-surface: #F4F9FD;
+      /* Filled controls with white text: --accent is only 4.25:1 against white, under AA for button labels. */
+      --accent-solid:       #2166A0;
+      --accent-solid-hover: #1B5788;
       /* Status — closed set: green on time, amber delayed, red cancelled */
       --success-fg:     #0E6B4E;
       --success-surface: #E9F6F1;
@@ -63,7 +66,7 @@ export function themeVars(): string {
       --shadow-md:    0 4px 12px rgba(13,37,57,0.08), 0 1px 3px rgba(13,37,57,0.04);
       --shadow-lg:    0 12px 28px rgba(13,37,57,0.10), 0 2px 6px rgba(13,37,57,0.05);
       --shadow-right: 3px 0 16px rgba(13,37,57,0.10);
-      --ring-focus:   0 0 0 3px rgba(98,165,214,0.45);
+      --ring-focus:   0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent);
       /* Shape */
       --radius-xs:      4px;
       --radius-sm:      6px;
@@ -149,7 +152,7 @@ export function themeVars(): string {
       --border-strong:  #566574;
       --text-primary:   #E9EEF2;
       --text-secondary: #A8B4C0;
-      --text-muted:     #7C8A98;
+      --text-muted:     #95A3B0;
       --text-faint:     #566574;
       --input-bg:       #0F1A24;
       --accent:         #2B7FC4;
@@ -157,6 +160,8 @@ export function themeVars(): string {
       --accent-fg:      #FFFFFF;
       --accent-text:    #9AC7E8;
       --accent-surface: rgba(43, 127, 196, 0.18);
+      --accent-solid:       #2166A0;
+      --accent-solid-hover: #1B5788;
       --success-fg:     #2FBE8E;
       --success-surface: rgba(47, 190, 142, 0.16);
       --success-dot:    #2FBE8E;
@@ -173,7 +178,7 @@ export function themeVars(): string {
       --shadow-md:    none;
       --shadow-lg:    none;
       --shadow-right: none;
-      --ring-focus:   0 0 0 3px rgba(98,165,214,0.55);
+      --ring-focus:   0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent);
     }
   `;
 }
@@ -224,6 +229,7 @@ export function themeRuntimeScript(): string {
       const pref = _getThemePref();
       document.querySelectorAll('.settings-theme-btn').forEach(function(btn) {
         btn.classList.toggle('active', btn.dataset.themeVal === pref);
+        btn.setAttribute('aria-pressed', btn.dataset.themeVal === pref ? 'true' : 'false');
       });
     }
 

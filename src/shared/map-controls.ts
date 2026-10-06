@@ -759,7 +759,7 @@ export function sharedMapControlsScripts(
         localStorage.setItem('${MAP_BASEMAP_KEY}', style);
         _ftApplyActiveLayerColor();
         _updateAttrib();
-        _styleGroup.querySelectorAll('.map-style-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.style === style); });
+        _styleGroup.querySelectorAll('.map-style-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.style === style); b.setAttribute('aria-pressed', b.dataset.style === style ? 'true' : 'false'); });
         // Reset to the newly active basemap's default overlay states — a viewer's
         // manual overlay toggle applies to the basemap they made it on, not to
         // whichever one they switch to next (see _ftClearOverlayOverrides in

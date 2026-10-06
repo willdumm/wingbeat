@@ -100,7 +100,7 @@ function demoStyles(): string {
 
 export function demoMarkup(appName: string): Record<'status' | 'flights' | 'maintenance' | 'duty' | 'analytics', string> {
   return {
-    status: dashboardHeaderMarkup(appName, { logo: false }),
+    status: dashboardHeaderMarkup(appName, { logo: false, refresh: false }),
 
     flights: /* html */ `${LEAFLET_CSS}
   <div class="main">

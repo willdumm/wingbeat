@@ -100,8 +100,8 @@ export function analyticsTotalsMarkup(): string {
 export function analyticsViewTabsMarkup(): string {
   return /* html */ `
   <div id="view-tabs">
-    <button class="view-tab active" data-view="map">Map</button>
-    <button class="view-tab" data-view="streamgraph">Stream Graph</button>
+    <button class="view-tab active" data-view="map" aria-pressed="true">Map</button>
+    <button class="view-tab" data-view="streamgraph" aria-pressed="false">Stream Graph</button>
   </div>`;
 }
 

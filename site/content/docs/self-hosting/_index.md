@@ -1,5 +1,6 @@
 ---
 title: Self-hosting
+description: "Run Wingbeat yourself as a Cloudflare Worker with a D1 database."
 weight: 4
 ---
 

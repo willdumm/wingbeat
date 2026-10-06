@@ -1,5 +1,6 @@
 ---
 title: Live Tracking
+description: "Live positions, aircraft status cards, the flight list, day view, and bulk flight editing on the Wingbeat dashboard."
 weight: 1
 ---
 

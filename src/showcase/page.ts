@@ -98,6 +98,24 @@ export function showcasePageStyles(): string {
     .sc-btn-lg { min-height: var(--control-h-md); padding: 0 var(--space-5); font-size: var(--size-md); text-decoration: none; }
     .sc-btn-md { padding: 0 var(--space-4); font-size: var(--size-sm); text-decoration: none; }
 
+    /* ── Skip link: off-screen until focused ─────────────────────────────── */
+    .sc-skip-link {
+      position: absolute;
+      left: var(--space-4);
+      top: var(--space-2);
+      z-index: 40;
+      padding: var(--space-2) var(--space-4);
+      background: var(--surface-1);
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      font-weight: var(--weight-semibold);
+      border-radius: var(--radius-md);
+      box-shadow: var(--ring-focus);
+      transform: translateY(-200%);
+    }
+    .sc-skip-link:focus { transform: none; }
+    main:focus { outline: none; }
+
     /* ── Header ──────────────────────────────────────────────────────────── */
     .sc-header {
       position: sticky;
@@ -109,7 +127,9 @@ export function showcasePageStyles(): string {
       border-bottom: 1px solid var(--border-subtle);
     }
     .sc-header-inner { height: 64px; display: flex; align-items: center; gap: var(--space-8); }
-    .sc-header .wb-logo { flex: none; }
+    /* The lockup may shrink, so at 320px the wordmark ellipsizes instead of overflowing. */
+    .sc-home-link { display: flex; min-width: 0; }
+    .sc-header .wb-logo { flex: 0 1 auto; }
     .sc-nav { display: flex; gap: var(--space-6); }
     .sc-nav a {
       font-family: var(--font-ui);
@@ -436,7 +456,7 @@ export function showcasePageStyles(): string {
       width: 100%;
       font-family: var(--font-mono);
       font-size: var(--size-xs);
-      color: var(--text-faint);
+      color: var(--text-muted);
     }
   `;
 }

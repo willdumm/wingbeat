@@ -568,13 +568,13 @@ export function settingsModalStyles(): string {
 
     /* Color-only override; size comes from .settings-action-btn */
     .save-edit-btn {
-      background: var(--accent);
+      background: var(--accent-solid);
       border-color: transparent;
       border-radius: var(--radius-pill);
       color: var(--accent-fg);
     }
 
-    .save-edit-btn:hover { background: var(--accent-hover); color: var(--accent-fg); border-color: transparent; }
+    .save-edit-btn:hover { background: var(--accent-solid-hover); color: var(--accent-fg); border-color: transparent; }
 
     .settings-add-tracker {
       font-size: 0.8rem;
@@ -1052,8 +1052,8 @@ export function settingsModalStyles(): string {
     }
 
     .map-tool-btn.active {
-      background: var(--accent);
-      border-color: var(--accent);
+      background: var(--accent-solid);
+      border-color: var(--accent-solid);
       color: var(--accent-fg);
     }
 

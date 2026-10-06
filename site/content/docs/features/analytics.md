@@ -1,5 +1,6 @@
 ---
 title: Analytics
+description: "The Wingbeat analytics page: fleet-wide map views, stream graphs, and an accounting table, with the dashboard's filters."
 weight: 5
 ---
 

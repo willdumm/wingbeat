@@ -1,5 +1,6 @@
 ---
 title: Notifications
+description: "Get notified by webhook or Pushover when a tracker takes off, lands, or loses signal in flight."
 weight: 6
 ---
 

@@ -157,8 +157,19 @@ export function mapToolButtonsMarkup(): string {
 }
 
 /** Top bar: logo, per-aircraft status cards (filled by updateAircraftStatusCards) and refresh.
- *  The showcase status demo leaves out the logo (logo: false); its page has one already. */
-export function dashboardHeaderMarkup(appName: string, { logo = true }: { logo?: boolean } = {}): string {
+ *  The showcase status demo leaves out the logo (logo: false; its page has one already) and
+ *  the refresh button (refresh: false; it would be a dead control there). */
+export function dashboardHeaderMarkup(
+  appName: string,
+  { logo = true, refresh = true }: { logo?: boolean; refresh?: boolean } = {},
+): string {
+  const refreshControl = /* html */ `
+    <div id="refresh-control">
+      <button id="refresh-btn" aria-label="Refresh now" title="Refresh">
+        <span id="refresh-icon">&#8635;</span>
+        <span id="refresh-time">&mdash;</span>
+      </button>
+    </div>`;
   return /* html */ `
   <header>
     ${logo ? logoLockupMarkup(appName, { size: 26, compact: true }) : ''}
@@ -166,12 +177,6 @@ export function dashboardHeaderMarkup(appName: string, { logo = true }: { logo?:
       <div id="aircraft-cards">
         <!-- Populated at runtime by updateAircraftStatusCards() -->
       </div>
-    </div>
-    <div id="refresh-control">
-      <button id="refresh-btn" aria-label="Refresh now" title="Refresh">
-        <span id="refresh-icon">&#8635;</span>
-        <span id="refresh-time">&mdash;</span>
-      </button>
-    </div>
+    </div>${refresh ? refreshControl : ''}
   </header>`;
 }

@@ -1,5 +1,6 @@
 ---
 title: Overview
+description: "Wingbeat polls a Garmin inReach MapShare feed, segments the tracking data into flights, and shows flight history and live positions on a map."
 weight: 1
 ---
 

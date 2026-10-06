@@ -24,7 +24,9 @@ const LOGO_ASPECT = (() => {
 const MARK_SCALE = 0.8;
 
 const bodyMatch = LOGO_SOURCE.match(/<svg[^>]*>([\s\S]*)<\/svg>/);
-const LOGO_BODY_RAW = bodyMatch ? bodyMatch[1].trim() : '';
+// Inkscape's ids are dropped: nothing references them, and the mark appears more than once
+// per page (header + footer), which would duplicate them.
+const LOGO_BODY_RAW = bodyMatch ? bodyMatch[1].trim().replace(/\s+id="[^"]*"/g, '') : '';
 
 // Brand tone: the black wing tracks --text-primary so it stays visible against
 // the app's own themed background in both light and dark mode (the blue wing is
@@ -73,7 +75,9 @@ export function logoLockupMarkup(
   const height = Math.round(size * MARK_SCALE);
   const width = Math.round(height * LOGO_ASPECT);
   const body = tone === 'mono' ? LOGO_BODY_MONO : LOGO_BODY_BRAND;
-  const mark = `<svg width="${width}" height="${height}" viewBox="${LOGO_VIEWBOX}" class="wb-logo__mark" role="img" aria-label="${escapeHtml(appName)}">${body}</svg>`;
+  // With a visible wordmark the mark is decorative; alone, it carries the name.
+  const a11y = showWordmark ? 'aria-hidden="true"' : `role="img" aria-label="${escapeHtml(appName)}"`;
+  const mark = `<svg width="${width}" height="${height}" viewBox="${LOGO_VIEWBOX}" class="wb-logo__mark" ${a11y}>${body}</svg>`;
   const word = showWordmark ? `<span class="wb-logo__word">${escapeHtml(appName)}</span>` : '';
   const cls = ['wb-logo', tone === 'mono' ? 'wb-logo--mono' : '', compact ? 'wb-logo--compact' : ''].filter(Boolean).join(' ');
   return `<span class="${cls}" style="--wb-logo-size:${size}px;--wb-logo-aspect:${LOGO_ASPECT.toFixed(4)}">${mark}${word}</span>`;

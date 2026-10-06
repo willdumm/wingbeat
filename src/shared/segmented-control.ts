@@ -23,7 +23,7 @@ export function segmentedControlStyles(): string {
       background: transparent;
       border: none;
       border-radius: var(--radius-sm);
-      color: var(--text-muted);
+      color: var(--text-secondary);
       font-family: var(--font-ui);
       font-weight: var(--weight-semibold);
       font-size: 0.82rem;

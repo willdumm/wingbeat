@@ -1,5 +1,6 @@
 ---
 title: Admin Settings
+description: "Admin-only Wingbeat settings: the setup checklist, fleet management, overlays, users, and global settings."
 weight: 2
 ---
 

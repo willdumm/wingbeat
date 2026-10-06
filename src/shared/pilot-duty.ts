@@ -76,7 +76,7 @@ export function pilotDutyStyles(): string {
       color: var(--text-primary); vertical-align: top;
     }
     .duty-table tr:last-child td { border-bottom: none; }
-    .duty-row-rest td { color: var(--text-faint); font-style: italic; }
+    .duty-row-rest td { color: var(--text-muted); font-style: italic; }
     .duty-row-day-total td {
       color: var(--text-secondary); font-size: 0.75rem;
       background: var(--surface-hover);

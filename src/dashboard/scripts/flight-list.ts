@@ -36,10 +36,17 @@ export function dashboardScriptsFlightListRender(): string {
       heading.className = 'flight-day-heading';
       heading.dataset.dayKey = group.dayKey;
 
-      const chevron = document.createElement('span');
+      // A real button, so the day toggles from the keyboard: its click bubbles to the
+      // caller's heading handler, which flips data-open; aria-expanded follows it.
+      const chevron = document.createElement('button');
+      chevron.type = 'button';
       chevron.className = 'chevron';
       chevron.innerHTML = FLIGHT_LIST_CHEVRON_HTML;
+      chevron.setAttribute('aria-label', group.label);
+      const syncExpanded = () => chevron.setAttribute('aria-expanded', chevron.getAttribute('data-open') === 'true' ? 'true' : 'false');
+      new MutationObserver(syncExpanded).observe(chevron, { attributes: true, attributeFilter: ['data-open'] });
       chevron.setAttribute('data-open', expanded ? 'true' : 'false');
+      syncExpanded();
       heading.appendChild(chevron);
 
       const dayLabel = document.createElement('span');
@@ -72,6 +79,12 @@ export function dashboardScriptsFlightListRender(): string {
       const el = document.createElement('div');
       el.className = 'flight-item' + (active ? ' active' : '');
       el.dataset.id = f.id;
+      // Focusable and Enter/Space-activated, so the caller's click handler works from the keyboard.
+      el.setAttribute('role', 'button');
+      el.tabIndex = 0;
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
+      });
 
       const start = new Date(f.start_time * 1000);
       const dur = f.end_time ? ((f.end_time - f.start_time) / 3600).toFixed(1) : null;
