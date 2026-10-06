@@ -160,18 +160,24 @@ function selectCandidate(
 
 interface NamedPointRow { name: string; lat: number; lon: number; max_km: number | null }
 
-const _namedPointsCache = new Map<string, NamedPointRow[]>();
+// The TTL bounds cross-isolate staleness, as for settings (see src/settings.ts):
+// invalidateNamedPointsCache only reaches the isolate that served the edit, and the cron
+// geocodes in whichever isolate it lands on. Without it, an isolate that loaded the list
+// before a named-points import kept labelling every landing from Overpass instead.
+const NAMED_POINTS_TTL_MS = 60_000;
+
+const _namedPointsCache = new Map<string, { at: number; rows: NamedPointRow[] }>();
 
 export function invalidateNamedPointsCache(tenantKey: string): void {
   _namedPointsCache.delete(tenantKey);
 }
 
 async function loadNamedPoints(tenant: Tenant): Promise<NamedPointRow[]> {
-  if (!_namedPointsCache.has(tenant.key)) {
-    const { results } = await tenant.db.prepare('SELECT name, lat, lon, max_km FROM named_points').all<NamedPointRow>();
-    _namedPointsCache.set(tenant.key, results);
-  }
-  return _namedPointsCache.get(tenant.key)!;
+  const hit = _namedPointsCache.get(tenant.key);
+  if (hit && Date.now() - hit.at < NAMED_POINTS_TTL_MS) return hit.rows;
+  const { results } = await tenant.db.prepare('SELECT name, lat, lon, max_km FROM named_points').all<NamedPointRow>();
+  _namedPointsCache.set(tenant.key, { at: Date.now(), rows: results });
+  return results;
 }
 
 export async function lookupNamedPoint(
