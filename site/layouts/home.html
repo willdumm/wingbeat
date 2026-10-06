@@ -1,0 +1,65 @@
+{{- /* The home page ("showcase"). The prose is content/_index.md (front matter and the
+       hero/feature/demo/facts/plan/action shortcodes in layouts/_shortcodes/); this lays
+       out the header and footer around it. Everything that comes from the app's code
+       (styles, head and body scripts, logo, phone mockup) is data/showcase.json, generated
+       by `npm run docs:showcase` (src/showcase/). No `define` here, so baseof.html doesn't
+       wrap it.
+       The Carto key comes from the environment (HUGO_PARAMS_SHOWCASECARTOKEY) so it's
+       never committed. The meta name must match SHOWCASE_TILE_KEY_META in
+       src/showcase/page.ts; without a key the page leaves the Carto basemap out. */ -}}
+{{- $sc := hugo.Data.showcase -}}
+{{- if not $sc }}{{ errorf "site/data/showcase.json is missing: run npm run docs:showcase" }}{{ end -}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ .Params.pageTitle | default .Title }}</title>
+  <meta name="description" content="{{ .Params.description }}" />
+  {{ $sc.head | safeHTML }}
+  {{- with site.Params.showcaseCartoKey }}
+  <meta name="showcase-carto-key" content="{{ . }}" />
+  {{- end }}
+</head>
+<body>
+  <header class="sc-header">
+    <div class="sc-container sc-header-inner">
+      <a href="./" aria-label="{{ $sc.appName }} home">{{ $sc.logo.header | safeHTML }}</a>
+      <nav class="sc-nav" aria-label="Features">
+        {{- range .Params.nav }}
+        <a href="{{ .href }}">{{ .label }}</a>
+        {{- end }}
+      </nav>
+      <div class="sc-header-actions">
+        {{- range .Params.headerActions }}
+        <a class="btn-{{ .style | default "primary" }} sc-btn-md" href="{{ .href }}">{{ .label }}</a>
+        {{- end }}
+      </div>
+    </div>
+  </header>
+
+  <main>
+    {{ .Content }}
+  </main>
+
+  <footer class="sc-footer">
+    <div class="sc-container sc-footer-inner">
+      {{ $sc.logo.footer | safeHTML }}
+      <nav class="sc-footer-links" aria-label="Site">
+        {{- range .Params.footerLinks }}
+        <a href="{{ .href }}">{{ .label }}</a>
+        {{- end }}
+      </nav>
+      <div class="settings-theme-row" role="group" aria-label="Theme">
+        <button class="settings-theme-btn" data-theme-val="light">Light</button>
+        <button class="settings-theme-btn" data-theme-val="dark">Dark</button>
+        <button class="settings-theme-btn" data-theme-val="system">System</button>
+      </div>
+      {{- with .Params.footerNote }}
+      <p class="sc-footer-note">{{ $.RenderString . }}</p>
+      {{- end }}
+    </div>
+  </footer>
+  {{ $sc.scripts | safeHTML }}
+</body>
+</html>

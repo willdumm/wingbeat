@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="52.691326mm"
+   height="50.434719mm"
+   viewBox="0 0 52.691326 50.434719"
+   version="1.1"
+   id="svg1"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <g
+     id="layer1"
+     transform="translate(-64.46911,-112.97745)">
+    <g
+       id="path2"
+       transform="matrix(-0.72739208,0.6862221,0.6862221,0.72739208,-61.954094,96.962862)">
+      <path
+         style="baseline-shift:baseline;display:inline;overflow:visible;vector-effect:none;fill-opacity:0;stroke-linecap:round;enable-background:accumulate;stop-color:#000000;stop-opacity:1"
+         d="m -108.99226,134.55137 a 28.368134,28.368134 0 0 1 27.410036,23.27136"
+         id="path4" />
+    </g>
+    <g
+       id="g1"
+       transform="translate(1.0954474,-0.65726887)">
+      <path
+         id="path9"
+         style="baseline-shift:baseline;display:inline;overflow:visible;vector-effect:none;fill:#000000;fill-opacity:1;stroke-linecap:round;enable-background:accumulate;stop-color:#000000;stop-opacity:1"
+         d="m 77.885032,137.97441 c -6.172702,-5.985 -14.520824,-9.67074 -23.599669,-9.82992 a 6.4088001,6.4088001 0 0 0 -6.521817,6.29484 6.4088001,6.4088001 0 0 0 6.296962,6.51956 c 8.837324,0.15494 16.492696,5.49127 19.81953,13.33682 1.221837,-5.04894 3.476824,-9.65987 6.512848,-13.61935 -0.788802,-0.94529 -1.62604,-1.84695 -2.507854,-2.70195 z"
+         transform="rotate(-43.331794,91.062801,126.45838)" />
+      <path
+         id="path5"
+         style="baseline-shift:baseline;display:inline;overflow:visible;vector-effect:none;fill:#2b7fc4;fill-opacity:1;stroke-linecap:round;enable-background:accumulate;stop-color:#000000;stop-opacity:1"
+         d="m -103.12685,128.72678 c 13.958184,2.60347 25.233464,13.60852 27.849525,27.94497 a 6.4088001,6.4088001 0 0 1 -5.154407,7.45504 6.4088001,6.4088001 0 0 1 -7.455046,-5.15441 c -1.604066,-8.79055 -8.238756,-15.53008 -16.650332,-17.45798 a 8.2662201,8.2662201 0 0 0 3.81126,-6.96301 8.2662201,8.2662201 0 0 0 -2.401,-5.82461 z"
+         transform="matrix(-0.72739208,0.68622209,0.68622209,0.72739208,-61.954094,96.962862)" />
+      <circle
+         style="fill:#ff9955;fill-opacity:1;stroke:none;stroke-width:9.765;stroke-linecap:round"
+         id="path3"
+         cx="-2.6107116"
+         cy="162.56712"
+         r="6.4068465"
+         transform="rotate(-43.331794)" />
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,33 @@
+{{- /* A home page section. Params: id, overline, title, link + linkLabel (optional docs
+       link under the text), layout="split" (text beside the demo instead of above it).
+       Inner: the lede, plus optional {{< demo >}}, {{< facts >}} and {{< plan >}}s, which
+       this places: facts go under the lede in a split section and under the demo
+       otherwise; plans go below everything. */ -}}
+{{- $id := .Get "id" -}}
+{{- $split := eq (.Get "layout") "split" -}}
+{{- $lede := .Page.RenderString (dict "display" "block") (trim .InnerDeindent "\n") -}}
+{{- $demo := .Store.Get "demo" -}}
+{{- $facts := .Store.Get "facts" -}}
+<section class="sc-section" id="{{ $id }}" aria-labelledby="{{ $id }}-title">
+      <div class="sc-container{{ if $split }} sc-split{{ end }}">
+        <div class="sc-section-head">
+          <span class="sc-overline">{{ .Get "overline" }}</span>
+          <h2 id="{{ $id }}-title">{{ .Get "title" }}</h2>
+          {{- with $lede }}
+          <div class="sc-lede">{{ . }}</div>
+          {{- end }}
+          {{- if $split }}{{ $facts }}{{ end }}
+          {{- with .Get "link" }}
+          <a class="sc-link" href="{{ . }}">{{ $.Get "linkLabel" }} {{ partial "showcase/icon.html" (dict "name" "arrow-right" "size" 16) }}</a>
+          {{- end }}
+        </div>
+        {{- if $split }}
+        <div>{{ $demo }}</div>
+        {{- else }}{{ $demo }}{{ $facts }}{{ end }}
+        {{- with .Store.Get "plans" }}
+        <div class="sc-plans">{{ delimit . "" | safeHTML }}</div>
+        {{- end }}
+        {{- with .Store.Get "widePlans" }}{{ delimit . "" | safeHTML }}{{ end }}
+      </div>
+    </section>
+{{- /**/ -}}

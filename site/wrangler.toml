@@ -1,0 +1,21 @@
+# The docs site + showcase home page, served as static assets by a Worker at
+# wingbeat.dummthings.dev. Deployed by Workers Builds on pushes to main (root
+# directory `site`, build command `./scripts/build.sh`, deploy command
+# `npx wrangler deploy`); see README.md. Separate from the app Worker in ../wrangler.toml.
+name = "wingbeat-docs"
+compatibility_date = "2026-09-25"
+# No account_id: Workers Builds supplies CLOUDFLARE_ACCOUNT_ID (export it yourself for a
+# hand deploy). It has to be the account that owns the route's zone.
+
+# Only the custom domain: no workers.dev or preview URLs, which would sit outside the
+# Cloudflare Access application that keeps the site private.
+workers_dev = false
+preview_urls = false
+
+[[routes]]
+pattern = "wingbeat.dummthings.dev"
+custom_domain = true
+
+[assets]
+directory = "./public"
+not_found_handling = "404-page"

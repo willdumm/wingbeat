@@ -1,0 +1,38 @@
+name = "flight-tracker"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+# Lets src/shared/brand.ts `import` the top-level logo SVG as raw text, so the
+# brand mark has exactly one source file that flows into every rendered page.
+[[rules]]
+type = "Text"
+globs = ["**/*.svg"]
+fallthrough = true
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+# JSON map of hostname to D1 binding name.
+# Each entry must have a corresponding [[d1_databases]] binding below.
+# For a single-customer deployment: '{"your-domain.com": "DB"}'
+CUSTOMER_ROUTING = '{"your-domain.com": "DB"}'
+
+# For multi-tenant: add one [[d1_databases]] block per customer.
+# The binding name must match a value in CUSTOMER_ROUTING above.
+[[d1_databases]]
+binding = "DB"
+database_name = "YOUR_DATABASE_NAME"
+database_id = "YOUR_DATABASE_ID"
+
+# Optional: staging environment
+# [env.staging]
+# name = "flight-tracker-staging"
+#
+# [env.staging.triggers]
+# crons = ["* * * * *"]
+#
+# [[env.staging.d1_databases]]
+# binding = "DB"
+# database_name = "YOUR_STAGING_DATABASE_NAME"
+# database_id = "YOUR_STAGING_DATABASE_ID"

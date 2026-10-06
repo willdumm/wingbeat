@@ -1,0 +1,19 @@
+{{- /* Home page hero. Params: title, photo (the hero photo's alt text). Inner: the lede,
+       plus an optional {{< demo >}} (shown above the title) and {{< action >}} buttons. */ -}}
+{{- $lede := .Page.RenderString (dict "display" "block") (trim .InnerDeindent "\n") -}}
+<section class="sc-hero" aria-labelledby="hero-title">
+      <div class="sc-hero-photo" role="img" aria-label="{{ .Get "photo" }}"></div>
+      <div class="sc-container sc-hero-inner">
+        <div class="sc-hero-copy">
+          {{- with .Store.Get "demo" }}
+          <div class="sc-hero-demo">{{ . }}</div>
+          {{- end }}
+          <h1 id="hero-title">{{ .Get "title" }}</h1>
+          <div class="sc-hero-lede">{{ $lede }}</div>
+          {{- with .Store.Get "actions" }}
+          <div class="sc-actions">{{ delimit . "" | safeHTML }}</div>
+          {{- end }}
+        </div>
+      </div>
+    </section>
+{{- /**/ -}}

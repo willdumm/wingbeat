@@ -1,0 +1,26 @@
+{{- /* A pricing card in a {{< feature >}}. Params: title, price, period (optional),
+       perks="hosted" (list the front matter's hostedPerks), extra (one more perk),
+       featured="true" (highlighted), wide="true" (full-width card below the others, with
+       its {{< action >}}s beside the text), id (optional anchor). Inner: the description. */ -}}
+{{- $desc := .Page.RenderString (dict "display" "block") (trim .InnerDeindent "\n") -}}
+{{- $wide := eq (.Get "wide") "true" -}}
+{{- $price := printf `<p class="sc-plan-price"><span class="sc-plan-amount">%s</span>` (.Get "price") -}}
+{{- with .Get "period" }}{{ $price = printf `%s<span class="sc-plan-period">%s</span>` $price . }}{{ end -}}
+{{- $price = print $price "</p>" -}}
+{{- $copy := printf `<h3>%s</h3>%s<div class="sc-plan-desc">%s</div>` (.Get "title") $price $desc -}}
+{{- $perks := slice -}}
+{{- if eq (.Get "perks") "hosted" }}{{ $perks = .Page.Params.hostedPerks }}{{ end -}}
+{{- with .Get "extra" }}{{ $perks = $perks | append . }}{{ end -}}
+{{- $list := "" -}}
+{{- range $perks }}{{ $list = printf `%s<li>%s%s</li>` $list (partial "showcase/icon.html" (dict "name" "check" "size" 16)) ($.Page.RenderString .) }}{{ end -}}
+{{- $class := cond (eq (.Get "featured") "true") "sc-plan sc-plan--featured" "sc-plan" -}}
+{{- $idAttr := "" -}}
+{{- with .Get "id" }}{{ $idAttr = printf ` id="%s"` . }}{{ end -}}
+{{- if $wide -}}
+  {{- $actions := "" -}}
+  {{- with .Store.Get "actions" }}{{ $actions = printf `<div class="sc-actions">%s</div>` (delimit . "") }}{{ end -}}
+  {{- .Parent.Store.Add "widePlans" (slice (printf `<article class="sc-plan sc-plan--wide"%s><div class="sc-plan-wide-copy">%s</div>%s</article>` $idAttr $copy $actions)) -}}
+{{- else -}}
+  {{- with $list }}{{ $copy = printf `%s<ul class="sc-plan-list">%s</ul>` $copy . }}{{ end -}}
+  {{- .Parent.Store.Add "plans" (slice (printf `<article class="%s"%s>%s</article>` $class $idAttr $copy)) -}}
+{{- end -}}

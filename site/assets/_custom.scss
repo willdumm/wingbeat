@@ -1,0 +1,56 @@
+// Wingbeat fonts — Manrope for display/headings, IBM Plex Sans for body,
+// IBM Plex Mono for code (matches src/shared/theme.ts themeVars()).
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+
+$font-display: "Manrope", system-ui, sans-serif;
+$font-body: "IBM Plex Sans", system-ui, sans-serif;
+$font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+body {
+  font-family: $font-body;
+}
+
+h1, h2, h3, h4, h5, h6, .book-brand span {
+  font-family: $font-display;
+}
+
+.book-brand span {
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+pre, code, kbd, samp {
+  font-family: $font-mono;
+}
+
+// Logo has a black wing that's invisible against the dark theme's background —
+// swap in the light-text variant (img/logo-dark.svg) instead of recoloring
+// via CSS, since <img> can't be reached with fill overrides.
+.book-brand-logo-dark {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .book-brand-logo-light {
+    display: none;
+  }
+
+  .book-brand-logo-dark {
+    display: initial;
+  }
+}
+
+// Doc screenshots — both generated (site/scripts/gen-doc-shots.mjs, captured at 2x
+// device pixel density) and the hand-taken MapShare setup shots (site/static/img/mapshare-*.png,
+// also captured at high pixel density) — get the same frame treatment. zoom (unlike a
+// percentage width, which is relative to the container, not the image) displays them at
+// half their native pixel size while reflowing layout correctly. The border/shadow gives
+// them a frame, since the captured background is a plain page/app background color and
+// would otherwise blend into the docs page.
+.book-page img[src^="/img/generated/"],
+.book-page img[src^="/img/mapshare-"] {
+  zoom: 0.5;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}

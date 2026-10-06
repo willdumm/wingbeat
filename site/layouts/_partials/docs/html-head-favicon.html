@@ -1,0 +1,28 @@
+<link rel="icon" href="{{ .Site.Params.BookFavicon | default "favicon.png" | relURL }}" media="(prefers-color-scheme: light)">
+{{- with .Site.Params.BookFaviconDark -}}
+<link rel="icon" href="{{ . | relURL }}" media="(prefers-color-scheme: dark)">
+{{- end -}}
+{{- with .Site.Params.BookFaviconDark -}}
+<script>
+(function() {
+  // The declarative media= links above are correct on first paint, but most
+  // browsers don't repaint the tab icon when the OS theme flips live — so a
+  // switch back to light mode leaves the dark favicon stuck until a hard
+  // reload. Manage it in JS instead: swap in a fresh <link> (mutating an
+  // existing one's href doesn't reliably repaint either) whenever the OS
+  // preference changes.
+  var LIGHT = {{ printf "%q" ($.Site.Params.BookFavicon | default "favicon.png" | relURL) | safeJS }};
+  var DARK = {{ printf "%q" (. | relURL) | safeJS }};
+  var mql = window.matchMedia('(prefers-color-scheme: dark)');
+  function apply() {
+    document.querySelectorAll('link[rel="icon"]').forEach(function(l) { l.remove(); });
+    var link = document.createElement('link');
+    link.rel = 'icon';
+    link.href = mql.matches ? DARK : LIGHT;
+    document.head.appendChild(link);
+  }
+  apply();
+  mql.addEventListener('change', apply);
+})();
+</script>
+{{- end -}}

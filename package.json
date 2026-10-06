@@ -1,0 +1,29 @@
+{
+  "name": "wingbeat",
+  "description": "Wingbeat Flight Tracker",
+  "version": "1.0.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "cf-typegen": "wrangler types",
+    "type-check": "tsc --noEmit",
+    "docs:shots": "node site/scripts/gen-doc-shots.mjs",
+    "docs:showcase": "node site/scripts/build-showcase.mjs"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260722.1",
+    "playwright": "^1.59.1",
+    "typescript": "^5.6.0",
+    "wrangler": "^4.114.0",
+    "esbuild": "^0.28.1"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "workerd@1.20260722.1": true
+  }
+}

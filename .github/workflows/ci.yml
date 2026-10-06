@@ -1,0 +1,32 @@
+name: CI
+
+# Checks only; nothing here deploys. The docs site deploys through Workers Builds (see
+# site/README.md), and each app deployment is run by whoever hosts it.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Showcase output is up to date
+        run: npm run docs:showcase -- --check

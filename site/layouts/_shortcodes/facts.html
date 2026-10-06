@@ -1,0 +1,4 @@
+{{- /* Key points for a {{< feature >}}, which places them. Inner: a Markdown list whose
+       items start with the point's name in bold: `- **Rest days** Days without…`. */ -}}
+{{- $list := .Page.RenderString (dict "display" "block") (trim .InnerDeindent "\n") -}}
+{{- .Parent.Store.Set "facts" (replace $list "<ul>" `<ul class="sc-facts">` 1 | safeHTML) -}}
