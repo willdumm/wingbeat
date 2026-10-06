@@ -404,7 +404,11 @@ export function showcasePageStyles(): string {
       background: var(--surface-0);
     }
     .sc-plan-wide-copy { display: flex; flex-direction: column; gap: var(--space-3); max-width: 44rem; }
-    .sc-plan--wide .sc-actions { margin-top: 0; flex: none; }
+    /* A regular card's contact button sits at the bottom, so buttons line up across the row. */
+    .sc-plan > .sc-actions { margin-top: auto; padding-top: var(--space-3); }
+    .sc-plan > .sc-actions > a { flex: 1; justify-content: center; }
+    .sc-plan--wide .sc-actions { margin-top: 0; padding-top: 0; flex: none; }
+    .sc-plan--wide .sc-actions > a { flex: none; }
     @media (max-width: 800px) { .sc-plan--wide { flex-direction: column; align-items: stretch; } }
 
     /* ── Footer ──────────────────────────────────────────────────────────── */
@@ -469,7 +473,7 @@ export function showcasePageData(appName: string, scriptSrc: string, notificatio
   <script>${iconRuntimeScript()}</script>
   <script src="${scriptSrc}"></script>`,
     logo: {
-      header: logoLockupMarkup(`${appName} Flight Tracker`, { size: 24 }),
+      header: logoLockupMarkup(`${appName} Flight Tracker`, { size: 32 }),
       footer: logoLockupMarkup(`${appName} Flight Tracker`, { size: 20 }),
     },
     phone: phoneMockup(notifications),

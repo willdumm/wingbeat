@@ -85,7 +85,7 @@ export function brandStyles(): string {
     .wb-logo {
       display: inline-flex;
       align-items: center;
-      gap: calc(var(--wb-logo-size, 28px) * 0.2);
+      gap: calc(var(--wb-logo-size, 28px) * 0.3);
       min-width: 0;
     }
     .wb-logo__mark { flex: none; display: block; }
@@ -105,7 +105,7 @@ export function brandStyles(): string {
     }
     .wb-logo--mono, .wb-logo--mono .wb-logo__word { color: #FFFFFF; }
 
-    .wb-logo--compact { gap: calc(var(--wb-logo-size, 28px) * 0.14); }
+    .wb-logo--compact { gap: calc(var(--wb-logo-size, 28px) * 0.24); }
     .wb-logo--compact .wb-logo__mark {
       height: calc(var(--wb-logo-size, 28px) * 0.7);
       width: calc(var(--wb-logo-size, 28px) * 0.7 * var(--wb-logo-aspect, 1));

@@ -1,7 +1,8 @@
 {{- /* A pricing card in a {{< feature >}}. Params: title, price, period (optional),
        perks="hosted" (list the front matter's hostedPerks), extra (one more perk),
        featured="true" (highlighted), wide="true" (full-width card below the others, with
-       its {{< action >}}s beside the text), id (optional anchor). Inner: the description. */ -}}
+       its {{< action >}}s beside the text), id (optional anchor). Inner: the description,
+       plus any {{< action >}}s (pinned to the bottom of a regular card). */ -}}
 {{- $desc := .Page.RenderString (dict "display" "block") (trim .InnerDeindent "\n") -}}
 {{- $wide := eq (.Get "wide") "true" -}}
 {{- $price := printf `<p class="sc-plan-price"><span class="sc-plan-amount">%s</span>` (.Get "price") -}}
@@ -16,11 +17,11 @@
 {{- $class := cond (eq (.Get "featured") "true") "sc-plan sc-plan--featured" "sc-plan" -}}
 {{- $idAttr := "" -}}
 {{- with .Get "id" }}{{ $idAttr = printf ` id="%s"` . }}{{ end -}}
+{{- $actions := "" -}}
+{{- with .Store.Get "actions" }}{{ $actions = printf `<div class="sc-actions">%s</div>` (delimit . "") }}{{ end -}}
 {{- if $wide -}}
-  {{- $actions := "" -}}
-  {{- with .Store.Get "actions" }}{{ $actions = printf `<div class="sc-actions">%s</div>` (delimit . "") }}{{ end -}}
   {{- .Parent.Store.Add "widePlans" (slice (printf `<article class="sc-plan sc-plan--wide"%s><div class="sc-plan-wide-copy">%s</div>%s</article>` $idAttr $copy $actions)) -}}
 {{- else -}}
   {{- with $list }}{{ $copy = printf `%s<ul class="sc-plan-list">%s</ul>` $copy . }}{{ end -}}
-  {{- .Parent.Store.Add "plans" (slice (printf `<article class="%s"%s>%s</article>` $class $idAttr $copy)) -}}
+  {{- .Parent.Store.Add "plans" (slice (printf `<article class="%s"%s>%s%s</article>` $class $idAttr $copy $actions)) -}}
 {{- end -}}

@@ -134,15 +134,21 @@ for everyone on your team to use on any computer or phone.
 
 {{< plan title="One tracker" price="$25" period="/ month" perks="hosted" >}}
 For a single tracker.
+
+{{< action href="mailto:wingbeat@dummthings.dev?subject=Wingbeat%20One%20tracker%20plan" style="secondary" icon="mail" >}}Contact us{{< /action >}}
 {{< /plan >}}
 
 {{< plan title="Fleet" price="$100" period="/ month" perks="hosted" featured="true" >}}
 For up to five trackers.
+
+{{< action href="mailto:wingbeat@dummthings.dev?subject=Wingbeat%20Fleet%20plan" icon="mail" >}}Contact us{{< /action >}}
 {{< /plan >}}
 
 {{< plan title="Larger fleets" price="Contact us" perks="hosted" extra="Pricing and setup for your fleet" >}}
 More than five trackers, or something your operation needs that isn't listed here?
-[Email wingbeat@dummthings.dev](mailto:wingbeat@dummthings.dev) for pricing and setup.
+Email wingbeat@dummthings.dev for pricing and setup.
+
+{{< action href="mailto:wingbeat@dummthings.dev?subject=Wingbeat%20larger%20fleet" style="secondary" icon="mail" >}}Contact us{{< /action >}}
 {{< /plan >}}
 
 {{< plan id="self-hosting" wide="true" title="Self-hosted" price="Free" >}}

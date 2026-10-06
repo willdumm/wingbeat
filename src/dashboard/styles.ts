@@ -238,6 +238,11 @@ export function dashboardStyles(): string {
       header .wb-logo__word { display: none; }
     }
 
+    /* Phones: the status cards get the whole bar. */
+    @media (max-width: 640px) {
+      header .wb-logo { display: none; }
+    }
+
     @media (max-width: 640px) {
       #refresh-control { display: none; }
     }
