@@ -128,7 +128,7 @@ export function showcasePageStyles(): string {
     }
     .sc-header-inner { height: 64px; display: flex; align-items: center; gap: var(--space-8); }
     /* The lockup may shrink, so at 320px the wordmark ellipsizes instead of overflowing. */
-    .sc-home-link { display: flex; min-width: 0; }
+    .sc-home-link { display: flex; min-width: 0; text-decoration: none; }
     .sc-header .wb-logo { flex: 0 1 auto; }
     .sc-nav { display: flex; gap: var(--space-6); }
     .sc-nav a {
