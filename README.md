@@ -1,4 +1,7 @@
-<img src="logo.svg" alt="Wingbeat Flight Tracker" width="240">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/logo-wordmark-dark.svg">
+  <img src="docs/logo-wordmark.svg" alt="Wingbeat" width="320">
+</picture>
 
 # Wingbeat Flight Tracker
 
