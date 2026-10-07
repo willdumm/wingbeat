@@ -29,6 +29,13 @@ export const SHOWCASE_TILE_KEY_META = 'showcase-carto-key';
 /** Hero photo (site/static/showcase/), relative so it works wherever Hugo's baseURL puts the site root. */
 const HERO_IMAGE = { large: 'showcase/hero-2000.jpg', small: 'showcase/hero-1200.jpg' };
 
+/**
+ * The header lockup's size: 32px, shrinking on narrow screens so "<name> Flight Tracker"
+ * fits whole beside the menu button. The lockup is about 10.3× its size wide; 84px is the
+ * narrow header's side padding, menu button and gap.
+ */
+const HEADER_LOGO_SIZE = 'clamp(18px, calc((100vw - 84px) / 10.6), 32px)';
+
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -152,7 +159,7 @@ export function showcasePageStyles(): string {
       border-bottom: 1px solid var(--border-subtle);
     }
     .sc-header-inner { height: 64px; display: flex; align-items: center; gap: var(--space-8); }
-    /* The lockup may shrink, so at 320px the wordmark ellipsizes instead of overflowing. */
+    /* The lockup's size is fluid (HEADER_LOGO_SIZE), so the whole name fits beside the menu button. */
     .sc-home-link { display: flex; min-width: 0; text-decoration: none; }
     .sc-header .wb-logo { flex: 0 1 auto; }
     .sc-nav { display: flex; gap: var(--space-6); }
@@ -172,6 +179,7 @@ export function showcasePageStyles(): string {
     .sc-menu { display: contents; }
     .sc-menu-btn { display: none; }
     @media (max-width: 960px) {
+      .sc-header-inner { gap: var(--space-3); }
       .sc-menu-btn { display: inline-flex; flex: none; margin-left: auto; width: var(--control-h-md); min-height: var(--control-h-md); padding: 0; }
       .sc-menu-btn[aria-expanded="true"] .sc-menu-icon-open,
       .sc-menu-btn[aria-expanded="false"] .sc-menu-icon-close { display: none; }
@@ -547,7 +555,7 @@ export function showcasePageData(appName: string, scriptSrc: string, notificatio
   <script>${showcaseMenuScript()}</script>
   <script src="${scriptSrc}"></script>`,
     logo: {
-      header: logoLockupMarkup(`${appName} Flight Tracker`, { size: 32 }),
+      header: logoLockupMarkup(`${appName} Flight Tracker`, { size: 32, fluidSize: HEADER_LOGO_SIZE }),
       footer: logoLockupMarkup(`${appName} Flight Tracker`, { size: 20 }),
     },
     menuButton: menuButtonMarkup(),

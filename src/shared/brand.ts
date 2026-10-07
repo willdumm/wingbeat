@@ -63,10 +63,13 @@ function escapeHtml(s: string): string {
  * `compact: true` shrinks just the mark and tightens the gap to the wordmark
  * (e.g. a page-header lockup sitting right next to a title) without affecting
  * the wordmark's own font size, which stays driven by `size`.
+ * `fluidSize` (a CSS length, e.g. a clamp() on vw) replaces the fixed px size, scaling
+ * mark and wordmark together so a lockup can shrink to fit instead of ellipsizing; `size`
+ * then only sets the mark's intrinsic width/height attributes.
  */
 export function logoLockupMarkup(
   appName: string,
-  opts: { size?: number; showWordmark?: boolean; tone?: 'brand' | 'mono'; compact?: boolean } = {},
+  opts: { size?: number; fluidSize?: string; showWordmark?: boolean; tone?: 'brand' | 'mono'; compact?: boolean } = {},
 ): string {
   const size = opts.size ?? 28;
   const showWordmark = opts.showWordmark ?? true;
@@ -79,8 +82,8 @@ export function logoLockupMarkup(
   const a11y = showWordmark ? 'aria-hidden="true"' : `role="img" aria-label="${escapeHtml(appName)}"`;
   const mark = `<svg width="${width}" height="${height}" viewBox="${LOGO_VIEWBOX}" class="wb-logo__mark" ${a11y}>${body}</svg>`;
   const word = showWordmark ? `<span class="wb-logo__word">${escapeHtml(appName)}</span>` : '';
-  const cls = ['wb-logo', tone === 'mono' ? 'wb-logo--mono' : '', compact ? 'wb-logo--compact' : ''].filter(Boolean).join(' ');
-  return `<span class="${cls}" style="--wb-logo-size:${size}px;--wb-logo-aspect:${LOGO_ASPECT.toFixed(4)}">${mark}${word}</span>`;
+  const cls = ['wb-logo', tone === 'mono' ? 'wb-logo--mono' : '', compact ? 'wb-logo--compact' : '', opts.fluidSize ? 'wb-logo--fluid' : ''].filter(Boolean).join(' ');
+  return `<span class="${cls}" style="--wb-logo-size:${opts.fluidSize ?? size + 'px'};--wb-logo-aspect:${LOGO_ASPECT.toFixed(4)}">${mark}${word}</span>`;
 }
 
 /** CSS for the logo lockup produced by logoLockupMarkup(). */
@@ -108,6 +111,11 @@ export function brandStyles(): string {
       text-overflow: ellipsis;
     }
     .wb-logo--mono, .wb-logo--mono .wb-logo__word { color: #FFFFFF; }
+
+    .wb-logo--fluid .wb-logo__mark {
+      height: calc(var(--wb-logo-size) * ${MARK_SCALE});
+      width: calc(var(--wb-logo-size) * ${MARK_SCALE} * var(--wb-logo-aspect, 1));
+    }
 
     .wb-logo--compact { gap: calc(var(--wb-logo-size, 28px) * 0.24); }
     .wb-logo--compact .wb-logo__mark {
