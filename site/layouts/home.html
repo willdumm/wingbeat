@@ -33,15 +33,18 @@
   <header class="sc-header">
     <div class="sc-container sc-header-inner">
       <a class="sc-home-link" href="./">{{ $sc.logo.header | safeHTML }}</a>
-      <nav class="sc-nav" aria-label="Features">
-        {{- range .Params.nav }}
-        <a href="{{ .href }}">{{ .label }}</a>
-        {{- end }}
-      </nav>
-      <div class="sc-header-actions">
-        {{- range .Params.headerActions }}
-        <a class="btn-{{ .style | default "primary" }} sc-btn-md" href="{{ .href }}">{{ .label }}</a>
-        {{- end }}
+      {{ $sc.menuButton | safeHTML }}
+      <div class="sc-menu" id="sc-menu">
+        <nav class="sc-nav" aria-label="Features">
+          {{- range .Params.nav }}
+          <a href="{{ .href }}">{{ .label }}</a>
+          {{- end }}
+        </nav>
+        <div class="sc-header-actions">
+          {{- range .Params.headerActions }}
+          <a class="btn-{{ .style | default "primary" }} sc-btn-md" href="{{ .href }}">{{ .label }}</a>
+          {{- end }}
+        </div>
       </div>
     </div>
   </header>

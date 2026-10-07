@@ -40,8 +40,6 @@ export function mapViewPickerMarkup(): string {
 
 export function mapViewPickerStyles(): string {
   return `
-    #mvp-map { position: absolute; inset: 0; }
-
     .map-view-picker-crosshair {
       position: absolute;
       top: 50%;

@@ -59,6 +59,31 @@ function phoneMockup(notifications: SampleNotification[]): string {
         </div>`;
 }
 
+/** The header's menu button for narrow screens; both glyphs are rendered, CSS shows one. */
+function menuButtonMarkup(): string {
+  return /* html */ `<button class="btn-secondary sc-menu-btn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="sc-menu">${icon('menu', { className: 'sc-menu-icon-open' })}${icon('x', { className: 'sc-menu-icon-close' })}</button>`;
+}
+
+/** Opens and closes the narrow-screen header menu (see .sc-menu in showcasePageStyles). */
+function showcaseMenuScript(): string {
+  return `(() => {
+    const header = document.querySelector('.sc-header');
+    const btn = header && header.querySelector('.sc-menu-btn');
+    if (!btn) return;
+    const isOpen = () => header.hasAttribute('data-menu-open');
+    const setOpen = open => {
+      header.toggleAttribute('data-menu-open', open);
+      btn.setAttribute('aria-expanded', String(open));
+    };
+    btn.addEventListener('click', () => setOpen(!isOpen()));
+    // Following a link (they're all in-page anchors or other pages) closes the menu.
+    header.querySelector('.sc-menu').addEventListener('click', e => { if (e.target.closest('a')) setOpen(false); });
+    document.addEventListener('click', e => { if (isOpen() && !header.contains(e.target)) setOpen(false); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && isOpen()) { setOpen(false); btn.focus(); } });
+    window.matchMedia('(min-width: 961px)').addEventListener('change', e => { if (e.matches) setOpen(false); });
+  })();`;
+}
+
 export function showcasePageStyles(): string {
   return `
     ${sharedButtonStyles()}
@@ -142,10 +167,36 @@ export function showcasePageStyles(): string {
     }
     .sc-nav a:hover { color: var(--text-primary); }
     .sc-header-actions { margin-left: auto; display: flex; gap: var(--space-3); white-space: nowrap; }
-    @media (max-width: 960px) { .sc-nav { display: none; } }
-    @media (max-width: 540px) { .sc-header-actions .btn-secondary { display: none; } }
-    /* Below this the full "… Flight Tracker" wordmark leaves no room; the hero repeats both actions. */
-    @media (max-width: 420px) { .sc-header-actions { display: none; } }
+    /* Wide: the menu's links and actions sit in the header row. Narrow: they fold into a
+       panel under the header that the menu button opens (showcaseMenuScript). */
+    .sc-menu { display: contents; }
+    .sc-menu-btn { display: none; }
+    @media (max-width: 960px) {
+      .sc-menu-btn { display: inline-flex; flex: none; margin-left: auto; width: var(--control-h-md); min-height: var(--control-h-md); padding: 0; }
+      .sc-menu-btn[aria-expanded="true"] .sc-menu-icon-open,
+      .sc-menu-btn[aria-expanded="false"] .sc-menu-icon-close { display: none; }
+      .sc-menu {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        flex-direction: column;
+        gap: var(--space-4);
+        max-height: calc(100svh - 65px);
+        overflow-y: auto;
+        padding: var(--space-2) var(--space-6) var(--space-5);
+        background: var(--surface-1);
+        border-bottom: 1px solid var(--border);
+        box-shadow: var(--shadow-lg);
+      }
+      .sc-header[data-menu-open] .sc-menu { display: flex; }
+      .sc-nav { flex-direction: column; gap: 0; }
+      .sc-nav a { padding: var(--space-3) 0; border-bottom: 1px solid var(--border-subtle); }
+      .sc-header-actions { margin-left: 0; }
+      .sc-header-actions > a { flex: 1; }
+    }
+    @media (max-width: 640px) { .sc-menu { padding-inline: var(--space-4); } }
 
     /* ── Hero ────────────────────────────────────────────────────────────── */
     .sc-hero {
@@ -474,6 +525,8 @@ export interface ShowcasePageData {
   /** The end of `<body>`: Leaflet and friends, the icon runtime, then showcase.js. */
   scripts: string;
   logo: { header: string; footer: string };
+  /** The header's menu toggle, shown on narrow screens. */
+  menuButton: string;
   /** The `{{< demo name="notifications" >}}` phone mockup. */
   phone: string;
 }
@@ -491,11 +544,13 @@ export function showcasePageData(appName: string, scriptSrc: string, notificatio
   <script src="https://unpkg.com/pmtiles@3/dist/pmtiles.js"></script>
   <script src="https://unpkg.com/lucide@0.454.0/dist/umd/lucide.js"></script>
   <script>${iconRuntimeScript()}</script>
+  <script>${showcaseMenuScript()}</script>
   <script src="${scriptSrc}"></script>`,
     logo: {
       header: logoLockupMarkup(`${appName} Flight Tracker`, { size: 32 }),
       footer: logoLockupMarkup(`${appName} Flight Tracker`, { size: 20 }),
     },
+    menuButton: menuButtonMarkup(),
     phone: phoneMockup(notifications),
   };
 }

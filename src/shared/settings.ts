@@ -943,9 +943,9 @@ export function settingsModalStyles(): string {
       font-style: italic;
     }
 
-    /* ── Named points / regions map editors ───────────────────────────────── */
-    #settings-view-named-points-editor,
-    #settings-view-regions-editor {
+    /* ── Full-screen map views (named points, regions, default-view picker) ── */
+    /* The view is a flex column so .map-editor-body (and the map in it) fills it. */
+    .settings-view[data-fullscreen-editor] {
       overflow: hidden;
       display: flex;
       flex-direction: column;
@@ -999,7 +999,8 @@ export function settingsModalStyles(): string {
     }
 
     #np-editor-map,
-    #rg-editor-map { position: absolute; inset: 0; }
+    #rg-editor-map,
+    #mvp-map { position: absolute; inset: 0; }
 
     .map-editor-panel {
       display: none;

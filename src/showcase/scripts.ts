@@ -241,10 +241,15 @@ function showcaseDriverScript(): string {
       const root = attachDemo(host, 'dashboard', DEMO_MARKUP.status);
       const bar = root.getElementById('aircraft-status-bar');
       const container = root.getElementById('aircraft-cards');
+      // On phone widths (layoutAircraftCards' carousel breakpoint) the bar shows just the
+      // first aircraft in flight rather than cycling through the fleet; the flights demo
+      // still maps every in-progress flight.
+      const phone = window.matchMedia('(max-width: 640px)');
+      const firstInFlight = ACTIVE_TRACKERS.find(t => (LIVE_BY_TRACKER[t.id]?.velocity_kmh ?? 0) >= FLIGHT_THRESHOLD_KMH) ?? ACTIVE_TRACKERS[0];
 
       function render() {
         container.innerHTML = '';
-        for (const t of ACTIVE_TRACKERS) {
+        for (const t of phone.matches ? [firstInFlight].filter(Boolean) : ACTIVE_TRACKERS) {
           const d = LIVE_BY_TRACKER[t.id] ?? null;
           container.appendChild(buildAircraftCard({
             trackerId: t.id,
@@ -258,6 +263,7 @@ function showcaseDriverScript(): string {
         layoutAircraftCards(bar, container);
       }
       render();
+      phone.addEventListener('change', render);
       new ResizeObserver(debounce(() => layoutAircraftCards(bar, container), 50)).observe(bar);
       // Card widths are measured, so lay out again once the web fonts are in.
       if (document.fonts) document.fonts.ready.then(() => layoutAircraftCards(bar, container));

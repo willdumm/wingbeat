@@ -84,6 +84,24 @@ export function pilotDutyStyles(): string {
     }
     .duty-col-block { text-align: right; font-variant-numeric: tabular-nums; }
     .duty-col-date  { white-space: nowrap; font-weight: 500; }
+    .duty-col-compact { display: none; }
+    .duty-compact-times { color: var(--text-muted); font-size: 0.75rem; }
+
+    /* Narrow (phones, the settings modal or a showcase frame on one): seven columns
+       don't fit, so each flight folds into one "Origin → Dest / Dep–Arr · A/C" cell
+       between Date and Block. Rows become grids, which sidesteps the colspans. */
+    .pilot-duty-content { container-type: inline-size; }
+    @container (max-width: 34rem) {
+      .duty-table, .duty-table thead, .duty-table tbody { display: block; }
+      .duty-table tr { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr) auto; }
+      .duty-table th, .duty-table td { display: none; }
+      .duty-table .duty-col-date, .duty-table .duty-col-compact, .duty-table .duty-col-block,
+      .duty-row-rest td, .duty-row-day-total td { display: block; }
+      .duty-table .duty-col-compact { overflow-wrap: anywhere; }
+      .duty-row-rest td:last-child { grid-column: 2 / -1; }
+      .duty-row-day-total td:first-child { grid-column: 1 / 3; }
+    }
+
     .duty-month-total {
       text-align: right; font-size: 0.85rem;
       color: var(--text-primary); font-weight: 600;
@@ -258,6 +276,7 @@ export function pilotDutyRenderScript(): string {
       table.innerHTML =
         '<thead><tr>' +
         '<th class="duty-col-date">Date</th>' +
+        '<th class="duty-col-compact">Flight</th>' +
         '<th>A/C</th><th>Origin</th><th>Dep</th>' +
         '<th>Dest</th><th>Arr</th><th class="duty-col-block">Block</th>' +
         '</tr></thead><tbody></tbody>';
@@ -285,6 +304,9 @@ export function pilotDutyRenderScript(): string {
             const tr = document.createElement('tr');
             tr.innerHTML =
               '<td class="duty-col-date">' + (i === 0 ? dateLabel : '') + '</td>' +
+              '<td class="duty-col-compact">' + (f.origin_label || '—') + ' → ' + (f.destination_label || '—') +
+                '<div class="duty-compact-times">' + fmtLocalTime(f.start_time) + '–' + fmtLocalTime(f.end_time) +
+                ' · ' + (f.aircraft_tail || '—') + '</div></td>' +
               '<td>' + (f.aircraft_tail || '—') + '</td>' +
               '<td>' + (f.origin_label || '—') + '</td>' +
               '<td>' + fmtLocalTime(f.start_time) + '</td>' +
