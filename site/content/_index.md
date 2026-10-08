@@ -48,10 +48,7 @@ Wingbeat flight tracker works with the tracking hardware you already use, such a
 
 {{< feature id="flights" overline="Flights" title="Flights are logged automatically."
     link="docs/features/live-tracking/" linkLabel="How flights are detected" >}}
-A flight starts when the aircraft goes faster than 20 knots and ends when it slows down
-again. Each departure and arrival gets a place name, from map data or from your own list of
-places, so the log says Kodiak to Larsen Bay instead of showing coordinates.
-
+Flight start and endpoints are detected based on tracker speed. Aircraft positions, including takeoff and landing points, are described relative to customizable geographic names.
 {{< demo name="flights" caption="Flight list and map. Select a flight, or use Map all to see the whole day" >}}
 
 {{< facts >}}
@@ -71,8 +68,8 @@ Wingbeat sends notifications to your phone through the Pushover app.
 - **Takeoffs and landings** Get notified when and where flights begin or end.
 - **Lost signal** If an aircraft in flight stops sending GPS locations,
   you get alerts until the next position is received.
-- **Customizable by recipient** Everyone uses their own Pushover account and chooses which
-  notifications they receive.
+- **Customizable by recipient** Each user chooses which
+  notifications they receive, through their own Pushover account.
 {{< /facts >}}
 
 {{< demo name="notifications" caption="Notifications from today's flights" >}}
@@ -81,14 +78,13 @@ Wingbeat sends notifications to your phone through the Pushover app.
 {{< feature id="maintenance" layout="split" overline="Maintenance"
     title="Maintenance due dates from logged flight time."
     link="docs/features/maintenance-tracking/" linkLabel="Set up maintenance tracking" >}}
-Enter a Hobbs or tach reading. Wingbeat adds the flight time it logs, adjusted by a
+Enter a Hobbs or tach reading, and Wingbeat adds the flight time it logs, adjusted by a
 learned correction factor, to help track and monitor maintenance deadlines.
 
 {{< facts >}}
 - **Hours and dates** Oil changes and 100-hour inspections by meter time; annual
   inspections and ELT batteries by date.
-- **Due soon** Items within 10% of their interval, or within 30 days, are marked as due
-  soon.
+- **Due soon** Items requiring attention are flagged in the user interface.
 {{< /facts >}}
 
 {{< demo name="maintenance" caption="Aircraft info for N100DM" >}}
@@ -97,13 +93,10 @@ learned correction factor, to help track and monitor maintenance deadlines.
 {{< feature id="duty" layout="split" overline="Pilot duty"
     title="A duty and flight time log for each pilot."
     link="docs/features/pilot-duty-log/" linkLabel="Read about the duty log" >}}
-Each pilot's month on one page: every leg with departure and arrival times, block time for
-each day, and running totals from the last 24 hours up to the last 12 months.
+See a detailed summary of each pilot's flying activity, including each leg with departure and arrival times, block time for each day, and cumulative totals for relevant time intervals.
 
 {{< facts >}}
 - **PDF export** Download the log as a PDF to print or send.
-- **Rest days** Days without a flight are marked as rest days and counted over the last 90
-  days.
 {{< /facts >}}
 
 {{< demo name="duty" caption="Duty log for one pilot. Try Export PDF" >}}
@@ -123,8 +116,7 @@ it for any purpose you like.
 
 {{< facts >}}
 - **Owned by you** Your flight data belongs to you.
-- **Use it how you like** Land management and permit reports, contract billing, insurance,
-  safety reviews, or your own analysis.
+- **Use it how you like** Land management and permit reports, contract billing, insurance, or your own analysis.
 {{< /facts >}}
 {{< /feature >}}
 
