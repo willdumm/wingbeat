@@ -1,4 +1,4 @@
-import { Hono, type MiddlewareHandler } from 'hono';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { Env, Tenant, Point, Flight, FlightRecord, FlightPoint, Tracker, Aircraft, Pilot, InviteToken, Webhook, TileOverlay } from './types';
 import { maybePoll, pollAllActive, pollAllActiveForce, testFeed } from './poller';
@@ -196,6 +196,14 @@ app.post('/logout', async (c) => {
 
 // ── Join routes (invite / device-link) ───────────────────────────────────────
 
+// A device that already has a session here doesn't need another one: opening a device
+// link (e.g. again, or from an old deployment's "moved" screen) just takes it to the app.
+async function hasSession(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<boolean> {
+  const token = getCookie(c, SESSION_COOKIE);
+  if (!token) return false;
+  return (await c.var.db.prepare('SELECT 1 FROM sessions WHERE token = ?').bind(token).first()) !== null;
+}
+
 app.get('/join/:token', async (c) => {
   const token = c.req.param('token');
   const [row, settings] = await Promise.all([
@@ -205,6 +213,7 @@ app.get('/join/:token', async (c) => {
 
   const appName = settings.app_name;
   if (!row) return c.html(joinErrorHTML('This link is invalid.', appName), 404);
+  if (row.type === 'device_link' && await hasSession(c)) return c.redirect('/');
   if (row.expires_at < Math.floor(Date.now() / 1000)) {
     return c.html(joinErrorHTML('This link has expired. Ask an admin for a new one.', appName), 410);
   }
@@ -231,6 +240,7 @@ app.post('/join/:token', async (c) => {
 
   const appName = settings.app_name;
   if (!row) return c.html(joinErrorHTML('This link is invalid.', appName), 404);
+  if (row.type === 'device_link' && await hasSession(c)) return c.redirect('/');
   if (row.expires_at < Math.floor(Date.now() / 1000)) {
     return c.html(joinErrorHTML('This link has expired.', appName), 410);
   }
