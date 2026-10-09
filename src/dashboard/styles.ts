@@ -31,8 +31,8 @@ export function dashboardStyles(): string {
       height: 100vh;
       height: 100svh;
       overflow: hidden;
-      padding-bottom: constant(safe-area-inset-bottom, 0px);
-      padding-bottom: env(safe-area-inset-bottom, 0px);
+      /* No bottom safe-area padding: the map runs to the screen edge, and the chrome
+         along the bottom (map controls, sidebar) insets itself instead. */
     }
 
     header {
@@ -566,6 +566,44 @@ export function dashboardStyles(): string {
     .map-wrapper {
       position: relative;
       flex: 1;
+    }
+
+    /* ── Phones: the map runs up behind the status cards ─────────────────── */
+    /* #ptr-content becomes a one-column grid whose map row (.main) also spans the
+       header's row, so the cards float over the map. --mobile-header-h (set from the
+       header's height in init.ts) keeps the map's own top-anchored chrome and the
+       sidebar's content below the cards. */
+    @media (max-width: 640px) {
+      #ptr-content {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto auto minmax(0, 1fr);
+      }
+      #mobile-topnav { grid-row: 1; grid-column: 1; }
+      header {
+        grid-row: 2;
+        grid-column: 1;
+        background: transparent;
+        border-bottom: none;
+        box-shadow: none;
+        pointer-events: none;
+      }
+      header .aircraft-card {
+        pointer-events: auto;
+        background: var(--surface-float);
+        border-color: var(--glass-border);
+        backdrop-filter: var(--glass-blur);
+        -webkit-backdrop-filter: var(--glass-blur);
+        box-shadow: var(--shadow-md);
+      }
+      header .aircraft-card.in-flight { border-color: var(--live-dot); }
+      /* With the flight list open the cards sit over the sidebar, not the map. */
+      #ptr-content:has(aside.open) header { background: var(--surface-1); }
+      .main { grid-row: 2 / 4; grid-column: 1; }
+      aside { padding-top: var(--mobile-header-h, 0px); }
+      .map-wrapper .show-sidebar-btn,
+      .map-wrapper .day-view-legend,
+      .map-wrapper .elevation-panel { top: calc(10px + var(--mobile-header-h, 0px)); }
     }
 
     ${sharedSidebarToggleStyles('aside', '.map-wrapper')}

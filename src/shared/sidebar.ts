@@ -6,7 +6,12 @@
  */
 export function sharedSidebarToggleStyles(sidebarSelector: string, mapWrapperSelector: string): string {
   return `
-    ${sidebarSelector} { transition: width 0.2s ease; }
+    ${sidebarSelector} {
+      transition: width 0.2s ease;
+      /* The page has no bottom safe-area padding (the map runs to the screen edge), so
+         the sidebar keeps its footer clear of the home indicator itself. */
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
 
     @media (min-width: 641px) {
       ${sidebarSelector}.collapsed { width: 0; overflow: hidden; border-right-width: 0; }

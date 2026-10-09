@@ -27,6 +27,7 @@ export function dashboardScriptsInit(): string {
 
       if (activeTrackers.length === 0) {
         document.getElementById('empty-msg').textContent = 'No trackers configured.';
+        ensureMapView();
         openSettings();
         return;
       }
@@ -40,11 +41,14 @@ export function dashboardScriptsInit(): string {
         showDefaultMapView();
       });
 
-      // Phase 1: paint from cache synchronously — flight list appears immediately.
+      // Phase 1: paint from cache synchronously — flight list appears immediately. Live
+      // positions come from the cached points too, so the map's first view is already
+      // fitted to the current flights. With nothing cached, the map waits for phase 2.
       flightStore.init();
       allFlights = flightStore.getAll(allTrackerIds).reverse();
+      liveDataByTracker = buildLiveDataByTracker(null);
       applyFilter();
-      showDefaultMapView();
+      if (allFlights.length > 0) showDefaultMapView();
       initAlerts();
 
       // Phase 2: fetch incremental update, re-render with live envelope data.
@@ -53,12 +57,23 @@ export function dashboardScriptsInit(): string {
         const result = await flightStore.refresh(allTrackerIds);
         applyStoreResult(result);
         if (lastUserInteractionTime === 0) {
-          showDefaultMapView();
+          showDefaultMapView({ fit: mapInputSettled() });
         } else {
           await refreshMapIfNeeded(oldFlights);
         }
       } catch (_) {}
+      ensureMapView();
       scheduleNextLivePoll();
+    })();
+
+    // On phones the header floats over the map; publish its height for the CSS that
+    // keeps the map chrome and sidebar content below it (see dashboard styles).
+    (function() {
+      const header = document.querySelector('header');
+      if (!header || typeof ResizeObserver === 'undefined') return;
+      new ResizeObserver(() => {
+        document.documentElement.style.setProperty('--mobile-header-h', header.getBoundingClientRect().height + 'px');
+      }).observe(header);
     })();
 
     // ── Sidebar toggle (mobile: open/close overlay; desktop: collapse/expand) ──
@@ -72,6 +87,18 @@ export function dashboardScriptsInit(): string {
     map.on('movestart', (e) => {
       if (e.originalEvent) lastUserInteractionTime = Date.now();
     });
+
+    // Any touch, drag, wheel or control press on the map holds off poll-driven re-fits
+    // (see mapInputSettled). Leaflet's own drag/pinch events carry no originalEvent, so
+    // this listens on the DOM instead.
+    (function() {
+      const mapWrapper = document.querySelector('.map-wrapper');
+      if (!mapWrapper) return;
+      const noteInput = () => { lastMapInputTime = Date.now(); };
+      ['touchstart', 'touchmove', 'touchend', 'mousedown', 'wheel'].forEach(type =>
+        mapWrapper.addEventListener(type, noteInput, { passive: true, capture: true }));
+      mapWrapper.addEventListener('mousemove', (e) => { if (e.buttons) noteInput(); }, { passive: true, capture: true });
+    })();
 
     // Refresh the displayed "polled X ago" time and send a heartbeat ping when the tab regains focus.
     let _lastPingTime = 0;

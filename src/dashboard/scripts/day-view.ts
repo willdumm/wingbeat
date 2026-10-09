@@ -57,7 +57,8 @@ export function dashboardScriptsDayView(): string {
 
     // Draws flights (chronological) all at once in per-tracker colors, with plane markers
     // on the in-progress ones. Used for a day's "Map all" and for the default view.
-    function selectDayView(flights) {
+    // Pass fit: false to redraw without moving the viewport.
+    function selectDayView(flights, { fit = true } = {}) {
       if (activeTrack) { activeTrack.remove(); activeTrack = null; }
       if (activeStartMarker) { activeStartMarker.remove(); activeStartMarker = null; }
       if (activeEndMarker) { activeEndMarker.remove(); activeEndMarker = null; }
@@ -87,6 +88,13 @@ export function dashboardScriptsDayView(): string {
       activePointData = drawn.pointData;
       activePointLabels = drawn.labels;
 
+      // Fit before placing the end markers: their grouping depends on the zoom, and on
+      // first load the map has no view until this fit.
+      if (fit && drawn.allPoints.length > 0) {
+        map.fitBounds(L.latLngBounds(drawn.allPoints), mapFitOptions());
+      }
+      ensureMapView();
+
       currentDayEndInfos = drawn.endInfos;
       renderEndMarkers(drawn.endInfos);
 
@@ -97,21 +105,18 @@ export function dashboardScriptsDayView(): string {
         })));
       }
 
-      if (drawn.allPoints.length > 0) {
-        map.fitBounds(L.latLngBounds(drawn.allPoints), { padding: [40, 40] });
-      }
-
       // In the default view this also adds plane markers for aircraft on the ground.
       updateLivePlaneMarkers();
     }
 
     // Default map view: every in-progress flight, across all trackers. With nothing
-    // airborne, falls back to the most recent flight.
-    function showDefaultMapView() {
+    // airborne, falls back to the most recent flight. Pass fit: false to redraw without
+    // moving the viewport.
+    function showDefaultMapView({ fit = true } = {}) {
       activeDayDate = '__overview__';
       const current = filteredFlights.filter(_isFlightInProgress);
       if (current.length > 0) {
-        selectDayView([...current].reverse());
+        selectDayView([...current].reverse(), { fit });
         return;
       }
 
@@ -119,11 +124,11 @@ export function dashboardScriptsDayView(): string {
         const f = filteredFlights[0];
         const el = document.querySelector('.flight-item[data-id="' + f.id + '"]');
         activeFlightId = null;
-        selectFlight(f, el);
+        selectFlight(f, el, fit);
         return;
       }
 
-      selectDayView([]);
+      selectDayView([], { fit });
     }
   `;
 }

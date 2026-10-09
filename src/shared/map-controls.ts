@@ -289,6 +289,9 @@ export function sharedMapControlsStyles(): string {
       pointer-events: none;
     }
 
+    /* The page-level map runs to the screen's bottom edge: clear the home indicator. */
+    #map-controls { bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px)); }
+
     #map-attribution, .map-controls-attribution {
       font-family: var(--font-body);
       font-size: 0.63rem;
@@ -921,15 +924,40 @@ export function tileOverlayLegendButtonMarkup(idPrefix = ''): string {
  * the value passed to tileOverlayLegendButtonMarkup()/tileOverlayLegendMountScript(). */
 export function tileOverlayLegendPanelMarkup(idPrefix = ''): string {
   return `
-    <div id="${idPrefix}overlay-legend-panel" class="overlay-legend-panel hidden">
-      <div id="${idPrefix}overlay-legend-list"></div>
+    <div id="${idPrefix}overlay-legend-panel" class="overlay-legend-panel map-legend-card hidden">
+      <div class="map-legend-label">Overlays</div>
+      <div id="${idPrefix}overlay-legend-list" class="overlay-legend-list"></div>
     </div>
   `;
 }
 
-/** CSS for the overlay legend button state and its popover panel. */
+/** CSS for the overlay legend button state and its popover panel, plus the shared
+ * floating map-legend card (.map-legend-card / .map-legend-label) that this panel and the
+ * Flight Trends layer legend are both built from. */
 export function tileOverlayLegendStyles(): string {
   return `
+    /* Floating legend over the live map: design-system glass, same as the controls bar. */
+    .map-legend-card {
+      background: var(--surface-float);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius-md);
+      padding: var(--space-2) var(--space-3);
+      backdrop-filter: var(--glass-blur);
+      -webkit-backdrop-filter: var(--glass-blur);
+      box-shadow: var(--shadow-md);
+    }
+
+    .map-legend-label {
+      display: flex;
+      align-items: center;
+      font-family: var(--font-ui);
+      font-size: var(--size-2xs);
+      font-weight: var(--weight-bold);
+      text-transform: uppercase;
+      letter-spacing: var(--tracking-caps);
+      color: var(--text-muted);
+    }
+
     .overlay-legend-panel {
       position: absolute;
       /* Anchored above the map-controls bar, which grows upward with the attribution
@@ -940,34 +968,44 @@ export function tileOverlayLegendStyles(): string {
       left: 50%;
       transform: translateX(-50%);
       z-index: 600;
-      background: var(--surface-float);
-      border: 1.5px solid var(--border);
-      border-radius: var(--radius-md);
-      padding: 8px 10px;
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      font-size: 0.8rem;
-      color: var(--text-primary);
+      gap: var(--space-2);
+      min-width: 160px;
       max-width: calc(100vw - 1rem);
       max-height: 40vh;
       overflow-y: auto;
       pointer-events: auto;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
     }
 
+    #overlay-legend-panel { bottom: calc(4.2rem + env(safe-area-inset-bottom, 0px)); }
+
     .overlay-legend-panel.hidden { display: none; }
+
+    .overlay-legend-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-1);
+    }
 
     .overlay-legend-row {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: var(--space-2);
       white-space: nowrap;
+      font-family: var(--font-body);
+      font-size: 0.78rem;
+      color: var(--text-secondary);
     }
 
-    .overlay-legend-row input[type="checkbox"] { flex-shrink: 0; }
+    .overlay-legend-row input[type="checkbox"] {
+      flex-shrink: 0;
+      margin: 0;
+      width: 14px;
+      height: 14px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
     .overlay-legend-row label { cursor: pointer; }
   `;
 }

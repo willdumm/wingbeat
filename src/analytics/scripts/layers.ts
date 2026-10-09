@@ -28,7 +28,7 @@ export function analyticsScriptsLayers(): string {
       const max = Math.max(0.01, Math.pow(0.5, 14 - zoom) * 0.05);
       return L.heatLayer(pts, {
         radius: 30, blur: 35, max,
-        gradient: { 0.4: '#9a3412', 0.65: '#ea580c', 1.0: '#fde68a' },
+        gradient: { 0.4: '#6b21a8', 0.65: '#9333ea', 1.0: '#e9d5ff' },
       });
     }
 

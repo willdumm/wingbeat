@@ -11,10 +11,27 @@ import { sharedTileLayerDefs } from '../../shared/map-controls';
 export function dashboardScriptsState(speedThreshold: number): string {
   return `
     // ── Map setup ─────────────────────────────────────────────────────────────
-    const map = L.map('map', { zoomControl: false, attributionControl: false }).setView(
-      [window.APP_SETTINGS.mapDefaultLat, window.APP_SETTINGS.mapDefaultLng],
-      window.APP_SETTINGS.mapDefaultZoom
-    );
+    // No view yet: the first one is the fit to the current flights (showDefaultMapView in
+    // init.ts), so the map never paints the default extent first and then jumps. Leaflet
+    // holds layers added before then until it has a view. ensureMapView() falls back to
+    // the default extent when there is nothing to fit.
+    const map = L.map('map', { zoomControl: false, attributionControl: false });
+
+    function ensureMapView() {
+      if (map._loaded) return;
+      map.setView(
+        [window.APP_SETTINGS.mapDefaultLat, window.APP_SETTINGS.mapDefaultLng],
+        window.APP_SETTINGS.mapDefaultZoom
+      );
+    }
+
+    // fitBounds options for tracks. On phones the status cards float over the top of
+    // the map, so the fit keeps the tracks below them.
+    function mapFitOptions() {
+      const header = document.querySelector('header');
+      const top = window.innerWidth <= 640 && header ? header.getBoundingClientRect().height : 0;
+      return { paddingTopLeft: [40, 40 + top], paddingBottomRight: [40, 40] };
+    }
 
     ${sharedTileLayerDefs('map')}
 
@@ -44,6 +61,12 @@ export function dashboardScriptsState(speedThreshold: number): string {
     let expandedDays = null;  // null = first render; Set<string> after
     let seenDayKeys = new Set(); // tracks every day key we've ever rendered
     let lastUserInteractionTime = 0; // ms; updated on manual pan/zoom or flight click
+    let lastMapInputTime = 0; // ms; last touch/mouse/wheel input on the map or its controls
+
+    // Poll-driven re-fits wait until the map has gone this long without input, so an
+    // update never pulls the view away from where the user is looking.
+    const MAP_INPUT_SETTLE_MS = 20_000;
+    function mapInputSettled() { return Date.now() - lastMapInputTime >= MAP_INPUT_SETTLE_MS; }
     let activeDayDate = null; // dayKey or '__overview__' of the currently displayed day view
 
     // Speed threshold (km/h) injected from the server-side constant.

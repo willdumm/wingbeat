@@ -27,8 +27,8 @@ export function analyticsStyles(): string {
       height: 100vh;
       height: 100svh;
       overflow: hidden;
-      padding-bottom: constant(safe-area-inset-bottom, 0px);
-      padding-bottom: env(safe-area-inset-bottom, 0px);
+      /* No bottom safe-area padding: the map runs to the screen edge, and the chrome
+         along the bottom (map controls, sidebar) insets itself instead. */
     }
 
     /* ── Header ─────────────────────────────────────────────────────────────── */
@@ -279,27 +279,12 @@ export function analyticsStyles(): string {
       position: absolute;
       top: 0.75rem;
       right: 0.75rem;
-      background: var(--surface-float);
-      border: 1.5px solid var(--border);
-      border-radius: var(--radius-md);
-      padding: 0.6rem 0.75rem;
       z-index: 500;
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
       min-width: 160px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.10);
     }
 
-    .layer-controls-label {
-      font-size: 0.68rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--text-muted);
-      margin-bottom: 0.5rem;
-      display: flex;
-      align-items: center;
-    }
+    /* Card and label visuals: .map-legend-card / .map-legend-label (tileOverlayLegendStyles). */
+    .layer-controls-label { margin-bottom: 0.5rem; gap: var(--space-2); }
 
     .legend-toggle {
       margin-left: auto;
@@ -318,7 +303,8 @@ export function analyticsStyles(): string {
     #layer-controls.collapsed .layer-item,
     #layer-controls.collapsed #heat-weight-toggle { display: none; }
 
-    #layer-controls.collapsed { min-width: 0; padding-bottom: 0.35rem; }
+    #layer-controls.collapsed { min-width: 0; }
+    #layer-controls.collapsed .layer-controls-label { margin-bottom: 0; }
 
     .layer-item {
       display: flex;
@@ -374,7 +360,7 @@ export function analyticsStyles(): string {
       border-radius: 2px;
     }
 
-    .swatch-heat    { background: linear-gradient(to right, #9a3412, #ea580c, #fde68a); }
+    .swatch-heat    { background: linear-gradient(to right, #6b21a8, #9333ea, #e9d5ff); }
     .swatch-density { background: linear-gradient(to right, #164e63, #0891b2, #a5f3fc); }
 
     .swatch-lines {
@@ -505,6 +491,7 @@ export function analyticsStyles(): string {
       align-items: center;
       gap: 0.25rem;
       padding: 0.4rem 0.75rem;
+      padding-bottom: calc(0.4rem + env(safe-area-inset-bottom, 0px));
       background: var(--surface-1);
       border-top: 1px solid var(--border);
       flex-shrink: 0;

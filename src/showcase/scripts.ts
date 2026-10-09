@@ -493,9 +493,6 @@ function showcaseDriverScript(): string {
       const sgChart = root.getElementById('streamgraph-chart');
       const sgOpts = { mode: 'time', normalized: false, interval: 'auto', showHomeBase: true };
 
-      // Region boundaries on by default here: they're what the totals are split by.
-      layerControls.querySelector('.layer-item[data-layer="region-bounds"]').classList.add('active');
-
       let filters = { dateFrom: null, dateTo: null, trackerIds: [], pilotIds: [], aircraftTails: [] };
       let filteredFlights = COMPLETED_FLIGHTS;
       let selectedMonthKey = null;

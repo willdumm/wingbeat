@@ -108,8 +108,8 @@ export function analyticsViewTabsMarkup(): string {
 /** Map legend with the layer toggles (wired by wireLayerControls in scripts/layers.ts). */
 export function analyticsLayerControlsMarkup(): string {
   return /* html */ `
-  <div id="layer-controls">
-    <div class="layer-controls-label">Legend<button id="legend-toggle" class="legend-toggle" aria-label="Toggle legend"><span class="chevron" data-open="true">${icon('chevron-right', { size: 14 })}</span></button></div>
+  <div id="layer-controls" class="map-legend-card collapsed">
+    <div class="layer-controls-label map-legend-label">Legend<button id="legend-toggle" class="legend-toggle" aria-label="Toggle legend"><span class="chevron" data-open="false">${icon('chevron-right', { size: 14 })}</span></button></div>
     <div class="layer-item active" data-layer="endpoint-heat">
       <span class="layer-swatch swatch-heat"></span>
       <span>Endpoint heatmap</span>

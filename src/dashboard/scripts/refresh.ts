@@ -30,7 +30,8 @@ export function dashboardScriptsRefresh(): string {
           const latestChanged = !oldLatest || oldLatest.modified_at !== latest.modified_at;
           if (activeFlightId === null || latestChanged) {
             activeFlightId = null;
-            showDefaultMapView();
+            // Redraw with the new data, but only re-fit once the map has been left alone.
+            showDefaultMapView({ fit: mapInputSettled() });
           }
         }
         return;
@@ -79,7 +80,7 @@ export function dashboardScriptsRefresh(): string {
           return dayKey(start) === activeDayDate && filterStore.matchesFlight(f, activeFilters);
         }).length;
         if (dayFlights.length !== oldDayCount || dayFlights.some(flightChanged)) {
-          selectDayView([...dayFlights].reverse());
+          selectDayView([...dayFlights].reverse(), { fit: mapInputSettled() });
         }
       }
     }
