@@ -8,7 +8,7 @@ import { icon } from '../shared/icons';
 /** Returns the HTML body fragment for the dashboard (header through end of .main). */
 export function dashboardMarkup(appName: string): string {
   return /* html */ `
-  <div id="ptr-indicator" aria-hidden="true">
+  <div id="ptr-indicator" class="mobile-statusbar-backdrop" aria-hidden="true">
     <span id="ptr-icon">↓</span>
     <span id="ptr-label">Pull to refresh</span>
   </div>

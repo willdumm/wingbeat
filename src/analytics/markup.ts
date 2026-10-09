@@ -6,6 +6,8 @@ import { icon } from '../shared/icons';
 
 export function analyticsMarkup(appName: string): string {
   return /* html */ `
+  <div class="mobile-statusbar-backdrop" aria-hidden="true"></div>
+
   ${mobileTopnavMarkup(appName, 'Flight Trends', 'panel')}
 
   <header class="analytics-header">

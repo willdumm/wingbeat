@@ -56,23 +56,13 @@ export function dashboardStyles(): string {
     }
 
     /* ── Pull-to-refresh indicator (mobile only) ────────────────────────── */
+    /* Positioning and surface: .mobile-statusbar-backdrop (shared/sidebar.ts). */
     #ptr-indicator {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 44px;
-      background: var(--surface-1);
-      border-bottom: 1px solid var(--border-structural);
-      display: none;
       align-items: center;
       justify-content: center;
       gap: 6px;
       font-size: 0.8rem;
       color: var(--text-muted);
-      z-index: 0;
-      pointer-events: none;
-      user-select: none;
     }
 
     @media (max-width: 640px) {

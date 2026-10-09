@@ -49,6 +49,28 @@ export function sharedSidebarToggleStyles(sidebarSelector: string, mapWrapperSel
       ${sidebarSelector}.open ~ ${mapWrapperSelector} #map-controls { display: none; }
     }
 
+    /* ── Status-bar backdrop (phones) ──────────────────────────────────────── */
+    /* A fixed strip at the top edge, behind the page. iOS Safari tints the status-bar
+       area from a fixed element there; without one it blurs the content beneath it
+       (over the top nav). The dashboard's pull-to-refresh indicator is one of these. */
+    .mobile-statusbar-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 44px;
+      background: var(--surface-1);
+      border-bottom: 1px solid var(--border-structural);
+      display: none;
+      z-index: 0;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    @media (max-width: 640px) {
+      .mobile-statusbar-backdrop { display: block; }
+    }
+
     /* ── Mobile persistent top nav (tabs + toggle, always visible) ──────── */
     .mobile-topnav {
       display: none;
