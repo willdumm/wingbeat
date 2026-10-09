@@ -12,6 +12,8 @@ it into flights, and shows flight history and live position on a map.
 ## Core concepts
 
 - **Tracker** — a Garmin inReach device. Wingbeat polls it on a schedule.
+  You bring your own tracker and pay Garmin for a plan that tracks at least
+  every 2 minutes. See [Trackers and AFF](features/automated-flight-following/).
 - **Aircraft** — an airframe (tail number). Optional; a tracker can fly unassigned.
 - **Pilot** — a person. Optional, same as aircraft.
 - **Flight** — a contiguous period of airborne movement, segmented automatically

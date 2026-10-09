@@ -41,6 +41,11 @@ A tracker is a Garmin inReach device polling a MapShare feed. Currently
 inReach/MapShare is the only supported tracker type; the poller is factored
 so other tracker types could be added later without restructuring ingestion.
 
+You supply the inReach and its Garmin subscription. Pick a plan that allows
+2-minute tracking: on cheaper plans the device only reports every 10 minutes
+or more. See [Trackers and AFF](../automated-flight-following/) for details, and for
+why Wingbeat isn't an Automated Flight Following provider.
+
 Add a tracker with:
 
 - **Display name**
