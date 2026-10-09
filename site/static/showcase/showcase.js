@@ -2891,11 +2891,25 @@ REGIONS = SAMPLE.regions;
       root.getElementById('zoom-in').addEventListener('click', function() { if (map) map.zoomIn(); });
       root.getElementById('zoom-out').addEventListener('click', function() { if (map) map.zoomOut(); });
 
+      // Leaflet's own attribution control is off on every map (it would render in
+      // Leaflet's styling, in a corner), so this line stands in for it: the active
+      // basemap's credit first, then each tile overlay currently on the map, deduped.
       function _updateAttrib() {
         var el = root.getElementById('map-attribution');
-        if (el) el.innerHTML = (currentTileLayer && currentTileLayer.options.attribution) || '';
+        if (!el || !map) return;
+        var parts = [];
+        function add(layer) {
+          var a = layer && layer.getAttribution && layer.getAttribution();
+          if (a && parts.indexOf(a) === -1) parts.push(a);
+        }
+        add(currentTileLayer);
+        map.eachLayer(function(l) { if (l instanceof L.TileLayer) add(l); });
+        el.innerHTML = parts.join(' · ');
       }
       _updateAttrib();
+      // Overlays are added/removed by the overlay legend, not here; tile-layer events
+      // catch those (markers and tracks also fire layeradd, hence the filter).
+      map.on('layeradd layerremove', function(e) { if (e.layer instanceof L.TileLayer) _updateAttrib(); });
 
       var _styleGroup = root.getElementById('map-style-group');
 
@@ -3736,11 +3750,25 @@ REGIONS = SAMPLE.regions;
       root.getElementById('zoom-in').addEventListener('click', function() { if (analyticsMap) analyticsMap.zoomIn(); });
       root.getElementById('zoom-out').addEventListener('click', function() { if (analyticsMap) analyticsMap.zoomOut(); });
 
+      // Leaflet's own attribution control is off on every map (it would render in
+      // Leaflet's styling, in a corner), so this line stands in for it: the active
+      // basemap's credit first, then each tile overlay currently on the map, deduped.
       function _updateAttrib() {
         var el = root.getElementById('map-attribution');
-        if (el) el.innerHTML = (currentTileLayer && currentTileLayer.options.attribution) || '';
+        if (!el || !analyticsMap) return;
+        var parts = [];
+        function add(layer) {
+          var a = layer && layer.getAttribution && layer.getAttribution();
+          if (a && parts.indexOf(a) === -1) parts.push(a);
+        }
+        add(currentTileLayer);
+        analyticsMap.eachLayer(function(l) { if (l instanceof L.TileLayer) add(l); });
+        el.innerHTML = parts.join(' · ');
       }
       _updateAttrib();
+      // Overlays are added/removed by the overlay legend, not here; tile-layer events
+      // catch those (markers and tracks also fire layeradd, hence the filter).
+      analyticsMap.on('layeradd layerremove', function(e) { if (e.layer instanceof L.TileLayer) _updateAttrib(); });
 
       var _styleGroup = root.getElementById('map-style-group');
 

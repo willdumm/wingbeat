@@ -9,36 +9,32 @@
 export function iconRuntimeScript(): string {
   return `
     (function() {
-      // lucide.createIcons() only ever searches the whole document (this version ignores
-      // a root option), so placeholders inside a shadow root are swapped in by hand.
-      function renderInShadow(root) {
-        var placeholders = root.querySelectorAll('i[data-lucide]');
-        for (var i = 0; i < placeholders.length; i++) {
-          var el = placeholders[i];
-          var name = el.getAttribute('data-lucide');
-          var key = name.replace(/(^|-)([a-z0-9])/g, function(_, __, c) { return c.toUpperCase(); });
-          var node = window.lucide.icons[key];
-          if (!node) continue;
-          var svg = window.lucide.createElement(node);
-          svg.setAttribute('stroke-width', '2');
-          svg.setAttribute('class', 'lucide lucide-' + name + ' ' + (el.getAttribute('class') || ''));
-          if (el.getAttribute('style')) svg.setAttribute('style', el.getAttribute('style'));
-          if (el.getAttribute('aria-hidden')) svg.setAttribute('aria-hidden', el.getAttribute('aria-hidden'));
-          el.parentNode.replaceChild(svg, el);
-        }
+      // Swaps one <i data-lucide> placeholder for its <svg>. Done by hand rather than via
+      // lucide.createIcons(), which always rescans the whole document and re-renders every
+      // [data-lucide] element it finds (it copies data-lucide onto the <svg>). Called per
+      // added node by the observer below, that turned a flight-list render — hundreds of
+      // separately-appended day headings — into a multi-second quadratic stall on load.
+      // Only icon()'s attributes (class, style, aria-hidden) are carried over, and the
+      // <svg> has no data-lucide, so it doesn't re-trigger the observer.
+      function swap(el) {
+        var name = el.getAttribute('data-lucide');
+        var key = name.replace(/(^|-)([a-z0-9])/g, function(_, __, c) { return c.toUpperCase(); });
+        var node = window.lucide.icons[key];
+        if (!node || !el.parentNode) return;
+        var svg = window.lucide.createElement(node);
+        svg.setAttribute('stroke-width', '2');
+        svg.setAttribute('class', 'lucide lucide-' + name + ' ' + (el.getAttribute('class') || ''));
+        if (el.getAttribute('style')) svg.setAttribute('style', el.getAttribute('style'));
+        if (el.getAttribute('aria-hidden')) svg.setAttribute('aria-hidden', el.getAttribute('aria-hidden'));
+        el.parentNode.replaceChild(svg, el);
       }
+      // Renders the placeholders in root (itself included) — and only there, so it works
+      // the same for the document and for a shadow root.
       function renderIn(root) {
         if (!window.lucide) return;
-        var node = root.getRootNode ? root.getRootNode() : root;
-        if (window.ShadowRoot && node instanceof ShadowRoot) { renderInShadow(root); return; }
-        window.lucide.createIcons({ attrs: { 'stroke-width': 2 } });
-        // Lucide copies the source element's attributes (including data-lucide) onto the
-        // <svg> it swaps in, so the replacement itself matches our own [data-lucide]
-        // selector below — without stripping it here, the MutationObserver sees that SVG
-        // land, re-renders it, and ping-pongs forever. Strip it from just-rendered <svg>s
-        // (not from <i> placeholders that haven't been rendered yet) so each icon settles.
-        var rendered = root.querySelectorAll ? root.querySelectorAll('svg[data-lucide]') : [];
-        for (var i = 0; i < rendered.length; i++) rendered[i].removeAttribute('data-lucide');
+        if (root.matches && root.matches('i[data-lucide]')) { swap(root); return; }
+        var placeholders = root.querySelectorAll ? root.querySelectorAll('i[data-lucide]') : [];
+        for (var i = 0; i < placeholders.length; i++) swap(placeholders[i]);
       }
       // Renders placeholders already under root, then keeps watching it for new ones.
       // Exposed as window.wbObserveIcons for shadow roots (the docs-site showcase's
@@ -49,10 +45,7 @@ export function iconRuntimeScript(): string {
           for (var i = 0; i < mutations.length; i++) {
             var added = mutations[i].addedNodes;
             for (var j = 0; j < added.length; j++) {
-              var node = added[j];
-              if (node.nodeType !== 1) continue;
-              if (node.matches && node.matches('[data-lucide]')) { renderIn(node.parentNode || root); continue; }
-              if (node.querySelector && node.querySelector('[data-lucide]')) renderIn(node);
+              if (added[j].nodeType === 1) renderIn(added[j]);
             }
           }
         });

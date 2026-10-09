@@ -541,8 +541,10 @@ export function mapLayersSettingsRowsMarkup(): string {
         <input type="text" id="settings-add-layer-url" placeholder="Tile URL, e.g. https://example.com/{z}/{x}/{y}.png" autocomplete="off" />
         <input type="text" id="settings-add-layer-attribution" placeholder="Attribution (optional)" autocomplete="off" />
         <input type="number" id="settings-add-layer-maxzoom" placeholder="Max zoom (optional)" min="1" max="22" step="1" autocomplete="off" />
+        <p id="settings-add-layer-lookup-status" class="settings-msg" aria-live="polite"></p>
         <div class="settings-add-actions">
           <button id="settings-add-layer-submit" class="btn-primary">Add</button>
+          <button id="settings-add-layer-lookup" class="btn-secondary" style="display:none">Look up details</button>
           <button id="settings-add-layer-cancel" class="btn-secondary">Cancel</button>
         </div>
       </div>
@@ -565,6 +567,48 @@ export function mapLayersSettingsRowsMarkup(): string {
  */
 export function mapLayersSettingsScript(): string {
   return `
+    // "Look up details" for any tile-layer form (this section's add-layer form and the
+    // overlay add/edit forms in settings.ts): asks /api/tile-metadata (admin-only) what
+    // the tile server publishes about itself and fills in whichever of the form's
+    // fields are still empty — never overwriting something already typed. The URL
+    // field is only replaced when it doesn't hold a tile template yet (a pasted
+    // TileJSON or MapServer link). \`fields\` maps url/label/attribution/maxZoom to
+    // the form's inputs.
+    async function _ftLookupTileMetadata(btn, status, fields) {
+      var url = fields.url.value.trim();
+      if (!url) { status.textContent = 'Enter the tile URL first.'; return; }
+      btn.disabled = true;
+      status.textContent = 'Looking up the tile server…';
+      try {
+        var resp = await fetch('/api/tile-metadata?url=' + encodeURIComponent(url));
+        var data = await resp.json().catch(function() { return {}; });
+        var meta = data.metadata;
+        if (!resp.ok) {
+          status.textContent = 'Lookup failed: ' + (data.error || ('HTTP ' + resp.status)) + '.';
+        } else if (!meta) {
+          status.textContent = 'This tile server doesn\\'t publish any details. Fill them in by hand.';
+        } else {
+          var filled = [];
+          var fill = function(input, value, name) {
+            if (!input || value === undefined || value === null || value === '' || input.value.trim()) return;
+            input.value = String(value);
+            filled.push(name);
+          };
+          if (meta.url && !/\\{z\\}/i.test(url)) { fields.url.value = meta.url; filled.push('tile URL'); }
+          fill(fields.label, meta.label, 'label');
+          fill(fields.attribution, meta.attribution, 'attribution');
+          fill(fields.maxZoom, meta.maxZoom, 'max zoom');
+          var from = meta.source === 'arcgis' ? 'ArcGIS service info' : 'TileJSON';
+          status.textContent = filled.length
+            ? 'Filled in ' + filled.join(', ') + ' from the server\\'s ' + from + '. Check them before saving.'
+            : 'Found the server\\'s ' + from + ', but every field it covers is already filled in.';
+        }
+      } catch (_) {
+        status.textContent = 'Couldn\\'t reach the server.';
+      }
+      btn.disabled = false;
+    }
+
     function _ftBuildLayerRow(id, label, isCustom) {
       var row = document.createElement('div');
       row.className = 'settings-aircraft-row';
@@ -697,10 +741,22 @@ export function mapLayersSettingsScript(): string {
         document.getElementById('settings-add-layer-url').value = '';
         document.getElementById('settings-add-layer-attribution').value = '';
         document.getElementById('settings-add-layer-maxzoom').value = '';
+        document.getElementById('settings-add-layer-lookup-status').textContent = '';
         if (_ftAddLayerPreset) _ftAddLayerPreset.value = '';
         document.getElementById('settings-add-map-layer').open = false;
         _ftNotifyLayersChanged();
         renderMapLayersSettings();
+      });
+    }
+    var _ftAddLayerLookup = document.getElementById('settings-add-layer-lookup');
+    if (_ftAddLayerLookup) {
+      _ftAddLayerLookup.addEventListener('click', function() {
+        _ftLookupTileMetadata(_ftAddLayerLookup, document.getElementById('settings-add-layer-lookup-status'), {
+          url: document.getElementById('settings-add-layer-url'),
+          label: document.getElementById('settings-add-layer-label'),
+          attribution: document.getElementById('settings-add-layer-attribution'),
+          maxZoom: document.getElementById('settings-add-layer-maxzoom'),
+        });
       });
     }
     var _ftAddLayerCancel = document.getElementById('settings-add-layer-cancel');
@@ -739,11 +795,25 @@ export function sharedMapControlsScripts(
       ${rootExpr}.getElementById('${idPrefix}zoom-in').addEventListener('click', function() { if (${mapVar}) ${mapVar}.zoomIn(); });
       ${rootExpr}.getElementById('${idPrefix}zoom-out').addEventListener('click', function() { if (${mapVar}) ${mapVar}.zoomOut(); });
 
+      // Leaflet's own attribution control is off on every map (it would render in
+      // Leaflet's styling, in a corner), so this line stands in for it: the active
+      // basemap's credit first, then each tile overlay currently on the map, deduped.
       function _updateAttrib() {
         var el = ${rootExpr}.getElementById('${idPrefix}map-attribution');
-        if (el) el.innerHTML = (${currentLayerVar} && ${currentLayerVar}.options.attribution) || '';
+        if (!el || !${mapVar}) return;
+        var parts = [];
+        function add(layer) {
+          var a = layer && layer.getAttribution && layer.getAttribution();
+          if (a && parts.indexOf(a) === -1) parts.push(a);
+        }
+        add(${currentLayerVar});
+        ${mapVar}.eachLayer(function(l) { if (l instanceof L.TileLayer) add(l); });
+        el.innerHTML = parts.join(' · ');
       }
       _updateAttrib();
+      // Overlays are added/removed by the overlay legend, not here; tile-layer events
+      // catch those (markers and tracks also fire layeradd, hence the filter).
+      ${mapVar}.on('layeradd layerremove', function(e) { if (e.layer instanceof L.TileLayer) _updateAttrib(); });
 
       var _styleGroup = ${rootExpr}.getElementById('${idPrefix}map-style-group');
 

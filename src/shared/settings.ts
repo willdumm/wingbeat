@@ -130,8 +130,10 @@ export function settingsModalMarkup(): string {
                   <label><input type="checkbox" id="settings-add-overlay-default" /> On by default (fallback for basemaps not set below)</label>
                   <div class="settings-form-label">Default per basemap (optional)</div>
                   <div id="settings-add-overlay-basemap-defaults" class="settings-basemap-defaults"></div>
+                  <p id="settings-add-overlay-lookup-status" class="settings-msg" aria-live="polite"></p>
                   <div class="settings-add-actions">
                     <button id="settings-add-overlay-submit" class="btn-primary">Add</button>
+                    <button id="settings-add-overlay-lookup" class="btn-secondary">Look up details</button>
                     <button id="settings-add-overlay-cancel" class="btn-secondary">Cancel</button>
                   </div>
                 </div>
@@ -1212,6 +1214,10 @@ export function settingsModalScript(): string {
         const el = document.getElementById(id);
         if (el) el.style.display = isAdmin ? '' : 'none';
       }
+      // Anyone can add a per-device basemap, but the lookup fetches a URL server-side,
+      // so /api/tile-metadata (and this button) is admin-only.
+      const layerLookup = document.getElementById('settings-add-layer-lookup');
+      if (layerLookup) layerLookup.style.display = isAdmin ? '' : 'none';
 
       // Re-render tracker/overlay lists now that role is known (action buttons depend on it)
       renderSettingsTrackerList();
@@ -1465,17 +1471,32 @@ export function settingsModalScript(): string {
       _buildBasemapDefaultsFields(basemapDefaultsEl, ov.default_enabled_by_basemap);
       form.appendChild(_lbl('Default per basemap (optional)', basemapDefaultsEl));
 
+      const lookupStatus = document.createElement('p');
+      lookupStatus.className = 'settings-msg';
+      lookupStatus.setAttribute('aria-live', 'polite');
+      form.appendChild(lookupStatus);
+
       const actionsDiv = document.createElement('div');
       actionsDiv.className = 'settings-edit-form-actions';
       const saveBtn = document.createElement('button');
       saveBtn.className = 'settings-action-btn';
       saveBtn.textContent = 'Save';
+      const lookupBtn = document.createElement('button');
+      lookupBtn.className = 'settings-action-btn';
+      lookupBtn.textContent = 'Look up details';
       const cancelBtn = document.createElement('button');
       cancelBtn.className = 'settings-action-btn';
       cancelBtn.textContent = 'Cancel';
       actionsDiv.appendChild(saveBtn);
+      actionsDiv.appendChild(lookupBtn);
       actionsDiv.appendChild(cancelBtn);
       form.appendChild(actionsDiv);
+
+      lookupBtn.addEventListener('click', () => {
+        _ftLookupTileMetadata(lookupBtn, lookupStatus, {
+          url: urlInput, label: labelInput, attribution: attrInput, maxZoom: maxZoomInput,
+        });
+      });
 
       saveBtn.addEventListener('click', async () => {
         const label = labelInput.value.trim();
@@ -1565,12 +1586,24 @@ export function settingsModalScript(): string {
             document.getElementById('settings-add-overlay-maxzoom').value = '';
             document.getElementById('settings-add-overlay-default').checked = false;
             if (_addOverlayBasemapDefaults) _buildBasemapDefaultsFields(_addOverlayBasemapDefaults, null);
+            document.getElementById('settings-add-overlay-lookup-status').textContent = '';
             document.getElementById('settings-add-overlay').open = false;
           } else {
             const data = await resp.json().catch(() => ({}));
             alert(data.error ?? 'Failed to add overlay.');
           }
         } catch (_) {}
+      });
+    }
+    const _addOverlayLookup = document.getElementById('settings-add-overlay-lookup');
+    if (_addOverlayLookup) {
+      _addOverlayLookup.addEventListener('click', () => {
+        _ftLookupTileMetadata(_addOverlayLookup, document.getElementById('settings-add-overlay-lookup-status'), {
+          url: document.getElementById('settings-add-overlay-url'),
+          label: document.getElementById('settings-add-overlay-label'),
+          attribution: document.getElementById('settings-add-overlay-attribution'),
+          maxZoom: document.getElementById('settings-add-overlay-maxzoom'),
+        });
       });
     }
     const _addOverlayCancel = document.getElementById('settings-add-overlay-cancel');

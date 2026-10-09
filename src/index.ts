@@ -10,6 +10,7 @@ import { analyticsHTML } from './analytics';
 import { generateToken, deviceNameFromUA, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
 import { loadSettings, invalidateSettingsCache } from './settings';
 import { keyedBasemapPreset, readEnvSecret, substituteTileUrl } from './shared/map-controls';
+import { lookupTileMetadata, sanitizeAttribution } from './tile-metadata';
 
 const SESSION_COOKIE = 'session';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 365;
@@ -58,7 +59,13 @@ async function queryTileOverlays(db: D1Database) {
   const { results } = await db.prepare(
     'SELECT id, label, url, attribution, max_zoom, default_enabled, default_enabled_by_basemap FROM tile_overlays ORDER BY id ASC'
   ).all<Omit<TileOverlay, 'default_enabled_by_basemap'> & { default_enabled_by_basemap: string | null }>();
-  return results.map(r => ({ ...r, default_enabled_by_basemap: r.default_enabled_by_basemap ? JSON.parse(r.default_enabled_by_basemap) : null }));
+  // Attribution is rendered as HTML on every viewer's map, so it's sanitized on the
+  // way out (which also covers rows saved before sanitizing existed).
+  return results.map(r => ({
+    ...r,
+    attribution: r.attribution ? sanitizeAttribution(r.attribution) || null : null,
+    default_enabled_by_basemap: r.default_enabled_by_basemap ? JSON.parse(r.default_enabled_by_basemap) : null,
+  }));
 }
 
 /** `YYYY-MM-DD` → UTC midnight; null when missing or malformed. */
@@ -859,6 +866,19 @@ function validBasemapDefaults(v: unknown): v is Record<string, boolean> | null |
   if (typeof v !== 'object' || Array.isArray(v)) return false;
   return Object.values(v as Record<string, unknown>).every((x) => typeof x === 'boolean');
 }
+
+// Backs the "Look up details" button in the add-layer and overlay forms (see
+// src/tile-metadata.ts). Admin-only, like Test feed: it fetches a user-supplied URL
+// server-side. A source with no published metadata is a normal, empty result.
+app.get('/api/tile-metadata', requireAdmin, async (c) => {
+  const url = c.req.query('url')?.trim();
+  if (!url) return c.json({ error: 'url is required' }, 400);
+  try {
+    return c.json({ metadata: await lookupTileMetadata(url) });
+  } catch (err) {
+    return c.json({ error: String(err instanceof Error ? err.message : err) }, 400);
+  }
+});
 
 app.get('/api/overlays', async (c) => {
   return c.json({ overlays: await queryTileOverlays(c.var.db) });

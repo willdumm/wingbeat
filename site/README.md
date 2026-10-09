@@ -26,9 +26,9 @@ push to `main`, once the repo is connected in the Cloudflare dashboard (Workers 
 |---|---|
 | Git repository | `willdumm/wingbeat`, production branch `main` |
 | Root directory | `site` |
-| Build command | `./scripts/build.sh` (vendors the theme, runs `hugo`) |
+| Build command | `./scripts/build.sh` (fetches the Hugo pinned in `.hugo-version` if needed, vendors the theme, runs `hugo`) |
 | Deploy command | `npx wrangler deploy` |
-| Build variables | `HUGO_VERSION` (match your local Hugo), `HUGO_PARAMS_SHOWCASECARTOKEY` (secret) |
+| Build variables | `HUGO_PARAMS_SHOWCASECARTOKEY` (secret). No `HUGO_VERSION`: Workers Builds installs the standard Hugo, but the theme needs the extended build, so `build.sh` downloads that itself. Bump `.hugo-version` with the flake's Hugo (`build.sh` warns in the dev shell when they differ). |
 
 To make it private, put a Cloudflare Access application on `wingbeat.dummthings.dev`
 (Zero Trust → Access → Applications); nothing in the repo changes.
