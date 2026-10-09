@@ -1,5 +1,6 @@
 import { sharedMapControlsMarkup, tileOverlayLegendButtonMarkup, tileOverlayLegendPanelMarkup } from '../shared/map-controls';
 import { settingsModalMarkup } from '../shared/settings';
+import { mobileTopnavMarkup } from '../shared/sidebar';
 import { elevationToolMarkup } from '../shared/elevation';
 import { logoLockupMarkup } from '../shared/brand';
 import { icon } from '../shared/icons';
@@ -14,14 +15,7 @@ export function dashboardMarkup(appName: string): string {
 
   <div id="ptr-content">
 
-  <div id="mobile-topnav" class="mobile-topnav">
-    <div class="mobile-topnav-tabs-row">
-      <div class="page-nav-tabs">
-        <a href="/" class="page-nav-tab active">Flight Tracker</a>
-        <a href="/analytics" class="page-nav-tab">Flight Trends</a>
-      </div>
-    </div>
-  </div>
+  ${mobileTopnavMarkup(appName, 'Flight Tracker', 'flight list')}
 
   ${dashboardHeaderMarkup(appName)}
 

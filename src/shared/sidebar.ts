@@ -1,3 +1,22 @@
+import { logoLockupMarkup } from './brand';
+
+/**
+ * Phone-only top bar: the sidebar toggle, then the logo mark and page title (the page-nav tabs
+ * live in the sidebar on phones). Wired by sharedSidebarToggleScripts(); `label`
+ * should match the one passed there.
+ */
+export function mobileTopnavMarkup(appName: string, title: string, label: string): string {
+  return /* html */ `
+  <div id="mobile-topnav" class="mobile-topnav">
+    <div class="mobile-topnav-row">
+      <button id="mobile-sidebar-toggle" class="mobile-sidebar-toggle btn-secondary">&#8592; Show ${label}</button>
+      ${logoLockupMarkup(appName, { size: 24, showWordmark: false })}
+      <span class="mobile-topnav-sep" aria-hidden="true"></span>
+      <span class="mobile-topnav-title">${title}</span>
+    </div>
+  </div>`;
+}
+
 /**
  * CSS for sidebar toggle behavior: desktop collapse (.collapsed) and mobile overlay (.open).
  *
@@ -48,8 +67,43 @@ export function sharedSidebarToggleStyles(sidebarSelector: string, mapWrapperSel
       }
     }
 
-    .mobile-topnav-tabs-row {
-      padding: 0.3rem 0.75rem 0.3rem;
+    .mobile-topnav-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      padding: 0.4rem 0.75rem;
+    }
+
+    .mobile-topnav-sep {
+      width: 1px;
+      align-self: stretch;
+      background: var(--border);
+    }
+
+    /* Toggle on the left; logo and title pushed to the right. */
+    .mobile-topnav-row .wb-logo { margin-left: auto; }
+
+    .mobile-topnav-title {
+      min-width: 0;
+      font-family: var(--font-display);
+      font-size: 1rem;
+      font-weight: var(--weight-semibold);
+      letter-spacing: var(--tracking-heading);
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .mobile-sidebar-toggle {
+      flex: none;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.82rem;
+    }
+
+    /* On phones the top bar's toggle replaces the floating one over the map. */
+    @media (max-width: 640px) {
+      ${mapWrapperSelector} .show-sidebar-btn { display: none; }
     }
 
     /* ── Inline sidebar toggle (mobile only, inside sidebar above alerts) ──── */
@@ -151,6 +205,19 @@ export function sharedSidebarToggleScripts(mapVar: string, label = 'flight list'
           sidebar.classList.toggle('collapsed');
         }
       });
+      new MutationObserver(syncBtn).observe(sidebar, { attributes: true, attributeFilter: ['class'] });
+      syncBtn();
+    })();
+
+    /* Phone top-bar toggle (mobileTopnavMarkup): opens the sidebar, or closes it to
+       reveal the map. */
+    (function() {
+      var btn = ${rootExpr}.getElementById('mobile-sidebar-toggle');
+      if (!btn) return;
+      function syncBtn() {
+        btn.innerHTML = sidebar.classList.contains('open') ? 'Show map &#8594;' : '&#8592; Show ${label}';
+      }
+      btn.addEventListener('click', function() { sidebar.classList.toggle('open'); });
       new MutationObserver(syncBtn).observe(sidebar, { attributes: true, attributeFilter: ['class'] });
       syncBtn();
     })();

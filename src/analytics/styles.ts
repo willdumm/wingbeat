@@ -144,7 +144,6 @@ export function analyticsStyles(): string {
     }
 
     @media (max-width: 640px) {
-      .panel-toolbar { display: none; }
       .analytics-header { display: none; }
     }
 

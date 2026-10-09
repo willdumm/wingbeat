@@ -273,7 +273,6 @@ export function dashboardStyles(): string {
     }
 
     @media (max-width: 640px) {
-      .aside-toolbar { display: none; }
       /* mobile-topnav handles safe-area-inset-top above the header */
       header { padding: 0.15rem 0.5rem; }
       #aircraft-cards { padding: 0.1rem 0.5rem; }
@@ -601,7 +600,6 @@ export function dashboardStyles(): string {
       #ptr-content:has(aside.open) header { background: var(--surface-1); }
       .main { grid-row: 2 / 4; grid-column: 1; }
       aside { padding-top: var(--mobile-header-h, 0px); }
-      .map-wrapper .show-sidebar-btn,
       .map-wrapper .day-view-legend,
       .map-wrapper .elevation-panel { top: calc(10px + var(--mobile-header-h, 0px)); }
     }

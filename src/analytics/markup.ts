@@ -1,18 +1,12 @@
 import { sharedMapControlsMarkup, tileOverlayLegendButtonMarkup, tileOverlayLegendPanelMarkup } from '../shared/map-controls';
 import { settingsModalMarkup } from '../shared/settings';
+import { mobileTopnavMarkup } from '../shared/sidebar';
 import { logoLockupMarkup } from '../shared/brand';
 import { icon } from '../shared/icons';
 
 export function analyticsMarkup(appName: string): string {
   return /* html */ `
-  <div id="mobile-topnav" class="mobile-topnav">
-    <div class="mobile-topnav-tabs-row">
-      <div class="page-nav-tabs">
-        <a href="/" class="page-nav-tab">Flight Tracker</a>
-        <a href="/analytics" class="page-nav-tab active">Flight Trends</a>
-      </div>
-    </div>
-  </div>
+  ${mobileTopnavMarkup(appName, 'Flight Trends', 'panel')}
 
   <header class="analytics-header">
     ${logoLockupMarkup(appName, { size: 26, compact: true })}
@@ -30,7 +24,6 @@ export function analyticsMarkup(appName: string): string {
           </div>
         </div>
       </div>
-      <button class="sidebar-mobile-toggle" id="mobile-map-btn">View Map &#8594;</button>
       <div class="analytics-panel-content">
         <div id="filter-section-root"></div>
 
