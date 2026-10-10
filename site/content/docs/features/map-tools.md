@@ -57,10 +57,10 @@ Admin → Global Settings, either by importing/exporting a `.geojson` file or
 using the built-in map editor.
 
 **Regions** — polygons used to group flights geographically for
-[Analytics](analytics). Each feature needs a `Name` property. Importing
+[Analytics](../analytics). Each feature needs a `Name` property. Importing
 replaces all existing regions. End a name with `(Base)` (e.g. `Kodiak (Base)`)
 to make that region a home base: analytics leaves out time spent flying to and
-from it (see [Accounting table](analytics#accounting-table)). The marker isn't
+from it (see [Accounting table](../analytics#accounting-table)). The marker isn't
 shown outside the regions editor.
 
 **Named points** — point landmarks used to label the live position ("12 km NW

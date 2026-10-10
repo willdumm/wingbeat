@@ -37,4 +37,4 @@ another device to your account. See
 
 The Aircraft, Pilots, and Trackers lists are visible to every user (so
 Viewers can see what's assigned to what), but only Admins get the add/edit
-controls — see [Admin Settings](admin-settings).
+controls — see [Admin Settings](../admin-settings).

@@ -19,7 +19,7 @@ position updates arrive without a manual refresh. A manual **Refresh** button
 is available too (throttled to once per 30 seconds).
 
 Because polling runs on a schedule independent of anyone having the dashboard
-open, takeoff/landing/gap notifications (see [Notifications](notifications))
+open, takeoff/landing/gap notifications (see [Notifications](../notifications))
 still fire when no one is watching.
 
 ## Aircraft status bar

@@ -12,7 +12,7 @@ filters (date range, tracker, aircraft, pilot) as the dashboard.
 ## Map view
 
 All filtered flight tracks plotted together, with the same basemap/layer
-controls as the dashboard (see [Map Tools](map-tools)).
+controls as the dashboard (see [Map Tools](../map-tools)).
 
 ## Stream graph
 
@@ -34,7 +34,7 @@ region(s) it touches: if both endpoints are at a home base the flight is
 excluded; if one endpoint is at a home base, all its hours go to the other
 region; otherwise its hours are split evenly between both endpoints' regions.
 Regions are matched by point-in-polygon lookup against the regions data (see
-[Regions & Named Points](map-tools#regions--named-points)). A home base is any
+[Regions & Named Points](../map-tools#regions--named-points)). A home base is any
 region whose name ends in `(Base)`; home bases win over any region they overlap,
 and their stops are listed separately. With no home base, every flight's hours
 are split between its start and end regions.

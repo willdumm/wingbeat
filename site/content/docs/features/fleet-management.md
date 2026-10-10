@@ -27,13 +27,13 @@ carries:
   card don't just show a stale number.
 - **Maintenance schedule** — a list of items, each due either on a Hobbs/tach
   interval (hours since last done) or a calendar date. See
-  [Maintenance Tracking](maintenance-tracking).
+  [Maintenance Tracking](../maintenance-tracking).
 
 ## Pilots
 
 Just a name and an active flag — pilots are never hard-deleted, so historical
 flights keep a valid reference even after someone stops flying. See
-[Pilot Duty Log](pilot-duty-log) for what's tracked per pilot.
+[Pilot Duty Log](../pilot-duty-log) for what's tracked per pilot.
 
 ## Trackers
 
