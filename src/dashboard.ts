@@ -3,6 +3,7 @@ import { dashboardMarkup } from './dashboard/markup';
 import { dashboardScripts } from './dashboard/scripts/index';
 import { themeVars, themeFontImport, themeInitScript } from './shared/theme';
 import { mapLayerColorInitScript } from './shared/map-controls';
+import { viewportHeightInitScript } from './shared/viewport';
 import { brandStyles, logoFaviconHref, logoFaviconScript } from './shared/brand';
 import { iconStyles, iconRuntimeScript } from './shared/icons';
 import { statusStyles } from './shared/status';
@@ -25,6 +26,7 @@ export function dashboardHTML(settings: AppSettings, env: Env): string {
   <title>${settings.app_name}</title>
   <link rel="icon" href="${logoFaviconHref()}" />
   <script>${themeInitScript()}</script>
+  <script>${viewportHeightInitScript()}</script>
   <script>${logoFaviconScript()}</script>
   <script>${mapLayerColorInitScript()}</script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />

@@ -30,6 +30,8 @@ export function dashboardStyles(): string {
       flex-direction: column;
       height: 100vh;
       height: 100svh;
+      /* Measured visible height (shared/viewport.ts); 100svh until it runs. */
+      height: var(--app-height, 100svh);
       overflow: hidden;
       /* No bottom safe-area padding: the map runs to the screen edge, and the chrome
          along the bottom (map controls, sidebar) insets itself instead. */
