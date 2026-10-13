@@ -266,9 +266,14 @@ colors, radii and fonts from theme tokens.
   - a Part 91 / 135 toggle (segmented control)
   - "Remove from log", and for edited tracked flights "Revert to tracker", with the
     tracker's values shown for reference
-- **Per-day edit** (click the date cell): duty start/end, or a "Rest day" toggle, plus a
-  note.
-- **Toolbar:** "Add flight" opens the same form with a date picker.
+- **Per-day edit** (click the date cell, which carries a calendar icon, or "Duty / rest"
+  in the toolbar): duty start/end, or a "Rest day" toggle, plus a note. An optional
+  "Through" date applies the same to a range of days (one `PUT` each, up to 62), so a
+  block of rest can be designated in one go.
+- **Toolbar:** "Add flight" opens the flight form with a date picker.
+- **Future months:** the month navigation goes up to 12 months ahead so rest can be
+  designated in advance. A future month's totals are as of now, with its rest days
+  counted as planned.
 - The narrow (`@container`) layout keeps working: edit affordances move into the
   compact cell.
 
