@@ -432,9 +432,37 @@ function showcaseDriverScript(): string {
 
     // ── Pilot duty log ────────────────────────────────────────────────────────
 
+    // SAMPLE.dutyLog in schedule time → GET /api/duty-log's { entries, days }, shifted
+    // like the flights.
+    function dutyLogSample() {
+      const at = (daysAgo, minute) => localMidnight(daysAgo) + minute * 60 + SHIFT;
+      const flightsById = Object.fromEntries(COMPLETED_FLIGHTS.map(f => [f.id, f]));
+      const blank = { start_time: null, end_time: null, origin_label: null, destination_label: null,
+                      part91: 0, excluded: 0, pilot_id: null, aircraft_tail: null, updated_at: NOW };
+      const entries = [];
+      for (const e of SAMPLE.dutyLog.edits) {
+        const f = flightsById[e.flightId];
+        entries.push({ ...blank, id: entries.length + 1, tracker_id: f.tracker_id, flight_start_time: f.start_time,
+          start_time: e.startDeltaMin ? f.start_time + e.startDeltaMin * 60 : null, part91: e.part91 ? 1 : 0 });
+      }
+      for (const m of SAMPLE.dutyLog.manual) {
+        entries.push({ ...blank, id: entries.length + 1, tracker_id: null, flight_start_time: null,
+          start_time: at(m.daysAgo, m.startMin), end_time: at(m.daysAgo, m.endMin),
+          origin_label: m.from, destination_label: m.to, pilot_id: SAMPLE.dutyPilotId, aircraft_tail: m.aircraftTail });
+      }
+      const days = SAMPLE.dutyLog.days.map(d => d.rest
+        ? { pilot_id: SAMPLE.dutyPilotId, date: dutyDateKey(at(d.daysAgo, 12 * 60)), duty_start: null, duty_end: null,
+            rest: 1, rest_designated_at: at(d.designatedDaysAgo, 17 * 60), note: null }
+        : { pilot_id: SAMPLE.dutyPilotId, date: dutyDateKey(at(d.daysAgo, d.dutyStartMin)),
+            duty_start: dutyTime(at(d.daysAgo, d.dutyStartMin)), duty_end: dutyTime(at(d.daysAgo, d.dutyEndMin)),
+            rest: 0, rest_designated_at: null, note: null });
+      return { entries, days };
+    }
+
     function mountDuty(host) {
       const root = attachDemo(host, 'dashboard', DEMO_MARKUP.duty);
       const pilot = PILOTS_BY_ID[SAMPLE.dutyPilotId];
+      const dutyLog = dutyLogSample();
       const prevBtn = root.getElementById('pilot-duty-prev');
       const nextBtn = root.getElementById('pilot-duty-next');
       const exportBtn = root.getElementById('pilot-duty-export');
@@ -443,7 +471,7 @@ function showcaseDriverScript(): string {
       let data = null;
 
       function load() {
-        data = computeDutyData(ALL_FLIGHTS, pilot.id, pilot.name, year, month);
+        data = computeDutyData(ALL_FLIGHTS, pilot.id, pilot.name, year, month, dutyLog);
         root.getElementById('pilot-duty-period').textContent = dutyPeriodLabel(data);
         nextBtn.disabled = data.isCurrentMonth;
         prevBtn.disabled = (year + '-' + String(month).padStart(2, '0')) <= firstMonthKey;
