@@ -38,6 +38,33 @@ export interface Pilot {
   active: boolean;
 }
 
+/** Duty-log correction of a tracked flight (tracker_id set) or a manual flight (tracker_id null). */
+export interface FlightLogEntry {
+  id: number;
+  tracker_id: number | null;
+  flight_start_time: number | null;
+  start_time: number | null;
+  end_time: number | null;
+  origin_label: string | null;
+  destination_label: string | null;
+  part91: number;
+  excluded: number;
+  pilot_id: number | null;
+  aircraft_tail: string | null;
+  updated_at: number;
+}
+
+/** One pilot's duty times or rest designation for a local date. */
+export interface DutyDay {
+  pilot_id: number;
+  date: string;
+  duty_start: string | null;
+  duty_end: string | null;
+  rest: number;
+  rest_designated_at: number | null;
+  note: string | null;
+}
+
 export interface Point {
   id: number;
   garmin_time: number;
