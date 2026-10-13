@@ -6,6 +6,30 @@ import { icon } from './icons';
  * by the dashboard's flight assignment modal and the duty log's flight and day editors.
  * It sits above the settings modal, so it can open from a settings view.
  */
+/**
+ * The text input / select / textarea look shared by every form: the form modal's
+ * fields and the settings modal's forms. `selector` lists the controls to style.
+ */
+export function formControlStyles(selector: string): string {
+  return `
+    ${selector} {
+      padding: 0.4rem 0.5rem;
+      background: var(--input-bg);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      font-size: var(--size-md);
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+      transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
+    }
+    :is(${selector}):hover:not(:disabled) { border-color: var(--border-strong); }
+    :is(${selector}):focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--ring-focus); }
+  `;
+}
+
 export function formModalStyles(): string {
   return `
     .form-modal {
@@ -34,6 +58,7 @@ export function formModalStyles(): string {
       overflow: hidden;
       box-shadow: var(--shadow-lg);
     }
+    .form-modal-panel:focus { outline: none; }
     .form-modal-wide .form-modal-panel { width: min(420px, 100%); }
     .form-modal-header {
       display: flex;
@@ -47,18 +72,6 @@ export function formModalStyles(): string {
       font-weight: var(--weight-semibold);
       color: var(--text-primary);
     }
-    .form-modal-close {
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      line-height: 1;
-      cursor: pointer;
-      padding: 0.2rem;
-      border-radius: var(--radius-md);
-      display: inline-flex;
-      transition: color var(--duration-fast) var(--ease-standard);
-    }
-    .form-modal-close:hover { color: var(--text-secondary); }
     .form-modal-body {
       padding: 0.85rem 1rem;
       display: flex;
@@ -72,7 +85,9 @@ export function formModalStyles(): string {
       color: var(--text-muted);
       line-height: 1.5;
     }
-    .form-modal-hint { font-size: 0.75rem; }
+    .form-modal-hint { font-size: var(--size-xs); }
+    .form-modal-error { font-size: var(--size-xs); color: var(--danger-fg); }
+    .form-modal-error:empty { display: none; }
     .form-modal-footer {
       padding: 0.65rem 1rem;
       border-top: 1px solid var(--border);
@@ -81,11 +96,8 @@ export function formModalStyles(): string {
       gap: 0.5rem;
       justify-content: flex-end;
     }
-    /* Visual props from .btn-primary / .btn-secondary on these elements */
-    .form-modal-btn { padding: 0.45rem 0.85rem; font-size: 0.85rem; min-height: 2.25rem; }
-    .form-modal-btn.btn-primary { padding: 0.45rem 1rem; }
+    /* Footer buttons: .btn-* with .btn-md (buttons.ts); Cancel, then the primary action. */
     .form-modal-footer-spacer { flex: 1; }
-    .form-modal-footer .form-modal-btn-danger { color: var(--danger-fg); }
     .form-modal [hidden] { display: none; }
 
     .form-field {
@@ -95,28 +107,17 @@ export function formModalStyles(): string {
       min-width: 0;
     }
     .form-field label, .form-field-label {
-      font-size: 0.72rem;
+      font-size: var(--size-2xs);
       font-weight: var(--weight-semibold);
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: var(--tracking-caps);
       color: var(--text-muted);
     }
-    .form-field select, .form-field input, .form-field textarea {
-      padding: 0.4rem 0.5rem;
-      background: var(--input-bg);
-      border: 1.5px solid var(--border);
-      border-radius: var(--radius-md);
-      color: var(--text-primary);
-      font-family: var(--font-ui);
-      font-size: 0.875rem;
-      width: 100%;
-      min-width: 0;
-      box-sizing: border-box;
-    }
+    ${formControlStyles('.form-field input, .form-field select, .form-field textarea')}
     .form-field input:disabled { opacity: 0.5; }
     .form-field textarea { resize: vertical; min-height: 3.5rem; }
     /* The tracker's value under a field the user can correct. */
-    .form-field-original { font-size: 0.72rem; color: var(--text-muted); }
+    .form-field-original { font-size: var(--size-2xs); color: var(--text-muted); }
     .form-field-row { display: flex; gap: 0.6rem; }
     .form-field-row > .form-field { flex: 1; }
   `;
@@ -139,18 +140,23 @@ export function formModalScript(): string {
       modal.className = 'form-modal' + (className ? ' ' + className : '');
       modal.setAttribute('role', 'dialog');
       modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-labelledby', id + '-title');
       modal.innerHTML =
         '<div class="form-modal-backdrop"></div>' +
-        '<div class="form-modal-panel">' +
+        '<div class="form-modal-panel" tabindex="-1">' +
           '<div class="form-modal-header">' +
-            '<span class="form-modal-title"></span>' +
-            '<button type="button" class="form-modal-close" aria-label="Close">' + ${JSON.stringify(icon('x', { size: 16 }))} + '</button>' +
+            '<span class="form-modal-title" id="' + id + '-title"></span>' +
+            '<button type="button" class="form-modal-close btn-icon" aria-label="Close">' + ${JSON.stringify(icon('x', { size: 16 }))} + '</button>' +
           '</div>' +
           '<div class="form-modal-body">' + bodyHtml + '</div>' +
           '<div class="form-modal-footer">' + footerHtml + '</div>' +
         '</div>';
       modal.querySelector('.form-modal-title').textContent = title;
       document.body.appendChild(modal);
+      // Move focus into the dialog (the panel, so a phone doesn't pop its keyboard for the
+      // first field), and give it back on close.
+      const opener = document.activeElement;
+      modal.querySelector('.form-modal-panel').focus();
 
       function onKey(e) {
         if (e.key !== 'Escape') return;
@@ -160,6 +166,7 @@ export function formModalScript(): string {
       function close() {
         document.removeEventListener('keydown', onKey, true);
         modal.remove();
+        if (opener && opener.isConnected) opener.focus();
       }
       document.addEventListener('keydown', onKey, true);
       modal.querySelector('.form-modal-backdrop').addEventListener('click', close);

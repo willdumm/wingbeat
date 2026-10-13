@@ -5,7 +5,7 @@
  * names (for existing markup and the theme JS's `.settings-theme-btn` selector),
  * this just supplies the one shared ruleset both render with. New toggles use the
  * generic `.segmented` / `.segmented-btn` pair (e.g. the duty log's Part 135 / 91 and
- * Duty / Rest toggles).
+ * Duty / Rest toggles), built and wired with segmentedControlScript()'s helpers.
  */
 export function segmentedControlStyles(): string {
   return `
@@ -53,6 +53,40 @@ export function segmentedControlStyles(): string {
     .segmented-btn:not(.active):hover {
       background: var(--surface-hover);
       color: var(--text-secondary);
+    }
+  `;
+}
+
+export function segmentedControlScript(): string {
+  return `
+    // ── Segmented control ─────────────────────────────────────────────────────
+
+    // A .segmented radiogroup named name, from [value, label] options (labels are
+    // trusted markup), with value selected. Name it with { label } or { labelledBy }.
+    function segmentedHtml(name, options, value, { label, labelledBy } = {}) {
+      return '<div class="segmented" role="radiogroup" data-segmented="' + name + '"' +
+        (labelledBy ? ' aria-labelledby="' + labelledBy + '"' : '') +
+        (label ? ' aria-label="' + label + '"' : '') + '>' +
+        options.map(([v, text]) =>
+          '<button type="button" role="radio" class="segmented-btn' + (v === value ? ' active' : '') +
+          '" aria-checked="' + (v === value) + '" data-value="' + v + '">' + text + '</button>').join('') +
+        '</div>';
+    }
+
+    // Wires the segmentedHtml() group named name inside root: clicks select a button and
+    // call onChange(value). Returns a getter for the selected value.
+    function wireSegmented(root, name, onChange) {
+      const group = root.querySelector('[data-segmented="' + name + '"]');
+      group.addEventListener('click', e => {
+        const btn = e.target.closest('.segmented-btn');
+        if (!btn) return;
+        group.querySelectorAll('.segmented-btn').forEach(b => {
+          b.classList.toggle('active', b === btn);
+          b.setAttribute('aria-checked', String(b === btn));
+        });
+        if (onChange) onChange(btn.dataset.value);
+      });
+      return () => group.querySelector('.segmented-btn.active').dataset.value;
     }
   `;
 }

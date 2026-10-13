@@ -57,6 +57,8 @@ export function statusStyles(): string {
       white-space: nowrap;
     }
     .wb-chip__dot { margin: 0; }
+    /* Compact, for a chip inside a table row. */
+    .wb-chip--sm { font-size: var(--size-2xs); gap: 4px; padding: 1px 6px; }
     .wb-chip--live    { background: var(--live-surface);    color: var(--live-fg); }
     .wb-chip--ok      { background: var(--success-surface); color: var(--success-fg); }
     .wb-chip--neutral { background: var(--surface-2);       color: var(--text-secondary); }

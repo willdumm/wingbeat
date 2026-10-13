@@ -20,6 +20,8 @@ import { dashboardScriptsTrackRender } from './track-render';
 import { dashboardScriptsRefresh } from './refresh';
 import { settingsModalScript } from '../../shared/settings';
 import { formModalScript } from '../../shared/form-modal';
+import { segmentedControlScript } from '../../shared/segmented-control';
+import { tzCalendarScript } from '../../shared/time';
 import { pilotDutyScript } from '../../shared/pilot-duty';
 import { aircraftInfoScript } from '../../shared/aircraft-info';
 import { dashboardScriptsAircraft } from './aircraft';
@@ -42,6 +44,7 @@ export function dashboardScripts(env: Env): string {
     mapLayerColorRuntimeScript(),
     mapLayersRuntimeScript(env),
     toggleScript(),
+    tzCalendarScript(),
     dashboardScriptsState(SPEED_THRESHOLD_KMH),
     overlayLegendRuntimeScript(),
     flightStoreScript(),
@@ -60,6 +63,7 @@ export function dashboardScripts(env: Env): string {
     dashboardScriptsFlightList(),
     dashboardScriptsRefresh(),
     formModalScript(),
+    segmentedControlScript(),
     settingsModalScript(),
     pilotDutyScript(),
     aircraftInfoScript(),

@@ -176,6 +176,7 @@ export function filterMarkup(): string {
   `;
 }
 
+/** Needs tzCalendarScript() (shared/time.ts) in the same script. */
 export function filterScript(): string {
   const markupJson = JSON.stringify(filterMarkup());
   return `
@@ -206,10 +207,10 @@ export function filterScript(): string {
 
       matchesFlight(flight, state) {
         if (state.dateFrom) {
-          if (flight.start_time < _filterDayStart(state.dateFrom)) return false;
+          if (flight.start_time < tzDayStartUnix(...state.dateFrom.split('-').map(Number))) return false;
         }
         if (state.dateTo) {
-          if (flight.start_time > _filterDayEnd(state.dateTo)) return false;
+          if (flight.start_time > tzDayEndUnix(...state.dateTo.split('-').map(Number))) return false;
         }
         if (state.trackerIds.length > 0) {
           if (!state.trackerIds.includes(flight.tracker_id)) return false;
@@ -225,30 +226,6 @@ export function filterScript(): string {
         return true;
       },
     };
-
-    function _filterGetTzOffset(refUTC) {
-      const fmt = new Intl.DateTimeFormat('en-US', {
-        timeZone: window.APP_SETTINGS.timezone,
-        year: 'numeric', month: 'numeric', day: 'numeric',
-        hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: false,
-      });
-      const parts = Object.fromEntries(
-        fmt.formatToParts(refUTC).filter(p => p.type !== 'literal').map(p => [p.type, +p.value])
-      );
-      return (Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour % 24, parts.minute, parts.second) - refUTC.getTime()) / 1000;
-    }
-
-    function _filterDayStart(dateStr) {
-      const [y, m, d] = dateStr.split('-').map(Number);
-      const ref = new Date(Date.UTC(y, m - 1, d, 9, 0, 0));
-      return Math.floor(Date.UTC(y, m - 1, d) / 1000) - _filterGetTzOffset(ref);
-    }
-
-    function _filterDayEnd(dateStr) {
-      const [y, m, d] = dateStr.split('-').map(Number);
-      const ref = new Date(Date.UTC(y, m - 1, d, 20, 0, 0));
-      return Math.floor(Date.UTC(y, m - 1, d, 23, 59, 59) / 1000) - _filterGetTzOffset(ref);
-    }
 
     // ── Filter UI ─────────────────────────────────────────────────────────────
     // Set by initFilters(); external code can call refreshFilterDropdowns() after list changes.

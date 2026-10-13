@@ -6,11 +6,12 @@ import { flightStoreScript } from '../../shared/flight-store';
 import { filterScript } from '../../shared/filters';
 import { settingsModalScript } from '../../shared/settings';
 import { formModalScript } from '../../shared/form-modal';
+import { segmentedControlScript } from '../../shared/segmented-control';
 import { pilotDutyScript } from '../../shared/pilot-duty';
 import { aircraftInfoScript } from '../../shared/aircraft-info';
 import { analyticsScriptsRegion } from './region';
 import { analyticsScriptsAccounting } from './accounting';
-import { analyticsScriptsTime } from './time';
+import { tzCalendarScript } from '../../shared/time';
 import { analyticsScriptsStreamgraphRender, analyticsScriptsStreamgraph } from './streamgraph';
 import { analyticsScriptsLayers } from './layers';
 import { analyticsScriptsMap } from './map';
@@ -23,14 +24,15 @@ export function analyticsScripts(env: Env): string {
     mapLayersRuntimeScript(env),
     overlayLegendRuntimeScript(),
     toggleScript(),
+    tzCalendarScript(),
     flightStoreScript(),
     filterScript(),
     formModalScript(),
+    segmentedControlScript(),
     settingsModalScript(),
     pilotDutyScript(),
     aircraftInfoScript(),
     analyticsScriptsRegion(),
-    analyticsScriptsTime(),
     analyticsScriptsAccounting(),
     analyticsScriptsStreamgraphRender(),
     analyticsScriptsStreamgraph(),

@@ -35,7 +35,7 @@ export function namedPointsEditorMarkup(): string {
               </div>
               <div class="settings-add-actions">
                 <button id="np-editor-save" class="btn-primary">Save</button>
-                <button id="np-editor-delete" class="settings-danger-btn">Delete</button>
+                <button id="np-editor-delete" class="btn-danger">Delete</button>
                 <button id="np-editor-cancel" class="btn-secondary">Cancel</button>
               </div>
               <p id="np-editor-msg" class="settings-msg" style="display:none"></p>

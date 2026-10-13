@@ -11,7 +11,7 @@
 ```js
 // src/dashboard/scripts/init.ts
 document.addEventListener('touchmove', (e) => {
-  if (!e.target.closest('#flight-list, .settings-modal, .pilot-duty-modal, .bulk-edit-modal, .aircraft-info-modal')) {
+  if (!e.target.closest('#flight-list, .settings-view, .be-panel, .form-modal, #alerts-strip, header, #mobile-topnav, .map-controls-bar, .overlay-legend-panel')) {
     e.preventDefault();
   }
 }, { passive: false });

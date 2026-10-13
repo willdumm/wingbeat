@@ -5,12 +5,13 @@ import { statusChip } from './status';
 export function pilotDutyMarkup(): string {
   return /* html */ `
           <div class="pilot-duty-toolbar">
-            <button id="pilot-duty-prev" class="pilot-duty-nav-btn btn-secondary" aria-label="Previous month">${icon('chevron-left', { size: 14 })}</button>
+            <button id="pilot-duty-prev" class="pilot-duty-nav-btn btn-secondary btn-sm" aria-label="Previous month">${icon('chevron-left', { size: 14 })}</button>
             <span id="pilot-duty-period" class="pilot-duty-period-label"></span>
-            <button id="pilot-duty-next" class="pilot-duty-nav-btn btn-secondary" aria-label="Next month">${icon('chevron-right', { size: 14 })}</button>
-            <div class="pilot-duty-toolbar-spacer"></div>
-            <button id="pilot-duty-add" class="pilot-duty-add-btn btn-secondary" hidden>${icon('plus', { size: 14 })}Add flight</button>
-            <button id="pilot-duty-export" class="pilot-duty-export-btn btn-primary">Export PDF</button>
+            <button id="pilot-duty-next" class="pilot-duty-nav-btn btn-secondary btn-sm" aria-label="Next month">${icon('chevron-right', { size: 14 })}</button>
+            <div class="pilot-duty-actions">
+              <button id="pilot-duty-add" class="pilot-duty-add-btn btn-secondary btn-sm" hidden>${icon('plus', { size: 14 })}Add flight</button>
+              <button id="pilot-duty-export" class="btn-primary btn-sm">Export PDF</button>
+            </div>
           </div>
           <div class="pilot-duty-body">
             <div id="pilot-duty-content" class="pilot-duty-content"></div>
@@ -32,30 +33,34 @@ export function typstLoadOverlayMarkup(): string {
 
 export function pilotDutyStyles(): string {
   return `
+    /* The view opens full screen (data-fullscreen in settings.ts); past 64rem the toolbar
+       and body keep a readable measure, centered. */
     .pilot-duty-toolbar {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       gap: 0.5rem;
-      padding: 0.6rem 1rem;
+      padding: 0.6rem max(1rem, calc((100% - 64rem) / 2 + 1rem));
       border-bottom: 1px solid var(--border);
       position: sticky;
       top: 0;
       z-index: 1;
       background: var(--surface-1);
     }
-    /* Visual props from .btn-secondary on nav buttons */
-    .pilot-duty-nav-btn { font-size: 0.78rem; padding: 0.25rem 0.55rem; }
+    /* Square .btn-sm (buttons.ts) */
+    .pilot-duty-nav-btn { width: var(--control-h-sm); padding: 0; }
     .pilot-duty-period-label {
       font-size: 0.88rem; font-weight: 600; color: var(--text-primary);
       min-width: 7rem; text-align: center;
     }
-    .pilot-duty-toolbar-spacer { flex: 1; }
-    /* Visual props from .btn-primary / .btn-secondary on the action buttons */
-    .pilot-duty-export-btn, .pilot-duty-add-btn { padding: 0.45rem 0.8rem; font-size: 0.82rem; min-height: 2.1rem; white-space: nowrap; }
+    /* Pushed right; on a phone they wrap onto their own row. */
+    .pilot-duty-actions { display: flex; gap: 0.5rem; margin-left: auto; }
     .pilot-duty-add-btn[hidden] { display: none; }
 
     .pilot-duty-body {
       padding: 1rem;
+      max-width: 64rem;
+      margin: 0 auto;
       display: flex;
       flex-direction: column;
       gap: 1.5rem;
@@ -103,10 +108,10 @@ export function pilotDutyStyles(): string {
     .duty-compact-times { color: var(--text-muted); font-size: 0.75rem; }
     .duty-date-sub { display: none; }
     .duty-note { font-size: 0.72rem; color: var(--text-muted); font-style: normal; white-space: normal; }
-    .duty-chip { margin-left: 0.35rem; vertical-align: 1px; font-size: 0.62rem; padding: 1px 6px; }
+    .duty-chip { margin-left: 0.35rem; vertical-align: 1px; }
     .duty-row-unmatched .duty-chip { margin: 0 0.35rem 0 0; }
     /* A value corrected from the tracker's; the title holds the original. */
-    .duty-edited { color: var(--accent); font-weight: var(--weight-bold); margin-left: 1px; cursor: help; }
+    .duty-edited { color: var(--accent-text); font-weight: var(--weight-bold); margin-left: 1px; cursor: help; }
 
     /* Edit affordances (admins only): the date opens the day form, the pencil the flight form. */
     .duty-day-btn, .duty-edit-btn, .duty-link-btn {
@@ -115,11 +120,11 @@ export function pilotDutyStyles(): string {
       border-radius: var(--radius-xs);
     }
     .duty-day-btn { text-align: left; text-decoration: underline dotted var(--text-faint); text-underline-offset: 3px; }
-    .duty-day-btn:hover { color: var(--accent); }
+    .duty-day-btn:hover { color: var(--accent-text); }
     .duty-edit-btn {
       color: var(--text-muted); display: inline-flex; padding: 0.15rem 0.35rem;
     }
-    .duty-edit-btn:hover { color: var(--accent); }
+    .duty-edit-btn:hover { color: var(--accent-text); }
     .duty-link-btn { color: var(--danger-fg); text-decoration: underline; margin-left: 0.4rem; }
     .duty-day-btn:focus-visible, .duty-edit-btn:focus-visible, .duty-link-btn:focus-visible { outline: none; box-shadow: var(--ring-focus); }
 
@@ -139,8 +144,8 @@ export function pilotDutyStyles(): string {
       .duty-table .duty-col-span { grid-column: 2 / -1; white-space: normal; }
       .duty-table .duty-col-full { grid-column: 1 / -1; }
       .duty-table .duty-total-label { grid-column: 1 / 3; }
-      .duty-table .duty-col-edit { padding: 0.25rem 0 0 0.25rem; }
-      .duty-date-sub { display: block; font-weight: 400; font-size: 0.72rem; color: var(--text-muted); white-space: normal; }
+      .duty-table .duty-col-edit { width: auto; padding: 0.25rem 0 0 0.25rem; }
+      .duty-date-sub { display: block; font-weight: normal; font-size: 0.72rem; color: var(--text-muted); white-space: normal; }
     }
 
     .duty-month-total {
@@ -164,12 +169,8 @@ export function pilotDutyStyles(): string {
     .totals-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
     .totals-table tr:last-child td { border-bottom: none; }
     .totals-table .duty-over td { color: var(--danger); font-weight: var(--weight-semibold); }
-    .totals-limit { color: var(--text-muted); font-weight: 400; }
+    .totals-limit { color: var(--text-muted); font-weight: normal; }
     .pilot-duty-footnote { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.5rem; line-height: 1.45; }
-
-    /* Flight and day forms (formModalStyles()) */
-    .duty-form-error { font-size: 0.78rem; color: var(--danger-fg); }
-    .duty-form-error:empty { display: none; }
 
     .typst-load-overlay {
       position: absolute;
@@ -217,6 +218,8 @@ export function pilotDutyRenderScript(): string {
     // ── Pilot duty log rendering ──────────────────────────────────────────────
 
     const _DUTY_TZ = window.APP_SETTINGS.timezone;
+    // The PDF isn't themed: warnings print in light mode's --danger-fg.
+    const _DUTY_PDF_DANGER = '#9c2f27';
     const _DUTY_DAY_NAMES   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     const _DUTY_MONTH_NAMES = ['January','February','March','April','May','June',
                                'July','August','September','October','November','December'];
@@ -236,8 +239,8 @@ export function pilotDutyRenderScript(): string {
     const _DUTY_EDIT_FIELDS = ['start_time', 'end_time', 'origin_label', 'destination_label'];
     const _DUTY_FIELD_NAMES = { start_time: 'Dep', end_time: 'Arr', origin_label: 'Origin', destination_label: 'Dest' };
 
-    const _DUTY_CHIP_MANUAL    = ${JSON.stringify(statusChip('Manual', 'neutral', 'duty-chip'))};
-    const _DUTY_CHIP_UNMATCHED = ${JSON.stringify(statusChip('Not found', 'warn', 'duty-chip'))};
+    const _DUTY_CHIP_MANUAL    = ${JSON.stringify(statusChip('Manual', 'neutral', 'wb-chip--sm duty-chip'))};
+    const _DUTY_CHIP_UNMATCHED = ${JSON.stringify(statusChip('Not found', 'warn', 'wb-chip--sm duty-chip'))};
     const _DUTY_ICON_EDIT      = ${JSON.stringify(icon('pencil', { size: 13 }))};
     const _DUTY_ICON_WARN      = ${JSON.stringify(icon('triangle-alert', { size: 13 }))};
 
@@ -256,38 +259,8 @@ export function pilotDutyRenderScript(): string {
 
     // ── Dates and times in the duty timezone ──
 
-    const _dutyPartsFmt = new Intl.DateTimeFormat('en-US', {
-      timeZone: _DUTY_TZ, hourCycle: 'h23',
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-    });
-    function _dutyParts(epoch) {
-      const p = {};
-      for (const { type, value } of _dutyPartsFmt.formatToParts(new Date(epoch * 1000))) p[type] = value;
-      return p;
-    }
-    // YYYY-MM-DD of an epoch in the duty timezone.
-    function dutyDateKey(epoch) {
-      const p = _dutyParts(epoch);
-      return p.year + '-' + p.month + '-' + p.day;
-    }
-    // HH:MM of an epoch in the duty timezone.
-    function dutyTime(epoch) {
-      const p = _dutyParts(epoch);
-      return p.hour + ':' + p.minute;
-    }
-    // The epoch of local date + HH:MM in the duty timezone.
-    function dutyLocalToEpoch(dateKey, hhmm) {
-      const [y, m, d] = dateKey.split('-').map(Number);
-      const [h, mi] = hhmm.split(':').map(Number);
-      const asUtc = Date.UTC(y, m - 1, d, h, mi) / 1000;
-      const offsetAt = t => {
-        const p = _dutyParts(t);
-        return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) / 1000 - t;
-      };
-      const guess = asUtc - offsetAt(asUtc);
-      return asUtc - offsetAt(guess);
-    }
+    // Dates and times come from tzCalendarScript() (shared/time.ts): unixToTzDateStr,
+    // unixToTzTime, tzLocalToEpoch.
     function dutyAddDays(dateKey, n) {
       const [y, m, d] = dateKey.split('-').map(Number);
       return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
@@ -312,7 +285,7 @@ export function pilotDutyRenderScript(): string {
 
     // [year, month] of the current month in the duty timezone.
     function currentDutyMonth() {
-      return dutyDateKey(Math.floor(Date.now() / 1000)).split('-').slice(0, 2).map(Number);
+      return unixToTzDateStr(Math.floor(Date.now() / 1000)).split('-').slice(0, 2).map(Number);
     }
 
     function dutyPeriodLabel(data) {
@@ -322,8 +295,8 @@ export function pilotDutyRenderScript(): string {
     // Duty period of a duty_days row as epochs; an end at or before the start is the next day.
     function _dutyInterval(rec) {
       if (!rec || !rec.duty_start || !rec.duty_end) return null;
-      const start = dutyLocalToEpoch(rec.date, rec.duty_start);
-      const end = dutyLocalToEpoch(rec.duty_end > rec.duty_start ? rec.date : dutyAddDays(rec.date, 1), rec.duty_end);
+      const start = tzLocalToEpoch(rec.date, rec.duty_start);
+      const end = tzLocalToEpoch(rec.duty_end > rec.duty_start ? rec.date : dutyAddDays(rec.date, 1), rec.duty_end);
       return { start, end, secs: end - start };
     }
 
@@ -395,13 +368,13 @@ export function pilotDutyRenderScript(): string {
         const cover = completed.find(f => f.tracker_id === e.tracker_id &&
           f.start_time <= e.flight_start_time && e.flight_start_time <= f.end_time);
         if (cover && cover.pilot_id !== pilotId) continue;
-        const dk = dutyDateKey(e.flight_start_time);
+        const dk = unixToTzDateStr(e.flight_start_time);
         (unmatchedByDate[dk] = unmatchedByDate[dk] || []).push(e);
       }
 
       const flightsByDate = {};
       for (const f of flights) {
-        const dk = dutyDateKey(f.start_time);
+        const dk = unixToTzDateStr(f.start_time);
         (flightsByDate[dk] = flightsByDate[dk] || []).push(f);
       }
       const recordByDate = {};
@@ -428,13 +401,13 @@ export function pilotDutyRenderScript(): string {
 
         if (rest) {
           if (dayFlights.length) warnings.push('Flights on a rest day');
-          if (rec.rest_designated_at != null && dutyDateKey(rec.rest_designated_at) >= dateKey) {
-            warnings.push('Rest day designated ' + _dutyShortDate(dutyDateKey(rec.rest_designated_at), year) +
+          if (rec.rest_designated_at != null && unixToTzDateStr(rec.rest_designated_at) >= dateKey) {
+            warnings.push('Rest day designated ' + _dutyShortDate(unixToTzDateStr(rec.rest_designated_at), year) +
               ', not in advance');
           }
           const prevDuty = _dutyInterval(recordByDate[dutyAddDays(dateKey, -1)]);
-          if (prevDuty && prevDuty.end > dutyLocalToEpoch(dateKey, '00:00')) {
-            warnings.push('Previous duty ended ' + dutyTime(prevDuty.end) + ', so this rest is under 24 h');
+          if (prevDuty && prevDuty.end > tzLocalToEpoch(dateKey, '00:00')) {
+            warnings.push('Previous duty ended ' + unixToTzTime(prevDuty.end) + ', so this rest is under 24 h');
           }
         }
         let worst24 = 0, worstEnd = null;
@@ -444,7 +417,7 @@ export function pilotDutyRenderScript(): string {
           if (s > worst24) { worst24 = s; worstEnd = f.end_time; }
         }
         if (worst24 > _DUTY_LIMITS.flight24hSecs) {
-          warnings.push(fmtBlock(worst24) + ' flight time in the 24 h to ' + dutyTime(worstEnd) +
+          warnings.push(fmtBlock(worst24) + ' flight time in the 24 h to ' + unixToTzTime(worstEnd) +
             ' (limit ' + fmtBlock(_DUTY_LIMITS.flight24hSecs) + ')');
         }
         if (duty) {
@@ -482,8 +455,8 @@ export function pilotDutyRenderScript(): string {
       const [curY, curM] = currentDutyMonth();
       const isCurrentMonth = year === curY && month === curM;
       const [nextY, nextM] = _dutyAddMonths(year, month, 1);
-      const asOf = isCurrentMonth ? nowEpoch : dutyLocalToEpoch(_dutyKey(nextY, nextM, 1), '00:00');
-      const asOfDateKey = isCurrentMonth ? dutyDateKey(nowEpoch) : _dutyKey(year, month, daysInMonth);
+      const asOf = isCurrentMonth ? nowEpoch : tzLocalToEpoch(_dutyKey(nextY, nextM, 1), '00:00');
+      const asOfDateKey = isCurrentMonth ? unixToTzDateStr(nowEpoch) : _dutyKey(year, month, daysInMonth);
 
       const qy = year, qm = Math.floor((month - 1) / 3) * 3 + 1;
       const [pqy, pqm] = _dutyAddMonths(qy, qm, -3);
@@ -492,7 +465,7 @@ export function pilotDutyRenderScript(): string {
       const qEndKey = dutyAddDays(_dutyKey(nqy, nqm, 1), -1);
       const quarterName = (y, m) => 'Q' + ((m - 1) / 3 + 1) + ' ' + y;
       function flownSince(dateKey) {
-        const from = dutyLocalToEpoch(dateKey, '00:00');
+        const from = tzLocalToEpoch(dateKey, '00:00');
         return flights.reduce((s, f) => s + (f.start_time >= from && f.start_time < asOf ? f.secs : 0), 0);
       }
 
@@ -537,8 +510,8 @@ export function pilotDutyRenderScript(): string {
     // What an unmatched row would have changed, e.g. "Dep 08:05, Part 91".
     function dutyEntrySummary(e) {
       const parts = [];
-      if (e.start_time != null) parts.push('Dep ' + dutyTime(e.start_time));
-      if (e.end_time != null) parts.push('Arr ' + dutyTime(e.end_time));
+      if (e.start_time != null) parts.push('Dep ' + unixToTzTime(e.start_time));
+      if (e.end_time != null) parts.push('Arr ' + unixToTzTime(e.end_time));
       if (e.origin_label != null) parts.push('Origin ' + e.origin_label);
       if (e.destination_label != null) parts.push('Dest ' + e.destination_label);
       if (e.part91) parts.push('Part 91');
@@ -549,14 +522,14 @@ export function pilotDutyRenderScript(): string {
     // The tracker's value of an edited field, as shown next to the correction.
     function dutyOriginalText(field, value) {
       if (value == null || value === '') return '(none)';
-      return field === 'start_time' || field === 'end_time' ? dutyTime(value) : String(value);
+      return field === 'start_time' || field === 'end_time' ? unixToTzTime(value) : String(value);
     }
 
     // "Rest · designated Oct 3", "08:00–17:00" or "—".
     function dutyDayText(day, year) {
       if (day.rest) {
         return 'Rest' + (day.restDesignatedAt != null
-          ? ' · designated ' + _dutyShortDate(dutyDateKey(day.restDesignatedAt), year) : '');
+          ? ' · designated ' + _dutyShortDate(unixToTzDateStr(day.restDesignatedAt), year) : '');
       }
       if (day.duty) return day.record.duty_start + '–' + day.record.duty_end;
       return '—';
@@ -583,7 +556,7 @@ export function pilotDutyRenderScript(): string {
           _dutyEsc(dutyOriginalText(field, f.edited[field])) + '">†</span>';
       }
       function label(f, field) { return cellVal(f, field, f[field] || '—'); }
-      function time(f, field) { return cellVal(f, field, dutyTime(f[field])); }
+      function time(f, field) { return cellVal(f, field, unixToTzTime(f[field])); }
 
       let html =
         '<table class="duty-table"><thead><tr>' +
@@ -636,7 +609,7 @@ export function pilotDutyRenderScript(): string {
           html += '<tr class="duty-row-unmatched">' +
             '<td class="duty-col-date"></td>' +
             '<td class="duty-col-span" colspan="' + (cols - 1) + '">' + _DUTY_CHIP_UNMATCHED +
-              'Tracked flight from ' + dutyTime(e.flight_start_time) + ' no longer found; its corrections (' +
+              'Tracked flight from ' + unixToTzTime(e.flight_start_time) + ' no longer found; its corrections (' +
               _dutyEsc(dutyEntrySummary(e)) + ') aren’t counted.' +
               (edit ? '<button class="duty-link-btn" data-duty-target="' + action(() => edit.onDeleteEntry(e)) + '">Delete</button>' : '') +
             '</td></tr>';
@@ -793,7 +766,7 @@ export function pilotDutyRenderScript(): string {
       const { pilotName, year, month, days, totals } = data;
       const appName = window.APP_SETTINGS.appName;
       const COLS = 9;
-      const warnCell = text => 'table.cell(colspan: ' + COLS + ')[#text(fill: rgb("#9c2f27"))[' + _typStr('Warning: ' + text) + ']],\\n';
+      const warnCell = text => 'table.cell(colspan: ' + COLS + ')[#text(fill: rgb("' + _DUTY_PDF_DANGER + '"))[' + _typStr('Warning: ' + text) + ']],\\n';
       const footnotes = [];
       let anyManual = false;
       let rows = '';
@@ -808,7 +781,7 @@ export function pilotDutyRenderScript(): string {
           let mark = '';
           const fields = Object.keys(f.edited);
           if (fields.length) {
-            footnotes.push(day.label + ', flight at ' + dutyTime(f.start_time) + ': the tracker recorded ' +
+            footnotes.push(day.label + ', flight at ' + unixToTzTime(f.start_time) + ': the tracker recorded ' +
               fields.map(k => _DUTY_FIELD_NAMES[k] + ' ' + dutyOriginalText(k, f.edited[k])).join(', ') + '.');
             mark = '#super[†' + footnotes.length + ']';
           }
@@ -818,14 +791,14 @@ export function pilotDutyRenderScript(): string {
             (i === 0 ? '[' + day.label + '], [' + _typStr(dayText) + ']' : '[], []') + ', ' +
             '[' + _typStr(f.aircraft_tail || '—') + '], ' +
             '[' + _typStr(f.origin_label || '—') + ('origin_label' in f.edited ? mark : '') + (f.manual ? '#super[‡]' : '') + '], ' +
-            cell('start_time', dutyTime(f.start_time)) + ', ' +
+            cell('start_time', unixToTzTime(f.start_time)) + ', ' +
             cell('destination_label', f.destination_label || '—') + ', ' +
-            cell('end_time', dutyTime(f.end_time)) + ', ' +
+            cell('end_time', unixToTzTime(f.end_time)) + ', ' +
             '[' + fmtBlock(f.secs) + '], [' + (f.part91 ? '91' : '') + '],\\n';
         });
         for (const e of day.unmatched) {
           rows += '  [], table.cell(colspan: ' + (COLS - 1) + ')[' +
-            _typStr('Tracked flight from ' + dutyTime(e.flight_start_time) + ' no longer found; its corrections (' +
+            _typStr('Tracked flight from ' + unixToTzTime(e.flight_start_time) + ' no longer found; its corrections (' +
               dutyEntrySummary(e) + ') are not counted.') + '],\\n';
         }
         if (day.flights.length > 0) {
@@ -835,7 +808,7 @@ export function pilotDutyRenderScript(): string {
       }
 
       const r = totals.rest;
-      const overFill = '#text(fill: rgb("#9c2f27"))';
+      const overFill = '#text(fill: rgb("' + _DUTY_PDF_DANGER + '"))';
       const totalsRows = totals.hours.map(t =>
         '  [' + _typStr(t.label) + '], [' + (t.over ? overFill + '[*' + fmtBlock(t.secs) + '*]' : fmtBlock(t.secs)) + '], [' + fmtBlock(t.limit) + '],\\n'
       ).join('') +
@@ -1011,7 +984,7 @@ export function pilotDutyScript(): string {
     document.getElementById('pilot-duty-add').addEventListener('click', () => {
       const [y, m] = currentDutyMonth();
       const dateKey = (y === _dutyYear && m === _dutyMonth)
-        ? dutyDateKey(Math.floor(Date.now() / 1000))
+        ? unixToTzDateStr(Math.floor(Date.now() / 1000))
         : _dutyYear + '-' + String(_dutyMonth).padStart(2, '0') + '-01';
       _dutyOpenFlightForm(null, dateKey);
     });
@@ -1047,27 +1020,6 @@ export function pilotDutyScript(): string {
       }
     }
 
-    function _dutySegmentedHtml(name, options, value) {
-      return '<div class="segmented" role="radiogroup" data-segmented="' + name + '">' +
-        options.map(([v, label]) =>
-          '<button type="button" role="radio" class="segmented-btn' + (v === value ? ' active' : '') +
-          '" aria-checked="' + (v === value) + '" data-value="' + v + '">' + label + '</button>').join('') +
-        '</div>';
-    }
-    function _dutyWireSegmented(root, name, onChange) {
-      const group = root.querySelector('[data-segmented="' + name + '"]');
-      group.addEventListener('click', e => {
-        const btn = e.target.closest('.segmented-btn');
-        if (!btn) return;
-        group.querySelectorAll('.segmented-btn').forEach(b => {
-          b.classList.toggle('active', b === btn);
-          b.setAttribute('aria-checked', String(b === btn));
-        });
-        if (onChange) onChange(btn.dataset.value);
-      });
-      return () => group.querySelector('.segmented-btn.active').dataset.value;
-    }
-
     // Flight form: edits a tracked or manual flight (f), or adds a manual flight on
     // dateKey when f is null.
     function _dutyOpenFlightForm(f, dateKey) {
@@ -1078,7 +1030,6 @@ export function pilotDutyScript(): string {
       const start = f ? f.start_time : null;
       const pilotId = tracked ? orig.pilot_id : (entry ? entry.pilot_id : _dutyPilotId);
       const aircraftTail = f ? f.aircraft_tail : null;
-      const esc = settingsEscAttr;
 
       const aircraftOptions = aircraftList
         .filter(a => a.active || a.tail_number === aircraftTail)
@@ -1087,7 +1038,7 @@ export function pilotDutyScript(): string {
         .filter(p => p.active || p.id === pilotId)
         .map(p => settingsPilotOptionHtml(p, pilotId)).join('');
       const originalHint = (field, text) => tracked && (field in f.edited)
-        ? '<div class="form-field-original">Tracker: ' + esc(text) + '</div>' : '';
+        ? '<div class="form-field-original">Tracker: ' + _dutyEsc(text) + '</div>' : '';
 
       const { modal, close } = openFormModal({
         id: 'duty-flight-modal',
@@ -1096,25 +1047,25 @@ export function pilotDutyScript(): string {
         bodyHtml:
           (tracked
             ? '<p class="form-modal-hint">Corrections apply to the duty log only; the tracked flight is unchanged. ' +
-              'Tracker: ' + esc(dutyDateLabel(dutyDateKey(orig.start_time)) + ', ' + dutyTime(orig.start_time) + '–' +
-              dutyTime(orig.end_time) + ', ' + (orig.origin_label || '—') + ' → ' + (orig.destination_label || '—')) + '.</p>'
+              'Tracker: ' + _dutyEsc(dutyDateLabel(unixToTzDateStr(orig.start_time)) + ', ' + unixToTzTime(orig.start_time) + '–' +
+              unixToTzTime(orig.end_time) + ', ' + (orig.origin_label || '—') + ' → ' + (orig.destination_label || '—')) + '.</p>'
             : '') +
           '<div class="form-field"><label for="duty-f-date">Date</label>' +
-            '<input type="date" id="duty-f-date" value="' + esc(start != null ? dutyDateKey(start) : dateKey) + '"></div>' +
+            '<input type="date" id="duty-f-date" value="' + _dutyEsc(start != null ? unixToTzDateStr(start) : dateKey) + '"></div>' +
           '<div class="form-field-row">' +
             '<div class="form-field"><label for="duty-f-dep">Dep</label>' +
-              '<input type="time" id="duty-f-dep" value="' + (start != null ? dutyTime(start) : '') + '">' +
-              originalHint('start_time', tracked ? dutyTime(orig.start_time) : '') + '</div>' +
+              '<input type="time" id="duty-f-dep" value="' + (start != null ? unixToTzTime(start) : '') + '">' +
+              originalHint('start_time', tracked ? unixToTzTime(orig.start_time) : '') + '</div>' +
             '<div class="form-field"><label for="duty-f-arr">Arr</label>' +
-              '<input type="time" id="duty-f-arr" value="' + (f ? dutyTime(f.end_time) : '') + '">' +
-              originalHint('end_time', tracked ? dutyTime(orig.end_time) : '') + '</div>' +
+              '<input type="time" id="duty-f-arr" value="' + (f ? unixToTzTime(f.end_time) : '') + '">' +
+              originalHint('end_time', tracked ? unixToTzTime(orig.end_time) : '') + '</div>' +
           '</div>' +
           '<div class="form-field-row">' +
             '<div class="form-field"><label for="duty-f-origin">Origin</label>' +
-              '<input type="text" id="duty-f-origin" value="' + esc((f && f.origin_label) || '') + '">' +
+              '<input type="text" id="duty-f-origin" value="' + _dutyEsc((f && f.origin_label) || '') + '">' +
               originalHint('origin_label', tracked ? (orig.origin_label || '(none)') : '') + '</div>' +
             '<div class="form-field"><label for="duty-f-dest">Dest</label>' +
-              '<input type="text" id="duty-f-dest" value="' + esc((f && f.destination_label) || '') + '">' +
+              '<input type="text" id="duty-f-dest" value="' + _dutyEsc((f && f.destination_label) || '') + '">' +
               originalHint('destination_label', tracked ? (orig.destination_label || '(none)') : '') + '</div>' +
           '</div>' +
           '<div class="form-field-row">' +
@@ -1124,20 +1075,20 @@ export function pilotDutyScript(): string {
               '<select id="duty-f-pilot">' + (tracked ? '<option value="">Unknown</option>' : '') + pilotOptions + '</select></div>' +
           '</div>' +
           (tracked ? '<p class="form-modal-hint">Aircraft and pilot change the tracked flight itself, everywhere it’s shown.</p>' : '') +
-          '<div class="form-field"><span class="form-field-label">Operated under</span>' +
-            _dutySegmentedHtml('part', [['135', 'Part 135'], ['91', 'Part 91']], f && f.part91 ? '91' : '135') + '</div>' +
-          '<div class="duty-form-error" role="alert"></div>',
+          '<div class="form-field"><span class="form-field-label" id="duty-f-part-label">Operated under</span>' +
+            segmentedHtml('part', [['135', 'Part 135'], ['91', 'Part 91']], f && f.part91 ? '91' : '135', { labelledBy: 'duty-f-part-label' }) + '</div>' +
+          '<div class="form-modal-error" role="alert"></div>',
         footerHtml:
-          (!isNew ? '<button class="form-modal-btn btn-secondary form-modal-btn-danger" data-act="remove">Remove from log</button>' : '') +
-          (tracked && entry ? '<button class="form-modal-btn btn-secondary" data-act="revert">Revert to tracker</button>' : '') +
+          (!isNew ? '<button class="btn-danger btn-md" data-act="remove">Remove from log</button>' : '') +
+          (tracked && entry ? '<button class="btn-secondary btn-md" data-act="revert">Revert to tracker</button>' : '') +
           '<span class="form-modal-footer-spacer"></span>' +
-          '<button class="form-modal-btn btn-secondary" data-act="cancel">Cancel</button>' +
-          '<button class="form-modal-btn btn-primary" data-act="save">Save</button>',
+          '<button class="btn-secondary btn-md" data-act="cancel">Cancel</button>' +
+          '<button class="btn-primary btn-md" data-act="save">Save</button>',
       });
 
       const $ = sel => modal.querySelector(sel);
-      const getPart = _dutyWireSegmented(modal, 'part');
-      const errorEl = $('.duty-form-error');
+      const getPart = wireSegmented(modal, 'part');
+      const errorEl = $('.form-modal-error');
       const buttons = [...modal.querySelectorAll('.form-modal-footer button')];
       const btn = act => modal.querySelector('[data-act="' + act + '"]');
       btn('cancel').addEventListener('click', close);
@@ -1146,9 +1097,9 @@ export function pilotDutyScript(): string {
       function readForm() {
         const date = $('#duty-f-date').value, dep = $('#duty-f-dep').value, arr = $('#duty-f-arr').value;
         if (!date || !dep || !arr) return 'Enter the date, departure and arrival times.';
-        const startE = dutyLocalToEpoch(date, dep);
+        const startE = tzLocalToEpoch(date, dep);
         // An arrival at or before the departure is the next day.
-        const endE = dutyLocalToEpoch(arr > dep ? date : dutyAddDays(date, 1), arr);
+        const endE = tzLocalToEpoch(arr > dep ? date : dutyAddDays(date, 1), arr);
         return {
           start_time: startE, end_time: endE,
           origin_label: $('#duty-f-origin').value.trim() || null,
@@ -1231,42 +1182,39 @@ export function pilotDutyScript(): string {
     // Day form: duty start/end, or a rest day, plus a note.
     function _dutyOpenDayForm(day) {
       const rec = day.record;
-      const esc = settingsEscAttr;
       const { modal, close } = openFormModal({
         id: 'duty-day-modal',
         title: day.label,
         bodyHtml:
-          '<div class="form-field">' + _dutySegmentedHtml('kind', [['duty', 'Duty'], ['rest', 'Rest day']], day.rest ? 'rest' : 'duty') + '</div>' +
+          '<div class="form-field">' + segmentedHtml('kind', [['duty', 'Duty'], ['rest', 'Rest day']], day.rest ? 'rest' : 'duty', { label: 'Day type' }) + '</div>' +
           '<div class="form-field-row" data-duty-times>' +
             '<div class="form-field"><label for="duty-d-start">Duty start</label>' +
-              '<input type="time" id="duty-d-start" value="' + esc((rec && rec.duty_start) || '') + '"></div>' +
+              '<input type="time" id="duty-d-start" value="' + _dutyEsc((rec && rec.duty_start) || '') + '"></div>' +
             '<div class="form-field"><label for="duty-d-end">Duty end</label>' +
-              '<input type="time" id="duty-d-end" value="' + esc((rec && rec.duty_end) || '') + '"></div>' +
+              '<input type="time" id="duty-d-end" value="' + _dutyEsc((rec && rec.duty_end) || '') + '"></div>' +
           '</div>' +
           '<p class="form-modal-hint" data-duty-rest-hint>' +
             (day.rest && day.restDesignatedAt != null
-              ? 'Designated ' + esc(new Date(day.restDesignatedAt * 1000).toLocaleString('en-US', {
-                  timeZone: _DUTY_TZ, year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
-                })) + '.'
+              ? 'Designated ' + dutyDateLabel(unixToTzDateStr(day.restDesignatedAt)) + ', ' + unixToTzTime(day.restDesignatedAt) + '.'
               : 'The date you mark it is recorded as when the rest day was designated.') + '</p>' +
           '<div class="form-field"><label for="duty-d-note">Note</label>' +
             '<textarea id="duty-d-note" rows="2">' + _dutyEsc((rec && rec.note) || '') + '</textarea></div>' +
-          '<div class="duty-form-error" role="alert"></div>',
+          '<div class="form-modal-error" role="alert"></div>',
         footerHtml:
-          (rec ? '<button class="form-modal-btn btn-secondary form-modal-btn-danger" data-act="clear">Clear</button>' : '') +
+          (rec ? '<button class="btn-danger btn-md" data-act="clear">Clear</button>' : '') +
           '<span class="form-modal-footer-spacer"></span>' +
-          '<button class="form-modal-btn btn-secondary" data-act="cancel">Cancel</button>' +
-          '<button class="form-modal-btn btn-primary" data-act="save">Save</button>',
+          '<button class="btn-secondary btn-md" data-act="cancel">Cancel</button>' +
+          '<button class="btn-primary btn-md" data-act="save">Save</button>',
       });
 
       const $ = sel => modal.querySelector(sel);
-      const errorEl = $('.duty-form-error');
+      const errorEl = $('.form-modal-error');
       const buttons = [...modal.querySelectorAll('.form-modal-footer button')];
       function showKind(kind) {
         $('[data-duty-times]').hidden = kind === 'rest';
         $('[data-duty-rest-hint]').hidden = kind !== 'rest';
       }
-      const getKind = _dutyWireSegmented(modal, 'kind', showKind);
+      const getKind = wireSegmented(modal, 'kind', showKind);
       showKind(getKind());
       const url = '/api/duty-days/' + encodeURIComponent(_dutyPilotId) + '/' + day.dateKey;
       modal.querySelector('[data-act="cancel"]').addEventListener('click', close);

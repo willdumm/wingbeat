@@ -39,8 +39,8 @@ export function dashboardScriptsAssignmentModal(): string {
             ? '<p class="form-modal-empty">No aircraft or pilots configured.<br>Add them in Settings → Fleet.</p>'
             : ''),
         footerHtml:
-          '<button class="assignment-save-btn form-modal-btn btn-primary">Save</button>' +
-          '<button class="assignment-cancel-btn form-modal-btn btn-secondary">Cancel</button>',
+          '<button class="assignment-cancel-btn btn-secondary btn-md">Cancel</button>' +
+          '<button class="assignment-save-btn btn-primary btn-md">Save</button>',
       });
 
       modal.querySelector('.assignment-cancel-btn').addEventListener('click', closeModal);

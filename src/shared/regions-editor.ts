@@ -34,7 +34,7 @@ export function regionsEditorMarkup(): string {
               </p>
               <div class="settings-add-actions">
                 <button id="rg-panel-save" class="btn-primary">Save</button>
-                <button id="rg-panel-delete" class="settings-danger-btn">Delete region</button>
+                <button id="rg-panel-delete" class="btn-danger">Delete region</button>
                 <button id="rg-panel-cancel" class="btn-secondary">Close</button>
               </div>
               <p id="rg-panel-status" class="settings-msg" style="display:none"></p>

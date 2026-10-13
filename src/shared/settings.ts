@@ -3,6 +3,7 @@ import { regionsEditorMarkup, regionsEditorScript } from './regions-editor';
 import { mapLayersSettingsRowsMarkup, mapLayersSettingsScript } from './map-controls';
 import { icon } from './icons';
 import { pilotDutyMarkup, typstLoadOverlayMarkup } from './pilot-duty';
+import { formControlStyles } from './form-modal';
 import { aircraftInfoMarkup } from './aircraft-info';
 import { mapViewPickerMarkup, mapViewPickerStyles, mapViewPickerScript } from './map-view-picker';
 import { setupGuideMarkup, setupGuideAdminRowMarkup, setupGuideStyles, setupGuideScript } from './setup-guide';
@@ -30,7 +31,7 @@ export function settingsModalMarkup(): string {
       <div class="settings-nav">
         <button id="settings-nav-back" class="settings-nav-back hidden" aria-label="Back">${icon('chevron-left', { size: 14 })} Back</button>
         <span id="settings-nav-title" class="settings-modal-title">Settings</span>
-        <button id="settings-modal-close" class="settings-modal-close" aria-label="Close">${icon('x', { size: 18 })}</button>
+        <button id="settings-modal-close" class="settings-modal-close btn-icon" aria-label="Close">${icon('x', { size: 18 })}</button>
       </div>
       <div class="settings-views">
         <div class="settings-view" id="settings-view-main">
@@ -146,7 +147,7 @@ export function settingsModalMarkup(): string {
                   <div class="settings-row-title">Clear local cache</div>
                   <div class="settings-row-desc">Re-downloads all flight data from the server.</div>
                 </div>
-                <button id="settings-clear-cache" class="settings-danger-btn">Clear</button>
+                <button id="settings-clear-cache" class="btn-danger">Clear</button>
               </div>
             </div>
             <div class="settings-section" id="settings-section-devices">
@@ -184,7 +185,7 @@ export function settingsModalMarkup(): string {
             </div>
           </div>
         </div>
-        <div class="settings-view settings-view-detail" id="settings-view-pilot-duty">
+        <div class="settings-view settings-view-detail" id="settings-view-pilot-duty" data-fullscreen>
           ${pilotDutyMarkup()}
         </div>
         <div class="settings-view settings-view-detail" id="settings-view-aircraft-info">
@@ -381,20 +382,6 @@ export function settingsModalStyles(): string {
       font-weight: 600;
       color: var(--text-primary);
     }
-
-    .settings-modal-close {
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      cursor: pointer;
-      padding: 0.35rem;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: var(--radius-md);
-    }
-
-    .settings-modal-close:hover { color: var(--text-secondary); }
 
     .settings-views {
       display: grid;
@@ -605,21 +592,11 @@ export function settingsModalStyles(): string {
       padding-top: 0.5rem;
     }
 
-    .settings-add-inner input:not([type="radio"]):not([type="checkbox"]),
-    .settings-add-inner select,
-    .settings-edit-form input:not([type="radio"]):not([type="checkbox"]),
-    .settings-edit-form select,
-    .settings-form-row input:not([type="radio"]):not([type="checkbox"]),
-    .settings-form-row select {
-      padding: 0.35rem 0.5rem;
-      background: var(--input-bg);
-      border: 1.5px solid var(--border);
-      border-radius: var(--radius-md);
-      color: var(--text-primary);
-      font-size: 0.8rem;
-      font-family: inherit;
-      width: 100%;
-    }
+    ${formControlStyles(
+      '.settings-add-inner input:not([type="radio"]):not([type="checkbox"]), .settings-add-inner select, ' +
+      '.settings-edit-form input:not([type="radio"]):not([type="checkbox"]), .settings-edit-form select, ' +
+      '.settings-form-row input:not([type="radio"]):not([type="checkbox"]), .settings-form-row select'
+    )}
 
     .settings-webhook-events {
       display: flex;
@@ -678,21 +655,12 @@ export function settingsModalStyles(): string {
       gap: 0.4rem;
     }
 
-    /* Buttons inside .settings-add-actions get compact modal sizing automatically.
-       Visual appearance (color, border, radius) comes from .btn-primary / .btn-secondary /
-       .settings-danger-btn. No per-ID overrides needed — just put the button in the right
-       container and use the right class. */
-    .settings-add-actions .btn-primary {
-      padding: 0.45rem 1rem;
-      font-size: 0.85rem;
-      min-height: 2.25rem;
-    }
-
-    .settings-add-actions .btn-secondary,
-    .settings-add-actions .settings-danger-btn {
-      padding: 0.45rem 0.85rem;
-      font-size: 0.85rem;
-      min-height: 2.25rem;
+    /* Buttons inside .settings-add-actions get .btn-md sizing (buttons.ts) without the
+       class. Appearance comes from .btn-primary / .btn-secondary / .btn-danger. */
+    .settings-add-actions :is(.btn-primary, .btn-secondary, .btn-danger) {
+      min-height: var(--control-h-md);
+      padding: 0 var(--space-4);
+      font-size: var(--size-md);
     }
 
     #settings-regions-import-label,
@@ -738,18 +706,6 @@ export function settingsModalStyles(): string {
       color: var(--text-muted);
     }
 
-    .settings-danger-btn {
-      padding: 0.25rem 0.55rem;
-      background: transparent;
-      border: 1.5px solid var(--danger);
-      border-radius: var(--radius-md);
-      color: var(--danger-fg);
-      font-size: 0.75rem;
-      cursor: pointer;
-      transition: background-color var(--duration-fast) var(--ease-standard);
-    }
-
-    .settings-danger-btn:hover { background: var(--danger-surface); }
 
     .sidebar-footer {
       flex-shrink: 0;
@@ -1147,9 +1103,17 @@ export function settingsModalScript(): string {
       document.getElementById('settings-nav-title').textContent = title;
       document.getElementById('settings-nav-back').classList.remove('hidden');
       _settingsViewStack.push({ id: viewId, title });
-      if (view.dataset.fullscreenEditor !== undefined) {
-        document.getElementById('settings-modal').classList.add('settings-modal-fullscreen');
-      }
+      _settingsSyncFullscreen();
+    }
+
+    // The modal fills the screen while the top view asks for it: data-fullscreen (the duty
+    // log's wide table) or data-fullscreen-editor (the map editors, which also get a
+    // non-scrolling flex layout).
+    function _settingsSyncFullscreen() {
+      const top = _settingsViewStack[_settingsViewStack.length - 1];
+      const view = top && document.getElementById(top.id);
+      const full = !!view && (view.dataset.fullscreen !== undefined || view.dataset.fullscreenEditor !== undefined);
+      document.getElementById('settings-modal').classList.toggle('settings-modal-fullscreen', full);
     }
 
     function _settingsNavigateBack() {
@@ -1157,9 +1121,7 @@ export function settingsModalScript(): string {
       const entry = _settingsViewStack.pop();
       const exitView = document.getElementById(entry.id);
       exitView.classList.remove('settings-view-active', 'settings-view-pushed');
-      if (exitView.dataset.fullscreenEditor !== undefined) {
-        document.getElementById('settings-modal').classList.remove('settings-modal-fullscreen');
-      }
+      _settingsSyncFullscreen();
       if (_settingsViewStack.length === 0) {
         document.getElementById('settings-view-main').classList.remove('settings-view-pushed');
         document.getElementById('settings-nav-title').textContent = 'Settings';
@@ -2491,7 +2453,7 @@ export function settingsModalScript(): string {
           actions.appendChild(renameBtn);
           if (session.id === _settingsUser?.session_id) {
             const signOutBtn = document.createElement('button');
-            signOutBtn.className = 'settings-danger-btn';
+            signOutBtn.className = 'btn-danger';
             signOutBtn.textContent = 'Sign out';
             signOutBtn.addEventListener('click', async () => {
               try { await fetch('/logout', { method: 'POST' }); } finally {
@@ -2648,7 +2610,7 @@ export function settingsModalScript(): string {
             actions.className = 'settings-aircraft-actions';
             if (!user.is_env_admin && user.id !== _settingsUser?.id) {
               const deleteBtn = document.createElement('button');
-              deleteBtn.className = 'settings-danger-btn';
+              deleteBtn.className = 'btn-danger';
               deleteBtn.textContent = 'Delete';
               deleteBtn.addEventListener('click', () => settingsRevokeUser(user, deleteBtn));
               actions.appendChild(deleteBtn);
@@ -2912,7 +2874,7 @@ export function settingsModalScript(): string {
           toggleBtn.textContent = hook.active ? 'Disable' : 'Enable';
           toggleBtn.addEventListener('click', () => settingsToggleWebhook(hook, toggleBtn));
           const deleteBtn = document.createElement('button');
-          deleteBtn.className = 'settings-danger-btn';
+          deleteBtn.className = 'btn-danger';
           deleteBtn.textContent = 'Delete';
           deleteBtn.addEventListener('click', () => settingsDeleteWebhook(hook, deleteBtn));
           actions.appendChild(toggleBtn);

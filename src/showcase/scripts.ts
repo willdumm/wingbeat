@@ -23,7 +23,7 @@ import { dashboardScriptsFlightListRender } from '../dashboard/scripts/flight-li
 import { dashboardScriptsPointPicker } from '../dashboard/scripts/point-picker';
 import { elevationToolScript } from '../shared/elevation';
 import { analyticsScriptsRegion } from '../analytics/scripts/region';
-import { analyticsScriptsTime } from '../analytics/scripts/time';
+import { tzCalendarScript } from '../shared/time';
 import { analyticsScriptsAccounting } from '../analytics/scripts/accounting';
 import { analyticsScriptsStreamgraphRender } from '../analytics/scripts/streamgraph';
 import { analyticsScriptsLayers } from '../analytics/scripts/layers';
@@ -55,6 +55,7 @@ export function showcaseScript(sample: SampleData): string {
     `const synthesizeTrack = ${synthesizeTrack.toString()};`,
     `const formatLocalDateTime = ${formatLocalDateTime.toString()};`,
     `const trackerList = SAMPLE.trackers;`,
+    tzCalendarScript(),
     themeRuntimeScript(),
     mapLayerColorRuntimeScript(),
     // No app Worker behind the docs site to hold the Carto key, so keyed basemaps use a
@@ -76,7 +77,6 @@ export function showcaseScript(sample: SampleData): string {
     pilotDutyRenderScript(),
     analyticsScriptsRegion(),
     `REGIONS = SAMPLE.regions;`,
-    analyticsScriptsTime(),
     analyticsScriptsAccounting(),
     analyticsScriptsStreamgraphRender(),
     analyticsScriptsLayers(),
@@ -451,10 +451,10 @@ function showcaseDriverScript(): string {
           origin_label: m.from, destination_label: m.to, pilot_id: SAMPLE.dutyPilotId, aircraft_tail: m.aircraftTail });
       }
       const days = SAMPLE.dutyLog.days.map(d => d.rest
-        ? { pilot_id: SAMPLE.dutyPilotId, date: dutyDateKey(at(d.daysAgo, 12 * 60)), duty_start: null, duty_end: null,
+        ? { pilot_id: SAMPLE.dutyPilotId, date: unixToTzDateStr(at(d.daysAgo, 12 * 60)), duty_start: null, duty_end: null,
             rest: 1, rest_designated_at: at(d.designatedDaysAgo, 17 * 60), note: null }
-        : { pilot_id: SAMPLE.dutyPilotId, date: dutyDateKey(at(d.daysAgo, d.dutyStartMin)),
-            duty_start: dutyTime(at(d.daysAgo, d.dutyStartMin)), duty_end: dutyTime(at(d.daysAgo, d.dutyEndMin)),
+        : { pilot_id: SAMPLE.dutyPilotId, date: unixToTzDateStr(at(d.daysAgo, d.dutyStartMin)),
+            duty_start: unixToTzTime(at(d.daysAgo, d.dutyStartMin)), duty_end: unixToTzTime(at(d.daysAgo, d.dutyEndMin)),
             rest: 0, rest_designated_at: null, note: null });
       return { entries, days };
     }

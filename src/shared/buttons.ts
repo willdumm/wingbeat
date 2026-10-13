@@ -51,6 +51,49 @@ export function sharedButtonStyles(): string {
     .btn-secondary:focus-visible { outline: none; box-shadow: var(--ring-focus); }
     .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
 
+    /* Danger: red outline, for Delete / Remove / Clear / Sign out. */
+    .btn-danger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      padding: 0.25rem 0.55rem;
+      background: transparent;
+      border: 1.5px solid var(--danger);
+      border-radius: var(--radius-md);
+      color: var(--danger-fg);
+      font-family: var(--font-ui);
+      font-size: var(--size-xs);
+      cursor: pointer;
+      transition: background-color var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
+    }
+    .btn-danger:hover:not(:disabled) { background: var(--danger-surface); }
+    .btn-danger:active:not(:disabled) { transform: scale(var(--press-scale)); }
+    .btn-danger:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+    .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Icon-only (the design system's wb-iconbtn): close buttons and other bare-glyph
+       actions. Give it an aria-label. */
+    .btn-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-1);
+      background: none;
+      border: none;
+      border-radius: var(--radius-md);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+    }
+    .btn-icon:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-secondary); }
+    .btn-icon:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+
+    /* Sizes (the design system's wb-btn--sm / --md), for any of the above: sm for
+       toolbars, md for dialog and form actions. */
+    .btn-sm { min-height: var(--control-h-sm); padding: 0 var(--space-3); font-size: var(--size-sm); white-space: nowrap; }
+    .btn-md { min-height: var(--control-h-md); padding: 0 var(--space-4); font-size: var(--size-md); white-space: nowrap; }
+
     /* ── Shared chevron ──────────────────────────────────────────────────── */
 
     /* Used in collapsible section headers (flight day headings, filter toggle,
