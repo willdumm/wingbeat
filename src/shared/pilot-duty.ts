@@ -207,9 +207,10 @@ export function pilotDutyStyles(): string {
 }
 
 /**
- * Pilot duty log computation and rendering. computeDutyData() merges one pilot's tracked
- * flights with the duty log's corrections, manual flights and duty/rest days (GET
- * /api/duty-log) into a month of day rows with §135.267 warnings and totals;
+ * Pilot duty log computation and rendering. computeDutyData() turns one pilot's effective
+ * flights (corrections already applied by applyFlightEdits(), flight-edits.ts) and
+ * duty/rest days (GET /api/duty-log) into a month of day rows with §135.267 warnings and
+ * totals;
  * renderDutyLog() and the PDF export (Typst, loaded on first export) only format that
  * model. Takes flights, log and elements as arguments rather than reading the flight
  * store, so the docs-site showcase (src/showcase/) renders and exports the same log from
@@ -238,9 +239,6 @@ export function pilotDutyRenderScript(): string {
       yearSecs:        1400 * 3600,   // (a) calendar year
       quarterRestDays: 13,            // (f) 24-hour rest periods per calendar quarter
     };
-    // Tracked-flight fields a flight_log_entries row can correct (NULL = tracker's value).
-    const _DUTY_EDIT_FIELDS = ['start_time', 'end_time', 'origin_label', 'destination_label'];
-    const _DUTY_FIELD_NAMES = { start_time: 'Dep', end_time: 'Arr', origin_label: 'Origin', destination_label: 'Dest' };
 
     const _DUTY_CHIP_MANUAL    = ${JSON.stringify(statusChip('Manual', 'neutral', 'wb-chip--sm duty-chip'))};
     const _DUTY_CHIP_UNMATCHED = ${JSON.stringify(statusChip('Not found', 'warn', 'wb-chip--sm duty-chip'))};
@@ -306,62 +304,28 @@ export function pilotDutyRenderScript(): string {
 
     // ── The row model ──
 
-    // One pilot's month as day rows plus §135.267 totals. log is GET /api/duty-log's
-    // { entries, days } (omitted: the tracker's flights as they are, no duty days).
+    // One pilot's month as day rows plus §135.267 totals. allFlights are effective flights
+    // (flightStore.getCompleted(), or applyFlightEdits() output: corrections applied,
+    // manual flights added, removed flights left out) for every pilot; days are the
+    // pilot's duty_days rows (GET /api/duty-log) and unmatched the corrections whose
+    // flight is gone (flightStore.getUnmatched()).
     // Returns { pilotName, year, month, isCurrentMonth, isFutureMonth, days, monthSecs,
-    // totals }, where
-    // each day is { dateKey, label, record, duty, rest, restDesignatedAt, note, flights,
-    // unmatched, daySecs, warnings }. A flight is the tracked or manual flight with the
-    // log's corrections applied: { key, manual, entry, flight (tracked only), tracker_id,
-    // start_time, end_time, secs, origin_label, destination_label, aircraft_tail, part91,
-    // edited: { field: tracker's value } }.
-    function computeDutyData(allFlights, pilotId, pilotName, year, month, log) {
-      const entries = (log && log.entries) || [];
-      const dayRecords = (log && log.days) || [];
+    // totals }, where each day is { dateKey, label, record, duty, rest, restDesignatedAt,
+    // note, flights, unmatched, daySecs, warnings }. A day's flight is the effective
+    // flight plus { manual, part91, entry, secs, edited: { field: tracker's value } }.
+    function computeDutyData(allFlights, pilotId, pilotName, year, month, { days: dayRecords = [], unmatched: unmatchedEntries = [] } = {}) {
       const nowEpoch = Math.floor(Date.now() / 1000);
 
-      // 1. Effective flights.
-      const completed = allFlights.filter(f => f.end_time != null);
-      const flightKey = (trackerId, start) => trackerId + ':' + start;
-      const flightsByKey = new Map(completed.map(f => [flightKey(f.tracker_id, f.start_time), f]));
-      const entryByFlight = new Map();
-      const unmatchedEntries = [];
-      for (const e of entries) {
-        if (e.tracker_id == null) continue;
-        const k = flightKey(e.tracker_id, e.flight_start_time);
-        if (flightsByKey.has(k)) entryByFlight.set(k, e);
-        else unmatchedEntries.push(e);
-      }
-
-      const flights = [];
-      for (const f of completed) {
-        if (f.pilot_id !== pilotId) continue;
-        const k = flightKey(f.tracker_id, f.start_time);
-        const e = entryByFlight.get(k) || null;
-        if (e && e.excluded) continue;
-        const eff = {
-          key: 't' + k, manual: false, entry: e, flight: f, tracker_id: f.tracker_id,
-          start_time: f.start_time, end_time: f.end_time,
-          origin_label: f.origin_label, destination_label: f.destination_label,
-          aircraft_tail: f.aircraft_tail, part91: !!(e && e.part91), edited: {},
-        };
-        if (e) {
-          for (const field of _DUTY_EDIT_FIELDS) {
-            if (e[field] != null) { eff.edited[field] = f[field]; eff[field] = e[field]; }
-          }
-        }
-        flights.push(eff);
-      }
-      for (const e of entries) {
-        if (e.tracker_id != null || e.pilot_id !== pilotId || e.excluded) continue;
-        flights.push({
-          key: 'm' + e.id, manual: true, entry: e, flight: null, tracker_id: null,
-          start_time: e.start_time, end_time: e.end_time,
-          origin_label: e.origin_label, destination_label: e.destination_label,
-          aircraft_tail: e.aircraft_tail, part91: !!e.part91, edited: {},
-        });
-      }
-      for (const f of flights) f.secs = Math.max(0, f.end_time - f.start_time);
+      // 1. The pilot's flights.
+      const completed = allFlights.filter(f => f.end_time != null && !(f.edit && f.edit.excluded));
+      const flights = completed.filter(f => f.pilot_id === pilotId).map(f => ({
+        ...f,
+        manual: !!(f.edit && f.edit.manual),
+        part91: !!(f.edit && f.edit.part91),
+        entry: f.edit ? f.edit.entry : null,
+        edited: f.edit ? f.edit.original : {},
+        secs: Math.max(0, f.end_time - f.start_time),
+      }));
       flights.sort((a, b) => a.start_time - b.start_time);
       const flights135 = flights.filter(f => !f.part91);
 
@@ -370,7 +334,7 @@ export function pilotDutyRenderScript(): string {
       // time, or to every pilot's log when nothing does, rather than vanishing.
       const unmatchedByDate = {};
       for (const e of unmatchedEntries) {
-        const cover = completed.find(f => f.tracker_id === e.tracker_id &&
+        const cover = completed.find(f => !(f.edit && f.edit.manual) && f.tracker_id === e.tracker_id &&
           f.start_time <= e.flight_start_time && e.flight_start_time <= f.end_time);
         if (cover && cover.pilot_id !== pilotId) continue;
         const dk = unixToTzDateStr(e.flight_start_time);
@@ -518,24 +482,6 @@ export function pilotDutyRenderScript(): string {
       };
     }
 
-    // What an unmatched row would have changed, e.g. "Dep 08:05, Part 91".
-    function dutyEntrySummary(e) {
-      const parts = [];
-      if (e.start_time != null) parts.push('Dep ' + unixToTzTime(e.start_time));
-      if (e.end_time != null) parts.push('Arr ' + unixToTzTime(e.end_time));
-      if (e.origin_label != null) parts.push('Origin ' + e.origin_label);
-      if (e.destination_label != null) parts.push('Dest ' + e.destination_label);
-      if (e.part91) parts.push('Part 91');
-      if (e.excluded) parts.push('removed from log');
-      return parts.join(', ') || 'no corrections';
-    }
-
-    // The tracker's value of an edited field, as shown next to the correction.
-    function dutyOriginalText(field, value) {
-      if (value == null || value === '') return '(none)';
-      return field === 'start_time' || field === 'end_time' ? unixToTzTime(value) : String(value);
-    }
-
     // "Rest · designated Oct 3", "08:00–17:00" or "—".
     function dutyDayText(day, year) {
       if (day.rest) {
@@ -564,7 +510,7 @@ export function pilotDutyRenderScript(): string {
         const v = _dutyEsc(text);
         if (!(field in f.edited)) return v;
         return v + '<span class="duty-edited" title="Tracker: ' +
-          _dutyEsc(dutyOriginalText(field, f.edited[field])) + '">†</span>';
+          _dutyEsc(flightOriginalText(field, f.edited[field])) + '">†</span>';
       }
       function label(f, field) { return cellVal(f, field, f[field] || '—'); }
       function time(f, field) { return cellVal(f, field, unixToTzTime(f[field])); }
@@ -622,7 +568,7 @@ export function pilotDutyRenderScript(): string {
             '<td class="duty-col-date"></td>' +
             '<td class="duty-col-span" colspan="' + (cols - 1) + '">' + _DUTY_CHIP_UNMATCHED +
               'Tracked flight from ' + unixToTzTime(e.flight_start_time) + ' no longer found; its corrections (' +
-              _dutyEsc(dutyEntrySummary(e)) + ') aren’t counted.' +
+              _dutyEsc(flightEntrySummary(e)) + ') aren’t counted.' +
               (edit ? '<button class="duty-link-btn" data-duty-target="' + action(() => edit.onDeleteEntry(e)) + '">Delete</button>' : '') +
             '</td></tr>';
         }
@@ -794,7 +740,7 @@ export function pilotDutyRenderScript(): string {
           const fields = Object.keys(f.edited);
           if (fields.length) {
             footnotes.push(day.label + ', flight at ' + unixToTzTime(f.start_time) + ': the tracker recorded ' +
-              fields.map(k => _DUTY_FIELD_NAMES[k] + ' ' + dutyOriginalText(k, f.edited[k])).join(', ') + '.');
+              fields.map(k => FLIGHT_EDIT_FIELD_NAMES[k] + ' ' + flightOriginalText(k, f.edited[k])).join(', ') + '.');
             mark = '#super[†' + footnotes.length + ']';
           }
           const cell = (field, text) => '[' + _typStr(text) + (field in f.edited ? mark : '') + ']';
@@ -811,7 +757,7 @@ export function pilotDutyRenderScript(): string {
         for (const e of day.unmatched) {
           rows += '  [], table.cell(colspan: ' + (COLS - 1) + ')[' +
             _typStr('Tracked flight from ' + unixToTzTime(e.flight_start_time) + ' no longer found; its corrections (' +
-              dutyEntrySummary(e) + ') are not counted.') + '],\\n';
+              flightEntrySummary(e) + ') are not counted.') + '],\\n';
         }
         if (day.flights.length > 0) {
           rows += '  table.cell(colspan: 7, align: right)[*Day total*], [*' + fmtBlock(day.daySecs) + '*], [],\\n';
@@ -932,16 +878,15 @@ export function pilotDutyScript(): string {
 
     function closePilotDuty() { _settingsNavigateBack(); }
 
+    // Corrections made elsewhere (or a poll's new flights) show up in an open log.
+    flightStore.onChange(() => { if (_dutyLog) _dutyLoad(); });
+
     async function _dutyFetchLog() {
       const pilotId = _dutyPilotId;
       try {
-        const [resp, entriesResp] = await Promise.all([
-          fetch('/api/duty-log?pilot=' + encodeURIComponent(pilotId)),
-          fetch('/api/flight-log-entries'),
-        ]);
+        const resp = await fetch('/api/duty-log?pilot=' + encodeURIComponent(pilotId));
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        if (!entriesResp.ok) throw new Error('HTTP ' + entriesResp.status);
-        const log = { days: (await resp.json()).days, entries: (await entriesResp.json()).entries };
+        const log = await resp.json();
         if (pilotId === _dutyPilotId) _dutyLog = log;
       } catch (e) {
         // Without the log the corrections would silently be missing, so say so.
@@ -968,7 +913,8 @@ export function pilotDutyScript(): string {
     function _dutyLoad() {
       document.getElementById('pilot-duty-period').textContent = dutyPeriodLabel({ year: _dutyYear, month: _dutyMonth });
       if (!_dutyLog) return;
-      _dutyData = computeDutyData(flightStore.getAll(), _dutyPilotId, _dutyPilotName, _dutyYear, _dutyMonth, _dutyLog);
+      _dutyData = computeDutyData(flightStore.getCompleted(), _dutyPilotId, _dutyPilotName, _dutyYear, _dutyMonth,
+        { days: _dutyLog.days, unmatched: flightStore.getUnmatched() });
       // Future months open for planning duty and rest, up to a year ahead.
       const [curY, curM] = currentDutyMonth();
       document.getElementById('pilot-duty-next').disabled = _dutyYear * 12 + _dutyMonth >= curY * 12 + curM + 12;
@@ -1035,7 +981,7 @@ export function pilotDutyScript(): string {
       errorEl.textContent = '';
       try {
         await fn();
-        await _dutyFetchLog();
+        await Promise.all([_dutyFetchLog(), flightStore.refresh().catch(() => {})]);
         _dutyLoad();
         return true;
       } catch (e) {
@@ -1051,7 +997,8 @@ export function pilotDutyScript(): string {
     function _dutyOpenFlightForm(f, dateKey) {
       const isNew = !f;
       const tracked = !!(f && !f.manual);
-      const orig = tracked ? f.flight : null;
+      // The tracker's own values: the effective flight with its corrections undone.
+      const orig = tracked ? { ...f, ...f.edited } : null;
       const entry = f ? f.entry : null;
       const start = f ? f.start_time : null;
       const pilotId = tracked ? orig.pilot_id : (entry ? entry.pilot_id : _dutyPilotId);
@@ -1141,7 +1088,9 @@ export function pilotDutyScript(): string {
         if (typeof v === 'string') { errorEl.textContent = v; return; }
         const ok = await _dutySave(buttons, errorEl, async () => {
           if (!tracked) {
-            const body = { ...v, excluded: false };
+            const body = { ...v, excluded: false, remark: entry ? entry.remark : null,
+              start_lat: entry ? entry.start_lat : null, start_lon: entry ? entry.start_lon : null,
+              end_lat: entry ? entry.end_lat : null, end_lon: entry ? entry.end_lon : null };
             if (body.pilot_id == null) throw new Error('Choose a pilot.');
             if (entry) await _dutyApi('PUT', '/api/flight-log-entries/' + entry.id, body);
             else await _dutyApi('POST', '/api/flight-log-entries', body);
@@ -1156,10 +1105,11 @@ export function pilotDutyScript(): string {
             origin_label: v.origin_label === (orig.origin_label || null) ? null : v.origin_label,
             destination_label: v.destination_label === (orig.destination_label || null) ? null : v.destination_label,
             part91: v.part91,
+            remark: entry ? entry.remark : null,
             excluded: false,
           };
           const changed = body.start_time != null || body.end_time != null ||
-            body.origin_label != null || body.destination_label != null || body.part91;
+            body.origin_label != null || body.destination_label != null || body.part91 || body.remark != null;
           if (changed) {
             if (entry) await _dutyApi('PUT', '/api/flight-log-entries/' + entry.id, body);
             else await _dutyApi('POST', '/api/flight-log-entries', { ...body, tracker_id: orig.tracker_id, flight_start_time: orig.start_time });
@@ -1170,12 +1120,8 @@ export function pilotDutyScript(): string {
           if (v.aircraft_tail !== (orig.aircraft_tail || null)) assign.aircraft_tail = v.aircraft_tail;
           if (v.pilot_id !== (orig.pilot_id ?? null)) assign.pilot_id = v.pilot_id;
           if (Object.keys(assign).length) {
-            const data = await _dutyApi('PUT', '/api/flights/assignment?tracker=' + encodeURIComponent(orig.tracker_id),
+            await _dutyApi('PUT', '/api/flights/assignment?tracker=' + encodeURIComponent(orig.tracker_id),
               { flight_ids: [orig.id], ...assign });
-            const patch = {};
-            if ('aircraft_tail' in data) patch.aircraft_tail = data.aircraft_tail;
-            if ('pilot_id' in data) { patch.pilot_id = data.pilot_id; patch.pilot_name = data.pilot_name; }
-            flightStore.patchFlight(orig.id, patch, orig.start_time);
           }
         });
         if (ok) close();
@@ -1190,7 +1136,7 @@ export function pilotDutyScript(): string {
           const body = {
             start_time: entry ? entry.start_time : null, end_time: entry ? entry.end_time : null,
             origin_label: entry ? entry.origin_label : null, destination_label: entry ? entry.destination_label : null,
-            part91: !!(entry && entry.part91), excluded: true,
+            part91: !!(entry && entry.part91), remark: entry ? entry.remark : null, excluded: true,
           };
           if (entry) await _dutyApi('PUT', '/api/flight-log-entries/' + entry.id, body);
           else await _dutyApi('POST', '/api/flight-log-entries', { ...body, tracker_id: orig.tracker_id, flight_start_time: orig.start_time });
@@ -1321,7 +1267,7 @@ export function pilotDutyScript(): string {
       } catch (e) {
         alert('Delete failed: ' + (e && e.message ? e.message : String(e)));
       }
-      await _dutyFetchLog();
+      await Promise.all([_dutyFetchLog(), flightStore.refresh().catch(() => {})]);
       _dutyLoad();
     }
   `;

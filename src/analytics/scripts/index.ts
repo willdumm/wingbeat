@@ -3,6 +3,7 @@ import { themeRuntimeScript } from '../../shared/theme';
 import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, overlayLegendRuntimeScript } from '../../shared/map-controls';
 import { toggleScript } from '../../shared/toggle';
 import { flightStoreScript } from '../../shared/flight-store';
+import { flightEditsScript } from '../../shared/flight-edits';
 import { filterScript } from '../../shared/filters';
 import { settingsModalScript } from '../../shared/settings';
 import { formModalScript } from '../../shared/form-modal';
@@ -25,6 +26,7 @@ export function analyticsScripts(env: Env): string {
     overlayLegendRuntimeScript(),
     toggleScript(),
     tzCalendarScript(),
+    flightEditsScript(),
     flightStoreScript(),
     filterScript(),
     formModalScript(),

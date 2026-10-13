@@ -14,6 +14,7 @@ import { filterScript } from '../shared/filters';
 import { sharedSidebarToggleScripts } from '../shared/sidebar';
 import { aircraftInfoRenderScript } from '../shared/aircraft-info';
 import { pilotDutyRenderScript } from '../shared/pilot-duty';
+import { flightEditsScript } from '../shared/flight-edits';
 import { dashboardScriptsHelpers } from '../dashboard/scripts/helpers';
 import { dashboardScriptsIcons } from '../dashboard/scripts/icons';
 import { dashboardScriptsHover } from '../dashboard/scripts/hover';
@@ -74,6 +75,7 @@ export function showcaseScript(sample: SampleData): string {
     dashboardScriptsTrackRender(),
     dashboardScriptsFlightListRender(),
     aircraftInfoRenderScript(),
+    flightEditsScript(),
     pilotDutyRenderScript(),
     analyticsScriptsRegion(),
     `REGIONS = SAMPLE.regions;`,
@@ -437,8 +439,8 @@ function showcaseDriverScript(): string {
     function dutyLogSample() {
       const at = (daysAgo, minute) => localMidnight(daysAgo) + minute * 60 + SHIFT;
       const flightsById = Object.fromEntries(COMPLETED_FLIGHTS.map(f => [f.id, f]));
-      const blank = { start_time: null, end_time: null, origin_label: null, destination_label: null,
-                      part91: 0, excluded: 0, pilot_id: null, aircraft_tail: null, updated_at: NOW };
+      const blank = { start_time: null, end_time: null, origin_label: null, destination_label: null, remark: null,
+                      start_lat: null, start_lon: null, end_lat: null, end_lon: null, part91: 0, excluded: 0, pilot_id: null, aircraft_tail: null, updated_at: NOW };
       const entries = [];
       for (const e of SAMPLE.dutyLog.edits) {
         const f = flightsById[e.flightId];
@@ -471,7 +473,8 @@ function showcaseDriverScript(): string {
       let data = null;
 
       function load() {
-        data = computeDutyData(ALL_FLIGHTS, pilot.id, pilot.name, year, month, dutyLog);
+        const { flights, unmatched } = applyFlightEdits(ALL_FLIGHTS, dutyLog.entries, { pilots: SAMPLE.pilots });
+        data = computeDutyData(flights, pilot.id, pilot.name, year, month, { days: dutyLog.days, unmatched });
         root.getElementById('pilot-duty-period').textContent = dutyPeriodLabel(data);
         nextBtn.disabled = data.isCurrentMonth;
         prevBtn.disabled = (year + '-' + String(month).padStart(2, '0')) <= firstMonthKey;

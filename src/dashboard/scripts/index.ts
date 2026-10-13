@@ -4,6 +4,7 @@ import { themeRuntimeScript } from '../../shared/theme';
 import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, overlayLegendRuntimeScript } from '../../shared/map-controls';
 import { toggleScript } from '../../shared/toggle';
 import { flightStoreScript } from '../../shared/flight-store';
+import { flightEditsScript } from '../../shared/flight-edits';
 import { filterScript } from '../../shared/filters';
 import { dashboardScriptsState } from './state';
 import { dashboardScriptsHelpers } from './helpers';
@@ -47,6 +48,7 @@ export function dashboardScripts(env: Env): string {
     tzCalendarScript(),
     dashboardScriptsState(SPEED_THRESHOLD_KMH),
     overlayLegendRuntimeScript(),
+    flightEditsScript(),
     flightStoreScript(),
     filterScript(),
     dashboardScriptsHelpers(),

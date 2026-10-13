@@ -46,6 +46,12 @@ export function dashboardScriptsInit(): string {
       // fitted to the current flights. With nothing cached, the map waits for phase 2.
       flightStore.init();
       allFlights = flightStore.getAll(allTrackerIds).reverse();
+      // A correction saved anywhere (flight editor, duty log) refreshes the store; show it.
+      flightStore.onChange(() => {
+        allFlights = flightStore.getAll(allTrackerIds).reverse();
+        applyFilter();
+        refreshAlerts();
+      });
       liveDataByTracker = buildLiveDataByTracker(null);
       applyFilter();
       if (allFlights.length > 0) showDefaultMapView();

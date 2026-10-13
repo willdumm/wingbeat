@@ -11,7 +11,8 @@ export function dashboardScriptsLive(): string {
       const result = {};
       const activeTrackers = trackerList.filter(t => t.active && !t.deleted);
       for (const tracker of activeTrackers) {
-        const sorted = flightStore.getAll([tracker.id]);
+        // The tracker's own records: positions don't depend on corrections.
+        const sorted = flightStore.getRaw([tracker.id]);
         if (!sorted.length) continue;
         const latest = sorted[sorted.length - 1];
         const lp = latest.points[latest.points.length - 1];

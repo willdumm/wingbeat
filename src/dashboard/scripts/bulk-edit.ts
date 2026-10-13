@@ -226,7 +226,8 @@ export function dashboardScriptsBulkEdit(): string {
           return;
         }
 
-        const toUpdate = beFiltered.filter(function(f) { return beSelected.has(f.id); });
+        // Manual flights (negative ids) aren't tracked flights; this modal only assigns those.
+        const toUpdate = beFiltered.filter(function(f) { return beSelected.has(f.id) && f.id > 0; });
         if (toUpdate.length === 0) return;
 
         const body = {};
@@ -244,14 +245,7 @@ export function dashboardScriptsBulkEdit(): string {
             body: JSON.stringify(Object.assign({ flight_ids: toUpdate.map(function(f) { return f.id; }) }, body)),
           });
           if (resp.ok) {
-            const data = await resp.json();
-            const patch = {};
-            if ('aircraft_tail' in data) patch.aircraft_tail = data.aircraft_tail;
-            if ('pilot_id' in data) { patch.pilot_id = data.pilot_id; patch.pilot_name = data.pilot_name; }
-            for (const f of toUpdate) {
-              flightStore.patchFlight(f.id, patch, f.start_time);
-              beSelected.delete(f.id);
-            }
+            for (const f of toUpdate) beSelected.delete(f.id);
           } else {
             const err = await resp.json().catch(function() { return {}; });
             alert(err.error ?? 'Failed to update flights.');
@@ -260,8 +254,9 @@ export function dashboardScriptsBulkEdit(): string {
           alert('Failed to update flights.');
         }
 
-        // Sync allFlights from the patched store and re-render the sidebar list.
+        // Reload the store and re-render the sidebar list.
         const _allTids = trackerList.filter(t => t.active && !t.deleted).map(t => t.id);
+        await flightStore.refresh(_allTids).catch(() => {});
         allFlights = flightStore.getAll(_allTids).reverse();
         applyFilter();
         refreshAlerts();

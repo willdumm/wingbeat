@@ -68,12 +68,8 @@ export function dashboardScriptsAssignmentModal(): string {
             body: JSON.stringify(Object.assign({ flight_ids: [flight.id] }, body)),
           });
           if (resp.ok) {
-            const data = await resp.json();
-            const patch = {};
-            if ('aircraft_tail' in data) patch.aircraft_tail = data.aircraft_tail;
-            if ('pilot_id' in data) { patch.pilot_id = data.pilot_id; patch.pilot_name = data.pilot_name; }
-            flightStore.patchFlight(flight.id, patch, flight.start_time);
             const allTrackerIds = trackerList.filter(t => t.active && !t.deleted).map(t => t.id);
+            await flightStore.refresh(allTrackerIds).catch(() => {});
             allFlights = flightStore.getAll(allTrackerIds).reverse();
             applyFilter();
             refreshAlerts();
