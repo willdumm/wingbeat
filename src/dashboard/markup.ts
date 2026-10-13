@@ -86,7 +86,7 @@ export function dashboardMarkup(appName: string): string {
         <div id="empty-msg">Loading flights…</div>
       </div>
       <div class="sidebar-footer">
-        <button id="bulk-edit-btn" class="settings-btn btn-secondary">Bulk Edit</button>
+        <button id="edit-flights-btn" class="settings-btn btn-secondary" data-doc-shot="flight-editor.open-button">Edit flights</button>
         <button id="settings-btn" class="settings-btn btn-secondary" data-doc-shot="settings.settings-button">Settings</button>
       </div>
     </aside>

@@ -11,6 +11,7 @@ export function dashboardScriptsFlightListRender(): string {
   const chevronIconHtml = icon('chevron-right', { size: 14 });
   return `
     const FLIGHT_LIST_CHEVRON_HTML = ${JSON.stringify(chevronIconHtml)};
+    const FLIGHT_LIST_EDIT_HTML = ${JSON.stringify(icon('pencil', { size: 14 }))};
 
     // Groups flights (already sorted) into [{ label, dayKey, flights }] by local day.
     function groupFlightsByDay(flights) {
@@ -75,8 +76,9 @@ export function dashboardScriptsFlightListRender(): string {
 
     // One flight row: start time, duration, route, aircraft/pilot assignment and remarks.
     // hasAircraft/hasPilots: whether any are configured, which decides whether a missing
-    // assignment reads "Unknown Aircraft"/"Unknown Pilot" or is left out.
-    function buildFlightItem(f, { active, hasAircraft, hasPilots }) {
+    // assignment reads "Unknown Aircraft"/"Unknown Pilot" or is left out. With onEdit, the
+    // row gets an edit (pencil) button, shown while it's selected, that calls onEdit(f).
+    function buildFlightItem(f, { active, hasAircraft, hasPilots, onEdit = null }) {
       const el = document.createElement('div');
       el.className = 'flight-item' + (active ? ' active' : '');
       el.dataset.id = f.id;
@@ -114,10 +116,14 @@ export function dashboardScriptsFlightListRender(): string {
         '<div class="flight-item-header">' +
           '<div class="flight-date">' + fmtTime(start) + flightEditedMark(f, ['start_time', 'end_time']) +
             (dur != null ? ' <span class="flight-dur">(' + dur + ' hr)</span>' : '') + '</div>' +
+          (onEdit ? '<button type="button" class="flight-edit-btn btn-icon" aria-label="Edit flight" title="Edit flight">' + FLIGHT_LIST_EDIT_HTML + '</button>' : '') +
         '</div>' +
         routeHtml + assignHtml + flightRemarksHtml(f) +
         // Shown while selected: a manual flight has nothing to draw.
         (manual ? '<div class="flight-no-track">No track recorded</div>' : '');
+      if (onEdit) {
+        el.querySelector('.flight-edit-btn').addEventListener('click', e => { e.stopPropagation(); onEdit(f); });
+      }
       return el;
     }
   `;
@@ -130,6 +136,8 @@ export function dashboardScriptsFlightListRender(): string {
 export function dashboardScriptsFlightList(): string {
   return `
     // ── Flights list ──────────────────────────────────────────────────────────
+    document.getElementById('edit-flights-btn').addEventListener('click', () => openFlightEditor());
+
     function renderFlightList(flights, isFiltered) {
       const list = document.getElementById('flight-list');
       const empty = document.getElementById('empty-msg');
@@ -176,6 +184,7 @@ export function dashboardScriptsFlightList(): string {
             active: f.id === activeFlightId,
             hasAircraft: aircraftList.length > 0,
             hasPilots: pilotList.length > 0,
+            onEdit: currentUser?.role === 'admin' ? openFlightForm : null,
           });
 
           el.addEventListener('click', () => {

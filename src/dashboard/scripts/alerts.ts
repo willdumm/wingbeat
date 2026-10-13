@@ -280,7 +280,7 @@ export function dashboardScriptsAlerts(): string {
         if (flight) {
           var el = document.querySelector('.flight-item[data-id="' + flightId + '"]');
           if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          openAssignmentModal(flight);
+          openFlightForm(flight);
         }
       } else if (kind === 'maintenance' || kind === 'timer_not_recorded') {
         var tail = btn.getAttribute('data-aircraft-tail');

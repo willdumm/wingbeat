@@ -9,6 +9,7 @@ import { settingsModalScript } from '../../shared/settings';
 import { formModalScript } from '../../shared/form-modal';
 import { segmentedControlScript } from '../../shared/segmented-control';
 import { pilotDutyScript } from '../../shared/pilot-duty';
+import { flightEditorScript } from '../../shared/flight-editor';
 import { aircraftInfoScript } from '../../shared/aircraft-info';
 import { analyticsScriptsRegion } from './region';
 import { analyticsScriptsAccounting } from './accounting';
@@ -33,6 +34,7 @@ export function analyticsScripts(env: Env): string {
     segmentedControlScript(),
     settingsModalScript(),
     pilotDutyScript(),
+    flightEditorScript(),
     aircraftInfoScript(),
     analyticsScriptsRegion(),
     analyticsScriptsAccounting(),

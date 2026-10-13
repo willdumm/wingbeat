@@ -10,7 +10,7 @@ export function pilotDutyMarkup(): string {
             <button id="pilot-duty-next" class="pilot-duty-nav-btn btn-secondary btn-sm" aria-label="Next month">${icon('chevron-right', { size: 14 })}</button>
             <div class="pilot-duty-actions">
               <button id="pilot-duty-day" class="pilot-duty-add-btn btn-secondary btn-sm" hidden>${icon('calendar-clock', { size: 14 })}Duty / rest</button>
-              <button id="pilot-duty-add" class="pilot-duty-add-btn btn-secondary btn-sm" hidden>${icon('plus', { size: 14 })}Add flight</button>
+              <button id="pilot-duty-edit-flights" class="pilot-duty-add-btn btn-secondary btn-sm" hidden>${icon('pencil', { size: 14 })}Edit flights</button>
               <button id="pilot-duty-export" class="btn-primary btn-sm">Export PDF</button>
             </div>
           </div>
@@ -859,9 +859,8 @@ export function pilotDutyRenderScript(): string {
 
 /**
  * The duty log view in the settings modal: loads the log for a pilot, month navigation,
- * PDF export, and (for admins) the flight, day and Add flight forms, which save through
- * /api/flight-log-entries, /api/duty-days and, for a tracked flight's aircraft or pilot,
- * /api/flights/assignment.
+ * PDF export, and (for admins) the day form (/api/duty-days) and the shared flight form
+ * and editor (flight-editor.ts) for flights.
  */
 export function pilotDutyScript(): string {
   return `
@@ -895,7 +894,7 @@ export function pilotDutyScript(): string {
       const [user] = await Promise.all([_loadSettingsUser(), _dutyFetchLog()]);
       if (_dutyPilotId !== pilotId) return;
       _dutyCanEdit = user?.role === 'admin';
-      document.getElementById('pilot-duty-add').hidden = !_dutyCanEdit;
+      document.getElementById('pilot-duty-edit-flights').hidden = !_dutyCanEdit;
       document.getElementById('pilot-duty-day').hidden = !_dutyCanEdit;
       _dutyLoad();
     }
@@ -952,7 +951,7 @@ export function pilotDutyScript(): string {
         totalsEl: document.getElementById('pilot-duty-totals'),
         bodyEl:   document.querySelector('.pilot-duty-body'),
         edit: _dutyCanEdit ? {
-          onFlight: f => _dutyOpenFlightForm(f, null),
+          onFlight: f => openFlightForm(f),
           onDay: day => _dutyOpenDayForm(day.dateKey),
           onDeleteEntry: _dutyDeleteUnmatched,
         } : null,
@@ -977,27 +976,18 @@ export function pilotDutyScript(): string {
         ? unixToTzDateStr(Math.floor(Date.now() / 1000))
         : _dutyYear + '-' + String(_dutyMonth).padStart(2, '0') + '-01';
     }
-    document.getElementById('pilot-duty-add').addEventListener('click', () => _dutyOpenFlightForm(null, _dutyDefaultDate()));
+    // The flight editor, filtered to this pilot and the shown month.
+    document.getElementById('pilot-duty-edit-flights').addEventListener('click', () => {
+      const first = _dutyKey(_dutyYear, _dutyMonth, 1);
+      const [ny, nm] = _dutyAddMonths(_dutyYear, _dutyMonth, 1);
+      openFlightEditor({ pilotId: _dutyPilotId, from: first, to: dutyAddDays(_dutyKey(ny, nm, 1), -1) });
+    });
     // Tomorrow by default when planning in the current month: rest is designated ahead.
     document.getElementById('pilot-duty-day').addEventListener('click', () => {
       const [y, m] = currentDutyMonth();
       const k = _dutyDefaultDate();
       _dutyOpenDayForm(y === _dutyYear && m === _dutyMonth ? dutyAddDays(k, 1) : k);
     });
-
-    // Sends a duty-log write; throws with the server's message when it fails.
-    async function _dutyApi(method, url, body) {
-      const resp = await fetch(url, {
-        method,
-        headers: body ? { 'Content-Type': 'application/json' } : undefined,
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(err.error || ('HTTP ' + resp.status));
-      }
-      return resp.json();
-    }
 
     // Runs a save, then reloads the log and re-renders; shows a failure in errorEl.
     async function _dutySave(buttons, errorEl, fn) {
@@ -1014,165 +1004,6 @@ export function pilotDutyScript(): string {
       } finally {
         buttons.forEach(b => { b.disabled = false; });
       }
-    }
-
-    // Flight form: edits a tracked or manual flight (f), or adds a manual flight on
-    // dateKey when f is null.
-    function _dutyOpenFlightForm(f, dateKey) {
-      const isNew = !f;
-      const tracked = !!(f && !f.manual);
-      // The tracker's own values: the effective flight with its corrections undone.
-      const orig = tracked ? { ...f, ...f.edited } : null;
-      const entry = f ? f.entry : null;
-      const start = f ? f.start_time : null;
-      const pilotId = tracked ? orig.pilot_id : (entry ? entry.pilot_id : _dutyPilotId);
-      const aircraftTail = f ? f.aircraft_tail : null;
-
-      const aircraftOptions = aircraftList
-        .filter(a => a.active || a.tail_number === aircraftTail)
-        .map(a => settingsAircraftOptionHtml(a, aircraftTail)).join('');
-      const pilotOptions = pilotList
-        .filter(p => p.active || p.id === pilotId)
-        .map(p => settingsPilotOptionHtml(p, pilotId)).join('');
-      const originalHint = (field, text) => tracked && (field in f.edited)
-        ? '<div class="form-field-original">Tracker: ' + _dutyEsc(text) + '</div>' : '';
-
-      const { modal, close } = openFormModal({
-        id: 'duty-flight-modal',
-        className: 'form-modal-wide',
-        title: isNew ? 'Add flight' : (tracked ? 'Edit flight' : 'Edit manual flight'),
-        bodyHtml:
-          (tracked
-            ? '<p class="form-modal-hint">Corrections apply to the duty log only; the tracked flight is unchanged. ' +
-              'Tracker: ' + _dutyEsc(dutyDateLabel(unixToTzDateStr(orig.start_time)) + ', ' + unixToTzTime(orig.start_time) + '–' +
-              unixToTzTime(orig.end_time) + ', ' + (orig.origin_label || '—') + ' → ' + (orig.destination_label || '—')) + '.</p>'
-            : '') +
-          '<div class="form-field"><label for="duty-f-date">Date</label>' +
-            '<input type="date" id="duty-f-date" value="' + _dutyEsc(start != null ? unixToTzDateStr(start) : dateKey) + '"></div>' +
-          '<div class="form-field-row">' +
-            '<div class="form-field"><label for="duty-f-dep">Dep</label>' +
-              '<input type="time" id="duty-f-dep" value="' + (start != null ? unixToTzTime(start) : '') + '">' +
-              originalHint('start_time', tracked ? unixToTzTime(orig.start_time) : '') + '</div>' +
-            '<div class="form-field"><label for="duty-f-arr">Arr</label>' +
-              '<input type="time" id="duty-f-arr" value="' + (f ? unixToTzTime(f.end_time) : '') + '">' +
-              originalHint('end_time', tracked ? unixToTzTime(orig.end_time) : '') + '</div>' +
-          '</div>' +
-          '<div class="form-field-row">' +
-            '<div class="form-field"><label for="duty-f-origin">Origin</label>' +
-              '<input type="text" id="duty-f-origin" value="' + _dutyEsc((f && f.origin_label) || '') + '">' +
-              originalHint('origin_label', tracked ? (orig.origin_label || '(none)') : '') + '</div>' +
-            '<div class="form-field"><label for="duty-f-dest">Dest</label>' +
-              '<input type="text" id="duty-f-dest" value="' + _dutyEsc((f && f.destination_label) || '') + '">' +
-              originalHint('destination_label', tracked ? (orig.destination_label || '(none)') : '') + '</div>' +
-          '</div>' +
-          '<div class="form-field-row">' +
-            '<div class="form-field"><label for="duty-f-aircraft">Aircraft</label>' +
-              '<select id="duty-f-aircraft"><option value="">Unknown</option>' + aircraftOptions + '</select></div>' +
-            '<div class="form-field"><label for="duty-f-pilot">Pilot</label>' +
-              '<select id="duty-f-pilot">' + (tracked ? '<option value="">Unknown</option>' : '') + pilotOptions + '</select></div>' +
-          '</div>' +
-          (tracked ? '<p class="form-modal-hint">Aircraft and pilot change the tracked flight itself, everywhere it’s shown.</p>' : '') +
-          '<div class="form-field"><span class="form-field-label" id="duty-f-part-label">Operated under</span>' +
-            segmentedHtml('part', [['135', 'Part 135'], ['91', 'Part 91']], f && f.part91 ? '91' : '135', { labelledBy: 'duty-f-part-label' }) + '</div>' +
-          '<div class="form-modal-error" role="alert"></div>',
-        footerHtml:
-          (!isNew ? '<button class="btn-danger btn-md" data-act="remove">Remove from log</button>' : '') +
-          (tracked && entry ? '<button class="btn-secondary btn-md" data-act="revert">Revert to tracker</button>' : '') +
-          '<span class="form-modal-footer-spacer"></span>' +
-          '<button class="btn-secondary btn-md" data-act="cancel">Cancel</button>' +
-          '<button class="btn-primary btn-md" data-act="save">Save</button>',
-      });
-
-      const $ = sel => modal.querySelector(sel);
-      const getPart = wireSegmented(modal, 'part');
-      const errorEl = $('.form-modal-error');
-      const buttons = [...modal.querySelectorAll('.form-modal-footer button')];
-      const btn = act => modal.querySelector('[data-act="' + act + '"]');
-      btn('cancel').addEventListener('click', close);
-
-      // The form's state as epochs/labels, or an error message.
-      function readForm() {
-        const date = $('#duty-f-date').value, dep = $('#duty-f-dep').value, arr = $('#duty-f-arr').value;
-        if (!date || !dep || !arr) return 'Enter the date, departure and arrival times.';
-        const startE = tzLocalToEpoch(date, dep);
-        // An arrival at or before the departure is the next day.
-        const endE = tzLocalToEpoch(arr > dep ? date : dutyAddDays(date, 1), arr);
-        return {
-          start_time: startE, end_time: endE,
-          origin_label: $('#duty-f-origin').value.trim() || null,
-          destination_label: $('#duty-f-dest').value.trim() || null,
-          aircraft_tail: $('#duty-f-aircraft').value || null,
-          pilot_id: $('#duty-f-pilot').value ? parseInt($('#duty-f-pilot').value, 10) : null,
-          part91: getPart() === '91',
-        };
-      }
-
-      btn('save').addEventListener('click', async () => {
-        const v = readForm();
-        if (typeof v === 'string') { errorEl.textContent = v; return; }
-        const ok = await _dutySave(buttons, errorEl, async () => {
-          if (!tracked) {
-            const body = { ...v, excluded: false, remark: entry ? entry.remark : null,
-              start_lat: entry ? entry.start_lat : null, start_lon: entry ? entry.start_lon : null,
-              end_lat: entry ? entry.end_lat : null, end_lon: entry ? entry.end_lon : null };
-            if (body.pilot_id == null) throw new Error('Choose a pilot.');
-            if (entry) await _dutyApi('PUT', '/api/flight-log-entries/' + entry.id, body);
-            else await _dutyApi('POST', '/api/flight-log-entries', body);
-            return;
-          }
-          // Only what differs from the tracker is stored; times compare to the minute,
-          // since the form has no seconds.
-          const sameMinute = (a, b) => Math.floor(a / 60) === Math.floor(b / 60);
-          const body = {
-            start_time: sameMinute(v.start_time, orig.start_time) ? null : v.start_time,
-            end_time: sameMinute(v.end_time, orig.end_time) ? null : v.end_time,
-            origin_label: v.origin_label === (orig.origin_label || null) ? null : v.origin_label,
-            destination_label: v.destination_label === (orig.destination_label || null) ? null : v.destination_label,
-            part91: v.part91,
-            remark: entry ? entry.remark : null,
-            excluded: false,
-          };
-          const changed = body.start_time != null || body.end_time != null ||
-            body.origin_label != null || body.destination_label != null || body.part91 || body.remark != null;
-          if (changed) {
-            if (entry) await _dutyApi('PUT', '/api/flight-log-entries/' + entry.id, body);
-            else await _dutyApi('POST', '/api/flight-log-entries', { ...body, tracker_id: orig.tracker_id, flight_start_time: orig.start_time });
-          } else if (entry) {
-            await _dutyApi('DELETE', '/api/flight-log-entries/' + entry.id);
-          }
-          const assign = {};
-          if (v.aircraft_tail !== (orig.aircraft_tail || null)) assign.aircraft_tail = v.aircraft_tail;
-          if (v.pilot_id !== (orig.pilot_id ?? null)) assign.pilot_id = v.pilot_id;
-          if (Object.keys(assign).length) {
-            await _dutyApi('PUT', '/api/flights/assignment?tracker=' + encodeURIComponent(orig.tracker_id),
-              { flight_ids: [orig.id], ...assign });
-          }
-        });
-        if (ok) close();
-      });
-
-      btn('remove')?.addEventListener('click', async () => {
-        if (!confirm(tracked
-          ? 'Remove this flight from the duty log? The tracked flight itself stays in the flight history.'
-          : 'Delete this manual flight?')) return;
-        const ok = await _dutySave(buttons, errorEl, async () => {
-          if (!tracked) { await _dutyApi('DELETE', '/api/flight-log-entries/' + entry.id); return; }
-          const body = {
-            start_time: entry ? entry.start_time : null, end_time: entry ? entry.end_time : null,
-            origin_label: entry ? entry.origin_label : null, destination_label: entry ? entry.destination_label : null,
-            part91: !!(entry && entry.part91), remark: entry ? entry.remark : null, excluded: true,
-          };
-          if (entry) await _dutyApi('PUT', '/api/flight-log-entries/' + entry.id, body);
-          else await _dutyApi('POST', '/api/flight-log-entries', { ...body, tracker_id: orig.tracker_id, flight_start_time: orig.start_time });
-        });
-        if (ok) close();
-      });
-
-      btn('revert')?.addEventListener('click', async () => {
-        if (!confirm('Drop this flight’s corrections and Part 91 mark, and show it as the tracker recorded it?')) return;
-        const ok = await _dutySave(buttons, errorEl, () => _dutyApi('DELETE', '/api/flight-log-entries/' + entry.id));
-        if (ok) close();
-      });
     }
 
     // Duty days are planned at most this far ahead (one per PUT).
@@ -1272,14 +1103,14 @@ export function pilotDutyScript(): string {
         const dutyEnd = rest ? null : ($('#duty-d-end').value || null);
         if ((dutyStart == null) !== (dutyEnd == null)) { errorEl.textContent = 'Enter both duty start and end, or neither.'; return; }
         const body = { duty_start: dutyStart, duty_end: dutyEnd, rest, note: $('#duty-d-note').value };
-        const ok = await _dutySave(buttons, errorEl, () => eachDay(keys, url => _dutyApi('PUT', url, body)));
+        const ok = await _dutySave(buttons, errorEl, () => eachDay(keys, url => flightApi('PUT', url, body)));
         if (ok) close();
       });
       $('[data-act="clear"]').addEventListener('click', async () => {
         const keys = readDates();
         if (typeof keys === 'string') { errorEl.textContent = keys; return; }
         if (keys.length > 1 && !confirm('Clear duty, rest and notes for all ' + keys.length + ' days?')) return;
-        const ok = await _dutySave(buttons, errorEl, () => eachDay(keys.filter(recordOf), url => _dutyApi('DELETE', url)));
+        const ok = await _dutySave(buttons, errorEl, () => eachDay(keys.filter(recordOf), url => flightApi('DELETE', url)));
         if (ok) close();
       });
     }
@@ -1287,7 +1118,7 @@ export function pilotDutyScript(): string {
     async function _dutyDeleteUnmatched(entry) {
       if (!confirm('Delete these corrections? The flight they belonged to is no longer in the tracker’s history.')) return;
       try {
-        await _dutyApi('DELETE', '/api/flight-log-entries/' + entry.id);
+        await flightApi('DELETE', '/api/flight-log-entries/' + entry.id);
       } catch (e) {
         alert('Delete failed: ' + (e && e.message ? e.message : String(e)));
       }

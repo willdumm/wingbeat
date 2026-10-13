@@ -24,10 +24,9 @@ import { formModalScript } from '../../shared/form-modal';
 import { segmentedControlScript } from '../../shared/segmented-control';
 import { tzCalendarScript } from '../../shared/time';
 import { pilotDutyScript } from '../../shared/pilot-duty';
+import { flightEditorScript } from '../../shared/flight-editor';
 import { aircraftInfoScript } from '../../shared/aircraft-info';
 import { dashboardScriptsAircraft } from './aircraft';
-import { dashboardScriptsAssignmentModal } from './assignment-modal';
-import { dashboardScriptsBulkEdit } from './bulk-edit';
 import { dashboardScriptsAlerts } from './alerts';
 import { dashboardScriptsInit } from './init';
 
@@ -68,10 +67,9 @@ export function dashboardScripts(env: Env): string {
     segmentedControlScript(),
     settingsModalScript(),
     pilotDutyScript(),
+    flightEditorScript(),
     aircraftInfoScript(),
     dashboardScriptsAircraft(),
-    dashboardScriptsAssignmentModal(),
-    dashboardScriptsBulkEdit(),
     dashboardScriptsAlerts(),
     dashboardScriptsInit(),
   ].join('\n');

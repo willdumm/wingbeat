@@ -3,6 +3,7 @@ import { regionsEditorMarkup, regionsEditorScript } from './regions-editor';
 import { mapLayersSettingsRowsMarkup, mapLayersSettingsScript } from './map-controls';
 import { icon } from './icons';
 import { pilotDutyMarkup, typstLoadOverlayMarkup } from './pilot-duty';
+import { flightEditorMarkup } from './flight-editor';
 import { formControlStyles } from './form-modal';
 import { aircraftInfoMarkup } from './aircraft-info';
 import { mapViewPickerMarkup, mapViewPickerStyles, mapViewPickerScript } from './map-view-picker';
@@ -187,6 +188,9 @@ export function settingsModalMarkup(): string {
         </div>
         <div class="settings-view settings-view-detail" id="settings-view-pilot-duty" data-fullscreen>
           ${pilotDutyMarkup()}
+        </div>
+        <div class="settings-view settings-view-detail" id="settings-view-flight-editor" data-fullscreen data-doc-shot="flight-editor.view">
+          ${flightEditorMarkup()}
         </div>
         <div class="settings-view settings-view-detail" id="settings-view-aircraft-info">
           ${aircraftInfoMarkup()}

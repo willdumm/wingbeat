@@ -25,7 +25,7 @@ export function sharedButtonStyles(): string {
     .btn-primary:focus-visible { outline: none; box-shadow: var(--ring-focus); }
     .btn-primary:disabled { background: var(--surface-2); color: var(--text-faint); box-shadow: none; cursor: not-allowed; }
 
-    /* Secondary: subtle surface background, control radius. For Settings / Bulk Edit /
+    /* Secondary: subtle surface background, control radius. For Settings / Edit flights /
        Most Recent / Cancel buttons and other secondary actions. */
     .btn-secondary {
       display: inline-flex;

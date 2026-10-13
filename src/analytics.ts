@@ -10,13 +10,14 @@ import { statusStyles } from './shared/status';
 import { segmentedControlStyles } from './shared/segmented-control';
 import { formModalStyles } from './shared/form-modal';
 import { flightEditsStyles } from './shared/flight-edits';
+import { flightEditorStyles } from './shared/flight-editor';
 import { AppSettings, settingsAsClientObject } from './settings';
 import { Env } from './types';
 
 /** The analytics page's stylesheet after the font import and theme tokens. The docs-site
  * showcase (src/showcase/) adopts it as-is for its analytics demos. */
 export function analyticsPageStyles(): string {
-  return brandStyles() + iconStyles() + statusStyles() + segmentedControlStyles() + formModalStyles() + flightEditsStyles() + analyticsStyles();
+  return brandStyles() + iconStyles() + statusStyles() + segmentedControlStyles() + formModalStyles() + flightEditsStyles() + flightEditorStyles() + analyticsStyles();
 }
 
 export function analyticsHTML(settings: AppSettings, env: Env): string {

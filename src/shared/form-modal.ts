@@ -3,7 +3,7 @@ import { icon } from './icons';
 /**
  * Shared small form dialog: a scrim, and a panel with a title bar, a body of labeled
  * fields (`.form-field`) that scrolls when it doesn't fit, and a footer of buttons. Used
- * by the dashboard's flight assignment modal and the duty log's flight and day editors.
+ * by the shared flight form (flight-editor.ts) and the duty log's day editor.
  * It sits above the settings modal, so it can open from a settings view.
  */
 /**

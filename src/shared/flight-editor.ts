@@ -1,0 +1,550 @@
+import { icon } from './icons';
+import { formControlStyles } from './form-modal';
+
+/**
+ * The flight editor: a full-screen settings view listing effective flights (filterable,
+ * selectable, with bulk actions) and the single-flight form, shared by the dashboard,
+ * the analytics page and the duty log. Replaces the dashboard's Bulk Edit and assignment
+ * modals and the duty log's own flight form. See docs/flight-editor-plan.md, §4.
+ *
+ * The view lives in the settings modal (settings.ts places flightEditorMarkup()); the
+ * script needs the flight store, flight-edits.ts, form-modal.ts, segmented-control.ts,
+ * tzCalendarScript() and the duty log's date helpers (pilot-duty.ts), all on both pages.
+ */
+export function flightEditorMarkup(): string {
+  return /* html */ `
+          <div class="fe-toolbar">
+            <div class="fe-filters">
+              <label class="fe-filter"><span>From</span><input type="date" id="fe-from" /></label>
+              <label class="fe-filter"><span>To</span><input type="date" id="fe-to" /></label>
+              <label class="fe-filter"><span>Aircraft</span><select id="fe-aircraft"></select></label>
+              <label class="fe-filter"><span>Pilot</span><select id="fe-pilot"></select></label>
+              <label class="fe-show-removed"><input type="checkbox" id="fe-show-removed" />Show removed</label>
+            </div>
+            <button id="fe-add" class="btn-secondary btn-sm">${icon('plus', { size: 14 })}Add flight</button>
+          </div>
+          <div class="fe-body">
+            <div class="fe-list-header">
+              <label class="fe-select-all"><input type="checkbox" id="fe-select-all" /><span id="fe-count"></span></label>
+            </div>
+            <div id="fe-list" class="fe-list"></div>
+          </div>
+          <div id="fe-selection" class="fe-selection" hidden>
+            <span id="fe-selection-count" class="fe-selection-count"></span>
+            <select id="fe-set-aircraft" class="fe-action-select" aria-label="Set aircraft"></select>
+            <select id="fe-set-pilot" class="fe-action-select" aria-label="Set pilot"></select>
+            <button class="btn-secondary btn-sm" data-fe-bulk="part91">Part 91</button>
+            <button class="btn-secondary btn-sm" data-fe-bulk="part135">Part 135</button>
+            <button class="btn-danger btn-sm" data-fe-bulk="remove">Remove</button>
+            <button class="btn-secondary btn-sm" data-fe-bulk="restore">Restore</button>
+            <button class="btn-secondary btn-sm" data-fe-bulk="clear">Clear</button>
+            <span id="fe-selection-error" class="fe-selection-error" role="alert"></span>
+          </div>`;
+}
+
+export function flightEditorStyles(): string {
+  return `
+    /* The editor opens full screen (data-fullscreen); past 64rem it keeps a readable
+       measure, centered, like the duty log. */
+    .fe-toolbar {
+      display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem 0.75rem;
+      padding: 0.6rem max(1rem, calc((100% - 64rem) / 2 + 1rem));
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 1;
+      background: var(--surface-1);
+    }
+    .fe-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem 0.75rem; flex: 1 1 30rem; }
+    .fe-filter { display: flex; flex-direction: column; gap: 0.2rem; flex: 1 1 8rem; max-width: 14rem; }
+    .fe-filter > span {
+      font-size: var(--size-2xs); font-weight: var(--weight-semibold);
+      text-transform: uppercase; letter-spacing: var(--tracking-caps); color: var(--text-muted);
+    }
+    ${formControlStyles('.fe-filter input, .fe-filter select, .fe-action-select')}
+    .fe-filter input, .fe-filter select, .fe-action-select { padding: 0.25rem 0.4rem; font-size: var(--size-sm); }
+    .fe-show-removed, .fe-select-all {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      font-size: var(--size-sm); color: var(--text-secondary); cursor: pointer;
+    }
+    .fe-show-removed { min-height: var(--control-h-sm); }
+
+    .fe-body { padding: 0.5rem 1rem 1rem; max-width: 64rem; margin: 0 auto; }
+    .fe-list-header { padding: 0.25rem 0.5rem 0.5rem; border-bottom: 1px solid var(--border); }
+    .fe-empty { padding: 1rem 0.5rem; font-size: 0.82rem; color: var(--text-muted); }
+
+    .fe-row {
+      display: grid;
+      grid-template-columns: auto 6.5rem 6.5rem minmax(0, 1fr) 5rem minmax(0, 8rem) 3rem;
+      align-items: baseline; gap: 0 0.6rem;
+      padding: 0.45rem 0.5rem;
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 0.82rem; color: var(--text-primary);
+      cursor: pointer;
+    }
+    .fe-row:hover { background: var(--surface-hover); }
+    .fe-row:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
+    .fe-row.fe-selected { background: var(--accent-surface); }
+    .fe-row-removed > :not(.fe-check) { opacity: 0.5; }
+    .fe-row-removed .fe-route { text-decoration: line-through; }
+    .fe-check { align-self: center; }
+    .fe-date { font-weight: var(--weight-semibold); white-space: nowrap; }
+    .fe-times, .fe-dur { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-secondary); }
+    .fe-dur { text-align: right; }
+    .fe-route { overflow-wrap: anywhere; }
+    .fe-ac, .fe-pilot { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fe-row .flight-remarks { grid-column: 4 / -1; }
+    .fe-row-unmatched { cursor: default; color: var(--text-secondary); }
+    .fe-row-unmatched .fe-unmatched-text { grid-column: 2 / -1; }
+    .fe-link-btn {
+      background: none; border: none; padding: 0; margin-left: 0.4rem;
+      font: inherit; color: var(--danger-fg); text-decoration: underline; cursor: pointer;
+    }
+
+    /* Narrow: date and times stack, route takes the row, aircraft/pilot below it. */
+    .fe-body { container-type: inline-size; }
+    @container (max-width: 40rem) {
+      .fe-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+      .fe-row > .fe-date { grid-column: 2; }
+      .fe-row > .fe-dur { grid-column: 3; grid-row: 1; }
+      .fe-row > .fe-times, .fe-row > .fe-route { grid-column: 2 / -1; }
+      .fe-row > .fe-ac, .fe-row > .fe-pilot { grid-column: 2 / -1; font-size: 0.75rem; }
+      .fe-row .flight-remarks { grid-column: 2 / -1; }
+    }
+
+    .fe-selection {
+      position: sticky; bottom: 0; z-index: 1;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+      padding: 0.6rem max(1rem, calc((100% - 64rem) / 2 + 1rem));
+      padding-bottom: max(0.6rem, env(safe-area-inset-bottom));
+      background: var(--surface-1);
+      border-top: 1px solid var(--border);
+      box-shadow: var(--shadow-lg);
+    }
+    .fe-selection[hidden], .fe-selection [hidden], .fe-toolbar [hidden] { display: none; }
+    .fe-selection-count { font-size: var(--size-sm); font-weight: var(--weight-semibold); color: var(--text-primary); margin-right: 0.25rem; }
+    .fe-action-select { width: auto; }
+    .fe-selection-error { font-size: var(--size-xs); color: var(--danger-fg); flex-basis: 100%; }
+    .fe-selection-error:empty { display: none; }
+
+    .fe-toolbar input[type="checkbox"], .fe-body input[type="checkbox"] {
+      accent-color: var(--accent); width: 16px; height: 16px; margin: 0; cursor: pointer;
+    }
+  `;
+}
+
+export function flightEditorScript(): string {
+  return `
+    // ── Flight editor ─────────────────────────────────────────────────────────
+
+    const _FE_ICON_EDIT = ${JSON.stringify(icon('pencil', { size: 13 }))};
+    let _feCanEdit = false;
+    const _feSelected = new Set();   // effective flight ids
+    let _feShown = [];               // flights currently listed
+    let _feNamedPoints = null;       // [{ name, lat, lon }], loaded on first use
+
+    function _feEsc(s) { return flightEsc(s == null ? '' : s); }
+
+    // Opens the editor, optionally filtered ({ pilotId, from, to }: YYYY-MM-DD dates).
+    async function openFlightEditor({ pilotId = null, from = '', to = '' } = {}) {
+      if (document.getElementById('settings-modal').classList.contains('hidden')) openSettings();
+      _settingsNavigateTo('settings-view-flight-editor', 'Edit flights');
+      _feSelected.clear();
+      document.getElementById('fe-from').value = from;
+      document.getElementById('fe-to').value = to;
+      document.getElementById('fe-show-removed').checked = false;
+      _feFillFilterSelects(pilotId);
+      const user = await _loadSettingsUser();
+      _feCanEdit = user?.role === 'admin';
+      document.getElementById('fe-add').hidden = !_feCanEdit;
+      _feRender();
+    }
+
+    function _feFillFilterSelects(pilotId) {
+      document.getElementById('fe-aircraft').innerHTML =
+        '<option value="">All aircraft</option><option value="__null__">Unknown aircraft</option>' +
+        aircraftList.map(a => settingsAircraftOptionHtml(a, null)).join('');
+      document.getElementById('fe-pilot').innerHTML =
+        '<option value="">All pilots</option><option value="__null__">Unknown pilot</option>' +
+        pilotList.map(p => settingsPilotOptionHtml(p, pilotId)).join('');
+      document.getElementById('fe-set-aircraft').innerHTML =
+        '<option value="">Set aircraft…</option><option value="__null__">Unknown</option>' +
+        aircraftList.filter(a => a.active).map(a => settingsAircraftOptionHtml(a, null)).join('');
+      document.getElementById('fe-set-pilot').innerHTML =
+        '<option value="">Set pilot…</option><option value="__null__">Unknown</option>' +
+        pilotList.filter(p => p.active).map(p => settingsPilotOptionHtml(p, null)).join('');
+    }
+
+    // The toolbar as a filters.ts state, so the editor filters the way the flight list does.
+    function _feFilterState() {
+      const ac = document.getElementById('fe-aircraft').value;
+      const p = document.getElementById('fe-pilot').value;
+      return {
+        dateFrom: document.getElementById('fe-from').value || null,
+        dateTo: document.getElementById('fe-to').value || null,
+        trackerIds: [],
+        aircraftTails: ac ? [ac] : [],
+        pilotIds: p ? [p === '__null__' ? '__null__' : parseInt(p, 10)] : [],
+      };
+    }
+
+    function _feIsOpen() {
+      return document.getElementById('settings-view-flight-editor').classList.contains('settings-view-active');
+    }
+
+    function _feRender() {
+      if (!_feIsOpen()) return;
+      const state = _feFilterState();
+      const showRemoved = document.getElementById('fe-show-removed').checked;
+      // Newest first, like the flight list.
+      _feShown = flightStore.getCompleted(undefined, { includeRemoved: showRemoved })
+        .filter(f => filterStore.matchesFlight(f, state)).reverse();
+      const shownIds = new Set(_feShown.map(f => f.id));
+      for (const id of [..._feSelected]) if (!shownIds.has(id)) _feSelected.delete(id);
+
+      // Corrections whose flight is gone, in the date range.
+      const unmatched = flightStore.getUnmatched().filter(e => filterStore.matchesFlight(
+        { start_time: e.flight_start_time, tracker_id: e.tracker_id, pilot_id: null, aircraft_tail: null },
+        { ...state, pilotIds: [], aircraftTails: [] }));
+
+      const list = document.getElementById('fe-list');
+      let html = '';
+      for (const e of unmatched) {
+        html += '<div class="fe-row fe-row-unmatched"><span></span><span class="fe-unmatched-text">' +
+          FLIGHT_CHIP_UNMATCHED + ' ' + _feEsc(dutyDateLabel(unixToTzDateStr(e.flight_start_time)) + ' ' +
+          unixToTzTime(e.flight_start_time)) + ': tracked flight no longer found; its corrections (' +
+          _feEsc(flightEntrySummary(e)) + ') aren’t applied.' +
+          (_feCanEdit ? '<button class="fe-link-btn" data-fe-delete-entry="' + e.id + '">Delete</button>' : '') +
+          '</span></div>';
+      }
+      for (const f of _feShown) html += _feRowHtml(f);
+      if (!html) html = '<div class="fe-empty">No flights match these filters.</div>';
+      list.innerHTML = html;
+      document.getElementById('fe-count').textContent = _feShown.length + (_feShown.length === 1 ? ' flight' : ' flights');
+      document.getElementById('fe-select-all').disabled = !_feCanEdit || _feShown.length === 0;
+      _feSyncSelection();
+    }
+
+    function _feRowHtml(f) {
+      const removed = !!(f.edit && f.edit.excluded);
+      const manual = !!(f.edit && f.edit.manual);
+      const sel = _feSelected.has(f.id);
+      const secs = Math.max(0, f.end_time - f.start_time);
+      return '<div class="fe-row' + (removed ? ' fe-row-removed' : '') + (sel ? ' fe-selected' : '') +
+          '" data-fe-id="' + f.id + '" tabindex="0" role="button">' +
+        '<input type="checkbox" class="fe-check" aria-label="Select flight"' + (sel ? ' checked' : '') + (_feCanEdit ? '' : ' disabled') + '>' +
+        '<span class="fe-date">' + _feEsc(dutyDateLabel(unixToTzDateStr(f.start_time))) + '</span>' +
+        '<span class="fe-times">' + unixToTzTime(f.start_time) + flightEditedMark(f, ['start_time']) + '–' +
+          unixToTzTime(f.end_time) + flightEditedMark(f, ['end_time']) + '</span>' +
+        '<span class="fe-route">' + _feEsc(f.origin_label || '—') + flightEditedMark(f, ['origin_label']) + ' → ' +
+          _feEsc(f.destination_label || '—') + flightEditedMark(f, ['destination_label']) +
+          (manual ? FLIGHT_CHIP_MANUAL : '') + (removed ? FLIGHT_CHIP_REMOVED : '') + '</span>' +
+        '<span class="fe-ac">' + _feEsc(f.aircraft_tail || '—') + '</span>' +
+        '<span class="fe-pilot">' + _feEsc(f.pilot_name || '—') + '</span>' +
+        '<span class="fe-dur">' + fmtBlock(secs) + '</span>' +
+        flightRemarksHtml(f) +
+      '</div>';
+    }
+
+    function _feSyncSelection() {
+      const n = _feSelected.size;
+      const all = document.getElementById('fe-select-all');
+      all.checked = n > 0 && n === _feShown.length;
+      all.indeterminate = n > 0 && n < _feShown.length;
+      document.getElementById('fe-selection').hidden = n === 0;
+      document.getElementById('fe-selection-count').textContent = n + ' selected';
+      const sel = _feShown.filter(f => _feSelected.has(f.id));
+      document.querySelector('[data-fe-bulk="restore"]').hidden = !sel.some(f => f.edit && f.edit.excluded);
+      document.querySelector('[data-fe-bulk="remove"]').hidden = !sel.some(f => !(f.edit && f.edit.excluded));
+    }
+
+    document.getElementById('fe-list').addEventListener('click', e => {
+      const del = e.target.closest('[data-fe-delete-entry]');
+      if (del) { _feDeleteUnmatched(+del.dataset.feDeleteEntry); return; }
+      const row = e.target.closest('[data-fe-id]');
+      if (!row) return;
+      const id = +row.dataset.feId;
+      if (e.target.classList.contains('fe-check')) {
+        if (e.target.checked) _feSelected.add(id); else _feSelected.delete(id);
+        row.classList.toggle('fe-selected', e.target.checked);
+        _feSyncSelection();
+        return;
+      }
+      const f = _feShown.find(x => x.id === id);
+      if (f) openFlightForm(f);
+    });
+    document.getElementById('fe-list').addEventListener('keydown', e => {
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-fe-id]')) { e.preventDefault(); e.target.click(); }
+    });
+    document.getElementById('fe-select-all').addEventListener('change', e => {
+      _feSelected.clear();
+      if (e.target.checked) _feShown.forEach(f => _feSelected.add(f.id));
+      _feRender();
+    });
+    ['fe-from', 'fe-to', 'fe-aircraft', 'fe-pilot', 'fe-show-removed'].forEach(id =>
+      document.getElementById(id).addEventListener('change', _feRender));
+    document.getElementById('fe-add').addEventListener('click', () => {
+      const p = document.getElementById('fe-pilot').value;
+      openFlightForm(null, { pilotId: p && p !== '__null__' ? parseInt(p, 10) : null });
+    });
+    // Corrections saved from the form (or a poll's new flights) show up in the open list.
+    flightStore.onChange(_feRender);
+
+    // Sends a flight write; throws with the server's message when it fails.
+    async function flightApi(method, url, body) {
+      const resp = await fetch(url, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || ('HTTP ' + resp.status));
+      }
+      return resp.json();
+    }
+
+    // The bulk route's key for a flight: its tracker's original start time, or its row.
+    function _feFlightRef(f) {
+      if (f.tracker_id == null) return { entry_id: f.edit.entry.id };
+      const start = f.edit && 'start_time' in f.edit.original ? f.edit.original.start_time : f.start_time;
+      return { tracker_id: f.tracker_id, flight_start_time: start };
+    }
+
+    // Aircraft/pilot for tracked flights (by id) and manual flights (by row) in one request.
+    function flightAssign(flights, assign) {
+      const tracked = flights.filter(f => f.tracker_id != null);
+      const manual = flights.filter(f => f.tracker_id == null);
+      return flightApi('PUT', '/api/flights/assignment', {
+        flight_ids: tracked.map(f => f.id), entry_ids: manual.map(f => f.edit.entry.id), ...assign,
+      });
+    }
+
+    function flightSetFlags(flights, set) {
+      return flightApi('POST', '/api/flight-log-entries/bulk', { flights: flights.map(_feFlightRef), set });
+    }
+
+    async function _feBulk(fn) {
+      const errorEl = document.getElementById('fe-selection-error');
+      const controls = [...document.querySelectorAll('#fe-selection button, #fe-selection select')];
+      controls.forEach(c => { c.disabled = true; });
+      errorEl.textContent = '';
+      try {
+        await fn(_feShown.filter(f => _feSelected.has(f.id)));
+        await flightStore.refresh();
+      } catch (e) {
+        errorEl.textContent = e && e.message ? e.message : String(e);
+      } finally {
+        controls.forEach(c => { c.disabled = false; });
+        _feRender();
+      }
+    }
+
+    document.getElementById('fe-set-aircraft').addEventListener('change', e => {
+      const v = e.target.value;
+      e.target.value = '';
+      if (v) _feBulk(sel => flightAssign(sel, { aircraft_tail: v === '__null__' ? null : v }));
+    });
+    document.getElementById('fe-set-pilot').addEventListener('change', e => {
+      const v = e.target.value;
+      e.target.value = '';
+      if (v) _feBulk(sel => flightAssign(sel, { pilot_id: v === '__null__' ? null : parseInt(v, 10) }));
+    });
+    document.getElementById('fe-selection').addEventListener('click', e => {
+      const btn = e.target.closest('[data-fe-bulk]');
+      if (!btn) return;
+      const act = btn.dataset.feBulk;
+      if (act === 'clear') { _feSelected.clear(); _feRender(); return; }
+      if (act === 'remove' && !confirm('Remove ' + _feSelected.size + ' flight(s)? They’re hidden everywhere except here, with Show removed.')) return;
+      const set = { part91: { part91: true }, part135: { part91: false }, remove: { excluded: true }, restore: { excluded: false } }[act];
+      _feBulk(sel => flightSetFlags(sel, set));
+    });
+
+    async function _feDeleteUnmatched(entryId) {
+      if (!confirm('Delete these corrections? The flight they belonged to is no longer in the tracker’s history.')) return;
+      try { await flightApi('DELETE', '/api/flight-log-entries/' + entryId); }
+      catch (e) { alert('Delete failed: ' + (e && e.message ? e.message : String(e))); }
+      await flightStore.refresh().catch(() => {});
+      _feRender();
+    }
+
+    async function _feLoadNamedPoints() {
+      if (_feNamedPoints) return _feNamedPoints;
+      try {
+        const resp = await fetch('/api/named-points');
+        const data = resp.ok ? await resp.json() : { features: [] };
+        _feNamedPoints = data.features.map(ft => ({ name: ft.properties.name, lon: ft.geometry.coordinates[0], lat: ft.geometry.coordinates[1] }));
+      } catch (_) { return []; }
+      return _feNamedPoints;
+    }
+
+    // ── Flight form ──
+
+    // Edits flight f (an effective flight: tracked or manual), or adds a manual flight
+    // when f is null (on dateKey, today by default, for pilotId). Saves through
+    // /api/flight-log-entries (corrections, Part 91, remark, removal) and
+    // /api/flights/assignment (aircraft, pilot), then refreshes the flight store, which
+    // re-renders every open view.
+    async function openFlightForm(f, { dateKey = null, pilotId = null } = {}) {
+      const isNew = !f;
+      const tracked = !!(f && f.tracker_id != null);
+      const edit = f ? f.edit : null;
+      const entry = edit ? edit.entry : null;
+      const removed = !!(edit && edit.excluded);
+      // The tracker's own values: the effective flight with its corrections undone.
+      const orig = tracked ? { ...f, ...(edit ? edit.original : {}) } : null;
+      const curPilot = f ? f.pilot_id : pilotId;
+      const curTail = f ? f.aircraft_tail : null;
+      const namedPoints = await _feLoadNamedPoints();
+
+      const aircraftOptions = aircraftList
+        .filter(a => a.active || a.tail_number === curTail)
+        .map(a => settingsAircraftOptionHtml(a, curTail)).join('');
+      const pilotOptions = pilotList
+        .filter(p => p.active || p.id === curPilot)
+        .map(p => settingsPilotOptionHtml(p, curPilot)).join('');
+      const hint = field => tracked && flightFieldEdited(f, field)
+        ? '<div class="form-field-original">Tracker: ' + _feEsc(flightOriginalText(field, orig[field])) + '</div>' : '';
+      const date = f ? unixToTzDateStr(f.start_time) : (dateKey || unixToTzDateStr(Math.floor(Date.now() / 1000)));
+
+      const { modal, close } = openFormModal({
+        id: 'flight-form-modal',
+        className: 'form-modal-wide',
+        title: isNew ? 'Add flight' : (tracked ? 'Edit flight' : 'Edit manual flight'),
+        bodyHtml:
+          (tracked
+            ? '<p class="form-modal-hint">Corrections show everywhere except the recorded track. Tracker: ' +
+              _feEsc(dutyDateLabel(unixToTzDateStr(orig.start_time)) + ', ' + unixToTzTime(orig.start_time) + '–' +
+              unixToTzTime(orig.end_time) + ', ' + (orig.origin_label || '—') + ' → ' + (orig.destination_label || '—')) + '.</p>'
+            : '') +
+          (removed ? '<p class="form-modal-hint">' + FLIGHT_CHIP_REMOVED + ' Hidden everywhere except the flight editor.</p>' : '') +
+          '<datalist id="fe-f-places">' + namedPoints.map(p => '<option value="' + _feEsc(p.name) + '">').join('') + '</datalist>' +
+          '<div class="form-field"><label for="fe-f-date">Date</label>' +
+            '<input type="date" id="fe-f-date" value="' + _feEsc(date) + '"></div>' +
+          '<div class="form-field-row">' +
+            '<div class="form-field"><label for="fe-f-dep">Dep</label>' +
+              '<input type="time" id="fe-f-dep" value="' + (f ? unixToTzTime(f.start_time) : '') + '">' + hint('start_time') + '</div>' +
+            '<div class="form-field"><label for="fe-f-arr">Arr</label>' +
+              '<input type="time" id="fe-f-arr" value="' + (f ? unixToTzTime(f.end_time) : '') + '">' + hint('end_time') + '</div>' +
+          '</div>' +
+          '<div class="form-field-row">' +
+            '<div class="form-field"><label for="fe-f-origin">Origin</label>' +
+              '<input type="text" id="fe-f-origin" list="fe-f-places" autocomplete="off" value="' + _feEsc((f && f.origin_label) || '') + '">' + hint('origin_label') + '</div>' +
+            '<div class="form-field"><label for="fe-f-dest">Dest</label>' +
+              '<input type="text" id="fe-f-dest" list="fe-f-places" autocomplete="off" value="' + _feEsc((f && f.destination_label) || '') + '">' + hint('destination_label') + '</div>' +
+          '</div>' +
+          '<div class="form-field-row">' +
+            '<div class="form-field"><label for="fe-f-aircraft">Aircraft</label>' +
+              '<select id="fe-f-aircraft"><option value="">Unknown</option>' + aircraftOptions + '</select></div>' +
+            '<div class="form-field"><label for="fe-f-pilot">Pilot</label>' +
+              '<select id="fe-f-pilot">' + (tracked ? '<option value="">Unknown</option>' : (curPilot == null ? '<option value="">Choose…</option>' : '')) +
+              pilotOptions + '</select></div>' +
+          '</div>' +
+          '<div class="form-field"><span class="form-field-label" id="fe-f-part-label">Operated under</span>' +
+            segmentedHtml('part', [['135', 'Part 135'], ['91', 'Part 91']], edit && edit.part91 ? '91' : '135', { labelledBy: 'fe-f-part-label' }) + '</div>' +
+          '<div class="form-field"><label for="fe-f-remark">Remark</label>' +
+            '<input type="text" id="fe-f-remark" placeholder="e.g. Training" value="' + _feEsc((edit && edit.remark) || '') + '"></div>' +
+          '<div class="form-modal-error" role="alert"></div>',
+        footerHtml:
+          (!isNew ? (removed
+            ? '<button class="btn-secondary btn-md" data-act="restore">Restore</button>'
+            : '<button class="btn-danger btn-md" data-act="remove">Remove from log</button>') : '') +
+          (tracked && entry ? '<button class="btn-secondary btn-md" data-act="revert">Revert to tracker</button>' : '') +
+          (!isNew && !tracked ? '<button class="btn-danger btn-md" data-act="delete">Delete</button>' : '') +
+          '<span class="form-modal-footer-spacer"></span>' +
+          '<button class="btn-secondary btn-md" data-act="cancel">Cancel</button>' +
+          '<button class="btn-primary btn-md" data-act="save">Save</button>',
+      });
+      modal.querySelector('.form-modal-panel').dataset.docShot = 'flight-editor.flight-form';
+
+      const $ = sel => modal.querySelector(sel);
+      const getPart = wireSegmented(modal, 'part');
+      const errorEl = $('.form-modal-error');
+      const buttons = [...modal.querySelectorAll('.form-modal-footer button')];
+      const btn = act => modal.querySelector('[data-act="' + act + '"]');
+      btn('cancel').addEventListener('click', close);
+
+      async function save(fn) {
+        buttons.forEach(b => { b.disabled = true; });
+        errorEl.textContent = '';
+        try {
+          await fn();
+          await flightStore.refresh();
+          close();
+        } catch (e) {
+          errorEl.textContent = e && e.message ? e.message : String(e);
+        } finally {
+          buttons.forEach(b => { b.disabled = false; });
+        }
+      }
+
+      // A label's named-point coordinates (manual flights), or nulls.
+      function coords(label) {
+        const p = label && namedPoints.find(n => n.name === label);
+        return p ? [p.lat, p.lon] : [null, null];
+      }
+
+      // The form's state as epochs/labels, or an error message.
+      function readForm() {
+        const d = $('#fe-f-date').value, dep = $('#fe-f-dep').value, arr = $('#fe-f-arr').value;
+        if (!d || !dep || !arr) return 'Enter the date, departure and arrival times.';
+        const startE = tzLocalToEpoch(d, dep);
+        // An arrival at or before the departure is the next day.
+        const endE = tzLocalToEpoch(arr > dep ? d : dutyAddDays(d, 1), arr);
+        return {
+          start_time: startE, end_time: endE,
+          origin_label: $('#fe-f-origin').value.trim() || null,
+          destination_label: $('#fe-f-dest').value.trim() || null,
+          aircraft_tail: $('#fe-f-aircraft').value || null,
+          pilot_id: $('#fe-f-pilot').value ? parseInt($('#fe-f-pilot').value, 10) : null,
+          part91: getPart() === '91',
+          remark: $('#fe-f-remark').value.trim() || null,
+        };
+      }
+
+      btn('save').addEventListener('click', () => {
+        const v = readForm();
+        if (typeof v === 'string') { errorEl.textContent = v; return; }
+        save(async () => {
+          if (!tracked) {
+            if (v.pilot_id == null) throw new Error('Choose a pilot.');
+            const [startLat, startLon] = coords(v.origin_label);
+            const [endLat, endLon] = coords(v.destination_label);
+            const body = { ...v, excluded: removed, start_lat: startLat, start_lon: startLon, end_lat: endLat, end_lon: endLon };
+            if (entry) await flightApi('PUT', '/api/flight-log-entries/' + entry.id, body);
+            else await flightApi('POST', '/api/flight-log-entries', body);
+            return;
+          }
+          // Only what differs from the tracker is stored (the server drops a row left
+          // empty); times compare to the minute, since the form has no seconds.
+          const sameMinute = (a, b) => Math.floor(a / 60) === Math.floor(b / 60);
+          await flightApi('POST', '/api/flight-log-entries', {
+            tracker_id: orig.tracker_id, flight_start_time: orig.start_time,
+            start_time: sameMinute(v.start_time, orig.start_time) ? null : v.start_time,
+            end_time: sameMinute(v.end_time, orig.end_time) ? null : v.end_time,
+            origin_label: v.origin_label === (orig.origin_label || null) ? null : v.origin_label,
+            destination_label: v.destination_label === (orig.destination_label || null) ? null : v.destination_label,
+            part91: v.part91, remark: v.remark, excluded: removed,
+          });
+          const assign = {};
+          if (v.aircraft_tail !== (orig.aircraft_tail || null)) assign.aircraft_tail = v.aircraft_tail;
+          if (v.pilot_id !== (orig.pilot_id ?? null)) assign.pilot_id = v.pilot_id;
+          if (Object.keys(assign).length) await flightAssign([f], assign);
+        });
+      });
+
+      btn('remove')?.addEventListener('click', () => {
+        if (!confirm('Remove this flight? It’s hidden everywhere (flight list, map, analytics, maintenance, duty log) ' +
+          'except the flight editor with Show removed, where it can be restored.')) return;
+        save(() => flightSetFlags([f], { excluded: true }));
+      });
+      btn('restore')?.addEventListener('click', () => save(() => flightSetFlags([f], { excluded: false })));
+      btn('revert')?.addEventListener('click', () => {
+        if (!confirm('Drop this flight’s corrections, Part 91 mark and remark, and show it as the tracker recorded it?')) return;
+        save(() => flightApi('DELETE', '/api/flight-log-entries/' + entry.id));
+      });
+      btn('delete')?.addEventListener('click', () => {
+        if (!confirm('Delete this manual flight?')) return;
+        save(() => flightApi('DELETE', '/api/flight-log-entries/' + entry.id));
+      });
+    }
+  `;
+}
