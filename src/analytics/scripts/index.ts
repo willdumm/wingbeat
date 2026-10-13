@@ -5,6 +5,7 @@ import { toggleScript } from '../../shared/toggle';
 import { flightStoreScript } from '../../shared/flight-store';
 import { filterScript } from '../../shared/filters';
 import { settingsModalScript } from '../../shared/settings';
+import { formModalScript } from '../../shared/form-modal';
 import { pilotDutyScript } from '../../shared/pilot-duty';
 import { aircraftInfoScript } from '../../shared/aircraft-info';
 import { analyticsScriptsRegion } from './region';
@@ -24,6 +25,7 @@ export function analyticsScripts(env: Env): string {
     toggleScript(),
     flightStoreScript(),
     filterScript(),
+    formModalScript(),
     settingsModalScript(),
     pilotDutyScript(),
     aircraftInfoScript(),

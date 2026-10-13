@@ -1,67 +1,48 @@
 /**
  * Flight assignment modal: lets the user change a flight's aircraft and pilot.
  * Opens when the edit button on a flight item is clicked.
- * Calls PUT /api/flights/:id/assignment and patches the local flight store.
+ * Calls PUT /api/flights/assignment and patches the local flight store.
  */
 export function dashboardScriptsAssignmentModal(): string {
   return `
     // ── Flight assignment modal ───────────────────────────────────────────────
 
     async function openAssignmentModal(flight) {
-      const existing = document.getElementById('assignment-modal');
-      if (existing) existing.remove();
-
-      const modal = document.createElement('div');
-      modal.id = 'assignment-modal';
-      modal.className = 'assignment-modal';
-
       const aircraftOptions = aircraftList.map(a => settingsAircraftOptionHtml(a, flight.aircraft_tail)).join('');
 
       const activePilots = pilotList.filter(p => p.active || p.id === flight.pilot_id);
       const pilotOptions = activePilots.map(p => settingsPilotOptionHtml(p, flight.pilot_id)).join('');
 
-      modal.innerHTML =
-        '<div class="assignment-modal-backdrop"></div>' +
-        '<div class="assignment-modal-panel">' +
-          '<div class="assignment-modal-header">' +
-            '<span class="assignment-modal-title">Edit Assignment</span>' +
-            '<button class="assignment-modal-close" aria-label="Close">&times;</button>' +
-          '</div>' +
-          '<div class="assignment-modal-body">' +
-            (aircraftList.length > 0
-              ? '<div class="assignment-field">' +
-                  '<label>Aircraft</label>' +
-                  '<select id="assign-aircraft-select">' +
-                    '<option value="">Unknown</option>' +
-                    aircraftOptions +
-                  '</select>' +
-                '</div>'
-              : '') +
-            (pilotList.length > 0
-              ? '<div class="assignment-field">' +
-                  '<label>Pilot</label>' +
-                  '<select id="assign-pilot-select">' +
-                    '<option value="">Unknown</option>' +
-                    pilotOptions +
-                  '</select>' +
-                '</div>'
-              : '') +
-            (aircraftList.length === 0 && pilotList.length === 0
-              ? '<p class="assignment-modal-empty">No aircraft or pilots configured.<br>Add them in Settings → Fleet.</p>'
-              : '') +
-          '</div>' +
-          '<div class="assignment-modal-footer">' +
-            '<button class="assignment-save-btn btn-primary">Save</button>' +
-            '<button class="assignment-cancel-btn btn-secondary">Cancel</button>' +
-          '</div>' +
-        '</div>';
+      const { modal, close: closeModal } = openFormModal({
+        id: 'assignment-modal',
+        title: 'Edit Assignment',
+        bodyHtml:
+          (aircraftList.length > 0
+            ? '<div class="form-field">' +
+                '<label for="assign-aircraft-select">Aircraft</label>' +
+                '<select id="assign-aircraft-select">' +
+                  '<option value="">Unknown</option>' +
+                  aircraftOptions +
+                '</select>' +
+              '</div>'
+            : '') +
+          (pilotList.length > 0
+            ? '<div class="form-field">' +
+                '<label for="assign-pilot-select">Pilot</label>' +
+                '<select id="assign-pilot-select">' +
+                  '<option value="">Unknown</option>' +
+                  pilotOptions +
+                '</select>' +
+              '</div>'
+            : '') +
+          (aircraftList.length === 0 && pilotList.length === 0
+            ? '<p class="form-modal-empty">No aircraft or pilots configured.<br>Add them in Settings → Fleet.</p>'
+            : ''),
+        footerHtml:
+          '<button class="assignment-save-btn form-modal-btn btn-primary">Save</button>' +
+          '<button class="assignment-cancel-btn form-modal-btn btn-secondary">Cancel</button>',
+      });
 
-      document.body.appendChild(modal);
-
-      function closeModal() { modal.remove(); }
-
-      modal.querySelector('.assignment-modal-backdrop').addEventListener('click', closeModal);
-      modal.querySelector('.assignment-modal-close').addEventListener('click', closeModal);
       modal.querySelector('.assignment-cancel-btn').addEventListener('click', closeModal);
 
       modal.querySelector('.assignment-save-btn').addEventListener('click', async () => {

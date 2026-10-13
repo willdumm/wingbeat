@@ -19,6 +19,7 @@ import { dashboardScriptsFlightListRender, dashboardScriptsFlightList } from './
 import { dashboardScriptsTrackRender } from './track-render';
 import { dashboardScriptsRefresh } from './refresh';
 import { settingsModalScript } from '../../shared/settings';
+import { formModalScript } from '../../shared/form-modal';
 import { pilotDutyScript } from '../../shared/pilot-duty';
 import { aircraftInfoScript } from '../../shared/aircraft-info';
 import { dashboardScriptsAircraft } from './aircraft';
@@ -58,6 +59,7 @@ export function dashboardScripts(env: Env): string {
     dashboardScriptsFlightListRender(),
     dashboardScriptsFlightList(),
     dashboardScriptsRefresh(),
+    formModalScript(),
     settingsModalScript(),
     pilotDutyScript(),
     aircraftInfoScript(),

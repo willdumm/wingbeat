@@ -220,7 +220,7 @@ export function analyticsScriptsMap(): string {
 
       // Touch scroll guard (prevents iOS Safari page-behind-status-bar scroll)
       document.addEventListener('touchmove', e => {
-        if (!e.target.closest('.analytics-panel, .settings-modal, .pilot-duty-modal, .map-controls-bar, .overlay-legend-panel')) e.preventDefault();
+        if (!e.target.closest('.analytics-panel, .settings-modal, .pilot-duty-modal, .form-modal, .map-controls-bar, .overlay-legend-panel')) e.preventDefault();
       }, { passive: false });
     }
 

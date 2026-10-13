@@ -8,13 +8,14 @@ import { brandStyles, logoFaviconHref, logoFaviconScript } from './shared/brand'
 import { iconStyles, iconRuntimeScript } from './shared/icons';
 import { statusStyles } from './shared/status';
 import { segmentedControlStyles } from './shared/segmented-control';
+import { formModalStyles } from './shared/form-modal';
 import { AppSettings, settingsAsClientObject } from './settings';
 import { Env } from './types';
 
 /** The dashboard's stylesheet after the font import and theme tokens. The docs-site
  * showcase (src/showcase/) adopts it as-is for its dashboard demos. */
 export function dashboardPageStyles(): string {
-  return brandStyles() + iconStyles() + statusStyles() + segmentedControlStyles() + dashboardStyles();
+  return brandStyles() + iconStyles() + statusStyles() + segmentedControlStyles() + formModalStyles() + dashboardStyles();
 }
 
 export function dashboardHTML(settings: AppSettings, env: Env): string {

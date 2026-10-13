@@ -3,12 +3,15 @@
  * inside it. Backs both the page-nav tabs (Flight Tracker ↔ Flight Trends) and the
  * appearance theme switcher (Light / Dark / System); those keep their own class
  * names (for existing markup and the theme JS's `.settings-theme-btn` selector),
- * this just supplies the one shared ruleset both render with.
+ * this just supplies the one shared ruleset both render with. New toggles use the
+ * generic `.segmented` / `.segmented-btn` pair (e.g. the duty log's Part 135 / 91 and
+ * Duty / Rest toggles).
  */
 export function segmentedControlStyles(): string {
   return `
     .page-nav-tabs,
-    .settings-theme-row {
+    .settings-theme-row,
+    .segmented {
       display: flex;
       gap: 2px;
       padding: 3px;
@@ -17,7 +20,8 @@ export function segmentedControlStyles(): string {
     }
 
     .page-nav-tab,
-    .settings-theme-btn {
+    .settings-theme-btn,
+    .segmented-btn {
       flex: 1;
       padding: 0.4rem 0.5rem;
       background: transparent;
@@ -37,14 +41,16 @@ export function segmentedControlStyles(): string {
     }
 
     .page-nav-tab.active,
-    .settings-theme-btn.active {
+    .settings-theme-btn.active,
+    .segmented-btn.active {
       background: var(--surface-1);
       color: var(--text-primary);
       box-shadow: var(--shadow-sm);
     }
 
     .page-nav-tab:not(.active):hover,
-    .settings-theme-btn:not(.active):hover {
+    .settings-theme-btn:not(.active):hover,
+    .segmented-btn:not(.active):hover {
       background: var(--surface-hover);
       color: var(--text-secondary);
     }

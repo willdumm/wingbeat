@@ -264,7 +264,7 @@ export function dashboardScriptsInit(): string {
     // Prevent iOS Safari from scrolling the page when touching non-scrollable areas.
     // header/mobile-topnav touches are fully managed by the pull-to-refresh handler above.
     document.addEventListener('touchmove', (e) => {
-      if (!e.target.closest('#flight-list, .settings-view, .be-panel, #alerts-strip, header, #mobile-topnav, .map-controls-bar, .overlay-legend-panel')) {
+      if (!e.target.closest('#flight-list, .settings-view, .be-panel, .form-modal, #alerts-strip, header, #mobile-topnav, .map-controls-bar, .overlay-legend-panel')) {
         e.preventDefault();
       }
     }, { passive: false });
