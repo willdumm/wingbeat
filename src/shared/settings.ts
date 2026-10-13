@@ -555,6 +555,8 @@ export function settingsModalStyles(): string {
     }
 
     .settings-edit-form-actions { display: flex; gap: 0.3rem; }
+    .settings-edit-form-label { font-size: var(--size-2xs); color: var(--text-muted); }
+    .settings-edit-form-times { display: flex; gap: 0.3rem; }
 
     .settings-import-warning {
       background: var(--warning-surface);
@@ -2240,6 +2242,12 @@ export function settingsModalScript(): string {
         nameEl.className = 'settings-aircraft-name';
         nameEl.textContent = p.name;
         info.appendChild(nameEl);
+        if (p.default_duty_start) {
+          const sub = document.createElement('span');
+          sub.className = 'settings-aircraft-sub';
+          sub.textContent = 'Default duty ' + p.default_duty_start + '–' + p.default_duty_end;
+          info.appendChild(sub);
+        }
         const actions = document.createElement('div');
         actions.className = 'settings-aircraft-actions';
         const infoBtn = document.createElement('button');
@@ -2250,7 +2258,7 @@ export function settingsModalScript(): string {
         if (_settingsUser?.role === 'admin') {
           const editBtn = document.createElement('button');
           editBtn.className = 'settings-action-btn';
-          editBtn.textContent = 'Rename';
+          editBtn.textContent = 'Edit';
           editBtn.addEventListener('click', () => settingsTogglePilotEdit(row, p));
           const toggleBtn = document.createElement('button');
           toggleBtn.className = 'settings-action-btn';
@@ -2290,6 +2298,13 @@ export function settingsModalScript(): string {
       form.className = 'settings-edit-form';
       form.innerHTML =
         '<input type="text" class="edit-pilot-name" placeholder="Pilot name" value="' + settingsEscAttr(pilot.name) + '" />' +
+        // The usual duty period, used by the duty log for flying days with no duty times.
+        '<label class="settings-edit-form-label">Default duty (start – end)</label>' +
+        '<div class="settings-edit-form-times">' +
+          '<input type="time" class="edit-pilot-duty-start" aria-label="Default duty start" value="' + (pilot.default_duty_start || '') + '" />' +
+          '<input type="time" class="edit-pilot-duty-end" aria-label="Default duty end" value="' + (pilot.default_duty_end || '') + '" />' +
+        '</div>' +
+        '<div class="settings-msg edit-pilot-error"></div>' +
         '<div class="settings-edit-form-actions">' +
           '<button class="settings-action-btn save-edit-btn">Save</button>' +
           '<button class="settings-action-btn settings-cancel-btn">Cancel</button>' +
@@ -2297,13 +2312,22 @@ export function settingsModalScript(): string {
       form.querySelector('.save-edit-btn').addEventListener('click', async () => {
         const name = form.querySelector('.edit-pilot-name').value.trim();
         if (!name) return;
+        const start = form.querySelector('.edit-pilot-duty-start').value || null;
+        const end = form.querySelector('.edit-pilot-duty-end').value || null;
+        const errorEl = form.querySelector('.edit-pilot-error');
+        if ((start == null) !== (end == null)) { errorEl.textContent = 'Enter both default duty times, or neither.'; return; }
         try {
           const resp = await fetch('/api/pilots/' + pilot.id, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name }),
+            body: JSON.stringify({ name, default_duty_start: start, default_duty_end: end }),
           });
-          if (resp.ok) { pilot.name = name; renderSettingsPilotList(); }
+          if (resp.ok) {
+            Object.assign(pilot, { name, default_duty_start: start, default_duty_end: end });
+            renderSettingsPilotList();
+          } else {
+            errorEl.textContent = (await resp.json().catch(() => ({}))).error || 'Save failed.';
+          }
         } catch (_) {}
       });
       form.querySelector('.settings-cancel-btn').addEventListener('click', () => {
@@ -2325,7 +2349,7 @@ export function settingsModalScript(): string {
         });
         if (resp.ok) {
           const d = await resp.json();
-          pilotList.push({ id: d.id, name, active: true });
+          pilotList.push({ id: d.id, name, active: true, default_duty_start: null, default_duty_end: null });
           document.getElementById('settings-add-pilot-name').value = '';
           document.getElementById('settings-add-pilot').open = false;
           renderSettingsPilotList();

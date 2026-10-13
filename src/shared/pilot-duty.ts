@@ -8,13 +8,15 @@ export function pilotDutyMarkup(): string {
             <button id="pilot-duty-prev" class="pilot-duty-nav-btn btn-secondary btn-sm" aria-label="Previous month">${icon('chevron-left', { size: 14 })}</button>
             <span id="pilot-duty-period" class="pilot-duty-period-label"></span>
             <button id="pilot-duty-next" class="pilot-duty-nav-btn btn-secondary btn-sm" aria-label="Next month">${icon('chevron-right', { size: 14 })}</button>
+            <span id="pilot-duty-default" class="pilot-duty-default"></span>
             <div class="pilot-duty-actions">
-              <button id="pilot-duty-day" class="pilot-duty-add-btn btn-secondary btn-sm" hidden>${icon('calendar-clock', { size: 14 })}Duty / rest</button>
+              <button id="pilot-duty-day" class="pilot-duty-add-btn btn-secondary btn-sm" hidden>${icon('calendar-clock', { size: 14 })}Plan duty or rest</button>
               <button id="pilot-duty-edit-flights" class="pilot-duty-add-btn btn-secondary btn-sm" hidden>${icon('pencil', { size: 14 })}Edit flights</button>
               <button id="pilot-duty-export" class="btn-primary btn-sm">Export PDF</button>
             </div>
           </div>
           <div class="pilot-duty-body">
+            <div id="pilot-duty-upcoming" class="pilot-duty-upcoming" hidden></div>
             <div id="pilot-duty-content" class="pilot-duty-content"></div>
             <div id="pilot-duty-totals" class="pilot-duty-totals"></div>
           </div>`;
@@ -55,8 +57,21 @@ export function pilotDutyStyles(): string {
       min-width: 7rem; text-align: center;
     }
     /* Pushed right; on a phone they wrap onto their own row. */
-    .pilot-duty-actions { display: flex; gap: 0.5rem; margin-left: auto; }
-    .pilot-duty-add-btn[hidden] { display: none; }
+    .pilot-duty-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-left: auto; }
+    .pilot-duty-add-btn[hidden], .pilot-duty-default [hidden] { display: none; }
+    .pilot-duty-default { font-size: var(--size-sm); color: var(--text-muted); }
+    .pilot-duty-default .duty-link-btn { color: var(--accent-text); margin-left: 0.3rem; }
+
+    .pilot-duty-upcoming[hidden] { display: none; }
+    .duty-upcoming-list { list-style: none; margin: 0; padding: 0; font-size: 0.82rem; }
+    .duty-upcoming-item {
+      display: flex; align-items: baseline; gap: 0.75rem;
+      padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--border-subtle);
+    }
+    .duty-upcoming-item:last-child { border-bottom: none; }
+    .duty-upcoming-date { font-weight: 500; white-space: nowrap; min-width: 5.5rem; }
+    .duty-upcoming-dow { color: var(--text-muted); font-weight: normal; }
+    .duty-upcoming-what { flex: 1; color: var(--text-secondary); display: flex; flex-direction: column; }
 
     .pilot-duty-body {
       padding: 1rem;
@@ -94,6 +109,12 @@ export function pilotDutyStyles(): string {
       border-bottom: 1px solid var(--border);
     }
     .duty-total-label { text-align: right; }
+    /* Under a flight with remarks (Part 91, a remark): muted like the day total, from A/C on. */
+    .duty-row-remarks td {
+      color: var(--text-secondary); font-size: 0.75rem;
+      padding-top: 0; border-bottom-color: transparent;
+    }
+    .duty-default { color: var(--text-muted); font-size: 0.72rem; }
     .duty-row-warning td {
       color: var(--danger-fg); background: var(--danger-surface);
       font-size: 0.75rem;
@@ -103,7 +124,6 @@ export function pilotDutyStyles(): string {
     .duty-col-block { text-align: right; font-variant-numeric: tabular-nums; }
     .duty-col-date  { white-space: nowrap; font-weight: 500; }
     .duty-col-duty  { white-space: nowrap; color: var(--text-secondary); }
-    .duty-col-91    { text-align: center; color: var(--text-secondary); }
     .duty-col-edit  { width: 1px; padding-left: 0; padding-right: 0; }
     .duty-col-compact { display: none; }
     .duty-compact-times { color: var(--text-muted); font-size: 0.75rem; }
@@ -294,12 +314,13 @@ export function pilotDutyRenderScript(): string {
       return _DUTY_MONTH_NAMES[data.month - 1] + ' ' + data.year;
     }
 
-    // Duty period of a duty_days row as epochs; an end at or before the start is the next day.
-    function _dutyInterval(rec) {
-      if (!rec || !rec.duty_start || !rec.duty_end) return null;
-      const start = tzLocalToEpoch(rec.date, rec.duty_start);
-      const end = tzLocalToEpoch(rec.duty_end > rec.duty_start ? rec.date : dutyAddDays(rec.date, 1), rec.duty_end);
-      return { start, end, secs: end - start };
+    // Duty period of a day's duty times (a duty_days row, or the pilot's default) as epochs;
+    // an end at or before the start is the next day.
+    function _dutyInterval(dateKey, times) {
+      if (!times || !times.duty_start || !times.duty_end) return null;
+      const start = tzLocalToEpoch(dateKey, times.duty_start);
+      const end = tzLocalToEpoch(times.duty_end > times.duty_start ? dateKey : dutyAddDays(dateKey, 1), times.duty_end);
+      return { start, end, secs: end - start, duty_start: times.duty_start, duty_end: times.duty_end };
     }
 
     // ── The row model ──
@@ -307,14 +328,22 @@ export function pilotDutyRenderScript(): string {
     // One pilot's month as day rows plus §135.267 totals. allFlights are effective flights
     // (flightStore.getCompleted(), or applyFlightEdits() output: corrections applied,
     // manual flights added, removed flights left out) for every pilot; days are the
-    // pilot's duty_days rows (GET /api/duty-log) and unmatched the corrections whose
+    // pilot's duty_days rows (GET /api/duty-log), defaultDuty the pilot's usual duty
+    // period ({ duty_start, duty_end } HH:MM, or null) and unmatched the corrections whose
     // flight is gone (flightStore.getUnmatched()).
-    // Returns { pilotName, year, month, isCurrentMonth, isFutureMonth, days, monthSecs,
-    // totals }, where each day is { dateKey, label, record, duty, rest, restDesignatedAt,
-    // note, flights, unmatched, daySecs, warnings }. A day's flight is the effective
-    // flight plus { manual, part91, entry, secs, edited: { field: tracker's value } }.
-    function computeDutyData(allFlights, pilotId, pilotName, year, month, { days: dayRecords = [], unmatched: unmatchedEntries = [] } = {}) {
+    //
+    // Returns { pilotName, year, month, isCurrentMonth, days, upcoming, monthSecs, totals }.
+    // days run through today in the current month. Each is { dateKey, label, record,
+    // duty, defaultDuty, rest, restDesignatedAt, note, flights, unmatched, daySecs,
+    // warnings }: duty is the day's duty period from its record or, on a flying day with
+    // no record, from defaultDuty (then defaultDuty is true). A day's flight is the
+    // effective flight plus { manual, part91, remarks, entry, secs, edited: { field:
+    // tracker's value } }. upcoming (current month only) lists the records dated after
+    // today, for planning.
+    function computeDutyData(allFlights, pilotId, pilotName, year, month,
+                             { days: dayRecords = [], defaultDuty = null, unmatched: unmatchedEntries = [] } = {}) {
       const nowEpoch = Math.floor(Date.now() / 1000);
+      const todayKey = unixToTzDateStr(nowEpoch);
 
       // 1. The pilot's flights.
       const completed = allFlights.filter(f => f.end_time != null && !(f.edit && f.edit.excluded));
@@ -322,6 +351,7 @@ export function pilotDutyRenderScript(): string {
         ...f,
         manual: !!(f.edit && f.edit.manual),
         part91: !!(f.edit && f.edit.part91),
+        remarks: flightRemarks(f),
         entry: f.edit ? f.edit.entry : null,
         edited: f.edit ? f.edit.original : {},
         secs: Math.max(0, f.end_time - f.start_time),
@@ -349,6 +379,16 @@ export function pilotDutyRenderScript(): string {
       const recordByDate = {};
       for (const r of dayRecords) recordByDate[r.date] = r;
 
+      // A day's duty period: its record's times, or the default on a flying day with no
+      // record (a rest day has none). { ..., isDefault } or null.
+      function dutyOf(dateKey) {
+        const rec = recordByDate[dateKey];
+        if (rec) return rec.rest ? null : _dutyInterval(dateKey, rec);
+        if (!defaultDuty || !flightsByDate[dateKey]) return null;
+        const d = _dutyInterval(dateKey, defaultDuty);
+        return d && { ...d, isDefault: true };
+      }
+
       // Flight time in the 24 h ending at end, Part 91 flights left out.
       function flightTime24(end) {
         const from = end - 86400;
@@ -364,7 +404,8 @@ export function pilotDutyRenderScript(): string {
       function buildDay(dateKey) {
         const rec = recordByDate[dateKey] || null;
         const dayFlights = flightsByDate[dateKey] || [];
-        const duty = _dutyInterval(rec);
+        const duty = dutyOf(dateKey);
+        const prevDuty = dutyOf(dutyAddDays(dateKey, -1));
         const rest = !!(rec && rec.rest);
         const warnings = [];
 
@@ -374,7 +415,6 @@ export function pilotDutyRenderScript(): string {
             warnings.push('Rest day designated ' + _dutyShortDate(unixToTzDateStr(rec.rest_designated_at), year) +
               ', not in advance');
           }
-          const prevDuty = _dutyInterval(recordByDate[dutyAddDays(dateKey, -1)]);
           if (prevDuty && prevDuty.end > tzLocalToEpoch(dateKey, '00:00')) {
             warnings.push('Previous duty ended ' + unixToTzTime(prevDuty.end) + ', so this rest is under 24 h');
           }
@@ -393,10 +433,17 @@ export function pilotDutyRenderScript(): string {
           if (duty.secs > _DUTY_LIMITS.dutySecs) {
             warnings.push('Duty period ' + fmtBlock(duty.secs) + ' (limit ' + fmtBlock(_DUTY_LIMITS.dutySecs) + ')');
           }
-          const prevDuty = _dutyInterval(recordByDate[dutyAddDays(dateKey, -1)]);
           if (prevDuty && duty.start - prevDuty.end < _DUTY_LIMITS.restBeforeSecs) {
             warnings.push('Rest since previous duty ' + fmtBlock(Math.max(0, duty.start - prevDuty.end)) +
               ' (minimum ' + fmtBlock(_DUTY_LIMITS.restBeforeSecs) + ')');
+          }
+          // A default that doesn't fit the day's flying shows up here; the fix is to
+          // record the actual duty times.
+          for (const f of dayFlights) {
+            if (f.start_time < duty.start || f.end_time > duty.end) {
+              warnings.push('Flight ' + unixToTzTime(f.start_time) + '–' + unixToTzTime(f.end_time) +
+                ' outside duty ' + duty.duty_start + '–' + duty.duty_end + (duty.isDefault ? ' (default)' : ''));
+            }
           }
         }
 
@@ -405,6 +452,7 @@ export function pilotDutyRenderScript(): string {
           label: dutyDateLabel(dateKey),
           record: rec,
           duty,
+          defaultDuty: !!(duty && duty.isDefault),
           rest,
           restDesignatedAt: rest ? rec.rest_designated_at : null,
           note: rec ? rec.note : null,
@@ -415,22 +463,30 @@ export function pilotDutyRenderScript(): string {
         };
       }
 
-      const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-      const days = [];
-      for (let d = 1; d <= daysInMonth; d++) days.push(buildDay(_dutyKey(year, month, d)));
-
-      // 3. Totals: as of now for the current month and a future one (opened to plan rest
-      // days), as of month end for a past one, so a past month's PDF comes out the same
-      // whenever it's exported.
+      // Past days only: planning ahead goes through the Upcoming list.
       const [curY, curM] = currentDutyMonth();
       const isCurrentMonth = year === curY && month === curM;
-      const isFutureMonth = year * 12 + month > curY * 12 + curM;
-      const asOfNow = isCurrentMonth || isFutureMonth;
+      const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+      const lastDay = isCurrentMonth ? Number(todayKey.slice(8, 10)) : daysInMonth;
+      const days = [];
+      for (let d = 1; d <= lastDay; d++) days.push(buildDay(_dutyKey(year, month, d)));
+
+      const upcoming = isCurrentMonth
+        ? dayRecords.filter(r => r.date > todayKey).sort((a, b) => a.date < b.date ? -1 : 1).map(r => ({
+            dateKey: r.date, label: dutyDateLabel(r.date), record: r, rest: !!r.rest,
+            restDesignatedAt: r.rest ? r.rest_designated_at : null, note: r.note,
+            duty: _dutyInterval(r.date, r), defaultDuty: false,
+          }))
+        : [];
+
+      // 3. Totals: as of now for the current month, as of month end for a past one, so a
+      // past month's PDF comes out the same whenever it's exported. Planned rest later in
+      // the quarter counts as "planned".
       const [nextY, nextM] = _dutyAddMonths(year, month, 1);
-      const asOf = asOfNow ? nowEpoch : tzLocalToEpoch(_dutyKey(nextY, nextM, 1), '00:00');
+      const asOf = isCurrentMonth ? nowEpoch : tzLocalToEpoch(_dutyKey(nextY, nextM, 1), '00:00');
       const totals = dutyTotals(completed, pilotId, asOf, {
         days: dayRecords,
-        asOfLabel: asOfNow ? 'now' : _dutyShortDate(_dutyKey(year, month, daysInMonth), null),
+        asOfLabel: isCurrentMonth ? 'now' : _dutyShortDate(_dutyKey(year, month, daysInMonth), null),
       });
 
       return {
@@ -438,8 +494,8 @@ export function pilotDutyRenderScript(): string {
         year,
         month,
         isCurrentMonth,
-        isFutureMonth,
         days,
+        upcoming,
         monthSecs: days.reduce((s, d) => s + d.daySecs, 0),
         totals,
       };
@@ -506,14 +562,19 @@ export function pilotDutyRenderScript(): string {
       };
     }
 
-    // "Rest · designated Oct 3", "08:00–17:00" or "—".
+    // "Rest · designated Oct 3", "08:00–17:00", "08:00–17:00 (default)" or "—".
     function dutyDayText(day, year) {
       if (day.rest) {
         return 'Rest' + (day.restDesignatedAt != null
           ? ' · designated ' + _dutyShortDate(unixToTzDateStr(day.restDesignatedAt), year) : '');
       }
-      if (day.duty) return day.record.duty_start + '–' + day.record.duty_end;
+      if (day.duty) return day.duty.duty_start + '–' + day.duty.duty_end + (day.defaultDuty ? ' (default)' : '');
       return '—';
+    }
+
+    // "Remarks: Part 91 · Training" for a flight with remarks, else ''.
+    function dutyRemarksText(f) {
+      return f.remarks.length ? 'Remarks: ' + f.remarks.join(' · ') : '';
     }
 
     function _dutyEsc(s) {
@@ -521,12 +582,13 @@ export function pilotDutyRenderScript(): string {
     }
 
     // Renders data (from computeDutyData) as the month table into content and the totals
-    // into totalsEl, which is placed first in bodyEl for the current or a future month
-    // and last otherwise. With edit ({ onFlight(flight), onDay(day),
-    // onDeleteEntry(entry) }), dates and flights get edit controls.
-    function renderDutyLog(data, { content, totalsEl, bodyEl, edit }) {
-      const { year, days, totals, isCurrentMonth, isFutureMonth } = data;
-      const cols = 9 + (edit ? 1 : 0);   // Date … 91, plus the pencil column
+    // into totalsEl. In the current month the Upcoming list (planned duty and rest after
+    // today) goes into upcomingEl and both come first in bodyEl; otherwise upcomingEl is
+    // hidden and the totals go last. With edit ({ onFlight(flight), onDay(dateKey),
+    // onDeleteEntry(entry) }), dates, flights and upcoming entries get edit controls.
+    function renderDutyLog(data, { content, totalsEl, upcomingEl, bodyEl, edit }) {
+      const { year, days, totals, isCurrentMonth } = data;
+      const cols = 8 + (edit ? 1 : 0);   // Date … Time, plus the pencil column
       const targets = [];                // data-duty-target index → callback
 
       function action(fn) { targets.push(fn); return targets.length - 1; }
@@ -546,15 +608,17 @@ export function pilotDutyRenderScript(): string {
         '<th class="duty-col-duty">Duty</th>' +
         '<th>A/C</th><th>Origin</th><th>Dep</th>' +
         '<th>Dest</th><th>Arr</th><th class="duty-col-block">Time</th>' +
-        '<th class="duty-col-91" title="Part 91">91</th>' +
         (edit ? '<th class="duty-col-edit"></th>' : '') +
         '</tr></thead><tbody>';
 
       for (const day of days) {
         const dayText = dutyDayText(day, year);
+        const dayHtml = day.defaultDuty
+          ? _dutyEsc(day.duty.duty_start + '–' + day.duty.duty_end) + ' <span class="duty-default">(default)</span>'
+          : _dutyEsc(dayText);
         const noteHtml = day.note ? '<div class="duty-note">' + _dutyEsc(day.note) + '</div>' : '';
         const dateHtml = edit
-          ? '<button class="duty-day-btn" data-duty-target="' + action(() => edit.onDay(day)) + '" title="Set duty or rest" aria-label="' +
+          ? '<button class="duty-day-btn" data-duty-target="' + action(() => edit.onDay(day.dateKey)) + '" title="Set duty or rest" aria-label="' +
             day.label + ': set duty or rest">' + day.label + _DUTY_ICON_DAY + '</button>'
           : day.label;
         const restCls = day.rest ? ' duty-row-rest' : '';
@@ -562,7 +626,7 @@ export function pilotDutyRenderScript(): string {
         if (day.flights.length === 0) {
           html += '<tr class="duty-row-empty' + restCls + '">' +
             '<td class="duty-col-date">' + dateHtml + '</td>' +
-            '<td class="duty-col-duty duty-col-span" colspan="' + (cols - 1) + '">' + _dutyEsc(dayText) + noteHtml + '</td></tr>';
+            '<td class="duty-col-duty duty-col-span" colspan="' + (cols - 1) + '">' + dayHtml + noteHtml + '</td></tr>';
         }
 
         day.flights.forEach((f, i) => {
@@ -570,21 +634,26 @@ export function pilotDutyRenderScript(): string {
           const tail = _dutyEsc(f.aircraft_tail || '—');
           html += '<tr class="duty-row-flight' + restCls + '">' +
             '<td class="duty-col-date">' + (i === 0
-              ? dateHtml + '<div class="duty-date-sub">' + _dutyEsc(dayText) + noteHtml + '</div>' : '') + '</td>' +
+              ? dateHtml + '<div class="duty-date-sub">' + dayHtml + noteHtml + '</div>' : '') + '</td>' +
             '<td class="duty-col-compact">' + label(f, 'origin_label') + ' → ' + label(f, 'destination_label') + chip +
               '<div class="duty-compact-times">' + time(f, 'start_time') + '–' + time(f, 'end_time') +
-              ' · ' + tail + (f.part91 ? ' · Part 91' : '') + '</div></td>' +
-            '<td class="duty-col-duty">' + (i === 0 ? _dutyEsc(dayText) + noteHtml : '') + '</td>' +
+              ' · ' + tail + '</div></td>' +
+            '<td class="duty-col-duty">' + (i === 0 ? dayHtml + noteHtml : '') + '</td>' +
             '<td>' + tail + '</td>' +
             '<td>' + label(f, 'origin_label') + chip + '</td>' +
             '<td>' + time(f, 'start_time') + '</td>' +
             '<td>' + label(f, 'destination_label') + '</td>' +
             '<td>' + time(f, 'end_time') + '</td>' +
             '<td class="duty-col-block">' + fmtBlock(f.secs) + '</td>' +
-            '<td class="duty-col-91">' + (f.part91 ? '91' : '') + '</td>' +
             (edit ? '<td class="duty-col-edit"><button class="duty-edit-btn" data-duty-target="' +
               action(() => edit.onFlight(f)) + '" aria-label="Edit flight" title="Edit flight">' + _DUTY_ICON_EDIT + '</button></td>' : '') +
             '</tr>';
+          // Only for a flight with something to say (Part 91, a remark).
+          const remarks = dutyRemarksText(f);
+          if (remarks) {
+            html += '<tr class="duty-row-remarks"><td></td><td class="duty-col-duty"></td>' +
+              '<td class="duty-col-full" colspan="' + (cols - 2) + '">' + _dutyEsc(remarks) + '</td></tr>';
+          }
         });
 
         for (const e of day.unmatched) {
@@ -601,7 +670,7 @@ export function pilotDutyRenderScript(): string {
           html += '<tr class="duty-row-day-total">' +
             '<td class="duty-total-label" colspan="7">Day total</td>' +
             '<td class="duty-col-block">' + fmtBlock(day.daySecs) + '</td>' +
-            '<td colspan="' + (cols - 8) + '"></td></tr>';
+            (edit ? '<td></td>' : '') + '</tr>';
         }
         for (const w of day.warnings) {
           html += '<tr class="duty-row-warning"><td class="duty-col-full" colspan="' + cols + '">' +
@@ -629,11 +698,33 @@ export function pilotDutyRenderScript(): string {
           ' <span class="totals-limit">/ ' + r.required + '</span></td></tr>' +
         '</tbody></table>' +
         '<div class="pilot-duty-footnote">' + _dutyEsc(DUTY_TOTALS_FOOTNOTE) + '</div>';
-      if (isCurrentMonth || isFutureMonth) {
-        if (bodyEl.firstElementChild !== totalsEl) bodyEl.insertBefore(totalsEl, content);
-      } else if (bodyEl.lastElementChild !== totalsEl) {
-        bodyEl.appendChild(totalsEl);
+
+      if (upcomingEl) {
+        upcomingEl.hidden = !isCurrentMonth;
+        const upTargets = [];
+        upcomingEl.innerHTML = '<div class="pilot-duty-totals-label">Upcoming</div>' + (data.upcoming.length
+          ? '<ul class="duty-upcoming-list">' + data.upcoming.map(u => {
+              upTargets.push(() => edit.onDay(u.dateKey));
+              return '<li class="duty-upcoming-item' + (u.rest ? ' duty-row-rest' : '') + '">' +
+                '<span class="duty-upcoming-date">' + _dutyEsc(_dutyShortDate(u.dateKey, year)) +
+                  ' <span class="duty-upcoming-dow">' + _dutyEsc(u.label.slice(0, 3)) + '</span></span>' +
+                '<span class="duty-upcoming-what">' + _dutyEsc(dutyDayText(u, year)) +
+                  (u.note ? '<span class="duty-note">' + _dutyEsc(u.note) + '</span>' : '') + '</span>' +
+                (edit ? '<button class="duty-edit-btn" data-duty-up="' + (upTargets.length - 1) +
+                  '" aria-label="Edit ' + _dutyEsc(u.label) + '" title="Edit">' + _DUTY_ICON_EDIT + '</button>' : '') +
+                '</li>';
+            }).join('') + '</ul>'
+          : '<div class="pilot-duty-footnote">Nothing planned after today.</div>');
+        upcomingEl.onclick = e => {
+          const btn = e.target.closest('[data-duty-up]');
+          if (btn) upTargets[+btn.dataset.dutyUp]();
+        };
       }
+
+      // The current month leads with what's ahead (Upcoming, totals as of now).
+      const lead = isCurrentMonth ? [upcomingEl, totalsEl].filter(Boolean) : [];
+      for (const el of lead.reverse()) bodyEl.insertBefore(el, bodyEl.firstElementChild);
+      if (!isCurrentMonth && bodyEl.lastElementChild !== totalsEl) bodyEl.appendChild(totalsEl);
     }
 
     const DUTY_TOTALS_FOOTNOTE =
@@ -747,7 +838,7 @@ export function pilotDutyRenderScript(): string {
     function _buildTypstSource(data) {
       const { pilotName, year, month, days, totals } = data;
       const appName = window.APP_SETTINGS.appName;
-      const COLS = 9;
+      const COLS = 8;
       const warnCell = text => 'table.cell(colspan: ' + COLS + ')[#text(fill: rgb("' + _DUTY_PDF_DANGER + '"))[' + _typStr('Warning: ' + text) + ']],\\n';
       const footnotes = [];
       let anyManual = false;
@@ -776,7 +867,12 @@ export function pilotDutyRenderScript(): string {
             cell('start_time', unixToTzTime(f.start_time)) + ', ' +
             cell('destination_label', f.destination_label || '—') + ', ' +
             cell('end_time', unixToTzTime(f.end_time)) + ', ' +
-            '[' + fmtBlock(f.secs) + '], [' + (f.part91 ? '91' : '') + '],\\n';
+            '[' + fmtBlock(f.secs) + '],\\n';
+          // Remarks (Part 91, a remark) span the row under the flight, from A/C on.
+          const remarks = dutyRemarksText(f);
+          if (remarks) {
+            rows += '  [], [], table.cell(colspan: ' + (COLS - 2) + ', align: left)[#text(size: 7.5pt, fill: luma(90))[' + _typStr(remarks) + ']],\\n';
+          }
         });
         for (const e of day.unmatched) {
           rows += '  [], table.cell(colspan: ' + (COLS - 1) + ')[' +
@@ -784,7 +880,7 @@ export function pilotDutyRenderScript(): string {
               flightEntrySummary(e) + ') are not counted.') + '],\\n';
         }
         if (day.flights.length > 0) {
-          rows += '  table.cell(colspan: 7, align: right)[*Day total*], [*' + fmtBlock(day.daySecs) + '*], [],\\n';
+          rows += '  table.cell(colspan: 7, align: right)[*Day total*], [*' + fmtBlock(day.daySecs) + '*],\\n';
         }
         for (const w of day.warnings) rows += '  ' + warnCell(w);
       }
@@ -831,10 +927,10 @@ export function pilotDutyRenderScript(): string {
         ']\\n\\n' +
         '#v(0.8em)\\n\\n' +
         '#table(\\n' +
-        '  columns: (auto, auto, auto, 1fr, auto, 1fr, auto, auto, auto),\\n' +
+        '  columns: (auto, auto, auto, 1fr, auto, 1fr, auto, auto),\\n' +
         '  fill: (col, row) => if row == 0 { luma(220) } else if calc.rem(row, 2) == 1 { luma(248) } else { white },\\n' +
-        '  align: (left, left, center, left, center, left, center, right, center),\\n' +
-        '  table.header([*Date*], [*Duty*], [*A/C*], [*Origin*], [*Dep*], [*Dest*], [*Arr*], [*Time*], [*91*]),\\n' +
+        '  align: (left, left, center, left, center, left, center, right),\\n' +
+        '  table.header([*Date*], [*Duty*], [*A/C*], [*Origin*], [*Dep*], [*Dest*], [*Arr*], [*Time*]),\\n' +
         rows +
         ')\\n\\n' +
         '#align(right)[*Month total: ' + fmtBlock(data.monthSecs) + '*]\\n\\n' +
@@ -884,12 +980,13 @@ export function pilotDutyScript(): string {
 
       [_dutyYear, _dutyMonth] = currentDutyMonth();
 
-      document.getElementById('pilot-duty-next').disabled = false;
       if (document.getElementById('settings-modal').classList.contains('hidden')) { openSettings(); }
       _settingsNavigateTo('settings-view-pilot-duty', pilotName + ' — Duty Log');
       document.getElementById('pilot-duty-period').textContent = dutyPeriodLabel({ year: _dutyYear, month: _dutyMonth });
       document.getElementById('pilot-duty-content').innerHTML = '<div class="pilot-duty-loading">Loading…</div>';
       document.getElementById('pilot-duty-totals').innerHTML = '';
+      document.getElementById('pilot-duty-upcoming').hidden = true;
+      document.getElementById('pilot-duty-default').innerHTML = '';
 
       const [user] = await Promise.all([_loadSettingsUser(), _dutyFetchLog()]);
       if (_dutyPilotId !== pilotId) return;
@@ -937,24 +1034,87 @@ export function pilotDutyScript(): string {
       document.getElementById('pilot-duty-period').textContent = dutyPeriodLabel({ year: _dutyYear, month: _dutyMonth });
       if (!_dutyLog) return;
       _dutyData = computeDutyData(flightStore.getCompleted(), _dutyPilotId, _dutyPilotName, _dutyYear, _dutyMonth,
-        { days: _dutyLog.days, unmatched: flightStore.getUnmatched() });
-      // Future months open for planning duty and rest, up to a year ahead.
+        { days: _dutyLog.days, defaultDuty: _dutyDefaultDuty(), unmatched: flightStore.getUnmatched() });
+      // Planning ahead goes through the Upcoming list, so months stop at this one.
       const [curY, curM] = currentDutyMonth();
-      document.getElementById('pilot-duty-next').disabled = _dutyYear * 12 + _dutyMonth >= curY * 12 + curM + 12;
+      document.getElementById('pilot-duty-next').disabled = _dutyYear * 12 + _dutyMonth >= curY * 12 + curM;
       _dutyRender();
+    }
+
+    function _dutyPilot() { return pilotList.find(p => p.id === _dutyPilotId) || null; }
+
+    // The pilot's usual duty period ({ duty_start, duty_end }), or null.
+    function _dutyDefaultDuty() {
+      const p = _dutyPilot();
+      return p && p.default_duty_start ? { duty_start: p.default_duty_start, duty_end: p.default_duty_end } : null;
     }
 
     function _dutyRender() {
       if (!_dutyData) return;
       renderDutyLog(_dutyData, {
-        content:  document.getElementById('pilot-duty-content'),
-        totalsEl: document.getElementById('pilot-duty-totals'),
-        bodyEl:   document.querySelector('.pilot-duty-body'),
+        content:    document.getElementById('pilot-duty-content'),
+        totalsEl:   document.getElementById('pilot-duty-totals'),
+        upcomingEl: document.getElementById('pilot-duty-upcoming'),
+        bodyEl:     document.querySelector('.pilot-duty-body'),
         edit: _dutyCanEdit ? {
           onFlight: f => openFlightForm(f),
-          onDay: day => _dutyOpenDayForm(day.dateKey),
+          onDay: _dutyOpenDayForm,
           onDeleteEntry: _dutyDeleteUnmatched,
         } : null,
+      });
+      _dutyRenderDefault();
+    }
+
+    // "Default duty 08:00–17:00 · Change" in the toolbar (admins can change or set it).
+    function _dutyRenderDefault() {
+      const el = document.getElementById('pilot-duty-default');
+      const d = _dutyDefaultDuty();
+      el.innerHTML = (d ? 'Default duty ' + d.duty_start + '–' + d.duty_end : (_dutyCanEdit ? 'No default duty' : '')) +
+        (_dutyCanEdit ? '<button class="duty-link-btn" data-duty-default>' + (d ? 'Change' : 'Set') + '</button>' : '');
+    }
+    document.getElementById('pilot-duty-default').addEventListener('click', e => {
+      if (e.target.closest('[data-duty-default]')) _dutyOpenDefaultForm();
+    });
+
+    // The pilot's default duty period: used for flying days with no duty times recorded.
+    function _dutyOpenDefaultForm() {
+      const d = _dutyDefaultDuty();
+      const { modal, close } = openFormModal({
+        id: 'duty-default-modal',
+        title: 'Default duty',
+        bodyHtml:
+          '<p class="form-modal-hint">Used for a day with flights and no duty times or rest recorded. ' +
+            'It’s shown as “(default)”; record the actual times on a day it doesn’t fit.</p>' +
+          '<div class="form-field-row">' +
+            '<div class="form-field"><label for="duty-def-start">Duty start</label>' +
+              '<input type="time" id="duty-def-start" value="' + (d ? d.duty_start : '') + '"></div>' +
+            '<div class="form-field"><label for="duty-def-end">Duty end</label>' +
+              '<input type="time" id="duty-def-end" value="' + (d ? d.duty_end : '') + '"></div>' +
+          '</div>' +
+          '<div class="form-modal-error" role="alert"></div>',
+        footerHtml:
+          (d ? '<button class="btn-danger btn-md" data-act="clear">Clear</button>' : '') +
+          '<span class="form-modal-footer-spacer"></span>' +
+          '<button class="btn-secondary btn-md" data-act="cancel">Cancel</button>' +
+          '<button class="btn-primary btn-md" data-act="save">Save</button>',
+      });
+      const errorEl = modal.querySelector('.form-modal-error');
+      const buttons = [...modal.querySelectorAll('.form-modal-footer button')];
+      async function save(start, end) {
+        const ok = await _dutySave(buttons, errorEl, async () => {
+          await flightApi('PUT', '/api/pilots/' + _dutyPilotId, { default_duty_start: start, default_duty_end: end });
+          const p = _dutyPilot();
+          if (p) Object.assign(p, { default_duty_start: start, default_duty_end: end });
+          renderSettingsPilotList();
+        });
+        if (ok) close();
+      }
+      modal.querySelector('[data-act="cancel"]').addEventListener('click', close);
+      modal.querySelector('[data-act="clear"]')?.addEventListener('click', () => save(null, null));
+      modal.querySelector('[data-act="save"]').addEventListener('click', () => {
+        const start = modal.querySelector('#duty-def-start').value, end = modal.querySelector('#duty-def-end').value;
+        if (!start || !end) { errorEl.textContent = 'Enter both times, or Clear.'; return; }
+        save(start, end);
       });
     }
 
@@ -969,25 +1129,15 @@ export function pilotDutyScript(): string {
       });
     });
 
-    // Today in the current month, otherwise the shown month's 1st.
-    function _dutyDefaultDate() {
-      const [y, m] = currentDutyMonth();
-      return (y === _dutyYear && m === _dutyMonth)
-        ? unixToTzDateStr(Math.floor(Date.now() / 1000))
-        : _dutyYear + '-' + String(_dutyMonth).padStart(2, '0') + '-01';
-    }
     // The flight editor, filtered to this pilot and the shown month.
     document.getElementById('pilot-duty-edit-flights').addEventListener('click', () => {
       const first = _dutyKey(_dutyYear, _dutyMonth, 1);
       const [ny, nm] = _dutyAddMonths(_dutyYear, _dutyMonth, 1);
       openFlightEditor({ pilotId: _dutyPilotId, from: first, to: dutyAddDays(_dutyKey(ny, nm, 1), -1) });
     });
-    // Tomorrow by default when planning in the current month: rest is designated ahead.
-    document.getElementById('pilot-duty-day').addEventListener('click', () => {
-      const [y, m] = currentDutyMonth();
-      const k = _dutyDefaultDate();
-      _dutyOpenDayForm(y === _dutyYear && m === _dutyMonth ? dutyAddDays(k, 1) : k);
-    });
+    // Rest is designated ahead, so planning starts at tomorrow; any date can be picked.
+    document.getElementById('pilot-duty-day').addEventListener('click', () =>
+      _dutyOpenDayForm(dutyAddDays(unixToTzDateStr(Math.floor(Date.now() / 1000)), 1)));
 
     // Runs a save, then reloads the log and re-renders; shows a failure in errorEl.
     async function _dutySave(buttons, errorEl, fn) {
@@ -1011,7 +1161,8 @@ export function pilotDutyScript(): string {
 
     // Day form: duty start/end, or a rest day, plus a note, for dateKey or, with a
     // "Through" date, for every day from it to that date (e.g. a block of rest days planned
-    // ahead). Opened from a date in the table or from the toolbar's Duty / rest button.
+    // ahead). Opened from a date in the table, an Upcoming entry or the toolbar's Plan duty
+    // or rest button.
     function _dutyOpenDayForm(dateKey) {
       const recordOf = k => ((_dutyLog && _dutyLog.days) || []).find(r => r.date === k) || null;
       const { modal, close } = openFormModal({
@@ -1070,8 +1221,10 @@ export function pilotDutyScript(): string {
       function load() {
         rec = recordOf($('#duty-d-date').value);
         setKind(rec && rec.rest ? 'rest' : 'duty');
-        $('#duty-d-start').value = (rec && rec.duty_start) || '';
-        $('#duty-d-end').value = (rec && rec.duty_end) || '';
+        // A day with no record starts from the pilot's default duty.
+        const def = rec ? null : _dutyDefaultDuty();
+        $('#duty-d-start').value = (rec ? rec.duty_start : def && def.duty_start) || '';
+        $('#duty-d-end').value = (rec ? rec.duty_end : def && def.duty_end) || '';
         $('#duty-d-note').value = (rec && rec.note) || '';
         restHint.textContent = rec && rec.rest && rec.rest_designated_at != null
           ? 'Designated ' + dutyDateLabel(unixToTzDateStr(rec.rest_designated_at)) + ', ' + unixToTzTime(rec.rest_designated_at) + '.'
