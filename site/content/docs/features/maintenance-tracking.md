@@ -15,7 +15,8 @@ Rather than requiring someone to update a timer reading constantly, Wingbeat
 stores one recorded value + timestamp per timer and estimates the current
 reading using flight time logged since, scaled by a per-aircraft correction
 factor (defaults to 1.0 — set it if the timer runs faster or slower than
-wall-clock flight time).
+wall-clock flight time). Flight time uses [corrected](../editing-flights) times,
+includes manual flights flown in the aircraft, and leaves out removed flights.
 
 ## Maintenance schedule
 

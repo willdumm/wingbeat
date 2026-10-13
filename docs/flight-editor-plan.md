@@ -1,5 +1,8 @@
 # Design: One Flight Editor, Edits Shown Everywhere, Duty Planning
 
+**Status: implemented.** See "As built" at the end for where the code differs from
+the text below.
+
 Follows [duty-log-editing-plan.md](duty-log-editing-plan.md), which is implemented. That
 plan kept flight corrections inside the duty log ("Out of scope: showing duty-log edits in
 the dashboard flight list, analytics or maintenance views … merging the bulk-edit modal
@@ -299,7 +302,7 @@ the same way.
   default that doesn't fit the day's flying shows up there, and the fix is to record the
   actual duty times.
 
-**`computeDutyData(flights, pilotId, pilotName, year, month, { days, defaultDuty })`.**
+**`computeDutyData(flights, pilotId, pilotName, year, month, { days, defaultDuty, unmatched })`.**
 It takes effective flights from the store (step 1 of the old function moves to
 `applyFlightEdits`) and keeps its row model.
 
@@ -391,3 +394,50 @@ It takes effective flights from the store (step 1 of the old function moves to
   - Kill the dev server and its `workerd` children when done.
 - **Deployment:** don't deploy. The user tests on staging (`~/Documents/wingbeat-hosting`)
   after running the staging reset in §1.
+
+## As built
+
+Where the implementation departs from, or adds to, the plan above:
+
+- **API.** `POST /api/flight-log-entries` gets the same empty-row cleanup as `PUT`
+  (a tracked-flight body with nothing in it deletes the row and returns `{ entry:
+  null }`), so the flight form always upserts a tracked flight with `POST`. In
+  `/bulk`, an `{ entry_id }` ref updates that row whatever its kind. Assignment with
+  `entry_ids` and `pilot_id: null` is rejected ("Manual flights need a pilot").
+- **Flight store.** `refresh()` with no argument reuses the last call's tracker ids, so
+  the editor, form and duty log can refresh after a write without knowing the page's
+  trackers. Effective flights are cached per store generation, so repeated reads
+  return the same objects. A corrected flight's `modified_at` is the later of the
+  flight's and the row's `updated_at`, so redraw-on-change logic notices edits. Live
+  positions (`buildLiveDataByTracker`) read `getRaw()`. The dashboard subscribes to
+  `onChange` to re-render the list and alerts after a write.
+- **`computeDutyData`** takes `unmatched` (from `flightStore.getUnmatched()`) in its
+  options. Its day flights carry `remarks` (from `flightRemarks`). It returns
+  `upcoming` (current month only).
+- **`dutyTotals(flights, pilotId, asOf, { days, asOfLabel })`** derives the quarter
+  from `asOf` and also returns `flight24` (flight time in the 24 h before `asOf`, Part
+  91 left out). The dashboard alert flags the worst of the quarter/two-quarter/year
+  totals and `flight24` at 90% of its limit.
+- **Shared marks.** `flight-edits.ts` also exports `flightEditsStyles()` and the
+  helpers `flightEditedMark`, `flightRemarksHtml`, `flightEntrySummary`,
+  `flightOriginalText` and the Manual/Removed/Not found chips, used by the flight list
+  and the editor. The duty log keeps its own table markup.
+- **Editor.** It lists completed flights (`getCompleted`), so an in-progress flight is
+  editable once it lands. "Set aircraft…" and "Set pilot…" are selects in the selection
+  bar; Remove/Restore show according to what's selected. The editor's write helpers
+  (`flightApi`, `flightAssign`, `flightSetFlags`) replace the duty log's `_dutyApi`.
+  Manual flights can be removed (and restored) as well as deleted.
+- **Analytics.** The null-coordinate handling ("Unknown location", skipping points-less
+  flights in the map layers) landed with the store change (step 2), because manual
+  flights reach analytics as soon as the store serves them.
+- **Settings.** The pilot row's "Rename" became "Edit", with the default duty times
+  next to the name, and the row shows "Default duty 08:00–17:00" when set.
+- **Duty log.** The toolbar's "Duty / rest" is now "Plan duty or rest" and always
+  starts at tomorrow. The Upcoming panel isn't in the PDF (it isn't part of the
+  month's record). The toolbar shows "No default duty · Set" to admins when there is
+  none.
+- **Doc shots.** `site/scripts/doc-shots-seed.sql` gets four manual flights so the
+  editor screenshot has rows; the editor's Add flight button carries
+  `data-doc-shot="flight-editor.add-flight"` to reach the flight form.
+- **Step 1** carried a temporary client change (the duty log fetching entries from
+  `/api/flight-log-entries`), removed in step 2.

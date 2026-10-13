@@ -21,7 +21,7 @@ export function flightEditorMarkup(): string {
               <label class="fe-filter"><span>Pilot</span><select id="fe-pilot"></select></label>
               <label class="fe-show-removed"><input type="checkbox" id="fe-show-removed" />Show removed</label>
             </div>
-            <button id="fe-add" class="btn-secondary btn-sm">${icon('plus', { size: 14 })}Add flight</button>
+            <button id="fe-add" class="btn-secondary btn-sm" data-doc-shot="flight-editor.add-flight">${icon('plus', { size: 14 })}Add flight</button>
           </div>
           <div class="fe-body">
             <div class="fe-list-header">

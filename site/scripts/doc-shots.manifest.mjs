@@ -15,4 +15,18 @@ export const manifest = [
     theme: 'light',
     output: 'settings/add-tracker-dialog',
   },
+  {
+    slug: 'flight-editor.view',
+    route: '/',
+    setup: ['flight-editor.open-button'],
+    theme: 'light',
+    output: 'flight-editor/editor',
+  },
+  {
+    slug: 'flight-editor.flight-form',
+    route: '/',
+    setup: ['flight-editor.open-button', 'flight-editor.add-flight'],
+    theme: 'light',
+    output: 'flight-editor/flight-form',
+  },
 ];

@@ -1,41 +1,42 @@
 ---
 title: Pilot Duty Log
-description: "The per-pilot monthly flight and duty log: corrections, duty and rest days, §135.267 totals, and PDF export."
+description: "The per-pilot monthly flight and duty log: duty and rest days, default duty, planning ahead, §135.267 totals, and PDF export."
 weight: 4
 ---
 
 # Pilot Duty Log
 
 Per-pilot flight and duty log, opened with **Info** on a pilot's entry in
-Settings. It shows one month at a time; use the arrows to move between months,
-back through the pilot's history and up to a year ahead for planning. It's
-built from the pilot's tracked flights, and admins can correct it, record duty
-times and plan rest days before it's exported as a record.
+Settings. It shows one month at a time, through today in the current month;
+use the arrows to move back through the pilot's history. It's built from the
+pilot's flights, with any [corrections](../editing-flights) applied, and admins
+can record duty times and plan rest days before it's exported as a record.
 
 ## Table
 
 One row per flight that month: date, duty, aircraft, origin, departure time,
-destination, arrival time, flight time, and a "91" mark for flights flown
-under Part 91. Each day with flights gets a day-total row; the month gets a
+destination, arrival time and flight time. A flight with remarks gets a row
+under it, e.g. "Remarks: Part 91 · Training": "Part 91" for a flight flown
+under Part 91 (nothing is shown for Part 135), then the flight's remark. Most
+flights have none. Each day with flights gets a day-total row; the month gets a
 total at the bottom.
 
-The Duty column shows the day's duty period (e.g. 08:00–17:00), or "Rest ·
-designated Oct 3" for a rest day, with the date it was marked. A day with no
-flights and nothing recorded shows "—".
+The Duty column shows the day's duty period (e.g. 08:00–17:00), "08:00–17:00
+(default)" for a flying day that uses the pilot's [default duty](#default-duty),
+or "Rest · designated Oct 3" for a rest day, with the date it was marked. A day
+with no flights and nothing recorded shows "—".
 
 ## Editing
 
 Admins can edit the log; other users see it read-only.
 
-- **Flights:** the pencil on a flight row edits its departure and arrival
-  times, origin and destination, and whether it was flown under Part 135 or
-  Part 91. These corrections apply only to the duty log. The tracked flight is
-  unchanged, and a corrected value is marked † with the tracker's value on
-  hover. Changing the aircraft or pilot changes the tracked flight itself,
-  everywhere it's shown. **Remove from log** hides a flight from the duty log,
-  and **Revert to tracker** drops a flight's corrections.
-- **Add flight** in the toolbar enters a flight the tracker missed, or
-  commercial flying done elsewhere. It's shown with a "Manual" tag.
+- **Flights:** the pencil on a flight row opens the flight form: times,
+  origin and destination, aircraft, pilot, Part 135 or Part 91, and a remark.
+  **Edit flights** in the toolbar opens the flight editor filtered to this
+  pilot and month, to change several flights at once or add one the tracker
+  missed. Corrections show everywhere the flight appears, not just here; a
+  corrected value is marked † with the tracker's value on hover. See
+  [Editing Flights](../editing-flights).
 - **Duty and rest days:** see the next section.
 
 ## Duty times and rest days
@@ -44,9 +45,11 @@ Each day can hold a duty period or a rest designation, plus an optional note.
 Open the day form in either of two ways:
 
 - click a date in the table (each date has a calendar icon), or
-- use **Duty / rest** in the toolbar. In the current month the form starts on
-  tomorrow, since rest is usually planned ahead; in other months it starts on
-  the 1st.
+- use **Plan duty or rest** in the toolbar. The form starts on tomorrow, since
+  rest is usually planned ahead, and takes any date.
+
+A day with nothing recorded starts with the pilot's default duty times filled
+in.
 
 In the form:
 
@@ -66,17 +69,33 @@ In the form:
 
 Times are in the timezone set in [Admin Settings](../../settings/admin-settings).
 
-### Planning rest days ahead
+### Planning duty and rest ahead
 
 FAA interpretations of the rest rules require rest to be assigned in advance,
-so mark rest days before they happen. Go to the month with the next-month
-arrow, or stay in the current month, choose **Duty / rest**, pick the date (and
-a **Through** date for several days), choose **Rest day** and save.
+so mark rest days before they happen. Choose **Plan duty or rest**, pick the
+date (and a **Through** date for several days), choose **Rest day** and save.
 
-Planned rest days appear in the table straight away. The totals panel counts
-them toward the quarter's 13 rest periods as "planned" until the day has
-passed, e.g. "4 + 3 planned / 13". A rest day saved on or after the day it
-falls on gets a warning, because it wasn't designated in advance.
+The current month's **Upcoming** panel, above the totals, lists everything
+planned after today in date order: the date, "Rest · designated Oct 13" or the
+duty times, and the note. The pencil on an entry opens it in the day form. The
+totals panel counts planned rest days toward the quarter's 13 rest periods as
+"planned" until the day has passed, e.g. "4 + 3 planned / 13", including ones
+later in the quarter. A rest day saved on or after the day it falls on gets a
+warning, because it wasn't designated in advance.
+
+### Default duty
+
+Most pilots keep the same hours, so each pilot can have a default duty period.
+Admins set it from the "Default duty 08:00–17:00 · Change" line in the duty
+log's header, or with **Edit** on the pilot in Settings.
+
+The default applies to a day with flights and no duty times or rest recorded.
+That day's Duty column shows the default marked "(default)", on screen and in
+the PDF, and the 14-hour and 10-hour-rest checks use it. A day with a record
+always uses the record. If a flight departs before or lands after the day's
+duty period, recorded or default, the day gets a warning, e.g. "Flight
+18:05–18:50 outside duty 08:00–17:00 (default)"; record the actual duty times
+for that day.
 
 ## Corrections that no longer match
 
@@ -97,6 +116,7 @@ warning under the day, without blocking anything:
   day's duty
 - flights on a rest day, a rest day designated on or after the day itself, or
   a rest day after a duty that ran past midnight (so it's under 24 hours)
+- a flight that departs before or arrives after the day's duty period
 
 The totals panel shows flight time this calendar quarter (limit 500 hours),
 this and the previous quarter (800), and the calendar year (1,400), including
@@ -104,12 +124,13 @@ Part 91 flights, and the quarter's 24-hour rest periods (13 required), counted
 as rest days with no flights. Rest days that haven't happened yet are shown
 separately as planned, and the rest row turns red once the quarter can no
 longer reach 13 even if every remaining day were rest. Totals are as of now for
-the current month and future months, and as of the month's end for a past one,
+the current month, and as of the month's end for a past one,
 so a past month's PDF comes out the same whenever it's exported.
 
 ## Export
 
-**Export PDF** renders the month (table, warnings and totals) as a PDF,
-generated in the browser via Typst. Corrected values are marked † with
+**Export PDF** renders the month (table, remarks rows, warnings and totals) as
+a PDF, generated in the browser via Typst. Corrected values are marked † with
 numbered footnotes giving the tracker's values, manual flights are marked ‡,
-and the footer says when the PDF was generated.
+default duty times are marked "(default)", and the footer says when the PDF was
+generated.

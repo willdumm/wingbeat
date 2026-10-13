@@ -146,18 +146,51 @@ function showcaseDriverScript(): string {
       LIVE_LABELS[lv.trackerId] = lv.locationLabel;
     }
 
-    const COMPLETED_FLIGHTS = [];
+    const TRACKED_FLIGHTS = [];
     for (const [id, trackerId, pilotId, daysAgo, startMin, from, to, seed, kmh, altM] of SAMPLE.flights) {
-      COMPLETED_FLIGHTS.push(makeFlight(id, trackerId, pilotId, localMidnight(daysAgo) + startMin * 60 + SHIFT,
+      TRACKED_FLIGHTS.push(makeFlight(id, trackerId, pilotId, localMidnight(daysAgo) + startMin * 60 + SHIFT,
         synthesize(from, to, seed, kmh, altM), SAMPLE.places[from][0], SAMPLE.places[to][0], true));
     }
 
-    // Newest first, like the dashboard's allFlights.
-    const ALL_FLIGHTS = [...LIVE_FLIGHTS, ...COMPLETED_FLIGHTS].sort((a, b) => b.start_time - a.start_time);
-    COMPLETED_FLIGHTS.sort((a, b) => a.start_time - b.start_time);
+    // SAMPLE.dutyLog's corrections and manual flights in schedule time → GET
+    // /api/flight-log-entries rows, shifted like the flights.
+    function sampleEntries() {
+      const at = (daysAgo, minute) => localMidnight(daysAgo) + minute * 60 + SHIFT;
+      const flightsById = Object.fromEntries(TRACKED_FLIGHTS.map(f => [f.id, f]));
+      const placeByName = Object.fromEntries(SAMPLE.places.map(p => [p[0], p]));
+      const blank = { start_time: null, end_time: null, origin_label: null, destination_label: null, remark: null,
+                      start_lat: null, start_lon: null, end_lat: null, end_lon: null, part91: 0, excluded: 0, pilot_id: null, aircraft_tail: null, updated_at: 0 };
+      const entries = [];
+      for (const e of SAMPLE.dutyLog.edits) {
+        const f = flightsById[e.flightId];
+        entries.push({ ...blank, id: entries.length + 1, tracker_id: f.tracker_id, flight_start_time: f.start_time,
+          start_time: e.startDeltaMin ? f.start_time + e.startDeltaMin * 60 : null, part91: e.part91 ? 1 : 0, remark: e.remark || null });
+      }
+      for (const m of SAMPLE.dutyLog.manual) {
+        const from = placeByName[m.from], to = placeByName[m.to];
+        entries.push({ ...blank, id: entries.length + 1, tracker_id: null, flight_start_time: null,
+          start_time: at(m.daysAgo, m.startMin), end_time: at(m.daysAgo, m.endMin),
+          origin_label: m.from, destination_label: m.to, pilot_id: SAMPLE.dutyPilotId, aircraft_tail: m.aircraftTail,
+          // Picked from named points, so analytics can place it.
+          start_lat: from ? from[1] : null, start_lon: from ? from[2] : null, end_lat: to ? to[1] : null, end_lon: to ? to[2] : null });
+      }
+      return entries;
+    }
 
+    // Every demo reads effective flights, as the flight store serves them: corrections
+    // applied, the manual flight added.
+    const { flights: EFFECTIVE_FLIGHTS, unmatched: UNMATCHED_ENTRIES } =
+      applyFlightEdits([...LIVE_FLIGHTS, ...TRACKED_FLIGHTS], sampleEntries(), { pilots: SAMPLE.pilots });
+    const LIVE_IDS = new Set(LIVE_FLIGHTS.map(f => f.id));
+    // Newest first, like the dashboard's allFlights.
+    const ALL_FLIGHTS = EFFECTIVE_FLIGHTS.slice().reverse();
+    const COMPLETED_FLIGHTS = EFFECTIVE_FLIGHTS.filter(f => !LIVE_IDS.has(f.id));
+
+    // Positions come from the trackers' own records.
     const LATEST_BY_TRACKER = {};
-    for (const f of ALL_FLIGHTS) if (!LATEST_BY_TRACKER[f.tracker_id]) LATEST_BY_TRACKER[f.tracker_id] = f;
+    for (const f of [...LIVE_FLIGHTS, ...TRACKED_FLIGHTS].sort((a, b) => b.start_time - a.start_time)) {
+      if (!LATEST_BY_TRACKER[f.tracker_id]) LATEST_BY_TRACKER[f.tracker_id] = f;
+    }
 
     // Per-tracker live data: the last fix of the tracker's latest flight. A tracker on the
     // ground keeps reporting from where it landed, so its newest fix is recent too.
@@ -434,31 +467,20 @@ function showcaseDriverScript(): string {
 
     // ── Pilot duty log ────────────────────────────────────────────────────────
 
-    // SAMPLE.dutyLog in schedule time → GET /api/duty-log's { entries, days }, shifted
-    // like the flights.
+    // SAMPLE.dutyLog's duty/rest days and default duty in schedule time → GET
+    // /api/duty-log's { days } and the pilot's default_duty_start/end, shifted like the
+    // flights.
     function dutyLogSample() {
       const at = (daysAgo, minute) => localMidnight(daysAgo) + minute * 60 + SHIFT;
-      const flightsById = Object.fromEntries(COMPLETED_FLIGHTS.map(f => [f.id, f]));
-      const blank = { start_time: null, end_time: null, origin_label: null, destination_label: null, remark: null,
-                      start_lat: null, start_lon: null, end_lat: null, end_lon: null, part91: 0, excluded: 0, pilot_id: null, aircraft_tail: null, updated_at: NOW };
-      const entries = [];
-      for (const e of SAMPLE.dutyLog.edits) {
-        const f = flightsById[e.flightId];
-        entries.push({ ...blank, id: entries.length + 1, tracker_id: f.tracker_id, flight_start_time: f.start_time,
-          start_time: e.startDeltaMin ? f.start_time + e.startDeltaMin * 60 : null, part91: e.part91 ? 1 : 0 });
-      }
-      for (const m of SAMPLE.dutyLog.manual) {
-        entries.push({ ...blank, id: entries.length + 1, tracker_id: null, flight_start_time: null,
-          start_time: at(m.daysAgo, m.startMin), end_time: at(m.daysAgo, m.endMin),
-          origin_label: m.from, destination_label: m.to, pilot_id: SAMPLE.dutyPilotId, aircraft_tail: m.aircraftTail });
-      }
+      const def = SAMPLE.dutyLog.defaultDuty;
+      const defaultDuty = def ? { duty_start: unixToTzTime(at(0, def.startMin)), duty_end: unixToTzTime(at(0, def.endMin)) } : null;
       const days = SAMPLE.dutyLog.days.map(d => d.rest
         ? { pilot_id: SAMPLE.dutyPilotId, date: unixToTzDateStr(at(d.daysAgo, 12 * 60)), duty_start: null, duty_end: null,
             rest: 1, rest_designated_at: at(d.designatedDaysAgo, 17 * 60), note: null }
         : { pilot_id: SAMPLE.dutyPilotId, date: unixToTzDateStr(at(d.daysAgo, d.dutyStartMin)),
             duty_start: unixToTzTime(at(d.daysAgo, d.dutyStartMin)), duty_end: unixToTzTime(at(d.daysAgo, d.dutyEndMin)),
             rest: 0, rest_designated_at: null, note: null });
-      return { entries, days };
+      return { days, defaultDuty };
     }
 
     function mountDuty(host) {
@@ -473,16 +495,21 @@ function showcaseDriverScript(): string {
       let data = null;
 
       function load() {
-        const { flights, unmatched } = applyFlightEdits(ALL_FLIGHTS, dutyLog.entries, { pilots: SAMPLE.pilots });
-        data = computeDutyData(flights, pilot.id, pilot.name, year, month, { days: dutyLog.days, unmatched });
+        data = computeDutyData(COMPLETED_FLIGHTS, pilot.id, pilot.name, year, month,
+          { days: dutyLog.days, defaultDuty: dutyLog.defaultDuty, unmatched: UNMATCHED_ENTRIES });
         root.getElementById('pilot-duty-period').textContent = dutyPeriodLabel(data);
         nextBtn.disabled = data.isCurrentMonth;
         prevBtn.disabled = (year + '-' + String(month).padStart(2, '0')) <= firstMonthKey;
         renderDutyLog(data, {
           content: root.getElementById('pilot-duty-content'),
           totalsEl: root.getElementById('pilot-duty-totals'),
+          upcomingEl: root.getElementById('pilot-duty-upcoming'),
           bodyEl: root.querySelector('.pilot-duty-body'),
         });
+      }
+      if (dutyLog.defaultDuty) {
+        root.getElementById('pilot-duty-default').textContent =
+          'Default duty ' + dutyLog.defaultDuty.duty_start + '–' + dutyLog.defaultDuty.duty_end;
       }
 
       prevBtn.addEventListener('click', () => {
@@ -617,7 +644,7 @@ function showcaseDriverScript(): string {
       analyticsMap.on('zoomend', updateEndpointHeatmap);
 
       // Frame where the flights go (before the first draw, so fitting doesn't redraw the heat).
-      analyticsMap.fitBounds(L.latLngBounds(COMPLETED_FLIGHTS.map(f => [f.end_lat, f.end_lon])), { padding: [30, 30], animate: false });
+      analyticsMap.fitBounds(L.latLngBounds(COMPLETED_FLIGHTS.filter(f => f.end_lat != null).map(f => [f.end_lat, f.end_lon])), { padding: [30, 30], animate: false });
       rerender();
     }
 

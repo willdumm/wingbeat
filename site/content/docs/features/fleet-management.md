@@ -31,9 +31,11 @@ carries:
 
 ## Pilots
 
-Just a name and an active flag — pilots are never hard-deleted, so historical
-flights keep a valid reference even after someone stops flying. See
-[Pilot Duty Log](../pilot-duty-log) for what's tracked per pilot.
+A name, an active flag, and an optional default duty period (**Edit** on the
+pilot) — pilots are never hard-deleted, so historical flights keep a valid
+reference even after someone stops flying. See
+[Pilot Duty Log](../pilot-duty-log) for what's tracked per pilot, and
+[Editing Flights](../editing-flights) for changing a flight's aircraft or pilot.
 
 ## Trackers
 

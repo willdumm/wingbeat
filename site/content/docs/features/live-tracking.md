@@ -1,6 +1,6 @@
 ---
 title: Live Tracking
-description: "Live positions, aircraft status cards, the flight list, day view, and bulk flight editing on the Wingbeat dashboard."
+description: "Live positions, aircraft status cards, the flight list, day view, and flight editing on the Wingbeat dashboard."
 weight: 1
 ---
 
@@ -43,9 +43,15 @@ resolved from the region's named points).
 The sidebar lists flights, most recent first, filterable by date range,
 tracker, aircraft, and pilot. Filter state persists locally per device.
 
+Flights show with any [corrections](../editing-flights) applied: a corrected
+time or place is marked †, manual flights are tagged "Manual" (the tracker
+filter's **Manual entries** option shows just them), and a flight with remarks
+(Part 91, a remark) shows them under it. Removed flights aren't listed.
+
 ## Day view
 
-Clicking a date shows every flight from that day simultaneously, with
+Clicking a date shows every flight from that day simultaneously (the full
+recorded tracks, even where a time was corrected), with
 numbered stop markers. When more than one tracker is present, each tracker
 gets its own color and its own stop numbering (restarting at 1), plus a map
 legend.
@@ -57,9 +63,11 @@ that point's speed, altitude, and time. The **map pin** tool lets you click
 anywhere on the map to read off coordinates and a Google Maps link, snapping
 to a nearby flight point when you click close to one.
 
-## Bulk flight editing
+## Editing flights
 
-Admins can bulk-reassign aircraft and/or pilot across many flights at once —
-filter by date/aircraft/pilot, select flights, apply one assignment to all of
-them. Useful for backfilling assignment history after adding aircraft/pilot
-tracking to a tenant that already has flight data.
+Admins get an **Edit flights** button in the header, which opens the flight
+editor: filter by date, aircraft and pilot, select flights and set their
+aircraft, pilot or Part 91 status, or remove them, all at once. Useful for
+backfilling assignment history after adding aircraft/pilot tracking to a tenant
+that already has flight data. The selected flight in the list also gets a
+pencil that opens its flight form. See [Editing Flights](../editing-flights).

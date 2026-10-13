@@ -96,8 +96,8 @@ learned correction factor, to help track and monitor maintenance deadlines.
 See a detailed summary of each pilot's flying activity, including each leg with departure and arrival times, flight time for each day, and the quarterly, yearly and rest totals of the Part 135 one-pilot limits.
 
 {{< facts >}}
-- **Corrections** Fix times and places, add missed flights and mark Part 91 legs. Every edit is marked on the record.
-- **Duty and rest** Record duty times, and plan rest days ahead with the date they were designated.
+- **Corrections** Fix times and places, add missed flights and mark Part 91 legs. Every edit is marked on the record and shows on every page.
+- **Duty and rest** Set a default duty period, record actual times, and plan rest days ahead with the date they were designated.
 - **PDF export** Download the log as a PDF to print or send.
 {{< /facts >}}
 
