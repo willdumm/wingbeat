@@ -14,16 +14,11 @@ export function dashboardScriptsAlerts(): string {
       var now = Math.floor(Date.now() / 1000);
       var flights = flightStore.getAll();
       var flightsByTail = new Map();
-      var flightsByPilot = new Map();
       for (var _fi = 0; _fi < flights.length; _fi++) {
         var _f = flights[_fi];
         if (_f.aircraft_tail) {
           if (!flightsByTail.has(_f.aircraft_tail)) flightsByTail.set(_f.aircraft_tail, []);
           flightsByTail.get(_f.aircraft_tail).push(_f);
-        }
-        if (_f.pilot_id !== null && _f.pilot_id !== undefined) {
-          if (!flightsByPilot.has(_f.pilot_id)) flightsByPilot.set(_f.pilot_id, []);
-          flightsByPilot.get(_f.pilot_id).push(_f);
         }
       }
       var alerts = [];
@@ -126,44 +121,28 @@ export function dashboardScriptsAlerts(): string {
         }
       }
 
-      // 3. Pilot duty alerts (FAR 135.267-style limits)
-      var DUTY_LIMITS = [
-        { window_label: '24-hour',  window_seconds: 86400,    limit_hours: 8    },
-        { window_label: '7-day',    window_seconds: 604800,   limit_hours: 36   },
-        { window_label: '30-day',   window_seconds: 2592000,  limit_hours: 100  },
-        { window_label: '90-day',   window_seconds: 7776000,  limit_hours: 250  },
-        { window_label: '12-month', window_seconds: 31536000, limit_hours: 1000 },
-      ];
-
+      // 3. Pilot duty alerts: the duty log's §135.267 totals (dutyTotals, pilot-duty.ts),
+      // flagged at 90% of a limit; the worst one per pilot.
       var activePilots = pilotList.filter(function(p) { return p.active; });
       for (var m = 0; m < activePilots.length; m++) {
         var pilot = activePilots[m];
-        var worstPct = 0;
+        var totals = dutyTotals(flights, pilot.id, now);
         var worstAlert = null;
-
-        for (var n = 0; n < DUTY_LIMITS.length; n++) {
-          var dl = DUTY_LIMITS[n];
-          var windowStart = now - dl.window_seconds;
-          var pid = pilot.id;
-          var hoursFlown = (flightsByPilot.get(pid) || [])
-            .filter(function(f) { return f.start_time >= windowStart; })
-            .reduce(function(s, f) { return s + _flightHours(f); }, 0);
-          var pct = hoursFlown / dl.limit_hours;
-          if (pct >= 0.90 && pct > worstPct) {
-            worstPct = pct;
+        totals.hours.concat([totals.flight24]).forEach(function(row) {
+          var pct = row.secs / row.limit;
+          if (pct >= 0.90 && (!worstAlert || pct > worstAlert.pct)) {
             worstAlert = {
               kind: 'pilot_duty',
               pilot_id: pilot.id,
               pilot_name: pilot.name,
-              window_label: dl.window_label,
-              hours_flown: hoursFlown,
-              limit_hours: dl.limit_hours,
+              window_label: row.label,
+              hours_flown: row.secs / 3600,
+              limit_hours: row.limit / 3600,
               pct: pct,
               urgency: 'due_soon',
             };
           }
-        }
-
+        });
         if (worstAlert) alerts.push(worstAlert);
       }
 

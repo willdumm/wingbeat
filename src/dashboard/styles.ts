@@ -334,6 +334,9 @@ export function dashboardStyles(): string {
       margin-top: 0.1rem;
     }
 
+    .flight-no-track { display: none; font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem; }
+    .flight-item.active .flight-no-track { display: block; }
+
     .flight-meta {
       font-size: 0.78rem;
       color: var(--text-muted);

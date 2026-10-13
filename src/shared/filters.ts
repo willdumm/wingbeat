@@ -212,8 +212,11 @@ export function filterScript(): string {
         if (state.dateTo) {
           if (flight.start_time > tzDayEndUnix(...state.dateTo.split('-').map(Number))) return false;
         }
+        // Manual flights (no tracker) show unless a tracker filter is set; '__manual__'
+        // in trackerIds ("Manual entries") selects them.
         if (state.trackerIds.length > 0) {
-          if (!state.trackerIds.includes(flight.tracker_id)) return false;
+          const tid = flight.tracker_id == null ? '__manual__' : flight.tracker_id;
+          if (!state.trackerIds.includes(tid)) return false;
         }
         if (state.pilotIds.length > 0) {
           const pid = flight.pilot_id === null ? '__null__' : flight.pilot_id;
@@ -283,7 +286,7 @@ export function filterScript(): string {
 
         for (const id of s.trackerIds) {
           const t = trackerList.find(x => x.id === id);
-          chips.push({ label: 'Tracker: ' + (t ? t.name : id), remove: () => {
+          chips.push({ label: id === '__manual__' ? 'Manual entries' : 'Tracker: ' + (t ? t.name : id), remove: () => {
             _filterState = { ..._filterState, trackerIds: _filterState.trackerIds.filter(x => x !== id) };
             _commit();
           }});
@@ -348,6 +351,12 @@ export function filterScript(): string {
           opt.textContent = t.name + ' (deleted)';
           trackerSel.appendChild(opt);
         }
+        if (!curTrackerIds.has('__manual__')) {
+          const opt = document.createElement('option');
+          opt.value = '__manual__';
+          opt.textContent = 'Manual entries';
+          trackerSel.appendChild(opt);
+        }
 
         // Aircraft options
         const curTails = new Set(_filterState.aircraftTails);
@@ -409,7 +418,7 @@ export function filterScript(): string {
       trackerSel.addEventListener('change', () => {
         const val = trackerSel.value;
         if (!val) return;
-        const id = parseInt(val, 10);
+        const id = val === '__manual__' ? val : parseInt(val, 10);
         if (!_filterState.trackerIds.includes(id)) {
           _filterState = { ..._filterState, trackerIds: [..._filterState.trackerIds, id] };
           _commit();

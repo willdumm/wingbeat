@@ -428,47 +428,10 @@ export function pilotDutyRenderScript(): string {
       const asOfNow = isCurrentMonth || isFutureMonth;
       const [nextY, nextM] = _dutyAddMonths(year, month, 1);
       const asOf = asOfNow ? nowEpoch : tzLocalToEpoch(_dutyKey(nextY, nextM, 1), '00:00');
-      const asOfDateKey = asOfNow ? unixToTzDateStr(nowEpoch) : _dutyKey(year, month, daysInMonth);
-
-      const qy = year, qm = Math.floor((month - 1) / 3) * 3 + 1;
-      const [pqy, pqm] = _dutyAddMonths(qy, qm, -3);
-      const [nqy, nqm] = _dutyAddMonths(qy, qm, 3);
-      const qStartKey = _dutyKey(qy, qm, 1);
-      const qEndKey = dutyAddDays(_dutyKey(nqy, nqm, 1), -1);
-      const quarterName = (y, m) => 'Q' + ((m - 1) / 3 + 1) + ' ' + y;
-      function flownSince(dateKey) {
-        const from = tzLocalToEpoch(dateKey, '00:00');
-        return flights.reduce((s, f) => s + (f.start_time >= from && f.start_time < asOf ? f.secs : 0), 0);
-      }
-
-      // Rest periods: days marked rest with no flights on them.
-      let restTaken = 0, restScheduled = 0;
-      for (const r of dayRecords) {
-        if (!r.rest || r.date < qStartKey || r.date > qEndKey || flightsByDate[r.date]) continue;
-        if (r.date <= asOfDateKey) restTaken++; else restScheduled++;
-      }
-      // Days still to come in the quarter (all of it, for a future quarter).
-      let daysLeft = 0;
-      const tomorrow = dutyAddDays(asOfDateKey, 1);
-      for (let k = tomorrow > qStartKey ? tomorrow : qStartKey; k <= qEndKey; k = dutyAddDays(k, 1)) daysLeft++;
-
-      const limitRow = (label, secs, limit) => ({ label, secs, limit, over: secs > limit });
-      const totals = {
-        asOfLabel: asOfNow ? 'now' : _dutyShortDate(asOfDateKey, null),
-        hours: [
-          limitRow(quarterName(qy, qm), flownSince(qStartKey), _DUTY_LIMITS.quarterSecs),
-          limitRow(quarterName(pqy, pqm) + ' + ' + quarterName(qy, qm), flownSince(_dutyKey(pqy, pqm, 1)), _DUTY_LIMITS.twoQuarterSecs),
-          limitRow('Calendar year ' + qy, flownSince(_dutyKey(qy, 1, 1)), _DUTY_LIMITS.yearSecs),
-        ],
-        rest: {
-          label: '24 h rest periods, ' + quarterName(qy, qm),
-          taken: restTaken,
-          scheduled: restScheduled,
-          required: _DUTY_LIMITS.quarterRestDays,
-          // Can no longer reach 13 even if every remaining day were rest.
-          short: restTaken + daysLeft < _DUTY_LIMITS.quarterRestDays,
-        },
-      };
+      const totals = dutyTotals(completed, pilotId, asOf, {
+        days: dayRecords,
+        asOfLabel: asOfNow ? 'now' : _dutyShortDate(_dutyKey(year, month, daysInMonth), null),
+      });
 
       return {
         pilotName,
@@ -479,6 +442,67 @@ export function pilotDutyRenderScript(): string {
         days,
         monthSecs: days.reduce((s, d) => s + d.daySecs, 0),
         totals,
+      };
+    }
+
+    // One pilot's §135.267 totals as of the epoch asOf: flight time in the calendar
+    // quarter containing it, that plus the previous quarter, and the calendar year (all
+    // including Part 91), flight time in the 24 h before it (Part 91 left out), and 24-hour
+    // rest periods in the quarter (days marked rest with no flights). flights are
+    // effective flights for every pilot; days the pilot's duty_days rows (omitted: no rest
+    // counted, as for the dashboard alert). Returns { asOfLabel, hours: [{ label, secs,
+    // limit, over }], flight24: { secs, limit, over }, rest: { label, taken, scheduled,
+    // required, short } }.
+    function dutyTotals(flights, pilotId, asOf, { days: dayRecords = [], asOfLabel = 'now' } = {}) {
+      const own = flights.filter(f => f.pilot_id === pilotId && f.end_time != null && !(f.edit && f.edit.excluded));
+      const secsOf = f => Math.max(0, f.end_time - f.start_time);
+      const asOfDateKey = unixToTzDateStr(asOf - 1);
+      const [year, month] = asOfDateKey.split('-').map(Number);
+      const qy = year, qm = Math.floor((month - 1) / 3) * 3 + 1;
+      const [pqy, pqm] = _dutyAddMonths(qy, qm, -3);
+      const [nqy, nqm] = _dutyAddMonths(qy, qm, 3);
+      const qStartKey = _dutyKey(qy, qm, 1);
+      const qEndKey = dutyAddDays(_dutyKey(nqy, nqm, 1), -1);
+      const quarterName = (y, m) => 'Q' + ((m - 1) / 3 + 1) + ' ' + y;
+      function flownSince(dateKey) {
+        const from = tzLocalToEpoch(dateKey, '00:00');
+        return own.reduce((s, f) => s + (f.start_time >= from && f.start_time < asOf ? secsOf(f) : 0), 0);
+      }
+      let flight24 = 0;
+      for (const f of own) {
+        if ((f.edit && f.edit.part91) || f.end_time <= asOf - 86400 || f.start_time >= asOf) continue;
+        flight24 += Math.min(f.end_time, asOf) - Math.max(f.start_time, asOf - 86400);
+      }
+
+      // Rest periods: days marked rest with no flights on them.
+      const flownDates = new Set(own.map(f => unixToTzDateStr(f.start_time)));
+      let restTaken = 0, restScheduled = 0;
+      for (const r of dayRecords) {
+        if (!r.rest || r.date < qStartKey || r.date > qEndKey || flownDates.has(r.date)) continue;
+        if (r.date <= asOfDateKey) restTaken++; else restScheduled++;
+      }
+      // Days still to come in the quarter.
+      let daysLeft = 0;
+      const tomorrow = dutyAddDays(asOfDateKey, 1);
+      for (let k = tomorrow > qStartKey ? tomorrow : qStartKey; k <= qEndKey; k = dutyAddDays(k, 1)) daysLeft++;
+
+      const limitRow = (label, secs, limit) => ({ label, secs, limit, over: secs > limit });
+      return {
+        asOfLabel,
+        hours: [
+          limitRow(quarterName(qy, qm), flownSince(qStartKey), _DUTY_LIMITS.quarterSecs),
+          limitRow(quarterName(pqy, pqm) + ' + ' + quarterName(qy, qm), flownSince(_dutyKey(pqy, pqm, 1)), _DUTY_LIMITS.twoQuarterSecs),
+          limitRow('Calendar year ' + qy, flownSince(_dutyKey(qy, 1, 1)), _DUTY_LIMITS.yearSecs),
+        ],
+        flight24: limitRow('Last 24 h', flight24, _DUTY_LIMITS.flight24hSecs),
+        rest: {
+          label: '24 h rest periods, ' + quarterName(qy, qm),
+          taken: restTaken,
+          scheduled: restScheduled,
+          required: _DUTY_LIMITS.quarterRestDays,
+          // Can no longer reach 13 even if every remaining day were rest.
+          short: restTaken + daysLeft < _DUTY_LIMITS.quarterRestDays,
+        },
       };
     }
 
