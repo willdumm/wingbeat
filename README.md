@@ -259,7 +259,7 @@ wingbeat/
 │   └── shared/                         # Shared components (settings modal, flight store, …)
 ├── migrations/
 │   ├── 0001_initial.sql                # full schema; new migrations start at 0002_
-│   └── 0002_duty_log.sql               # duty-log corrections and duty/rest days
+│   └── 0002_duty_log.sql               # flight corrections, manual flights, duty/rest days
 ├── site/                               # docs site (Hugo) + showcase; own Worker, see site/README.md
 ├── wrangler.example.toml               # template — copy to wrangler.toml (gitignored) and fill in
 ├── .dev.vars.example                   # copy to .dev.vars for local dev

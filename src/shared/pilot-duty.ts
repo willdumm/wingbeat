@@ -935,9 +935,13 @@ export function pilotDutyScript(): string {
     async function _dutyFetchLog() {
       const pilotId = _dutyPilotId;
       try {
-        const resp = await fetch('/api/duty-log?pilot=' + encodeURIComponent(pilotId));
+        const [resp, entriesResp] = await Promise.all([
+          fetch('/api/duty-log?pilot=' + encodeURIComponent(pilotId)),
+          fetch('/api/flight-log-entries'),
+        ]);
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        const log = await resp.json();
+        if (!entriesResp.ok) throw new Error('HTTP ' + entriesResp.status);
+        const log = { days: (await resp.json()).days, entries: (await entriesResp.json()).entries };
         if (pilotId === _dutyPilotId) _dutyLog = log;
       } catch (e) {
         // Without the log the corrections would silently be missing, so say so.

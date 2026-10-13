@@ -36,9 +36,12 @@ export interface Pilot {
   id: number;
   name: string;
   active: boolean;
+  /** Usual duty period (HH:MM local), used for flying days with no duty times recorded. */
+  default_duty_start: string | null;
+  default_duty_end: string | null;
 }
 
-/** Duty-log correction of a tracked flight (tracker_id set) or a manual flight (tracker_id null). */
+/** Correction of a tracked flight (tracker_id set) or a manual flight (tracker_id null). */
 export interface FlightLogEntry {
   id: number;
   tracker_id: number | null;
@@ -47,6 +50,12 @@ export interface FlightLogEntry {
   end_time: number | null;
   origin_label: string | null;
   destination_label: string | null;
+  remark: string | null;
+  /** Manual flights only: endpoints picked from named points. */
+  start_lat: number | null;
+  start_lon: number | null;
+  end_lat: number | null;
+  end_lon: number | null;
   part91: number;
   excluded: number;
   pilot_id: number | null;
