@@ -631,7 +631,7 @@ export function flightEditorScript(): string {
             origin_label: v.origin_label === (orig.origin_label || null) ? null : v.origin_label,
             destination_label: v.destination_label === (orig.destination_label || null) ? null : v.destination_label,
             part91: v.part91, unpaid: v.unpaid, remark: v.remark, excluded: removed,
-            assign: Object.keys(assign).length ? { flight_id: f.id, ...assign } : undefined,
+            assign: Object.keys(assign).length ? assign : undefined,
           });
         });
       });

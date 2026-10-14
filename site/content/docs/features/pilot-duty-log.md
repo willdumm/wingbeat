@@ -91,9 +91,9 @@ in.
 
 In the form:
 
-- **Duty**: enter the start and end times, e.g. 08:00–17:00. An end at or
-  before the start is taken as past midnight, so 20:00–02:00 is a six-hour duty
-  period.
+- **Duty**: enter the start and end times, e.g. 08:00–17:00. An end before the
+  start is taken as past midnight, so 20:00–02:00 is a six-hour duty period. The
+  end can't be the same as the start.
 - **Rest day**: marks the whole local calendar day as rest. The date and time
   you save it is recorded as when the rest was designated and shown in the
   table and on the PDF, e.g. "Rest · designated Oct 3". Changing a rest day's

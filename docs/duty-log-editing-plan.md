@@ -248,8 +248,10 @@ history"), so a request's writes land together or not at all.
   flight_start_time) DO UPDATE`) or inserts a manual flight. The body is the form's full
   state, with NULL for any field equal to the tracker's value; a tracked body with nothing
   left in it deletes the row and returns `{ entry: null }`. An optional `assign: {
-  flight_id, aircraft_tail?, pilot_id? }` changes the tracked flight's aircraft/pilot in
-  the same batch.
+  aircraft_tail?, pilot_id? }` changes the tracked flight's aircraft/pilot in the same
+  batch. The server finds that flight by the row's key (the tracker's flight starting at
+  `flight_start_time`), so the assignment can only go to the flight being corrected, and
+  is refused if the tracker has no such flight.
 - `PUT /api/flight-corrections/:id` updates a manual flight (the form's full state). A
   tracked-flight row is refused: it's saved with `POST`, which also takes the assignment
   and drops a row left empty.
@@ -259,7 +261,9 @@ history"), so a request's writes land together or not at all.
   { entry_id }], set: { part91?, excluded? } }`, at most 5,000 flights, one statement per
   kind of flight (`json_each`). Setting Part 91 or removed upserts tracked rows; Part 135
   or restore only updates existing ones, so a flight with no row doesn't get one inserted
-  and then deleted as empty. Part 135 clears `unpaid`. Tracked rows left empty are deleted.
+  and then deleted as empty. Part 135 clears `unpaid`. Tracked rows of the request left
+  empty are deleted (only those: the history would otherwise record other rows' deletions
+  as this user's).
 
 **Aircraft and pilot:**
 
@@ -280,10 +284,8 @@ history"), so a request's writes land together or not at all.
   (no times, not rest, no note) is deleted. `rest_designated_at` is set the first time
   `rest` goes 0→1, kept on later edits, and cleared when rest is unset.
 - `POST /api/duty-days/:pilot/clear`: `{ dates }`, the same cap, deleted in one statement.
-- `PUT /api/duty-days/:pilot/:date` and `DELETE /api/duty-days/:pilot/:date` do the same
-  for one day. The UI doesn't use them.
 - `PUT /api/pilots/:id` also takes the pilot's default duty, `default_duty_start` /
-  `default_duty_end` (both HH:MM or both null).
+  `default_duty_end` (both HH:MM or both null, and not equal).
 
 **Edit history:** `GET /api/edit-history?entity=<entity>&key=<entity_key>[&limit=<n>]`
 (admins only; `limit` defaults to and is capped at 100) returns one record's history,
@@ -294,10 +296,13 @@ its aircraft/pilot), interleaved newest first.
 **Validation** (the shared numbers live in `record-limits.ts`):
 
 - Dates are real `YYYY-MM-DD` dates (`isDateKey`: 2026-02-31 is refused, not rolled over).
-  Duty times are `HH:MM`, both or neither, and a rest day has none.
-- `end_time > start_time` when both are set, and a flight over `MAX_FLIGHT_SECS` (24 h) is
-  refused. A tracked flight with one time corrected is checked against the tracker's
-  other time; one with neither corrected isn't checked, so a tracker's own overlong
+  Duty times are `HH:MM`, both or neither, and a rest day has none. A duty end equal to its
+  start is refused (an end before the start is past midnight, so an equal one would read as
+  24 hours), for a day and for the pilot's default.
+- A manual flight needs `end_time > start_time`. A tracked flight needs its effective
+  arrival no earlier than its departure (equal is a flight under a minute, which the form
+  saves with Dep = Arr). A flight over `MAX_FLIGHT_SECS` (24 h) is refused. A tracked flight
+  with one time corrected is checked against the tracker's other time; one with neither corrected isn't checked, so a tracker's own overlong
   flight can still take a remark or Part 91.
 - Labels and remarks are at most `MAX_FLIGHT_TEXT_LENGTH` (200) characters after trimming,
   a duty note `MAX_DUTY_NOTE_LENGTH` (1,000). The form inputs carry the same `maxlength`.

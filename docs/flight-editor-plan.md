@@ -466,7 +466,8 @@ Where the implementation departs from, or adds to, the plan above:
   duty-log-editing-plan.md said every route was admin-only.
 - **Saves are atomic.** The flight form saves a tracked flight's correction and its
   aircraft/pilot change in one request (`POST /api/flight-corrections` with `assign: {
-  flight_id, aircraft_tail?, pilot_id? }`, one D1 batch). The day form's Through range
+  aircraft_tail?, pilot_id? }`, one D1 batch; the server writes it to the flight the
+  correction is keyed to, found by tracker and start time). The day form's Through range
   goes through `PUT /api/duty-days/:pilot` (`{ dates, … }`, also used for a single day) and
   `POST /api/duty-days/:pilot/clear` (`{ dates }`), one statement each (`json_each`), at
   most 366 dates (`MAX_DUTY_DAYS_PER_REQUEST` in `src/shared/record-limits.ts`, shared by
