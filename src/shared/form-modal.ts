@@ -21,6 +21,15 @@ export function formControlStyles(selector: string): string {
     }
     :is(${selector}):hover:not(:disabled) { border-color: var(--border-strong); }
     :is(${selector}):focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--ring-focus); }
+    /* iOS Safari draws native date/time inputs at their own width, ignoring width and
+       min-width, so two side by side spill into each other; without the native look they
+       size like any other field (as filters.ts does for its dates). An empty one would
+       then collapse to no height, and its value would be centered. */
+    :is(${selector}):is([type="date"], [type="time"], [type="datetime-local"]) {
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    :is(${selector})::-webkit-date-and-time-value { min-height: 1.2em; text-align: left; }
   `;
 }
 
@@ -118,8 +127,10 @@ export function formModalStyles(): string {
     .form-field textarea { resize: vertical; min-height: 3.5rem; }
     /* The tracker's value under a field the user can correct. */
     .form-field-original { font-size: var(--size-2xs); color: var(--text-muted); }
-    .form-field-row { display: flex; gap: 0.6rem; }
-    .form-field-row > .form-field { flex: 1; }
+    /* Two fields side by side, each on its own line once the row is too narrow for both
+       (a phone, or a big text size). */
+    .form-field-row { display: flex; flex-wrap: wrap; gap: 0.65rem 0.6rem; }
+    .form-field-row > .form-field { flex: 1 1 8rem; }
   `;
 }
 
