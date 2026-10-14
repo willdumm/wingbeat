@@ -99,10 +99,14 @@ for that day.
 
 ## Corrections that no longer match
 
-If a history import changes when a tracked flight starts, its corrections no
-longer match the flight. The log then shows them as "Not found" on that day,
-leaves them out of the totals, and shows the flight as tracked, so it can be
-corrected again and the old corrections deleted.
+If a history import changes when a tracked flight starts, or the tracker's
+points are wiped, its corrections no longer match a flight. They don't record
+a pilot, so the log shows them as "Not found", on the day they were for, only
+for the pilot of the same tracker's nearest flight within 12 hours (usually
+the flight that replaced it, shown as tracked). With no flight that close they
+show only in the [flight editor](../editing-flights#corrections-that-no-longer-match).
+They're left out of the totals. Correct the flight again and delete the old
+corrections.
 
 ## Warnings and totals
 

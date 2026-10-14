@@ -14,7 +14,7 @@ bolted to one plane.
 
 Everyone can see the Aircraft, Pilots, and Trackers lists in Settings; only
 admins can add, edit, pause, or remove entries. See
-[Settings](../settings/) for the full admin/user split.
+[Settings](../../settings/) for the full admin/user split.
 
 ## Aircraft
 

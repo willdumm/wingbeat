@@ -50,6 +50,11 @@ filter's **Manual entries** option shows just them), and a flight with remarks
 
 ## Day view
 
+With nothing selected (and after **Map Current Flights**), the map shows every
+flight in progress, or otherwise the newest tracked flight, and follows it as
+new positions arrive; a newer [manual flight](../editing-flights#manual-flights)
+isn't selected, since it has no track to draw.
+
 Clicking a date shows every flight from that day simultaneously (the full
 recorded tracks, even where a time was corrected), with
 numbered stop markers. When more than one tracker is present, each tracker

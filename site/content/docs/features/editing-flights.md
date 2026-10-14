@@ -26,7 +26,9 @@ pilot's duty log, where it opens filtered to that pilot and month.
   aircraft, pilot and flight time. Corrected values are marked †, with the
   tracker's value on hover. Manual and removed flights are tagged, and a flight
   with remarks (Part 91, or a free-text remark) shows them underneath.
-- **Click a row** to open the flight form.
+- **Open a flight** in the flight form by clicking its row (anywhere but the
+  checkbox). Its date is a button, so with the keyboard, Tab to the date and
+  press Enter or Space.
 - **Select flights** with their checkboxes (or the checkbox at the top for
   every listed flight) to act on all of them at once from the bar at the
   bottom: **Set aircraft…**, **Set pilot…**, **Part 91** / **Part 135**, and
@@ -41,8 +43,10 @@ pencil on a flight in the duty log.
 
 ![The flight form](/img/generated/flight-editor/flight-form.png)
 
-- **Date, Dep, Arr:** an arrival at or before the departure is taken as the
-  next day.
+- **Date, Dep, Arr:** an arrival before the departure is taken as the next
+  day. An arrival equal to the departure is the same day for a tracked flight
+  (it took off and landed within the minute); a manual flight needs an arrival
+  different from its departure.
 - **Origin, Dest:** type a place or pick one of your
   [named points](../map-tools#regions--named-points).
 - **Aircraft, Pilot.**
@@ -62,6 +66,9 @@ The footer has:
   mark and remark
 - **Delete**, for a manual flight
 - **Save**
+
+Clicking outside the form closes it, but if you've changed a field it asks
+before discarding your changes.
 
 ## Manual flights
 
@@ -97,8 +104,18 @@ brings it back.
 
 ## Corrections that no longer match
 
-Corrections are tied to the time a tracked flight starts. If a history import
-changes that, the corrections no longer match any flight. The editor and the
-duty log list them as "Not found" with what they would have changed, and leave
-them out of everything else, so nothing is counted twice. Delete them and
-correct the flight again.
+Corrections are tied to a tracked flight's tracker and start time. When they
+no longer apply to any flight, the editor lists them as "Not found", with what
+they would have changed, if they fall in its date range:
+
+- **The flight is gone:** a history import changed when it starts, or the
+  tracker's points were wiped. The [duty log](../pilot-duty-log) shows the
+  same "Not found" row only for the pilot of the same tracker's nearest flight
+  within 12 hours, usually the flight that replaced it. With no flight that
+  close, the corrections show only in the editor.
+- **The tracker isn't loaded:** it was deleted or made inactive, so the page
+  has none of its flights. The editor gives the reason, e.g. "tracker Hawk 1
+  was deleted", "tracker Hawk 1 is inactive" or "tracker no longer exists".
+
+None of them are counted anywhere, so nothing is counted twice. Delete them
+and correct the flight again.

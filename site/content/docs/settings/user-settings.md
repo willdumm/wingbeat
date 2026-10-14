@@ -17,7 +17,7 @@ synced across a user's sessions.
 
 Which basemaps are enabled, the active basemap choice, and per-layer color
 correction (saturation/contrast/brightness). Also where a custom tile URL can
-be added. Stored per device — see [Map Tools](../features/map-tools).
+be added. Stored per device — see [Map Tools](../../features/map-tools).
 
 ## Data
 
@@ -31,7 +31,7 @@ stale.
 Manage sessions on your own account: rename a device, revoke another
 device's session, sign out the current device, or generate a link to add
 another device to your account. See
-[Users & Devices](../features/users-and-devices).
+[Users & Devices](../../features/users-and-devices).
 
 ## Viewing fleet lists
 
