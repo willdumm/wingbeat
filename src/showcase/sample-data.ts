@@ -81,8 +81,8 @@ export interface SampleMaintenanceItem {
 
 /**
  * The sample flight corrections and the duty log demo's days, in schedule time ("N days
- * ago at M minutes after local midnight"), turned into GET /api/flight-log-entries rows
- * (applied to every demo's flights) and GET /api/duty-log's { days } in the browser once
+ * ago at M minutes after local midnight"), turned into GET /api/flight-corrections rows
+ * (applied to every demo's flights) and GET /api/duty-days's { days } in the browser once
  * the schedule is shifted onto the visitor's clock.
  */
 export interface SampleDutyLog {

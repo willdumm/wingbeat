@@ -63,7 +63,7 @@ In the form:
   duty and then to rest again records a new one.
 - **Through (optional)**: applies the same duty times or rest to every day from
   the date through this one, up to 62 days at a time, e.g. a block of days off
-  next month.
+  next month. The whole range is saved at once, or not at all.
 - **Clear** removes the duty times, rest designation and note from the day, or
   from every day in the range.
 
@@ -81,7 +81,7 @@ duty times, and the note. The pencil on an entry opens it in the day form. The
 totals panel counts planned rest days toward the quarter's 13 rest periods as
 "planned" until the day has passed, e.g. "4 + 3 planned / 13", including ones
 later in the quarter. A rest day saved on or after the day it falls on gets a
-warning, because it wasn't designated in advance.
+warning, because it wasn't designated in advance, and doesn't count.
 
 ### Default duty
 
@@ -121,7 +121,8 @@ warning under the day, without blocking anything:
 The totals panel shows flight time this calendar quarter (limit 500 hours),
 this and the previous quarter (800), and the calendar year (1,400), including
 Part 91 flights, and the quarter's 24-hour rest periods (13 required), counted
-as rest days with no flights. Rest days that haven't happened yet are shown
+as the rest days with no warning: no flights on the day, designated before it,
+and the previous day's duty over by midnight. Rest days that haven't happened yet are shown
 separately as planned, and the rest row turns red once the quarter can no
 longer reach 13 even if every remaining day were rest. Totals are as of now for
 the current month, and as of the month's end for a past one,

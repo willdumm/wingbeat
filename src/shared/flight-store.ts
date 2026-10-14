@@ -5,7 +5,7 @@ import { SPEED_THRESHOLD_KMH } from '../geo';
  * Uses a single localStorage key (ft_flights_v2) across all trackers; tracker filtering
  * is a read-time concern via the optional trackerIds parameter on getAll/getCompleted.
  *
- * It also syncs the flight corrections (GET /api/flight-log-entries) and serves
+ * It also syncs the flight corrections (GET /api/flight-corrections) and serves
  * effective flights: getAll/getCompleted apply them with applyFlightEdits()
  * (flight-edits.ts, needed in the same script), so every page shows corrected times and
  * labels, manual flights, and no removed flights. getRaw() returns the tracker's own
@@ -20,7 +20,12 @@ export function flightStoreScript(): string {
     let _mem = { last_modified_at_by_tracker: {}, flights: [], entries: [], entries_version: null };
     let _cbs = [];
     let _pending = null;
+    let _queued = null;              // a refresh asked for while one was in flight
     let _lastTrackerIds = [];
+    // Trackers refreshed this session: a correction for one of them with no flight is
+    // "unmatched"; one for any other tracker can't be judged here.
+    const _refreshedTrackers = new Set();
+    let _pilots = [];                // [{ id, name }], for manual flights' pilot names
     // Effective flights, rebuilt when the raw flights, the corrections or the pilot list
     // change, so repeated reads return the same objects.
     let _gen = 0;
@@ -40,16 +45,11 @@ export function flightStoreScript(): string {
       _gen++;
     }
 
-    // The page's pilot list (both pages keep one), for manual flights' pilot names.
-    function _fsPilots() {
-      try { return pilotList || []; } catch (_) { return []; }
-    }
-
     function _fsEffective() {
-      const pilots = _fsPilots();
-      if (!_effCache || _effCache.gen !== _gen || _effCache.pilots !== pilots) {
-        const { flights, unmatched } = applyFlightEdits(_mem.flights, _mem.entries, { includeRemoved: true, pilots });
-        _effCache = { gen: _gen, pilots, flights, unmatched };
+      if (!_effCache || _effCache.gen !== _gen) {
+        const { flights, unmatched, unplaced } = applyFlightEdits(_mem.flights, _mem.entries,
+          { includeRemoved: true, pilots: _pilots, knownTrackerIds: _refreshedTrackers });
+        _effCache = { gen: _gen, flights, unmatched, unplaced };
       }
       return _effCache;
     }
@@ -71,7 +71,7 @@ export function flightStoreScript(): string {
     async function _fsFetchEntries() {
       try {
         const v = _mem.entries_version;
-        const resp = await fetch('/api/flight-log-entries' + (v != null ? '?version=' + encodeURIComponent(v) : ''));
+        const resp = await fetch('/api/flight-corrections' + (v != null ? '?version=' + encodeURIComponent(v) : ''));
         if (!resp.ok) return null;
         const data = await resp.json();
         return data.unchanged ? null : data;
@@ -95,6 +95,7 @@ export function flightStoreScript(): string {
       const liveLabelsByTracker = {};
       let anyGeocodePending = false;
       for (const { tid, data } of results) {
+        if (!_refreshedTrackers.has(tid)) { _refreshedTrackers.add(tid); _gen++; }
         if (data.flights.length > 0) {
           _fsMerge(data.flights);
           changed = true;
@@ -138,9 +139,18 @@ export function flightStoreScript(): string {
 
       // Without trackerIds, the last refresh's (after a write to the corrections, from
       // code that doesn't know the page's trackers).
+      //
+      // A refresh asked for while one is in flight (say, right after a write, during a
+      // poll) runs again once that one finishes, rather than sharing its result, which may
+      // predate the write. Callers asking meanwhile share that one follow-up.
       async refresh(trackerIds = _lastTrackerIds) {
         _lastTrackerIds = trackerIds;
-        if (_pending) return _pending;
+        if (_pending) {
+          if (!_queued) {
+            _queued = _pending.catch(() => {}).then(() => { _queued = null; return flightStore.refresh(); });
+          }
+          return _queued;
+        }
         _pending = _fsFetchMerge(trackerIds).finally(() => { _pending = null; });
         return _pending;
       },
@@ -178,6 +188,25 @@ export function flightStoreScript(): string {
       // Corrections whose tracked flight is gone (see applyFlightEdits).
       getUnmatched(trackerIds) {
         return _fsEffective().unmatched.filter(e => !trackerIds || trackerIds.includes(e.tracker_id));
+      },
+
+      // Corrections for trackers this page didn't refresh (deleted or inactive ones), which
+      // apply to nothing here.
+      getUnplaced() {
+        return _fsEffective().unplaced;
+      },
+
+      // The page's pilots ([{ id, name }]), for manual flights' pilot names. Call it
+      // whenever the list is loaded or a pilot changes.
+      setPilots(pilots) {
+        _pilots = pilots || [];
+        _gen++;
+        _cbs.forEach(cb => cb());
+      },
+
+      // Bumped whenever what getAll() returns may have changed.
+      generation() {
+        return _gen;
       },
 
       onChange(cb) {

@@ -126,6 +126,10 @@ label everywhere is a separate, later feature.)
 
 ### 1. Schema — `migrations/0002_duty_log.sql`
 
+(As built, renamed: the migration is `0002_flight_corrections.sql`, the table
+`flight_corrections`, the routes `/api/flight-corrections` and `GET /api/duty-days?pilot=`;
+see flight-editor-plan.md, "After review".)
+
 ```sql
 -- Duty-log corrections. A row with tracker_id + flight_start_time corrects the tracked
 -- flight with that start time: each NULL field means "use the tracker's value". A row
@@ -188,7 +192,8 @@ Notes:
 
 ### 2. API — `src/index.ts`
 
-All routes are `requireAdmin`, matching the existing flight assignment routes.
+All routes are `requireAdmin`, matching the existing flight assignment routes. (As built,
+reads are open to any signed-in user; see flight-editor-plan.md, "After review".)
 
 - `GET /api/duty-log?pilot=<id>` returns `{ entries, days }`: every tracked-flight row
   (they carry no pilot; the client matches them against that pilot's flights), the

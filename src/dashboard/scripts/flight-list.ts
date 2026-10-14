@@ -95,10 +95,10 @@ export function dashboardScriptsFlightListRender(): string {
       const manual = !!(f.edit && f.edit.manual);
       let routeHtml = '';
       if (f.origin_label || f.destination_label || manual) {
-        const origin = flightEsc(f.origin_label || '?') + flightEditedMark(f, ['origin_label']);
+        const origin = escHtml(f.origin_label || '?') + flightEditedMark(f, ['origin_label']);
         const dest = f.destination_label || (f.end_time ? '?' : '');
         routeHtml = '<div class="flight-route">' + origin + ' →' +
-          (dest ? ' ' + flightEsc(dest) + flightEditedMark(f, ['destination_label']) : '') +
+          (dest ? ' ' + escHtml(dest) + flightEditedMark(f, ['destination_label']) : '') +
           (manual ? FLIGHT_CHIP_MANUAL : '') + '</div>';
       }
 

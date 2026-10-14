@@ -42,7 +42,7 @@ export interface Pilot {
 }
 
 /** Correction of a tracked flight (tracker_id set) or a manual flight (tracker_id null). */
-export interface FlightLogEntry {
+export interface FlightCorrection {
   id: number;
   tracker_id: number | null;
   flight_start_time: number | null;

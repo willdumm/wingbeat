@@ -5,11 +5,6 @@ export function dashboardScriptsAlerts(): string {
     ${sharedMaintenanceHelperScripts()}
     // ── Alerts feed ──────────────────────────────────────────────────────────
 
-    function _alEsc(s) {
-      return String(s === null || s === undefined ? '' : s)
-        .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-
     function computeAlerts() {
       var now = Math.floor(Date.now() / 1000);
       var flights = flightStore.getAll();
@@ -190,40 +185,40 @@ export function dashboardScriptsAlerts(): string {
           descParts.push(alert.flight_origin + (alert.flight_destination ? ' → ' + alert.flight_destination : ''));
         }
         bodyHtml = '<div class="alert-body">' +
-          '<span class="alert-text">' + _alEsc(alert.flight_label) + '</span>' +
-          (descParts.length > 0 ? '<span class="alert-desc">' + _alEsc(descParts.join(' · ')) + '</span>' : '') +
+          '<span class="alert-text">' + escHtml(alert.flight_label) + '</span>' +
+          (descParts.length > 0 ? '<span class="alert-desc">' + escHtml(descParts.join(' · ')) + '</span>' : '') +
           '</div>';
         actionLabel = 'Assign';
-        actionDataAttrs = 'data-flight-id="' + _alEsc(String(alert.flight_id)) + '"';
+        actionDataAttrs = 'data-flight-id="' + escHtml(String(alert.flight_id)) + '"';
       } else if (alert.kind === 'maintenance') {
         icon = '⚠';
         var acParts = alert.aircraft_name ? [alert.aircraft_tail, alert.aircraft_name] : [alert.aircraft_tail];
-        bodyHtml = '<div class="alert-body"><span class="alert-text">' + _alEsc(acParts.join(' · ') + ' · ' + alert.item.name + ' · ' + alert.status.due_label) + '</span></div>';
+        bodyHtml = '<div class="alert-body"><span class="alert-text">' + escHtml(acParts.join(' · ') + ' · ' + alert.item.name + ' · ' + alert.status.due_label) + '</span></div>';
         actionLabel = 'View';
-        actionDataAttrs = 'data-aircraft-tail="' + _alEsc(alert.aircraft_tail) + '"';
+        actionDataAttrs = 'data-aircraft-tail="' + escHtml(alert.aircraft_tail) + '"';
       } else if (alert.kind === 'timer_not_recorded') {
         icon = '⚑';
         var acParts2 = alert.aircraft_name ? [alert.aircraft_tail, alert.aircraft_name] : [alert.aircraft_tail];
         var timerDesc = alert.timer_type === 'calendar'
           ? 'Last service date not set (' + alert.needed_for + ')'
           : (alert.timer_type === 'hobbs' ? 'Hobbs' : 'Tach') + ' not recorded (' + alert.needed_for + ')';
-        bodyHtml = '<div class="alert-body"><span class="alert-text">' + _alEsc(acParts2.join(' · ') + ' · ' + timerDesc) + '</span></div>';
+        bodyHtml = '<div class="alert-body"><span class="alert-text">' + escHtml(acParts2.join(' · ') + ' · ' + timerDesc) + '</span></div>';
         actionLabel = 'Set';
-        actionDataAttrs = 'data-aircraft-tail="' + _alEsc(alert.aircraft_tail) + '"';
+        actionDataAttrs = 'data-aircraft-tail="' + escHtml(alert.aircraft_tail) + '"';
       } else {
         icon = '⚑';
-        bodyHtml = '<div class="alert-body"><span class="alert-text">' + _alEsc(alert.pilot_name + ' · ' + alert.hours_flown.toFixed(1) + '/' + alert.limit_hours + ' hr (' + alert.window_label + ')') + '</span></div>';
+        bodyHtml = '<div class="alert-body"><span class="alert-text">' + escHtml(alert.pilot_name + ' · ' + alert.hours_flown.toFixed(1) + '/' + alert.limit_hours + ' hr (' + alert.window_label + ')') + '</span></div>';
         actionLabel = 'Log';
-        actionDataAttrs = 'data-pilot-id="' + _alEsc(String(alert.pilot_id)) + '" data-pilot-name="' + _alEsc(alert.pilot_name) + '"';
+        actionDataAttrs = 'data-pilot-id="' + escHtml(String(alert.pilot_id)) + '" data-pilot-name="' + escHtml(alert.pilot_name) + '"';
       }
 
       var isAdmin = currentUser?.role === 'admin';
       var hideAction = alert.kind === 'unassigned_flight' && !isAdmin;
       var clickClass = alert.kind === 'unassigned_flight' ? ' alert-row-clickable' : '';
-      return '<div class="alert-row ' + borderClass + clickClass + '" data-alert-kind="' + _alEsc(alert.kind) + '" ' + actionDataAttrs + '>' +
+      return '<div class="alert-row ' + borderClass + clickClass + '" data-alert-kind="' + escHtml(alert.kind) + '" ' + actionDataAttrs + '>' +
         '<span class="alert-icon">' + icon + '</span>' +
         bodyHtml +
-        (hideAction ? '' : '<button class="alert-action-btn btn-secondary" ' + actionDataAttrs + ' data-alert-kind="' + _alEsc(alert.kind) + '">' + actionLabel + '</button>') +
+        (hideAction ? '' : '<button class="alert-action-btn btn-secondary" ' + actionDataAttrs + ' data-alert-kind="' + escHtml(alert.kind) + '">' + actionLabel + '</button>') +
       '</div>';
     }
 

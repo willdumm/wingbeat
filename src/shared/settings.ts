@@ -1203,7 +1203,7 @@ export function settingsModalScript(): string {
       try {
         const [ar, pr] = await Promise.all([fetch('/api/aircraft'), fetch('/api/pilots')]);
         if (ar.ok) { const d = await ar.json(); aircraftList = d.aircraft; renderSettingsAircraftList(); }
-        if (pr.ok) { const d = await pr.json(); pilotList = d.pilots; renderSettingsPilotList(); }
+        if (pr.ok) { const d = await pr.json(); pilotList = d.pilots; flightStore.setPilots(pilotList); renderSettingsPilotList(); }
         settingsResetAddForm();
       } catch (_) {}
       if (isAdmin) renderSetupGuide(false);
@@ -2324,6 +2324,8 @@ export function settingsModalScript(): string {
           });
           if (resp.ok) {
             Object.assign(pilot, { name, default_duty_start: start, default_duty_end: end });
+            // Manual flights show the pilot by name.
+            flightStore.setPilots(pilotList);
             renderSettingsPilotList();
           } else {
             errorEl.textContent = (await resp.json().catch(() => ({}))).error || 'Save failed.';
@@ -2350,6 +2352,7 @@ export function settingsModalScript(): string {
         if (resp.ok) {
           const d = await resp.json();
           pilotList.push({ id: d.id, name, active: true, default_duty_start: null, default_duty_end: null });
+          flightStore.setPilots(pilotList);
           document.getElementById('settings-add-pilot-name').value = '';
           document.getElementById('settings-add-pilot').open = false;
           renderSettingsPilotList();

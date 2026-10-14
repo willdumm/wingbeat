@@ -12,14 +12,14 @@ export function flightEditsStyles(): string {
     }
     .flight-chip { margin-left: 0.35rem; vertical-align: 1px; }
     .flight-remarks {
-      font-size: 0.72rem; color: var(--text-muted); font-style: italic;
+      font-size: var(--size-2xs); color: var(--text-muted); font-style: italic;
       margin-top: 0.1rem;
     }
   `;
 }
 
 /**
- * Flight corrections (flight_log_entries rows) applied to tracked flights, so every page
+ * Flight corrections (flight_corrections rows) applied to tracked flights, so every page
  * shows the same corrected flights. See docs/flight-editor-plan.md.
  *
  * Takes data as arguments and touches no page state, so the flight store
@@ -36,12 +36,14 @@ export function flightEditsScript(): string {
     const FLIGHT_CHIP_REMOVED   = ${JSON.stringify(statusChip('Removed', 'danger', 'wb-chip--sm flight-chip'))};
     const FLIGHT_CHIP_UNMATCHED = ${JSON.stringify(statusChip('Not found', 'warn', 'wb-chip--sm flight-chip'))};
 
-    function flightEsc(s) {
-      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    // HTML-escapes text (null/undefined → '') for markup and attribute values. The one
+    // escape helper for the flight views, the duty log and the alerts.
+    function escHtml(s) {
+      return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    // Applies entries (GET /api/flight-log-entries rows) to flights (flight store records)
-    // and returns { flights, unmatched }, flights sorted by (corrected) start time.
+    // Applies entries (GET /api/flight-corrections rows) to flights (flight store records)
+    // and returns { flights, unmatched, unplaced }, flights sorted by (corrected) start time.
     //
     // A corrected flight is a copy of the record with the row's non-NULL fields applied
     // and edit: { entry, manual, part91, remark, excluded, original: { field: tracker's
@@ -50,13 +52,17 @@ export function flightEditsScript(): string {
     // tracker) gets id -entry.id, tracker_id null, points [], its named-point coordinates
     // and its own pilot/aircraft; pilot_name comes from pilots ([{ id, name }]).
     //
-    // unmatched lists rows for a tracker in flights whose flight is gone (a history import
-    // moved its first point); they're shown for deletion and never applied.
-    function applyFlightEdits(flights, entries, { includeRemoved = false, pilots = [] } = {}) {
+    // unmatched lists rows whose flight is gone (a history import moved its first point, or
+    // the tracker's points were wiped) for a tracker whose flights are loaded: one in
+    // flights or in knownTrackerIds (the trackers the caller fetched, so a tracker left with
+    // no flights still counts). They're shown for deletion and never applied. unplaced
+    // lists the other unapplied rows, for trackers whose flights aren't loaded at all
+    // (deleted or inactive ones).
+    function applyFlightEdits(flights, entries, { includeRemoved = false, pilots = [], knownTrackerIds = null } = {}) {
       const key = (trackerId, start) => trackerId + ':' + start;
       const byKey = new Map();
       for (const e of entries || []) if (e.tracker_id != null) byKey.set(key(e.tracker_id, e.flight_start_time), e);
-      const trackers = new Set();
+      const trackers = new Set(knownTrackerIds || []);
       const matched = new Set();
       const out = [];
 
@@ -93,8 +99,12 @@ export function flightEditsScript(): string {
       }
       out.sort((a, b) => a.start_time - b.start_time);
 
-      const unmatched = (entries || []).filter(e => e.tracker_id != null && trackers.has(e.tracker_id) && !matched.has(e));
-      return { flights: out, unmatched };
+      const unapplied = (entries || []).filter(e => e.tracker_id != null && !matched.has(e));
+      return {
+        flights: out,
+        unmatched: unapplied.filter(e => trackers.has(e.tracker_id)),
+        unplaced: unapplied.filter(e => !trackers.has(e.tracker_id)),
+      };
     }
 
     // The remarks shown under a flight, in order: "Part 91" (nothing for Part 135), then
@@ -116,14 +126,14 @@ export function flightEditsScript(): string {
     function flightEditedMark(f, fields) {
       const edited = fields.filter(k => flightFieldEdited(f, k));
       if (!edited.length) return '';
-      return '<span class="flight-edited" title="Tracker: ' + flightEsc(edited.map(k =>
+      return '<span class="flight-edited" title="Tracker: ' + escHtml(edited.map(k =>
         FLIGHT_EDIT_FIELD_NAMES[k] + ' ' + flightOriginalText(k, f.edit.original[k])).join(', ')) + '">†</span>';
     }
 
     // The remarks line under a flight ("Part 91 · Training"), or '' when it has none.
     function flightRemarksHtml(f) {
       const r = flightRemarks(f);
-      return r.length ? '<div class="flight-remarks">' + flightEsc(r.join(' · ')) + '</div>' : '';
+      return r.length ? '<div class="flight-remarks">' + escHtml(r.join(' · ')) + '</div>' : '';
     }
 
     // What a row would change, e.g. "Dep 08:05, Part 91" (for unmatched rows).

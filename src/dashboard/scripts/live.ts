@@ -30,13 +30,20 @@ export function dashboardScriptsLive(): string {
     }
 
     // Applies a store refresh result to shared state and re-renders the flight list and status cards.
-    function applyStoreResult(result) {
-      liveDataByTracker = buildLiveDataByTracker(result);
+    // The store's flights into allFlights, the list and the alerts; remembers the store
+    // generation it rendered, so the onChange handler (init.ts) doesn't render it again.
+    function renderStoreFlights() {
       const allTrackerIds = trackerList.filter(t => t.active && !t.deleted).map(t => t.id);
+      dashboardRenderedGen = flightStore.generation();
       allFlights = flightStore.getAll(allTrackerIds).reverse();
       applyFilter();
-      updateAircraftStatusCards();
       refreshAlerts();
+    }
+
+    function applyStoreResult(result) {
+      liveDataByTracker = buildLiveDataByTracker(result);
+      renderStoreFlights();
+      updateAircraftStatusCards();
     }
 
     // Full adaptive poll cycle: refresh the store, update status and map.

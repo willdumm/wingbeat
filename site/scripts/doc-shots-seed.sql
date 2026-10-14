@@ -23,9 +23,9 @@ INSERT INTO trackers (id, name, type, source_url, active, assigned_aircraft, ass
   (1, 'Demo Cub Tracker', 'inreach', 'https://share.garmin.com/Feed/Share/demoCub', 1, 'N100DM', 1),
   (2, 'Demo Beaver Tracker', 'inreach', 'https://share.garmin.com/Feed/Share/demoBeaver', 1, 'N200DM', 2);
 
--- Manual flights (flight_log_entries rows with no tracker), so the flight editor has
+-- Manual flights (flight_corrections rows with no tracker), so the flight editor has
 -- rows to show: one Part 91 with a remark, one removed.
-INSERT INTO flight_log_entries (start_time, end_time, origin_label, destination_label, remark, part91, excluded, pilot_id, aircraft_tail) VALUES
+INSERT INTO flight_corrections (start_time, end_time, origin_label, destination_label, remark, part91, excluded, pilot_id, aircraft_tail) VALUES
   (1767254400, 1767258000, 'Lake Union', 'Friday Harbor', 'Training', 0, 0, 1, 'N100DM'),
   (1767265200, 1767268200, 'Friday Harbor', 'Lake Union', 'Ferry home', 1, 0, 1, 'N100DM'),
   (1767340800, 1767346200, 'Kenmore', 'Roche Harbor', NULL, 0, 0, 2, 'N200DM'),

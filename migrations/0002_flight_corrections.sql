@@ -7,7 +7,7 @@
 -- Flight corrections. A row with tracker_id + flight_start_time corrects the tracked
 -- flight with that start time: each NULL field means "use the tracker's value". A row
 -- with both NULL is a manual flight, which sets its own pilot, aircraft and times.
-CREATE TABLE IF NOT EXISTS flight_log_entries (
+CREATE TABLE IF NOT EXISTS flight_corrections (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   tracker_id        INTEGER REFERENCES trackers(id),
   flight_start_time INTEGER,
@@ -34,21 +34,21 @@ CREATE TABLE IF NOT EXISTS flight_log_entries (
          (pilot_id IS NOT NULL AND start_time IS NOT NULL AND end_time IS NOT NULL))
 );
 
-CREATE INDEX IF NOT EXISTS idx_flight_log_entries_pilot ON flight_log_entries(pilot_id);
+CREATE INDEX IF NOT EXISTS idx_flight_corrections_pilot ON flight_corrections(pilot_id);
 
--- Bumped on every write to flight_log_entries, so clients can tell cheaply whether
+-- Bumped on every write to flight_corrections, so clients can tell cheaply whether
 -- their cached copy is current. Triggers keep it right whichever route writes.
-CREATE TABLE IF NOT EXISTS flight_log_version (
+CREATE TABLE IF NOT EXISTS flight_corrections_version (
   id      INTEGER PRIMARY KEY CHECK (id = 1),
   version INTEGER NOT NULL
 );
-INSERT OR IGNORE INTO flight_log_version (id, version) VALUES (1, 0);
-CREATE TRIGGER IF NOT EXISTS flight_log_entries_ai AFTER INSERT ON flight_log_entries
-  BEGIN UPDATE flight_log_version SET version = version + 1 WHERE id = 1; END;
-CREATE TRIGGER IF NOT EXISTS flight_log_entries_au AFTER UPDATE ON flight_log_entries
-  BEGIN UPDATE flight_log_version SET version = version + 1 WHERE id = 1; END;
-CREATE TRIGGER IF NOT EXISTS flight_log_entries_ad AFTER DELETE ON flight_log_entries
-  BEGIN UPDATE flight_log_version SET version = version + 1 WHERE id = 1; END;
+INSERT OR IGNORE INTO flight_corrections_version (id, version) VALUES (1, 0);
+CREATE TRIGGER IF NOT EXISTS flight_corrections_ai AFTER INSERT ON flight_corrections
+  BEGIN UPDATE flight_corrections_version SET version = version + 1 WHERE id = 1; END;
+CREATE TRIGGER IF NOT EXISTS flight_corrections_au AFTER UPDATE ON flight_corrections
+  BEGIN UPDATE flight_corrections_version SET version = version + 1 WHERE id = 1; END;
+CREATE TRIGGER IF NOT EXISTS flight_corrections_ad AFTER DELETE ON flight_corrections
+  BEGIN UPDATE flight_corrections_version SET version = version + 1 WHERE id = 1; END;
 
 -- Per-pilot, per-local-date duty times or rest designation (not both).
 CREATE TABLE IF NOT EXISTS duty_days (

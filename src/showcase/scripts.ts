@@ -153,7 +153,7 @@ function showcaseDriverScript(): string {
     }
 
     // SAMPLE.dutyLog's corrections and manual flights in schedule time → GET
-    // /api/flight-log-entries rows, shifted like the flights.
+    // /api/flight-corrections rows, shifted like the flights.
     function sampleEntries() {
       const at = (daysAgo, minute) => localMidnight(daysAgo) + minute * 60 + SHIFT;
       const flightsById = Object.fromEntries(TRACKED_FLIGHTS.map(f => [f.id, f]));
@@ -468,7 +468,7 @@ function showcaseDriverScript(): string {
     // ── Pilot duty log ────────────────────────────────────────────────────────
 
     // SAMPLE.dutyLog's duty/rest days and default duty in schedule time → GET
-    // /api/duty-log's { days } and the pilot's default_duty_start/end, shifted like the
+    // /api/duty-days's { days } and the pilot's default_duty_start/end, shifted like the
     // flights.
     function dutyLogSample() {
       const at = (daysAgo, minute) => localMidnight(daysAgo) + minute * 60 + SHIFT;

@@ -1,6 +1,6 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
-import { Env, Tenant, Point, Flight, FlightRecord, FlightPoint, Tracker, Aircraft, Pilot, InviteToken, Webhook, TileOverlay, FlightLogEntry, DutyDay } from './types';
+import { Env, Tenant, Point, Flight, FlightRecord, FlightPoint, Tracker, Aircraft, Pilot, InviteToken, Webhook, TileOverlay, FlightCorrection, DutyDay } from './types';
 import { maybePoll, pollAllActive, pollAllActiveForce, testFeed } from './poller';
 import { resegment } from './segmentation';
 import { geocodePendingPoints, geocodeLivePoint, invalidateNamedPointsCache, computeLiveLabel, resolveRefPoint } from './geocoding';
@@ -961,36 +961,15 @@ app.delete('/api/overlays/:id', requireAdmin, async (c) => {
 
 // ── Bulk flight assignment route ──────────────────────────────────────────────
 
-// Sets aircraft and/or pilot on tracked flights (flight_ids, written to flights and their
-// points) and manual flights (entry_ids, flight_log_entries rows with no tracker).
-app.put('/api/flights/assignment', requireAdmin, async (c) => {
-  const body = await c.req.json<{ flight_ids?: unknown; entry_ids?: unknown; aircraft_tail?: string | null; pilot_id?: number | null }>();
-
-  const intList = (v: unknown) => Array.isArray(v)
-    ? (v as unknown[]).filter((id): id is number => typeof id === 'number' && Number.isInteger(id))
-    : null;
-  const ids = intList(body.flight_ids ?? []);
-  const entryIds = intList(body.entry_ids ?? []);
-  if (ids === null || entryIds === null) return c.json({ error: 'flight_ids and entry_ids must be arrays' }, 400);
-  if (ids.length === 0 && entryIds.length === 0) return c.json({ error: 'No valid flight IDs' }, 400);
-
-  const hasAircraft = Object.prototype.hasOwnProperty.call(body, 'aircraft_tail');
-  const hasPilot = Object.prototype.hasOwnProperty.call(body, 'pilot_id');
-  if (!hasAircraft && !hasPilot) return c.json({ error: 'aircraft_tail or pilot_id required' }, 400);
-
-  const trackerParam = c.req.query('tracker');
-  const trackerId = trackerParam ? parseInt(trackerParam, 10) : null;
-  if (trackerParam !== undefined && (trackerId === null || Number.isNaN(trackerId))) {
-    return c.json({ error: 'tracker must be an integer' }, 400);
-  }
-
-  const aircraft_tail = hasAircraft ? (body.aircraft_tail ?? null) : undefined;
-  const pilot_id = hasPilot ? (body.pilot_id ?? null) : undefined;
-  // A manual flight always has a pilot (flight_log_entries CHECK).
-  if (entryIds.length > 0 && hasPilot && pilot_id === null) {
-    return c.json({ error: 'Manual flights need a pilot' }, 400);
-  }
-
+// The writes that set aircraft and/or pilot (undefined = unchanged) on tracked flights
+// (ids: flights and their points, optionally limited to trackerId) and manual flights
+// (entryIds: flight_corrections rows with no tracker). Shared by the assignment route and
+// the flight form's save (POST /api/flight-corrections with assign), which batches them
+// with the correction so the two land together.
+function assignmentStatements(db: D1Database, { ids, entryIds, trackerId = null, aircraft_tail, pilot_id }: {
+  ids: number[]; entryIds: number[]; trackerId?: number | null;
+  aircraft_tail: string | null | undefined; pilot_id: number | null | undefined;
+}): D1PreparedStatement[] {
   const flightSets = ['modified_at = unixepoch()'];
   const flightValsBase: (string | number | null)[] = [];
   const pointSets: string[] = [];
@@ -1020,14 +999,14 @@ app.put('/api/flights/assignment', requireAdmin, async (c) => {
     const flightVals = [...flightValsBase, ...chunk];
     stmts.push(
       trackerId !== null
-        ? c.var.db.prepare(`UPDATE flights SET ${flightSets.join(', ')} WHERE id IN (${ph}) AND tracker_id = ?`).bind(...flightVals, trackerId)
-        : c.var.db.prepare(`UPDATE flights SET ${flightSets.join(', ')} WHERE id IN (${ph})`).bind(...flightVals)
+        ? db.prepare(`UPDATE flights SET ${flightSets.join(', ')} WHERE id IN (${ph}) AND tracker_id = ?`).bind(...flightVals, trackerId)
+        : db.prepare(`UPDATE flights SET ${flightSets.join(', ')} WHERE id IN (${ph})`).bind(...flightVals)
     );
 
     if (pointSets.length > 0) {
       const pointVals = [...pointValsBase, ...chunk];
       stmts.push(
-        c.var.db.prepare(
+        db.prepare(
           `UPDATE points SET ${pointSets.join(', ')} WHERE id IN (SELECT point_id FROM point_flights WHERE flight_id IN (${ph}))`
         ).bind(...pointVals)
       );
@@ -1038,11 +1017,45 @@ app.put('/api/flights/assignment', requireAdmin, async (c) => {
     const ENTRY_CHUNK = 100 - pointValsBase.length;
     for (let i = 0; i < entryIds.length; i += ENTRY_CHUNK) {
       const chunk = entryIds.slice(i, i + ENTRY_CHUNK);
-      stmts.push(c.var.db.prepare(
-        `UPDATE flight_log_entries SET ${entrySets.join(', ')} WHERE tracker_id IS NULL AND id IN (${chunk.map(() => '?').join(', ')})`
+      stmts.push(db.prepare(
+        `UPDATE flight_corrections SET ${entrySets.join(', ')} WHERE tracker_id IS NULL AND id IN (${chunk.map(() => '?').join(', ')})`
       ).bind(...pointValsBase, ...chunk));
     }
   }
+  return stmts;
+}
+
+// Sets aircraft and/or pilot on tracked flights (flight_ids, written to flights and their
+// points) and manual flights (entry_ids, flight_corrections rows with no tracker).
+app.put('/api/flights/assignment', requireAdmin, async (c) => {
+  const body = await c.req.json<{ flight_ids?: unknown; entry_ids?: unknown; aircraft_tail?: string | null; pilot_id?: number | null }>();
+
+  const intList = (v: unknown) => Array.isArray(v)
+    ? (v as unknown[]).filter((id): id is number => typeof id === 'number' && Number.isInteger(id))
+    : null;
+  const ids = intList(body.flight_ids ?? []);
+  const entryIds = intList(body.entry_ids ?? []);
+  if (ids === null || entryIds === null) return c.json({ error: 'flight_ids and entry_ids must be arrays' }, 400);
+  if (ids.length === 0 && entryIds.length === 0) return c.json({ error: 'No valid flight IDs' }, 400);
+
+  const hasAircraft = Object.prototype.hasOwnProperty.call(body, 'aircraft_tail');
+  const hasPilot = Object.prototype.hasOwnProperty.call(body, 'pilot_id');
+  if (!hasAircraft && !hasPilot) return c.json({ error: 'aircraft_tail or pilot_id required' }, 400);
+
+  const trackerParam = c.req.query('tracker');
+  const trackerId = trackerParam ? parseInt(trackerParam, 10) : null;
+  if (trackerParam !== undefined && (trackerId === null || Number.isNaN(trackerId))) {
+    return c.json({ error: 'tracker must be an integer' }, 400);
+  }
+
+  const aircraft_tail = hasAircraft ? (body.aircraft_tail ?? null) : undefined;
+  const pilot_id = hasPilot ? (body.pilot_id ?? null) : undefined;
+  // A manual flight always has a pilot (flight_corrections CHECK).
+  if (entryIds.length > 0 && hasPilot && pilot_id === null) {
+    return c.json({ error: 'Manual flights need a pilot' }, 400);
+  }
+
+  const stmts = assignmentStatements(c.var.db, { ids, entryIds, trackerId, aircraft_tail, pilot_id });
   await c.var.db.batch(stmts);
 
   let pilot_name: string | null = null;
@@ -1059,11 +1072,11 @@ app.put('/api/flights/assignment', requireAdmin, async (c) => {
 });
 
 // ── Flight corrections and pilot duty log routes ──────────────────────────────
-// Corrections and manual flights (flight_log_entries), applied by the client's flight
+// Corrections and manual flights (flight_corrections), applied by the client's flight
 // store to every page's flights, and duty/rest days (duty_days), read by the duty log.
 // See docs/duty-log-editing-plan.md and docs/flight-editor-plan.md.
 
-type EntryFields = Pick<FlightLogEntry,
+type EntryFields = Pick<FlightCorrection,
   'start_time' | 'end_time' | 'origin_label' | 'destination_label' | 'remark' |
   'start_lat' | 'start_lon' | 'end_lat' | 'end_lon' | 'part91' | 'excluded' | 'pilot_id' | 'aircraft_tail'>;
 
@@ -1084,7 +1097,7 @@ function hhmm(v: unknown): string | null | undefined {
   return typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v : undefined;
 }
 
-// Validates a flight_log_entries body (the form's full state) for a tracked-flight
+// Validates a flight_corrections body (the form's full state) for a tracked-flight
 // correction or a manual flight. Returns the column values or an error message.
 async function parseEntryFields(db: D1Database, body: Record<string, unknown>, tracked: boolean): Promise<EntryFields | string> {
   const int = (k: string): number | null | string => {
@@ -1163,28 +1176,61 @@ function isEmptyTrackedEntry(f: EntryFields): boolean {
     f.destination_label == null && f.remark == null && !f.part91 && !f.excluded;
 }
 
+// A tracked-flight save's optional assignment: { flight_id, aircraft_tail?, pilot_id? }
+// (a key left out = unchanged). Returns null when there's nothing to assign, the
+// validated change, or an error message.
+async function parseTrackedAssign(db: D1Database, v: unknown, trackerId: number): Promise<
+  { flight_id: number; set: { aircraft_tail: string | null | undefined; pilot_id: number | null | undefined } } | null | string> {
+  if (v == null) return null;
+  if (typeof v !== 'object') return 'assign must be an object';
+  const a = v as Record<string, unknown>;
+  if (!Number.isInteger(a.flight_id)) return 'assign.flight_id must be an integer';
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(a, k);
+  if (!has('aircraft_tail') && !has('pilot_id')) return null;
+  const aircraft_tail = has('aircraft_tail') ? a.aircraft_tail ?? null : undefined;
+  const pilot_id = has('pilot_id') ? a.pilot_id ?? null : undefined;
+  if (aircraft_tail != null && typeof aircraft_tail !== 'string') return 'assign.aircraft_tail must be a string or null';
+  if (pilot_id != null && !Number.isInteger(pilot_id)) return 'assign.pilot_id must be an integer or null';
+  if (!await db.prepare('SELECT 1 FROM flights WHERE id = ? AND tracker_id = ?').bind(a.flight_id, trackerId).first()) {
+    return 'Flight not found (it may have just been re-recorded; reload and try again)';
+  }
+  if (pilot_id != null && !await db.prepare('SELECT 1 FROM pilots WHERE id = ?').bind(pilot_id).first()) return 'Pilot not found';
+  if (aircraft_tail != null && !await db.prepare('SELECT 1 FROM aircraft WHERE tail_number = ?').bind(aircraft_tail).first()) {
+    return 'Aircraft not found';
+  }
+  return { flight_id: a.flight_id as number, set: { aircraft_tail: aircraft_tail as string | null | undefined, pilot_id: pilot_id as number | null | undefined } };
+}
+
 // Every row, for the flight store to apply to its flights. ?version=<n> (the client's
-// cached flight_log_version) returns { version, unchanged: true } when nothing has been
+// cached flight_corrections_version) returns { version, unchanged: true } when nothing has been
 // written since, so a refresh costs one single-row read. Readable by anyone signed in,
 // like the flights it's applied to; only writes are admin-only.
-app.get('/api/flight-log-entries', async (c) => {
+// The client's cache key for the rows: the write counter plus the row count and newest
+// updated_at, so a counter that restarts (a reset or recreated database) can't match a
+// stale cached copy by accident. Opaque to the client.
+const ENTRIES_VERSION_SQL =
+  `SELECT version || '.' || (SELECT COUNT(*) FROM flight_corrections) || '.' ||
+          (SELECT COALESCE(MAX(updated_at), 0) FROM flight_corrections) AS version
+   FROM flight_corrections_version WHERE id = 1`;
+
+app.get('/api/flight-corrections', async (c) => {
   c.header('Cache-Control', 'no-store');
-  const current = await c.var.db.prepare('SELECT version FROM flight_log_version WHERE id = 1').first<{ version: number }>();
-  const version = current?.version ?? 0;
-  if (c.req.query('version') === String(version)) return c.json({ version, unchanged: true });
+  const current = await c.var.db.prepare(ENTRIES_VERSION_SQL).first<{ version: string }>();
+  const version = current?.version ?? '0';
+  if (c.req.query('version') === version) return c.json({ version, unchanged: true });
   // Re-read the version alongside the rows, so they match even if a write came in between.
   const [v, entries] = await c.var.db.batch([
-    c.var.db.prepare('SELECT version FROM flight_log_version WHERE id = 1'),
-    c.var.db.prepare('SELECT * FROM flight_log_entries ORDER BY id'),
+    c.var.db.prepare(ENTRIES_VERSION_SQL),
+    c.var.db.prepare('SELECT * FROM flight_corrections ORDER BY id'),
   ]);
   return c.json({
-    version: (v.results[0] as { version: number } | undefined)?.version ?? 0,
-    entries: entries.results as FlightLogEntry[],
+    version: (v.results[0] as { version: string } | undefined)?.version ?? '0',
+    entries: entries.results as FlightCorrection[],
   });
 });
 
 // One pilot's duty/rest days. Flights (with corrections) come from the flight store.
-app.get('/api/duty-log', async (c) => {
+app.get('/api/duty-days', async (c) => {
   const pilotId = parseInt(c.req.query('pilot') ?? '', 10);
   if (Number.isNaN(pilotId)) return c.json({ error: 'pilot must be an integer' }, 400);
   const { results } = await c.var.db.prepare('SELECT * FROM duty_days WHERE pilot_id = ? ORDER BY date')
@@ -1193,7 +1239,7 @@ app.get('/api/duty-log', async (c) => {
   return c.json({ days: results });
 });
 
-app.post('/api/flight-log-entries', requireAdmin, async (c) => {
+app.post('/api/flight-corrections', requireAdmin, async (c) => {
   let body: Record<string, unknown>;
   try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
   const tracked = body.tracker_id != null || body.flight_start_time != null;
@@ -1204,36 +1250,48 @@ app.post('/api/flight-log-entries', requireAdmin, async (c) => {
   if (typeof fields === 'string') return c.json({ error: fields }, 400);
   const vals = ENTRY_COLUMNS.map(k => fields[k]);
 
-  let entry: FlightLogEntry | null;
+  let entry: FlightCorrection | null;
   if (tracked) {
     if (!await c.var.db.prepare('SELECT 1 FROM trackers WHERE id = ?').bind(body.tracker_id).first()) {
       return c.json({ error: 'Tracker not found' }, 400);
     }
+    // The flight form's aircraft/pilot change ({ flight_id, aircraft_tail?, pilot_id? }),
+    // written in the same batch as the correction so a save lands whole or not at all.
+    const assign = await parseTrackedAssign(c.var.db, body.assign, body.tracker_id as number);
+    if (typeof assign === 'string') return c.json({ error: assign }, 400);
+    const assignStmts = assign ? assignmentStatements(c.var.db, { ids: [assign.flight_id], entryIds: [], ...assign.set }) : [];
     if (isEmptyTrackedEntry(fields)) {
-      await c.var.db.prepare('DELETE FROM flight_log_entries WHERE tracker_id = ? AND flight_start_time = ?')
-        .bind(body.tracker_id, body.flight_start_time).run();
+      await c.var.db.batch([
+        c.var.db.prepare('DELETE FROM flight_corrections WHERE tracker_id = ? AND flight_start_time = ?')
+          .bind(body.tracker_id, body.flight_start_time),
+        ...assignStmts,
+      ]);
       return c.json({ entry: null });
     }
-    entry = await c.var.db.prepare(
-      `INSERT INTO flight_log_entries (tracker_id, flight_start_time, ${ENTRY_COLUMNS.join(', ')})
-       VALUES (?, ?, ${ENTRY_COLUMNS.map(() => '?').join(', ')})
-       ON CONFLICT (tracker_id, flight_start_time) DO UPDATE SET
-         ${ENTRY_COLUMNS.map(k => `${k} = excluded.${k}`).join(', ')}, updated_at = unixepoch()
-       RETURNING *`
-    ).bind(body.tracker_id, body.flight_start_time, ...vals).first<FlightLogEntry>();
+    const [upsert] = await c.var.db.batch([
+      c.var.db.prepare(
+        `INSERT INTO flight_corrections (tracker_id, flight_start_time, ${ENTRY_COLUMNS.join(', ')})
+         VALUES (?, ?, ${ENTRY_COLUMNS.map(() => '?').join(', ')})
+         ON CONFLICT (tracker_id, flight_start_time) DO UPDATE SET
+           ${ENTRY_COLUMNS.map(k => `${k} = excluded.${k}`).join(', ')}, updated_at = unixepoch()
+         RETURNING *`
+      ).bind(body.tracker_id, body.flight_start_time, ...vals),
+      ...assignStmts,
+    ]);
+    entry = (upsert.results[0] as FlightCorrection | undefined) ?? null;
   } else {
     entry = await c.var.db.prepare(
-      `INSERT INTO flight_log_entries (${ENTRY_COLUMNS.join(', ')})
+      `INSERT INTO flight_corrections (${ENTRY_COLUMNS.join(', ')})
        VALUES (${ENTRY_COLUMNS.map(() => '?').join(', ')}) RETURNING *`
-    ).bind(...vals).first<FlightLogEntry>();
+    ).bind(...vals).first<FlightCorrection>();
   }
   return c.json({ entry });
 });
 
-app.put('/api/flight-log-entries/:id', requireAdmin, async (c) => {
+app.put('/api/flight-corrections/:id', requireAdmin, async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (Number.isNaN(id)) return c.json({ error: 'Invalid id' }, 400);
-  const existing = await c.var.db.prepare('SELECT tracker_id FROM flight_log_entries WHERE id = ?')
+  const existing = await c.var.db.prepare('SELECT tracker_id FROM flight_corrections WHERE id = ?')
     .bind(id).first<{ tracker_id: number | null }>();
   if (!existing) return c.json({ error: 'Not found' }, 404);
   let body: Record<string, unknown>;
@@ -1241,20 +1299,20 @@ app.put('/api/flight-log-entries/:id', requireAdmin, async (c) => {
   const fields = await parseEntryFields(c.var.db, body, existing.tracker_id != null);
   if (typeof fields === 'string') return c.json({ error: fields }, 400);
   if (existing.tracker_id != null && isEmptyTrackedEntry(fields)) {
-    await c.var.db.prepare('DELETE FROM flight_log_entries WHERE id = ?').bind(id).run();
+    await c.var.db.prepare('DELETE FROM flight_corrections WHERE id = ?').bind(id).run();
     return c.json({ entry: null });
   }
   const entry = await c.var.db.prepare(
-    `UPDATE flight_log_entries SET ${ENTRY_COLUMNS.map(k => `${k} = ?`).join(', ')}, updated_at = unixepoch()
+    `UPDATE flight_corrections SET ${ENTRY_COLUMNS.map(k => `${k} = ?`).join(', ')}, updated_at = unixepoch()
      WHERE id = ? RETURNING *`
-  ).bind(...ENTRY_COLUMNS.map(k => fields[k]), id).first<FlightLogEntry>();
+  ).bind(...ENTRY_COLUMNS.map(k => fields[k]), id).first<FlightCorrection>();
   return c.json({ entry });
 });
 
 // Sets Part 91 and/or removed on many flights at once (the flight editor's bulk actions),
 // in one batch. Tracked flights are upserted keeping their other corrections; manual
 // flights are updated by id. Tracked rows left with nothing in them are deleted.
-app.post('/api/flight-log-entries/bulk', requireAdmin, async (c) => {
+app.post('/api/flight-corrections/bulk', requireAdmin, async (c) => {
   let body: { flights?: unknown; set?: { part91?: unknown; excluded?: unknown } };
   try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
   if (!Array.isArray(body.flights) || body.flights.length === 0) return c.json({ error: 'flights must be a non-empty array' }, 400);
@@ -1282,28 +1340,33 @@ app.post('/api/flight-log-entries/bulk', requireAdmin, async (c) => {
     if (results.length !== trackerIds.length) return c.json({ error: 'Tracker not found' }, 400);
   }
 
-  const stmts: D1PreparedStatement[] = tracked.map(f => c.var.db.prepare(
-    `INSERT INTO flight_log_entries (tracker_id, flight_start_time, part91, excluded)
-     VALUES (?1, ?2, COALESCE(?3, 0), COALESCE(?4, 0))
-     ON CONFLICT (tracker_id, flight_start_time) DO UPDATE SET
-       part91 = COALESCE(?3, part91), excluded = COALESCE(?4, excluded), updated_at = unixepoch()`
-  ).bind(f.tracker_id, f.flight_start_time, part91, excluded));
-  for (let i = 0; i < entryIds.length; i += 90) {
-    const chunk = entryIds.slice(i, i + 90);
+  // One statement per kind of flight, whatever the selection's size (json_each over the
+  // refs), so a large selection stays well inside D1's per-request query limit.
+  const stmts: D1PreparedStatement[] = [];
+  if (tracked.length) {
     stmts.push(c.var.db.prepare(
-      `UPDATE flight_log_entries SET part91 = COALESCE(?, part91), excluded = COALESCE(?, excluded), updated_at = unixepoch()
-       WHERE id IN (${chunk.map(() => '?').join(', ')})`
-    ).bind(part91, excluded, ...chunk));
+      `INSERT INTO flight_corrections (tracker_id, flight_start_time, part91, excluded)
+       SELECT json_extract(value, '$.tracker_id'), json_extract(value, '$.flight_start_time'), COALESCE(?2, 0), COALESCE(?3, 0)
+       FROM json_each(?1) WHERE true
+       ON CONFLICT (tracker_id, flight_start_time) DO UPDATE SET
+         part91 = COALESCE(?2, part91), excluded = COALESCE(?3, excluded), updated_at = unixepoch()`
+    ).bind(JSON.stringify(tracked), part91, excluded));
   }
-  stmts.push(c.var.db.prepare(`DELETE FROM flight_log_entries WHERE ${EMPTY_TRACKED_ENTRY_SQL}`));
+  if (entryIds.length) {
+    stmts.push(c.var.db.prepare(
+      `UPDATE flight_corrections SET part91 = COALESCE(?2, part91), excluded = COALESCE(?3, excluded), updated_at = unixepoch()
+       WHERE id IN (SELECT value FROM json_each(?1))`
+    ).bind(JSON.stringify(entryIds), part91, excluded));
+  }
+  stmts.push(c.var.db.prepare(`DELETE FROM flight_corrections WHERE ${EMPTY_TRACKED_ENTRY_SQL}`));
   await c.var.db.batch(stmts);
   return c.json({ ok: true });
 });
 
-app.delete('/api/flight-log-entries/:id', requireAdmin, async (c) => {
+app.delete('/api/flight-corrections/:id', requireAdmin, async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (Number.isNaN(id)) return c.json({ error: 'Invalid id' }, 400);
-  const result = await c.var.db.prepare('DELETE FROM flight_log_entries WHERE id = ?').bind(id).run();
+  const result = await c.var.db.prepare('DELETE FROM flight_corrections WHERE id = ?').bind(id).run();
   if (result.meta.changes === 0) return c.json({ error: 'Not found' }, 404);
   return c.json({ ok: true });
 });
@@ -1316,46 +1379,103 @@ function parseDutyDayKey(c: Context<{ Bindings: Env; Variables: Variables }>): {
   return { pilotId, date };
 }
 
-app.put('/api/duty-days/:pilot/:date', requireAdmin, async (c) => {
-  const key = parseDutyDayKey(c);
-  if (typeof key === 'string') return c.json({ error: key }, 400);
-  let body: { duty_start?: unknown; duty_end?: unknown; rest?: unknown; note?: unknown };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+type DutyDayFields = { dutyStart: string | null; dutyEnd: string | null; rest: number; note: string | null };
 
+// Validates a duty-day body ({ duty_start, duty_end, rest, note }). Returns the fields or
+// an error message.
+function parseDutyDayFields(body: { duty_start?: unknown; duty_end?: unknown; rest?: unknown; note?: unknown }): DutyDayFields | string {
   const dutyStart = hhmm(body.duty_start);
   const dutyEnd = hhmm(body.duty_end);
-  if (dutyStart === undefined || dutyEnd === undefined) return c.json({ error: 'Duty times must be HH:MM' }, 400);
-  if ((dutyStart == null) !== (dutyEnd == null)) return c.json({ error: 'Set both duty start and end, or neither' }, 400);
+  if (dutyStart === undefined || dutyEnd === undefined) return 'Duty times must be HH:MM';
+  if ((dutyStart == null) !== (dutyEnd == null)) return 'Set both duty start and end, or neither';
   const rest = body.rest ? 1 : 0;
-  if (rest && dutyStart != null) return c.json({ error: 'A rest day has no duty times' }, 400);
-  if (body.note != null && typeof body.note !== 'string') return c.json({ error: 'note must be a string' }, 400);
+  if (rest && dutyStart != null) return 'A rest day has no duty times';
+  if (body.note != null && typeof body.note !== 'string') return 'note must be a string';
   const note = typeof body.note === 'string' ? body.note.trim() || null : null;
-  if (!await c.var.db.prepare('SELECT 1 FROM pilots WHERE id = ?').bind(key.pilotId).first()) {
-    return c.json({ error: 'Pilot not found' }, 404);
-  }
+  return { dutyStart, dutyEnd, rest, note };
+}
 
-  // Nothing left to record: clear the day rather than keep an empty row.
-  if (!rest && dutyStart == null && note == null) {
-    await c.var.db.prepare('DELETE FROM duty_days WHERE pilot_id = ? AND date = ?').bind(key.pilotId, key.date).run();
-    return c.json({ day: null });
+// The writes that set one pilot's dates to fields. A day with nothing left to record is
+// cleared rather than kept as an empty row. rest_designated_at records when rest was first
+// marked (FAA interpretations require rest to be known in advance), so later edits to the
+// note keep it; unmarking rest clears it.
+function dutyDayStatements(db: D1Database, pilotId: number, dates: string[], f: DutyDayFields): D1PreparedStatement[] {
+  if (!f.rest && f.dutyStart == null && f.note == null) {
+    return dates.map(date => db.prepare('DELETE FROM duty_days WHERE pilot_id = ? AND date = ?').bind(pilotId, date));
   }
-  // rest_designated_at records when rest was first marked (FAA interpretations require rest
-  // to be known in advance), so later edits to the note keep it; unmarking rest clears it.
-  const day = await c.var.db.prepare(
+  return dates.map(date => db.prepare(
     `INSERT INTO duty_days (pilot_id, date, duty_start, duty_end, rest, rest_designated_at, note)
      VALUES (?1, ?2, ?3, ?4, ?5, CASE WHEN ?5 = 1 THEN unixepoch() END, ?6)
      ON CONFLICT (pilot_id, date) DO UPDATE SET
        duty_start = excluded.duty_start, duty_end = excluded.duty_end, rest = excluded.rest, note = excluded.note,
        rest_designated_at = CASE WHEN excluded.rest = 1 THEN COALESCE(duty_days.rest_designated_at, unixepoch()) END
      RETURNING *`
-  ).bind(key.pilotId, key.date, dutyStart, dutyEnd, rest, note).first<DutyDay>();
-  return c.json({ day });
+  ).bind(pilotId, date, f.dutyStart, f.dutyEnd, f.rest, f.note));
+}
+
+const MAX_DUTY_DAYS_PER_REQUEST = 366;
+
+// { dates: [YYYY-MM-DD, …] } of a range request, or an error message.
+function parseDutyDates(v: unknown): string[] | string {
+  if (!Array.isArray(v) || v.length === 0) return 'dates must be a non-empty array';
+  if (v.length > MAX_DUTY_DAYS_PER_REQUEST) return `At most ${MAX_DUTY_DAYS_PER_REQUEST} days at a time`;
+  for (const d of v) {
+    if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z'))) {
+      return 'dates must be YYYY-MM-DD';
+    }
+  }
+  return [...new Set(v as string[])];
+}
+
+async function pilotExists(db: D1Database, pilotId: number): Promise<boolean> {
+  return !!await db.prepare('SELECT 1 FROM pilots WHERE id = ?').bind(pilotId).first();
+}
+
+app.put('/api/duty-days/:pilot/:date', requireAdmin, async (c) => {
+  const key = parseDutyDayKey(c);
+  if (typeof key === 'string') return c.json({ error: key }, 400);
+  let body: { duty_start?: unknown; duty_end?: unknown; rest?: unknown; note?: unknown };
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const fields = parseDutyDayFields(body);
+  if (typeof fields === 'string') return c.json({ error: fields }, 400);
+  if (!await pilotExists(c.var.db, key.pilotId)) return c.json({ error: 'Pilot not found' }, 404);
+  const [r] = await c.var.db.batch(dutyDayStatements(c.var.db, key.pilotId, [key.date], fields));
+  return c.json({ day: (r.results[0] as DutyDay | undefined) ?? null });
+});
+
+// The same for many dates at once ({ dates, duty_start, duty_end, rest, note }), in one
+// batch: the day form's Through range. All the days are written, or none.
+app.put('/api/duty-days/:pilot', requireAdmin, async (c) => {
+  const pilotId = parseInt(c.req.param('pilot') ?? '', 10);
+  if (Number.isNaN(pilotId)) return c.json({ error: 'Invalid pilot id' }, 400);
+  let body: { dates?: unknown; duty_start?: unknown; duty_end?: unknown; rest?: unknown; note?: unknown };
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const dates = parseDutyDates(body.dates);
+  if (typeof dates === 'string') return c.json({ error: dates }, 400);
+  const fields = parseDutyDayFields(body);
+  if (typeof fields === 'string') return c.json({ error: fields }, 400);
+  if (!await pilotExists(c.var.db, pilotId)) return c.json({ error: 'Pilot not found' }, 404);
+  const results = await c.var.db.batch(dutyDayStatements(c.var.db, pilotId, dates, fields));
+  return c.json({ days: results.flatMap(r => r.results as DutyDay[]) });
 });
 
 app.delete('/api/duty-days/:pilot/:date', requireAdmin, async (c) => {
   const key = parseDutyDayKey(c);
   if (typeof key === 'string') return c.json({ error: key }, 400);
   await c.var.db.prepare('DELETE FROM duty_days WHERE pilot_id = ? AND date = ?').bind(key.pilotId, key.date).run();
+  return c.json({ ok: true });
+});
+
+// Clears many dates at once ({ dates }), in one statement.
+app.post('/api/duty-days/:pilot/clear', requireAdmin, async (c) => {
+  const pilotId = parseInt(c.req.param('pilot') ?? '', 10);
+  if (Number.isNaN(pilotId)) return c.json({ error: 'Invalid pilot id' }, 400);
+  let body: { dates?: unknown };
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const dates = parseDutyDates(body.dates);
+  if (typeof dates === 'string') return c.json({ error: dates }, 400);
+  await c.var.db.prepare('DELETE FROM duty_days WHERE pilot_id = ? AND date IN (SELECT value FROM json_each(?))')
+    .bind(pilotId, JSON.stringify(dates)).run();
   return c.json({ ok: true });
 });
 

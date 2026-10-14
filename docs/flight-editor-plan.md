@@ -441,3 +441,41 @@ Where the implementation departs from, or adds to, the plan above:
   `data-doc-shot="flight-editor.add-flight"` to reach the flight form.
 - **Step 1** carried a temporary client change (the duty log fetching entries from
   `/api/flight-log-entries`), removed in step 2.
+
+### After review
+
+- **Corrections are a client-side overlay.** "Every page shows corrected flights" means
+  every page of the app: `/api/flights`, `/api/flights/:id/points` and webhook/Pushover
+  events still serve the tracker's own data. Anything that reads flights on the server
+  has to apply `flight_corrections` itself.
+- **Manual flights count everywhere.** Including commercial flying for another operator
+  entered for the duty log: it shows in fleet analytics (under "Unknown aircraft" or
+  "Unknown location" when those aren't set) and, in a fleet aircraft, in maintenance
+  estimates.
+- **Reads are open to signed-in users.** `GET /api/flight-corrections` and
+  `GET /api/duty-days?pilot=` are readable by viewers too, like flights and the duty log they
+  feed (so viewers see duty-day notes); every write is `requireAdmin`. §2 of
+  duty-log-editing-plan.md said every route was admin-only.
+- **Saves are atomic.** The flight form saves a tracked flight's correction and its
+  aircraft/pilot change in one request (`POST /api/flight-corrections` with `assign: {
+  flight_id, aircraft_tail?, pilot_id? }`, one D1 batch). The day form's Through range
+  goes through `PUT /api/duty-days/:pilot` (`{ dates, … }`) and
+  `POST /api/duty-days/:pilot/clear` (`{ dates }`), one batch each. The bulk route is one
+  statement per kind of flight (`json_each` over the refs), whatever the selection size.
+- **Rest periods.** A rest day that gets a warning (flights on it, not designated in
+  advance, previous duty past midnight) doesn't count toward the quarter's 13.
+- **Unapplied corrections.** Rows for a tracker the store refreshed but with no matching
+  flight (including after its points were wiped) are unmatched; rows for trackers the
+  page doesn't load (deleted or inactive) are listed in the editor as "unplaced". In the
+  duty log an unmatched row goes to the pilot of the same tracker's nearest flight within
+  12 h, and otherwise only to the editor.
+- **Cache key.** The corrections version the client caches is the write counter plus the
+  row count and newest `updated_at`, so a counter that restarts can't match a stale copy.
+- **Renamed.** The table holds flight corrections and manual flights, not duty-log
+  entries, so `flight_log_entries` is now `flight_corrections` (version table
+  `flight_corrections_version`, triggers `flight_corrections_ai/au/ad`, index
+  `idx_flight_corrections_pilot`), `/api/flight-log-entries[…]` is
+  `/api/flight-corrections[…]`, `GET /api/duty-log?pilot=` (now only `{ days }`) is
+  `GET /api/duty-days?pilot=`, the type `FlightLogEntry` is `FlightCorrection`, and the
+  migration `0002_duty_log.sql` is `0002_flight_corrections.sql`. The sections above keep
+  the old names. Staging needed the reset in §1 (it had the original 0002 applied).

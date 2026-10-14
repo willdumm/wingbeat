@@ -1,12 +1,6 @@
 import { icon } from './icons';
 
 /**
- * Shared small form dialog: a scrim, and a panel with a title bar, a body of labeled
- * fields (`.form-field`) that scrolls when it doesn't fit, and a footer of buttons. Used
- * by the shared flight form (flight-editor.ts) and the duty log's day editor.
- * It sits above the settings modal, so it can open from a settings view.
- */
-/**
  * The text input / select / textarea look shared by every form: the form modal's
  * fields and the settings modal's forms. `selector` lists the controls to style.
  */
@@ -30,6 +24,12 @@ export function formControlStyles(selector: string): string {
   `;
 }
 
+/**
+ * Shared small form dialog: a scrim, and a panel with a title bar, a body of labeled
+ * fields (`.form-field`) that scrolls when it doesn't fit, and a footer of buttons. Used
+ * by the shared flight form (flight-editor.ts) and the duty log's day editor.
+ * It sits above the settings modal, so it can open from a settings view.
+ */
 export function formModalStyles(): string {
   return `
     .form-modal {
@@ -129,8 +129,9 @@ export function formModalScript(): string {
 
     // Opens a form modal (formModalStyles()) and returns { modal, close }. bodyHtml and
     // footerHtml are trusted markup; the caller wires up its own buttons. Escape, the
-    // close button and the backdrop close it; extra classes go on the root (e.g.
-    // 'form-modal-wide').
+    // close button and the backdrop close it; a backdrop click (easy to make by accident
+    // on a phone) asks first once a field has been changed. Tab stays inside the dialog.
+    // Extra classes go on the root (e.g. 'form-modal-wide').
     function openFormModal({ id, title, bodyHtml, footerHtml, className = '' }) {
       const existing = document.getElementById(id);
       if (existing) existing.remove();
@@ -156,12 +157,31 @@ export function formModalScript(): string {
       // Move focus into the dialog (the panel, so a phone doesn't pop its keyboard for the
       // first field), and give it back on close.
       const opener = document.activeElement;
-      modal.querySelector('.form-modal-panel').focus();
+      const panel = modal.querySelector('.form-modal-panel');
+      panel.focus();
+
+      let dirty = false;
+      panel.addEventListener('input', () => { dirty = true; });
+      panel.addEventListener('change', () => { dirty = true; });
 
       function onKey(e) {
-        if (e.key !== 'Escape') return;
-        e.stopPropagation();
-        close();
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          close();
+          return;
+        }
+        if (e.key !== 'Tab') return;
+        // Keep focus in the dialog: wrap from the last control to the first and back.
+        const focusable = [...panel.querySelectorAll('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])')]
+          .filter(el => !el.disabled && el.offsetParent !== null);
+        if (!focusable.length) { e.preventDefault(); return; }
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey && (active === first || !panel.contains(active) || active === panel)) {
+          e.preventDefault(); last.focus();
+        } else if (!e.shiftKey && (active === last || !panel.contains(active))) {
+          e.preventDefault(); first.focus();
+        }
       }
       function close() {
         document.removeEventListener('keydown', onKey, true);
@@ -169,7 +189,9 @@ export function formModalScript(): string {
         if (opener && opener.isConnected) opener.focus();
       }
       document.addEventListener('keydown', onKey, true);
-      modal.querySelector('.form-modal-backdrop').addEventListener('click', close);
+      modal.querySelector('.form-modal-backdrop').addEventListener('click', () => {
+        if (!dirty || confirm('Discard your changes?')) close();
+      });
       modal.querySelector('.form-modal-close').addEventListener('click', close);
       return { modal, close };
     }

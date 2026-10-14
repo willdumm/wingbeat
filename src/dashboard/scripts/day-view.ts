@@ -120,8 +120,10 @@ export function dashboardScriptsDayView(): string {
         return;
       }
 
-      if (filteredFlights.length > 0) {
-        const f = filteredFlights[0];
+      // The newest tracked flight: a manual one has no track to show, and selecting it
+      // would leave an empty map with no aircraft on it.
+      const f = filteredFlights.find(x => x.tracker_id != null);
+      if (f) {
         const el = document.querySelector('.flight-item[data-id="' + f.id + '"]');
         activeFlightId = null;
         selectFlight(f, el, fit);

@@ -12,6 +12,7 @@ export function dashboardScriptsInit(): string {
           trackerList = d.trackers;
           aircraftList = d.aircraft;
           pilotList = d.pilots;
+          flightStore.setPilots(pilotList);
           overlayList = d.overlays;
           currentUser = d.me;
         }
@@ -46,12 +47,16 @@ export function dashboardScriptsInit(): string {
       // fitted to the current flights. With nothing cached, the map waits for phase 2.
       flightStore.init();
       allFlights = flightStore.getAll(allTrackerIds).reverse();
-      // A correction saved anywhere (flight editor, duty log) refreshes the store; show it.
-      flightStore.onChange(() => {
-        allFlights = flightStore.getAll(allTrackerIds).reverse();
-        applyFilter();
-        refreshAlerts();
-      });
+      // A store change the dashboard didn't render itself (a correction saved in the flight
+      // editor or duty log, another tab's sync, a pilot rename): re-render the list, alerts
+      // and map. Deferred a task, so a refresh the dashboard started (a poll, the refresh
+      // button) renders through applyStoreResult first and this sees nothing left to do.
+      flightStore.onChange(() => setTimeout(() => {
+        if (flightStore.generation() === dashboardRenderedGen) return;
+        const oldFlights = allFlights;
+        renderStoreFlights();
+        refreshMapIfNeeded(oldFlights).catch(() => {});
+      }, 0));
       liveDataByTracker = buildLiveDataByTracker(null);
       applyFilter();
       if (allFlights.length > 0) showDefaultMapView();

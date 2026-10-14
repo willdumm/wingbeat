@@ -111,7 +111,7 @@ export function analyticsScriptsMap(): string {
         ]);
         if (trackerResp.ok) { const d = await trackerResp.json(); trackerList = d.trackers; }
         if (aircraftResp.ok) { const d = await aircraftResp.json(); aircraftList = d.aircraft; }
-        if (pilotResp.ok) { const d = await pilotResp.json(); pilotList = d.pilots; }
+        if (pilotResp.ok) { const d = await pilotResp.json(); pilotList = d.pilots; flightStore.setPilots(pilotList); }
       } catch (_) {}
       refreshFilterDropdowns();
       rerender();
@@ -139,7 +139,7 @@ export function analyticsScriptsMap(): string {
         ]);
         if (trackerResp.ok) { const d = await trackerResp.json(); trackerList = d.trackers; }
         if (aircraftResp.ok) { const d = await aircraftResp.json(); aircraftList = d.aircraft; }
-        if (pilotResp.ok) { const d = await pilotResp.json(); pilotList = d.pilots; }
+        if (pilotResp.ok) { const d = await pilotResp.json(); pilotList = d.pilots; flightStore.setPilots(pilotList); }
         if (overlayResp.ok) { const d = await overlayResp.json(); overlayList = d.overlays; }
       } catch (_) {}
 
