@@ -21,15 +21,32 @@ export function formControlStyles(selector: string): string {
     }
     :is(${selector}):hover:not(:disabled) { border-color: var(--border-strong); }
     :is(${selector}):focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--ring-focus); }
-    /* iOS Safari draws native date/time inputs at their own width, ignoring width and
-       min-width, so two side by side spill into each other; without the native look they
-       size like any other field (as filters.ts does for its dates). An empty one would
-       then collapse to no height, and its value would be centered. */
+    /* Without the native look a date/time input sizes like any other field (as filters.ts
+       does for its dates). An empty one would then collapse to no height on iOS, and its
+       value would be centered. */
     :is(${selector}):is([type="date"], [type="time"], [type="datetime-local"]) {
       -webkit-appearance: none;
       appearance: none;
     }
     :is(${selector})::-webkit-date-and-time-value { min-height: 1.2em; text-align: left; }
+    /* iOS sizes date/time inputs as content-box whatever box-sizing says (WebKit bug
+       301648), so width: 100% plus the padding and border overflows the field and two side
+       by side overlap. On iOS only (-webkit-touch-callout), such an input has no border
+       or side padding to add: the border is an inset shadow and the inset is on the value. */
+    @supports (-webkit-touch-callout: none) {
+      :is(${selector}):is([type="date"], [type="time"], [type="datetime-local"]) {
+        border: 0;
+        padding: calc(0.4rem + 1.5px) 0;
+        box-shadow: inset 0 0 0 1.5px var(--border);
+      }
+      :is(${selector}):is([type="date"], [type="time"], [type="datetime-local"]):hover:not(:disabled) {
+        box-shadow: inset 0 0 0 1.5px var(--border-strong);
+      }
+      :is(${selector}):is([type="date"], [type="time"], [type="datetime-local"]):focus-visible {
+        box-shadow: inset 0 0 0 1.5px var(--accent), var(--ring-focus);
+      }
+      :is(${selector})::-webkit-date-and-time-value { margin: 0; padding-inline: 0.5rem; box-sizing: border-box; }
+    }
   `;
 }
 
