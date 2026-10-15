@@ -159,7 +159,7 @@ function showcaseDriverScript(): string {
       const flightsById = Object.fromEntries(TRACKED_FLIGHTS.map(f => [f.id, f]));
       const placeByName = Object.fromEntries(SAMPLE.places.map(p => [p[0], p]));
       const blank = { start_time: null, end_time: null, origin_label: null, destination_label: null, remark: null,
-                      start_lat: null, start_lon: null, end_lat: null, end_lon: null, part91: 0, excluded: 0, pilot_id: null, aircraft_tail: null, updated_at: 0 };
+                      start_lat: null, start_lon: null, end_lat: null, end_lon: null, part91: 0, unpaid: 0, excluded: 0, pilot_id: null, aircraft_tail: null, updated_at: 0 };
       const entries = [];
       for (const e of SAMPLE.dutyLog.edits) {
         const f = flightsById[e.flightId];

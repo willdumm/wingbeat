@@ -17,7 +17,8 @@ can record duty times and plan rest days before it's exported as a record.
 One row per flight that month: date, duty, aircraft, origin, departure time,
 destination, arrival time and flight time. A flight with remarks gets a row
 under it, e.g. "Remarks: Part 91 · Training": "Part 91" for a flight flown
-under Part 91 (nothing is shown for Part 135), then the flight's remark. Most
+under Part 91, or "Part 91 (unpaid)" for one [marked unpaid](#unpaid-flights)
+(nothing is shown for Part 135), then the flight's remark. Most
 flights have none. Each day with flights gets a day-total row; the month gets a
 total at the bottom.
 
@@ -31,7 +32,8 @@ with no flights and nothing recorded shows "—".
 Admins can edit the log; other users see it read-only.
 
 - **Flights:** the pencil on a flight row opens the flight form: times,
-  origin and destination, aircraft, pilot, Part 135 or Part 91, and a remark.
+  origin and destination, aircraft, pilot, Part 135 or Part 91 (paid or
+  unpaid), and a remark.
   **Edit flights** in the toolbar opens the flight editor filtered to this
   pilot and month, to change several flights at once or add one the tracker
   missed. Corrections show everywhere the flight appears, not just here; a
@@ -161,14 +163,30 @@ regularly assigned duty period. The log warns about:
   duty and the rest after it add up to less than 24 hours
 
 The totals panel shows flight time this calendar quarter (limit 500 hours),
-this and the previous quarter (800), and the calendar year (1,400), including
-Part 91 flights, and the quarter's 24-hour rest periods (13 required), counted
+this and the previous quarter (800), and the calendar year (1,400), counting
+all commercial flying (Part 135, and Part 91 unless [marked unpaid](#unpaid-flights)), and the quarter's 24-hour rest periods (13 required), counted
 as the rest days with no warning: no flights on the day, designated before it,
 and the previous day's duty over by midnight. Rest days that haven't happened yet are shown
 separately as planned, and the rest row turns red once the quarter can no
 longer reach 13 even if every remaining day were rest. Totals are as of now for
 the current month, and as of the month's end for a past one,
 so a past month's PDF comes out the same whenever it's exported.
+
+### Unpaid flights
+
+§135.267 limits flight time in all *commercial* flying, and the FAA reads
+"other commercial flying" as flying the pilot is paid for (interpretations to
+[Martindell, 2009](https://www.faa.gov/media/14636) and
+[Rodriguez, 2012](https://www.faa.gov/media/13326)). So a Part 91 flight can be
+marked **Unpaid** in the [flight form](../editing-flights#the-flight-form), and
+the log then leaves it out of the totals and the daily flight time limit. It
+stays in the log and the day and month totals, marked "Part 91 (unpaid)", and
+it still counts as time the pilot wasn't resting.
+
+Mark a flight unpaid only when the pilot genuinely received no compensation
+for it, such as a personal flight in their own time. Flying the pilot does as
+part of their job is paid even without a separate fee: a salaried pilot's ferry
+or positioning flight is paid, and so is paid flight instruction.
 
 ## Export
 

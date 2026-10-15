@@ -1568,7 +1568,7 @@ const trackerList = SAMPLE.trackers;
     // and returns { flights, unmatched, unplaced }, flights sorted by (corrected) start time.
     //
     // A corrected flight is a copy of the record with the row's non-NULL fields applied
-    // and edit: { entry, manual, part91, remark, excluded, original: { field: tracker's
+    // and edit: { entry, manual, part91, unpaid, remark, excluded, original: { field: tracker's
     // value } }; an untouched one is the record itself, with edit null. A removed
     // (excluded) flight is left out unless includeRemoved. A manual flight (a row with no
     // tracker) gets id -entry.id, tracker_id null, points [], its named-point coordinates
@@ -1598,7 +1598,7 @@ const trackerList = SAMPLE.trackers;
           ...f,
           // Bumped by an edit too, so anything that redraws on a changed flight notices.
           modified_at: Math.max(f.modified_at ?? 0, e.updated_at ?? 0),
-          edit: { entry: e, manual: false, part91: !!e.part91, remark: e.remark || null, excluded: !!e.excluded, original: {} },
+          edit: { entry: e, manual: false, part91: !!e.part91, unpaid: !!e.unpaid, remark: e.remark || null, excluded: !!e.excluded, original: {} },
         };
         for (const field of FLIGHT_EDIT_FIELDS) {
           if (e[field] != null) { eff.edit.original[field] = f[field]; eff[field] = e[field]; }
@@ -1616,7 +1616,7 @@ const trackerList = SAMPLE.trackers;
           start_lat: e.start_lat, start_lon: e.start_lon, end_lat: e.end_lat, end_lon: e.end_lon,
           aircraft_tail: e.aircraft_tail, pilot_id: e.pilot_id, pilot_name: pilotName(e.pilot_id),
           points: [],
-          edit: { entry: e, manual: true, part91: !!e.part91, remark: e.remark || null, excluded: !!e.excluded, original: {} },
+          edit: { entry: e, manual: true, part91: !!e.part91, unpaid: !!e.unpaid, remark: e.remark || null, excluded: !!e.excluded, original: {} },
         });
       }
       out.sort((a, b) => a.start_time - b.start_time);
@@ -1629,11 +1629,11 @@ const trackerList = SAMPLE.trackers;
       };
     }
 
-    // The remarks shown under a flight, in order: "Part 91" (nothing for Part 135), then
-    // its free-text remark. Empty for most flights.
+    // The remarks shown under a flight, in order: "Part 91" or "Part 91 (unpaid)" (nothing
+    // for Part 135), then its free-text remark. Empty for most flights.
     function flightRemarks(f) {
       const out = [];
-      if (f.edit && f.edit.part91) out.push('Part 91');
+      if (f.edit && f.edit.part91) out.push(f.edit.unpaid ? 'Part 91 (unpaid)' : 'Part 91');
       if (f.edit && f.edit.remark) out.push(f.edit.remark);
       return out;
     }
@@ -1665,7 +1665,7 @@ const trackerList = SAMPLE.trackers;
       if (e.end_time != null) parts.push('Arr ' + unixToTzTime(e.end_time));
       if (e.origin_label != null) parts.push('Origin ' + e.origin_label);
       if (e.destination_label != null) parts.push('Dest ' + e.destination_label);
-      if (e.part91) parts.push('Part 91');
+      if (e.part91) parts.push(e.unpaid ? 'Part 91 (unpaid)' : 'Part 91');
       if (e.remark) parts.push('Remark “' + e.remark + '”');
       if (e.excluded) parts.push('removed');
       return parts.join(', ') || 'no corrections';
@@ -1730,6 +1730,13 @@ const trackerList = SAMPLE.trackers;
     let _typstModule    = null;
     let _typstInstance  = null;
     let _typstWasmBytes = null;
+
+    // Whether an effective flight is commercial flying, which the §135.267 limits count: all
+    // but Part 91 flying marked unpaid (FAA interpretations to Martindell, 2009, and
+    // Rodriguez, 2012).
+    function _dutyCommercial(f) {
+      return !(f.edit && f.edit.unpaid);
+    }
 
     function fmtBlock(secs) {
       const h = Math.floor(secs / 3600);
@@ -1858,7 +1865,7 @@ const trackerList = SAMPLE.trackers;
     // warnings }: duty is the day's duty period from its record or, on a flying day with
     // no record, from defaultDuty (then defaultDuty is true). A day's flight is the
     // effective flight plus { manual, part91, remarks, entry, secs, edited: { field:
-    // tracker's value } }. upcoming (current month only) lists the records dated after
+    // tracker's value }, commercial }. upcoming (current month only) lists the records dated after
     // today, for planning.
     function computeDutyData(allFlights, pilotId, pilotName, year, month,
                              { days: dayRecords = [], defaultDuty = null, unmatched: unmatchedEntries = [], method = 'b' } = {}) {
@@ -1872,6 +1879,7 @@ const trackerList = SAMPLE.trackers;
         ...f,
         manual: !!(f.edit && f.edit.manual),
         part91: !!(f.edit && f.edit.part91),
+        commercial: _dutyCommercial(f),
         remarks: flightRemarks(f),
         entry: f.edit ? f.edit.entry : null,
         edited: f.edit ? f.edit.original : {},
@@ -1900,14 +1908,14 @@ const trackerList = SAMPLE.trackers;
       const { flightsByDate, recordByDate, dutyOf, spanOf, restProblems } = _dutyCalendar(flights, dayRecords, defaultDuty);
 
       // Flight time in the 24 h ending at end, in all commercial flying (§135.267(b)): Part
-      // 135 and Part 91 alike. Only evaluated at the end of a Part 135 flight, so Part 91
+      // 135 and paid Part 91 alike. Only evaluated at the end of a Part 135 flight, so Part 91
       // flying before a Part 135 flight counts and Part 91 flying after the last one falls
       // in no window (FAA interpretation to Converse, 2011).
       function flightTime24(end) {
         const from = end - 86400;
         let s = 0;
         for (const g of flights) {
-          if (g.end_time <= from || g.start_time >= end) continue;
+          if (!g.commercial || g.end_time <= from || g.start_time >= end) continue;
           s += Math.min(g.end_time, end) - Math.max(g.start_time, from);
         }
         return s;
@@ -1938,7 +1946,7 @@ const trackerList = SAMPLE.trackers;
         if (!span || !dutyOf(dateKey)) return { secs: 0, text: '' };
         const inDuty = flights.filter(f => f.start_time >= span.start && f.start_time < span.end);
         const last135 = Math.max(-Infinity, ...inDuty.filter(f => !f.part91).map(f => f.end_time));
-        const secs = inDuty.reduce((t, f) => t + (f.start_time < last135 ? f.secs : 0), 0);
+        const secs = inDuty.reduce((t, f) => t + (f.commercial && f.start_time < last135 ? f.secs : 0), 0);
         return { secs, text: fmtBlock(secs) + ' flight time in the duty period' };
       }
 
@@ -2103,8 +2111,9 @@ const trackerList = SAMPLE.trackers;
 
     // One pilot's §135.267 totals as of the epoch asOf: flight time in the calendar
     // quarter containing it, that plus the previous quarter, and the calendar year, flight
-    // time in the 24 h before it (all including Part 91: the 24 h are the window of the
-    // pilot's next flight, so any Part 91 flying in them came before it), and 24-hour
+    // time in the 24 h before it (all commercial flying, Part 91 included: the 24 h are the
+    // window of the pilot's next flight, so any Part 91 flying in them came before it;
+    // unpaid flights left out), and 24-hour
     // rest periods in the quarter (days marked rest that get no rest warning: no flights,
     // designated in advance, previous duty over by midnight). flights are effective
     // flights for every pilot; days the pilot's duty_days rows (omitted: no rest counted,
@@ -2114,6 +2123,7 @@ const trackerList = SAMPLE.trackers;
     // required, short } }.
     function dutyTotals(flights, pilotId, asOf, { days: dayRecords = [], defaultDuty = null, asOfLabel = 'now' } = {}) {
       const own = flights.filter(f => f.pilot_id === pilotId && f.end_time != null && !(f.edit && f.edit.excluded));
+      const commercial = own.filter(_dutyCommercial);
       const secsOf = f => Math.max(0, f.end_time - f.start_time);
       const asOfDateKey = unixToTzDateStr(asOf - 1);
       const [year, month] = asOfDateKey.split('-').map(Number);
@@ -2125,10 +2135,10 @@ const trackerList = SAMPLE.trackers;
       const quarterName = (y, m) => 'Q' + ((m - 1) / 3 + 1) + ' ' + y;
       function flownSince(dateKey) {
         const from = tzLocalToEpoch(dateKey, '00:00');
-        return own.reduce((s, f) => s + (f.start_time >= from && f.start_time < asOf ? secsOf(f) : 0), 0);
+        return commercial.reduce((s, f) => s + (f.start_time >= from && f.start_time < asOf ? secsOf(f) : 0), 0);
       }
       let flight24 = 0;
-      for (const f of own) {
+      for (const f of commercial) {
         if (f.end_time <= asOf - 86400 || f.start_time >= asOf) continue;
         flight24 += Math.min(f.end_time, asOf) - Math.max(f.start_time, asOf - 86400);
       }
@@ -2323,10 +2333,11 @@ const trackerList = SAMPLE.trackers;
     }
 
     const DUTY_TOTALS_FOOTNOTE =
-      'Hour totals include Part 91 flights. Rest periods are days marked rest in advance, with no ' +
-      'flights and the previous duty over by midnight (a rest day with a warning isn’t counted). ' +
-      'The 8-hour limit in any 24 hours counts Part 91 flying before a Part 135 flight and leaves ' +
-      'out Part 91 flying after the last one (FAA interpretation to Converse, 2011).';
+      'Hour totals count commercial flying: Part 135 and Part 91 flights, but not Part 91 flights ' +
+      'marked unpaid. Rest periods are days marked rest in advance, with no flights and the ' +
+      'previous duty over by midnight (a rest day with a warning isn’t counted). The daily flight ' +
+      'time limit counts paid Part 91 flying before a Part 135 flight and leaves out Part 91 flying ' +
+      'after the last one (FAA interpretation to Converse, 2011).';
 
     // Fetches url, from the Cache API when it has it, and caches the response.
     // onLoaded(bytes so far, total) reports progress (total 0 when unknown).
@@ -3382,7 +3393,7 @@ REGIONS = SAMPLE.regions;
       const flightsById = Object.fromEntries(TRACKED_FLIGHTS.map(f => [f.id, f]));
       const placeByName = Object.fromEntries(SAMPLE.places.map(p => [p[0], p]));
       const blank = { start_time: null, end_time: null, origin_label: null, destination_label: null, remark: null,
-                      start_lat: null, start_lon: null, end_lat: null, end_lon: null, part91: 0, excluded: 0, pilot_id: null, aircraft_tail: null, updated_at: 0 };
+                      start_lat: null, start_lon: null, end_lat: null, end_lon: null, part91: 0, unpaid: 0, excluded: 0, pilot_id: null, aircraft_tail: null, updated_at: 0 };
       const entries = [];
       for (const e of SAMPLE.dutyLog.edits) {
         const f = flightsById[e.flightId];

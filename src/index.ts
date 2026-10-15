@@ -1078,11 +1078,11 @@ app.put('/api/flights/assignment', requireAdmin, async (c) => {
 
 type EntryFields = Pick<FlightCorrection,
   'start_time' | 'end_time' | 'origin_label' | 'destination_label' | 'remark' |
-  'start_lat' | 'start_lon' | 'end_lat' | 'end_lon' | 'part91' | 'excluded' | 'pilot_id' | 'aircraft_tail'>;
+  'start_lat' | 'start_lon' | 'end_lat' | 'end_lon' | 'part91' | 'unpaid' | 'excluded' | 'pilot_id' | 'aircraft_tail'>;
 
 const ENTRY_COLUMNS = [
   'start_time', 'end_time', 'origin_label', 'destination_label', 'remark',
-  'start_lat', 'start_lon', 'end_lat', 'end_lon', 'part91', 'excluded', 'pilot_id', 'aircraft_tail',
+  'start_lat', 'start_lon', 'end_lat', 'end_lon', 'part91', 'unpaid', 'excluded', 'pilot_id', 'aircraft_tail',
 ] as const;
 
 // A tracked-flight row that no longer changes anything; such rows are deleted rather than
@@ -1139,6 +1139,7 @@ async function parseEntryFields(db: D1Database, body: Record<string, unknown>, t
     end_lat: end_lat as number | null,
     end_lon: end_lon as number | null,
     part91: body.part91 ? 1 : 0,
+    unpaid: body.unpaid ? 1 : 0,
     excluded: body.excluded ? 1 : 0,
     pilot_id: pilot_id as number | null,
     aircraft_tail: aircraft_tail as string | null,
@@ -1146,6 +1147,8 @@ async function parseEntryFields(db: D1Database, body: Record<string, unknown>, t
   if (fields.start_time != null && fields.end_time != null && fields.end_time <= fields.start_time) {
     return 'end_time must be after start_time';
   }
+  // Part 135 is flying for compensation, so only Part 91 can be unpaid.
+  if (fields.unpaid && !fields.part91) return 'Only a Part 91 flight can be unpaid';
   if ((fields.start_lat == null) !== (fields.start_lon == null) || (fields.end_lat == null) !== (fields.end_lon == null)) {
     return 'Set both latitude and longitude of an endpoint, or neither';
   }
@@ -1311,7 +1314,8 @@ app.put('/api/flight-corrections/:id', requireAdmin, async (c) => {
 
 // Sets Part 91 and/or removed on many flights at once (the flight editor's bulk actions),
 // in one batch. Tracked flights are upserted keeping their other corrections; manual
-// flights are updated by id. Tracked rows left with nothing in them are deleted.
+// flights are updated by id. Setting Part 135 clears unpaid (only Part 91 can be unpaid).
+// Tracked rows left with nothing in them are deleted.
 app.post('/api/flight-corrections/bulk', requireAdmin, async (c) => {
   let body: { flights?: unknown; set?: { part91?: unknown; excluded?: unknown } };
   try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
@@ -1349,12 +1353,14 @@ app.post('/api/flight-corrections/bulk', requireAdmin, async (c) => {
        SELECT json_extract(value, '$.tracker_id'), json_extract(value, '$.flight_start_time'), COALESCE(?2, 0), COALESCE(?3, 0)
        FROM json_each(?1) WHERE true
        ON CONFLICT (tracker_id, flight_start_time) DO UPDATE SET
-         part91 = COALESCE(?2, part91), excluded = COALESCE(?3, excluded), updated_at = unixepoch()`
+         part91 = COALESCE(?2, part91), unpaid = CASE WHEN COALESCE(?2, part91) = 0 THEN 0 ELSE unpaid END,
+         excluded = COALESCE(?3, excluded), updated_at = unixepoch()`
     ).bind(JSON.stringify(tracked), part91, excluded));
   }
   if (entryIds.length) {
     stmts.push(c.var.db.prepare(
-      `UPDATE flight_corrections SET part91 = COALESCE(?2, part91), excluded = COALESCE(?3, excluded), updated_at = unixepoch()
+      `UPDATE flight_corrections SET part91 = COALESCE(?2, part91), unpaid = CASE WHEN COALESCE(?2, part91) = 0 THEN 0 ELSE unpaid END,
+         excluded = COALESCE(?3, excluded), updated_at = unixepoch()
        WHERE id IN (SELECT value FROM json_each(?1))`
     ).bind(JSON.stringify(entryIds), part91, excluded));
   }

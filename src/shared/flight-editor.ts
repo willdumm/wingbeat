@@ -465,8 +465,14 @@ export function flightEditorScript(): string {
               '<select id="fe-f-pilot">' + (tracked ? '<option value="">Unknown</option>' : (curPilot == null ? '<option value="">Choose…</option>' : '')) +
               pilotOptions + '</select></div>' +
           '</div>' +
-          '<div class="form-field"><span class="form-field-label" id="fe-f-part-label">Operated under</span>' +
-            segmentedHtml('part', [['135', 'Part 135'], ['91', 'Part 91']], edit && edit.part91 ? '91' : '135', { labelledBy: 'fe-f-part-label' }) + '</div>' +
+          // Pay only applies to Part 91 (Part 135 is flying for compensation), so it shows
+          // only while Part 91 is picked.
+          '<div class="form-field-row">' +
+            '<div class="form-field"><span class="form-field-label" id="fe-f-part-label">Operated under</span>' +
+              segmentedHtml('part', [['135', 'Part 135'], ['91', 'Part 91']], edit && edit.part91 ? '91' : '135', { labelledBy: 'fe-f-part-label' }) + '</div>' +
+            '<div class="form-field" data-fe-pay' + (edit && edit.part91 ? '' : ' hidden') + '><span class="form-field-label" id="fe-f-pay-label">Pay</span>' +
+              segmentedHtml('pay', [['paid', 'Paid'], ['unpaid', 'Unpaid']], edit && edit.unpaid ? 'unpaid' : 'paid', { labelledBy: 'fe-f-pay-label' }) + '</div>' +
+          '</div>' +
           '<div class="form-field"><label for="fe-f-remark">Remark</label>' +
             '<input type="text" id="fe-f-remark" placeholder="e.g. Training" value="' + escHtml((edit && edit.remark) || '') + '"></div>' +
           '<div class="form-modal-error" role="alert"></div>',
@@ -483,7 +489,8 @@ export function flightEditorScript(): string {
       modal.querySelector('.form-modal-panel').dataset.docShot = 'flight-editor.flight-form';
 
       const $ = sel => modal.querySelector(sel);
-      const getPart = wireSegmented(modal, 'part');
+      const getPart = wireSegmented(modal, 'part', part => { $('[data-fe-pay]').hidden = part !== '91'; });
+      const getPay = wireSegmented(modal, 'pay');
       const errorEl = $('.form-modal-error');
       const buttons = [...modal.querySelectorAll('.form-modal-footer button')];
       const btn = act => modal.querySelector('[data-act="' + act + '"]');
@@ -529,6 +536,7 @@ export function flightEditorScript(): string {
           aircraft_tail: $('#fe-f-aircraft').value || null,
           pilot_id: $('#fe-f-pilot').value ? parseInt($('#fe-f-pilot').value, 10) : null,
           part91: getPart() === '91',
+          unpaid: getPart() === '91' && getPay() === 'unpaid',
           remark: $('#fe-f-remark').value.trim() || null,
         };
       }
@@ -560,7 +568,7 @@ export function flightEditorScript(): string {
             end_time: sameMinute(v.end_time, orig.end_time) ? null : v.end_time,
             origin_label: v.origin_label === (orig.origin_label || null) ? null : v.origin_label,
             destination_label: v.destination_label === (orig.destination_label || null) ? null : v.destination_label,
-            part91: v.part91, remark: v.remark, excluded: removed,
+            part91: v.part91, unpaid: v.unpaid, remark: v.remark, excluded: removed,
             assign: Object.keys(assign).length ? { flight_id: f.id, ...assign } : undefined,
           });
         });
@@ -573,7 +581,7 @@ export function flightEditorScript(): string {
       });
       btn('restore')?.addEventListener('click', () => save(() => flightSetFlags([f], { excluded: false })));
       btn('revert')?.addEventListener('click', () => {
-        if (!confirm('Drop this flight’s corrections, Part 91 mark and remark, and show it as the tracker recorded it?')) return;
+        if (!confirm('Drop this flight’s corrections, Part 91 and unpaid marks and remark, and show it as the tracker recorded it?')) return;
         save(() => flightApi('DELETE', '/api/flight-corrections/' + entry.id));
       });
       btn('delete')?.addEventListener('click', () => {

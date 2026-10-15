@@ -304,6 +304,13 @@ export function pilotDutyRenderScript(): string {
     let _typstInstance  = null;
     let _typstWasmBytes = null;
 
+    // Whether an effective flight is commercial flying, which the §135.267 limits count: all
+    // but Part 91 flying marked unpaid (FAA interpretations to Martindell, 2009, and
+    // Rodriguez, 2012).
+    function _dutyCommercial(f) {
+      return !(f.edit && f.edit.unpaid);
+    }
+
     function fmtBlock(secs) {
       const h = Math.floor(secs / 3600);
       const m = Math.floor((secs % 3600) / 60);
@@ -431,7 +438,7 @@ export function pilotDutyRenderScript(): string {
     // warnings }: duty is the day's duty period from its record or, on a flying day with
     // no record, from defaultDuty (then defaultDuty is true). A day's flight is the
     // effective flight plus { manual, part91, remarks, entry, secs, edited: { field:
-    // tracker's value } }. upcoming (current month only) lists the records dated after
+    // tracker's value }, commercial }. upcoming (current month only) lists the records dated after
     // today, for planning.
     function computeDutyData(allFlights, pilotId, pilotName, year, month,
                              { days: dayRecords = [], defaultDuty = null, unmatched: unmatchedEntries = [], method = 'b' } = {}) {
@@ -445,6 +452,7 @@ export function pilotDutyRenderScript(): string {
         ...f,
         manual: !!(f.edit && f.edit.manual),
         part91: !!(f.edit && f.edit.part91),
+        commercial: _dutyCommercial(f),
         remarks: flightRemarks(f),
         entry: f.edit ? f.edit.entry : null,
         edited: f.edit ? f.edit.original : {},
@@ -473,14 +481,14 @@ export function pilotDutyRenderScript(): string {
       const { flightsByDate, recordByDate, dutyOf, spanOf, restProblems } = _dutyCalendar(flights, dayRecords, defaultDuty);
 
       // Flight time in the 24 h ending at end, in all commercial flying (§135.267(b)): Part
-      // 135 and Part 91 alike. Only evaluated at the end of a Part 135 flight, so Part 91
+      // 135 and paid Part 91 alike. Only evaluated at the end of a Part 135 flight, so Part 91
       // flying before a Part 135 flight counts and Part 91 flying after the last one falls
       // in no window (FAA interpretation to Converse, 2011).
       function flightTime24(end) {
         const from = end - 86400;
         let s = 0;
         for (const g of flights) {
-          if (g.end_time <= from || g.start_time >= end) continue;
+          if (!g.commercial || g.end_time <= from || g.start_time >= end) continue;
           s += Math.min(g.end_time, end) - Math.max(g.start_time, from);
         }
         return s;
@@ -511,7 +519,7 @@ export function pilotDutyRenderScript(): string {
         if (!span || !dutyOf(dateKey)) return { secs: 0, text: '' };
         const inDuty = flights.filter(f => f.start_time >= span.start && f.start_time < span.end);
         const last135 = Math.max(-Infinity, ...inDuty.filter(f => !f.part91).map(f => f.end_time));
-        const secs = inDuty.reduce((t, f) => t + (f.start_time < last135 ? f.secs : 0), 0);
+        const secs = inDuty.reduce((t, f) => t + (f.commercial && f.start_time < last135 ? f.secs : 0), 0);
         return { secs, text: fmtBlock(secs) + ' flight time in the duty period' };
       }
 
@@ -676,8 +684,9 @@ export function pilotDutyRenderScript(): string {
 
     // One pilot's §135.267 totals as of the epoch asOf: flight time in the calendar
     // quarter containing it, that plus the previous quarter, and the calendar year, flight
-    // time in the 24 h before it (all including Part 91: the 24 h are the window of the
-    // pilot's next flight, so any Part 91 flying in them came before it), and 24-hour
+    // time in the 24 h before it (all commercial flying, Part 91 included: the 24 h are the
+    // window of the pilot's next flight, so any Part 91 flying in them came before it;
+    // unpaid flights left out), and 24-hour
     // rest periods in the quarter (days marked rest that get no rest warning: no flights,
     // designated in advance, previous duty over by midnight). flights are effective
     // flights for every pilot; days the pilot's duty_days rows (omitted: no rest counted,
@@ -687,6 +696,7 @@ export function pilotDutyRenderScript(): string {
     // required, short } }.
     function dutyTotals(flights, pilotId, asOf, { days: dayRecords = [], defaultDuty = null, asOfLabel = 'now' } = {}) {
       const own = flights.filter(f => f.pilot_id === pilotId && f.end_time != null && !(f.edit && f.edit.excluded));
+      const commercial = own.filter(_dutyCommercial);
       const secsOf = f => Math.max(0, f.end_time - f.start_time);
       const asOfDateKey = unixToTzDateStr(asOf - 1);
       const [year, month] = asOfDateKey.split('-').map(Number);
@@ -698,10 +708,10 @@ export function pilotDutyRenderScript(): string {
       const quarterName = (y, m) => 'Q' + ((m - 1) / 3 + 1) + ' ' + y;
       function flownSince(dateKey) {
         const from = tzLocalToEpoch(dateKey, '00:00');
-        return own.reduce((s, f) => s + (f.start_time >= from && f.start_time < asOf ? secsOf(f) : 0), 0);
+        return commercial.reduce((s, f) => s + (f.start_time >= from && f.start_time < asOf ? secsOf(f) : 0), 0);
       }
       let flight24 = 0;
-      for (const f of own) {
+      for (const f of commercial) {
         if (f.end_time <= asOf - 86400 || f.start_time >= asOf) continue;
         flight24 += Math.min(f.end_time, asOf) - Math.max(f.start_time, asOf - 86400);
       }
@@ -896,10 +906,11 @@ export function pilotDutyRenderScript(): string {
     }
 
     const DUTY_TOTALS_FOOTNOTE =
-      'Hour totals include Part 91 flights. Rest periods are days marked rest in advance, with no ' +
-      'flights and the previous duty over by midnight (a rest day with a warning isn’t counted). ' +
-      'The 8-hour limit in any 24 hours counts Part 91 flying before a Part 135 flight and leaves ' +
-      'out Part 91 flying after the last one (FAA interpretation to Converse, 2011).';
+      'Hour totals count commercial flying: Part 135 and Part 91 flights, but not Part 91 flights ' +
+      'marked unpaid. Rest periods are days marked rest in advance, with no flights and the ' +
+      'previous duty over by midnight (a rest day with a warning isn’t counted). The daily flight ' +
+      'time limit counts paid Part 91 flying before a Part 135 flight and leaves out Part 91 flying ' +
+      'after the last one (FAA interpretation to Converse, 2011).';
 
     // Fetches url, from the Cache API when it has it, and caches the response.
     // onLoaded(bytes so far, total) reports progress (total 0 when unknown).

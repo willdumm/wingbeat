@@ -46,7 +46,7 @@ export function flightEditsScript(): string {
     // and returns { flights, unmatched, unplaced }, flights sorted by (corrected) start time.
     //
     // A corrected flight is a copy of the record with the row's non-NULL fields applied
-    // and edit: { entry, manual, part91, remark, excluded, original: { field: tracker's
+    // and edit: { entry, manual, part91, unpaid, remark, excluded, original: { field: tracker's
     // value } }; an untouched one is the record itself, with edit null. A removed
     // (excluded) flight is left out unless includeRemoved. A manual flight (a row with no
     // tracker) gets id -entry.id, tracker_id null, points [], its named-point coordinates
@@ -76,7 +76,7 @@ export function flightEditsScript(): string {
           ...f,
           // Bumped by an edit too, so anything that redraws on a changed flight notices.
           modified_at: Math.max(f.modified_at ?? 0, e.updated_at ?? 0),
-          edit: { entry: e, manual: false, part91: !!e.part91, remark: e.remark || null, excluded: !!e.excluded, original: {} },
+          edit: { entry: e, manual: false, part91: !!e.part91, unpaid: !!e.unpaid, remark: e.remark || null, excluded: !!e.excluded, original: {} },
         };
         for (const field of FLIGHT_EDIT_FIELDS) {
           if (e[field] != null) { eff.edit.original[field] = f[field]; eff[field] = e[field]; }
@@ -94,7 +94,7 @@ export function flightEditsScript(): string {
           start_lat: e.start_lat, start_lon: e.start_lon, end_lat: e.end_lat, end_lon: e.end_lon,
           aircraft_tail: e.aircraft_tail, pilot_id: e.pilot_id, pilot_name: pilotName(e.pilot_id),
           points: [],
-          edit: { entry: e, manual: true, part91: !!e.part91, remark: e.remark || null, excluded: !!e.excluded, original: {} },
+          edit: { entry: e, manual: true, part91: !!e.part91, unpaid: !!e.unpaid, remark: e.remark || null, excluded: !!e.excluded, original: {} },
         });
       }
       out.sort((a, b) => a.start_time - b.start_time);
@@ -107,11 +107,11 @@ export function flightEditsScript(): string {
       };
     }
 
-    // The remarks shown under a flight, in order: "Part 91" (nothing for Part 135), then
-    // its free-text remark. Empty for most flights.
+    // The remarks shown under a flight, in order: "Part 91" or "Part 91 (unpaid)" (nothing
+    // for Part 135), then its free-text remark. Empty for most flights.
     function flightRemarks(f) {
       const out = [];
-      if (f.edit && f.edit.part91) out.push('Part 91');
+      if (f.edit && f.edit.part91) out.push(f.edit.unpaid ? 'Part 91 (unpaid)' : 'Part 91');
       if (f.edit && f.edit.remark) out.push(f.edit.remark);
       return out;
     }
@@ -143,7 +143,7 @@ export function flightEditsScript(): string {
       if (e.end_time != null) parts.push('Arr ' + unixToTzTime(e.end_time));
       if (e.origin_label != null) parts.push('Origin ' + e.origin_label);
       if (e.destination_label != null) parts.push('Dest ' + e.destination_label);
-      if (e.part91) parts.push('Part 91');
+      if (e.part91) parts.push(e.unpaid ? 'Part 91 (unpaid)' : 'Part 91');
       if (e.remark) parts.push('Remark “' + e.remark + '”');
       if (e.excluded) parts.push('removed');
       return parts.join(', ') || 'no corrections';

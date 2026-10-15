@@ -50,8 +50,18 @@ pencil on a flight in the duty log.
 - **Origin, Dest:** type a place or pick one of your
   [named points](../map-tools#regions--named-points).
 - **Aircraft, Pilot.**
-- **Operated under:** Part 135 or Part 91. Part 91 flights are left out of the
-  duty log's 8-hours-in-24 check and shown with a "Part 91" remark.
+- **Operated under:** Part 135 or Part 91, shown as a "Part 91" remark. Paid
+  Part 91 flying counts toward the duty log's limits as "other commercial
+  flying"; see [Pilot Duty Log](../pilot-duty-log#warnings-and-totals).
+- **Pay** (Part 91 only): **Paid** (the default) or **Unpaid**. Mark a flight
+  unpaid only when the pilot genuinely wasn't compensated for it, e.g. a
+  personal flight; see [when to mark a flight unpaid](../pilot-duty-log#unpaid-flights).
+  An unpaid flight isn't commercial flying, so the duty log leaves it out of
+  the §135.267 limits, and its remark reads "Part 91 (unpaid)". It still counts
+  everywhere else, including aircraft hours and maintenance. Part 135 flights
+  are always paid, so the choice only appears for Part 91, and setting a
+  flight back to Part 135 (here or with the bulk **Part 135** action) clears
+  it.
 - **Remark:** free text such as "Training", shown under the flight.
 
 For a tracked flight, only the values that differ from the tracker's are
@@ -63,7 +73,7 @@ The footer has:
 
 - **Remove from log** (or **Restore**)
 - **Revert to tracker**, which drops a tracked flight's corrections, Part 91
-  mark and remark
+  and unpaid marks and remark
 - **Delete**, for a manual flight
 - **Save**
 

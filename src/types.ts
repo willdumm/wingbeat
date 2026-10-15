@@ -57,6 +57,8 @@ export interface FlightCorrection {
   end_lat: number | null;
   end_lon: number | null;
   part91: number;
+  /** Part 91 flying the pilot wasn't paid for: not commercial, so outside the §135.267 limits. */
+  unpaid: number;
   excluded: number;
   pilot_id: number | null;
   aircraft_tail: string | null;
