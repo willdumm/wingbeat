@@ -12,18 +12,11 @@ use the arrows to move back through the pilot's history. It's built from the
 pilot's flights, with any [corrections](../editing-flights) applied, and admins
 can record duty times and plan rest days before it's exported as a record.
 
-> [!WARNING]
-> **Wingbeat does not guarantee regulatory compliance.** Neither Dumm Software
-> LLC nor Wingbeat takes any responsibility for, or makes any guarantee of,
-> compliance with 14 CFR Part 135 or any other regulation. The duty log is only
-> a tool to make checking compliance easier: its checks are an aid, they can be
-> incomplete or wrong, and they depend entirely on the flights, duty times and
-> rest days entered. **The certificate holder and its pilots remain fully
-> responsible for compliance with the flight, duty and rest rules, and for the
-> accuracy and completeness of these records.** Check the log against the
-> regulations, your operations specifications and manual, and the FAA's
-> interpretations, and ask your FAA inspector when in doubt. The log and its
-> PDF say this too.
+{{% compliance %}}
+The duty log is only a tool to make checking compliance easier: its checks are
+an aid, they can be incomplete or wrong, and they depend entirely on the
+flights, duty times and rest days entered. The log and its PDF say this too.
+{{% /compliance %}}
 
 ## Table
 
@@ -161,6 +154,31 @@ totals panel counts planned rest days toward the quarter's 13 rest periods as
 later in the quarter. A rest day saved on or after the day it falls on gets a
 warning, because it wasn't designated in advance, and doesn't count.
 
+### How rest is counted
+
+The log counts rest in two different ways:
+
+- **The 10-hour rest checks** (§135.267(c), (d) and (e), under
+  [Warnings and totals](#warnings-and-totals)) count any time outside a
+  recorded duty period or a flight as rest. There's no need to mark it. This is
+  why on-call and standby time must be [recorded as duty](#what-to-record-as-duty):
+  time left out of the duty times counts as rest.
+- **The 24-hour rest periods** (§135.267(f), 13 each calendar quarter) count
+  only days marked **Rest day**. Time off that isn't marked doesn't count, even
+  24 hours or more between two duty periods. Rest has to be assigned in
+  advance, and the log can't show that for time that was simply left blank. A
+  rest day's designation date is the record that it was.
+
+A rest day only counts toward the 13 when:
+
+- it was designated before the day,
+- no flights fall on it, and
+- the previous day's duty ended by midnight, so the rest is a full 24 hours.
+
+Each rest day is a whole local calendar day. A 24-hour rest that spans two days,
+such as 17:00 one day to 17:00 the next, isn't counted. To count it, designate
+a whole calendar day as rest.
+
 ### Default duty
 
 Most pilots keep the same hours, so each pilot can have a default duty period.
@@ -251,7 +269,7 @@ regularly assigned duty period. The log warns about:
 The totals panel shows flight time this calendar quarter (limit 500 hours),
 this and the previous quarter (800), and the calendar year (1,400), counting
 all commercial flying (Part 135, and Part 91 unless [marked unpaid](#unpaid-flights)), and the quarter's 24-hour rest periods (13 required), counted
-as the rest days with no warning: no flights on the day, designated before it,
+as the rest days with no warning ([how rest is counted](#how-rest-is-counted)): no flights on the day, designated before it,
 and the previous day's duty over by midnight. Rest days that haven't happened yet are shown
 separately as planned, and the rest row turns red once the quarter can no
 longer reach 13 even if every remaining day were rest. Totals are as of now for

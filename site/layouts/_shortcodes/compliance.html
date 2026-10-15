@@ -1,0 +1,16 @@
+{{- /* The compliance warning for a docs page that mentions a regulation or other rule. Call
+       it as {{% compliance %}} at the top of the page, so the alert is rendered as Markdown.
+       Inner (optional): page-specific sentences, placed before the responsibility
+       sentence. The app's duty log shows the same in short (src/shared/help.ts). */ -}}
+{{- $inner := trim .Inner " \n" -}}
+> [!WARNING]
+> **Wingbeat does not guarantee regulatory compliance, and these docs aren't legal or
+> regulatory advice.** Neither Dumm Software LLC nor Wingbeat takes any responsibility
+> for, or makes any guarantee of, compliance with 14 CFR Part 135 or any other regulation
+> or requirement. Where this page mentions a rule or an FAA interpretation, it's only to
+> explain how Wingbeat is meant to be used, based on our reading of it, which may be
+> incomplete or wrong.{{ with $inner }} {{ replace . "\n" " " }}{{ end }} **The
+> certificate holder and its pilots remain fully responsible for compliance, and for the
+> accuracy and completeness of their records.** Check against the regulations, your
+> operations specifications and manual, and the FAA's interpretations, and ask your FAA
+> inspector when in doubt.

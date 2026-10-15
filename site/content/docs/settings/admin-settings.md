@@ -6,6 +6,10 @@ weight: 2
 
 # Admin Settings
 
+{{% compliance %}}
+Which §135.267 method the duty log checks is for the operator to choose.
+{{% /compliance %}}
+
 Only visible to users with the Admin role. Split across the main Settings
 panel and a separate **Global Settings** screen.
 

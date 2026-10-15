@@ -6,6 +6,11 @@ weight: 3
 
 # Editing Flights
 
+{{% compliance %}}
+Whether a flight was operated under Part 91 or Part 135, and whether it was
+paid, is for the operator to decide; the duty log's limits rely on it.
+{{% /compliance %}}
+
 Admins can correct what the tracker recorded, add flights it missed, and set
 each flight's aircraft, pilot and Part 91 status. Corrections show everywhere
 a flight appears: the dashboard's flight list, analytics, maintenance hour

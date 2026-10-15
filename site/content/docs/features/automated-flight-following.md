@@ -6,6 +6,11 @@ weight: 9
 
 # Trackers and Automated Flight Following
 
+{{% compliance %}}
+AFF and other flight following requirements come from the agency, your contract
+and your operations specifications; confirm them there.
+{{% /compliance %}}
+
 ## You need your own tracker
 
 > [!WARNING]
