@@ -444,8 +444,9 @@ read "Part 91 (unpaid)", on screen and in the PDF.
 
 Only Part 91 flights can be unpaid: Part 135 is air transportation for compensation by
 definition, so an unpaid Part 135 flight would be a contradiction. The flight form shows
-the Unpaid checkbox next to the Part 135 / Part 91 control only while Part 91 is selected
-(and sends `unpaid: false` otherwise); the bulk "Part 135" action clears it; the server
+a Pay control (Paid / Unpaid, the same segmented control as Operated under) next to the
+Part 135 / Part 91 control only while Part 91 is selected (and sends `unpaid: false`
+otherwise); the bulk "Part 135" action clears it; the server
 rejects `unpaid` without `part91`, and a CHECK constraint backs that up. An unpaid flight
 still counts as busy time for the rest checks: the log can't tell whether it was done for
 the operator, so it errs on the side of a warning.
@@ -492,6 +493,12 @@ crew size. The user docs say the log assumes one-pilot crews.
   flights removed that month.
 - `fmtBlock` rounds down, so a warning can read "8:00 (limit 8:00)" for 8:00:40.
 - A full edit-history view (per flight, per day, per pilot and month).
+- A pilot's default duty (`pilots.default_duty_start/end`) isn't in the edit history,
+  though under (c) it's the regularly assigned duty period the days are checked against.
+  Adding the same triggers to `pilots` (and routing `PUT /api/pilots/:id` through
+  `recordedBatch`) would cover it.
+- The flight form's doc screenshot (`flight-editor.flight-form`) wasn't regenerated
+  for the Pay control, which only shows for a Part 91 flight.
 - §135.263(d) / SevenBar: an overrun caused by unexpected en-route delays isn't a
   violation, but the log can't know the cause, so it keeps warning. The day's note and
   the flight's remark record the cause.
