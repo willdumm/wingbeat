@@ -173,7 +173,9 @@ A rest day only counts toward the 13 when:
 
 - it was designated before the day,
 - no flights fall on it, and
-- the previous day's duty ended by midnight, so the rest is a full 24 hours.
+- the previous day's duty, and any flight on it, ended by midnight, so the rest
+  is a full 24 hours. A flight that departs the evening before and lands after
+  midnight counts, even outside the duty times.
 
 Each rest day is a whole local calendar day. A 24-hour rest that spans two days,
 such as 17:00 one day to 17:00 the next, isn't counted. To count it, designate
@@ -222,7 +224,8 @@ With either method:
   if it was over by up to 30 minutes, 12 hours up to an hour, 16 hours beyond
   that (§135.267(e))
 - flights on a rest day, a rest day designated on or after the day itself, or
-  a rest day after a duty that ran past midnight (so it's under 24 hours)
+  a rest day after a duty or flight that ran past midnight (so it's under 24
+  hours)
 - a day with flights but no duty times (none recorded and no default duty),
   since the duty and rest checks need them
 - a flight that departs before or arrives after the day's duty period
@@ -259,8 +262,8 @@ regularly assigned duty period. The log warns about:
 - a duty period over 14 hours. Under (c) this is a hard limit (FAA
   interpretation to [SevenBar, 2016](https://www.faa.gov/media/11331))
 - less than 10 hours of rest between two duty periods, shown on the later day
-- more than 8 hours of flight time in the duty period (Part 91 counted as under
-  (b))
+- more than 8 hours of flight time in the duty period, counting the whole of any
+  of the day's flights outside the duty times too (Part 91 counted as under (b))
 - duty times that differ from the regularly assigned ones, or no default duty
   set at all
 - a duty period starting earlier on the clock than the previous day's, so the
@@ -270,7 +273,7 @@ The totals panel shows flight time this calendar quarter (limit 500 hours),
 this and the previous quarter (800), and the calendar year (1,400), counting
 all commercial flying (Part 135, and Part 91 unless [marked unpaid](#unpaid-flights)), and the quarter's 24-hour rest periods (13 required), counted
 as the rest days with no warning ([how rest is counted](#how-rest-is-counted)): no flights on the day, designated before it,
-and the previous day's duty over by midnight. Rest days that haven't happened yet are shown
+and the previous day's duty and flights over by midnight. Rest days that haven't happened yet are shown
 separately as planned, and the rest row turns red once the quarter can no
 longer reach 13 even if every remaining day were rest. Totals are as of now for
 the current month, and as of the month's end for a past one,

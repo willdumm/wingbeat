@@ -213,8 +213,8 @@ Notes:
   count toward any totals. The new flight shows as an ordinary tracked flight, so nothing
   is counted twice and nothing silently disappears.
 - **A rest day** is a whole local calendar day. That gives the 24-hour rest periods
-  §135.267(f) counts, provided the previous day's duty ends by midnight (checked; see
-  §3).
+  §135.267(f) counts, provided the previous day's duty and flights end by midnight
+  (checked; see §3).
 
 ### 2. API — `src/index.ts`
 
@@ -264,7 +264,11 @@ daySecs, warnings }]` plus `totals`.
    - A day marked rest shows "Rest", with "designated <date>". If designated on or after
      that day, it's flagged as not prospective.
    - Flights on a rest day are a warning.
-   - A rest day after a day whose duty ran past midnight is a warning (not a full 24 h).
+   - A rest day after a day whose duty or flying ran past midnight is a warning (not a
+     full 24 h): the previous day's duty period stretched to cover its flights, so a
+     flight outside duty that lands after midnight, including one that departs the
+     evening before and lands on the rest day, counts too ("Previous duty or flight
+     ended 00:40, so this rest is under 24 h").
 3. **Limits for §135.267, one pilot**, replacing the current rolling list:
    - Per day: if flight time in the 24 h ending at any of that day's flights exceeds
      8:00, excluding Part 91 flights, the day gets a warning.
@@ -423,8 +427,11 @@ and the totals: (a) and (f) apply either way.
 - Less than 10 h of rest between consecutive duty periods. Each gap is checked once and
   reported on the later day, which covers both "preceded by" and "followed by" (the rest
   after the last duty so far isn't known yet).
-- Commercial flight time in the duty period over 8 h: commercial flights clipped to the
-  duty period, up to the end of its last Part 135 flight (the Converse ordering again).
+- Commercial flight time in the duty period over 8 h: the whole commercial flights that
+  start in the duty period stretched to cover the day's flights, before the end of its
+  last Part 135 flight (the Converse ordering again). Nothing is clipped, so a flight
+  outside the recorded duty counts in full as well as getting its own "outside duty"
+  warning: the conservative reading, since a flight outside duty is still duty.
 - Duty times that differ from the regularly assigned times, which are the pilot's default
   duty. With no default set, flying days get a "No regularly assigned duty period" warning.
 - Duty plus rest equals 24 h: a duty period starting earlier on the clock than the
@@ -512,13 +519,11 @@ any From/To months up to 24. `_buildTypstSource` takes one month's row model or 
 
 - The duty log only sees flights from active, non-deleted trackers (the flight store's
   source), so a retired tracker's history can be missing from the log and its totals.
-- Rest-day edge cases: a flight that starts the evening before and lands on a rest day
-  doesn't invalidate the rest day; on the DST spring-forward day a 23-hour calendar day
-  counts as a 24-hour rest period.
+- Rest-day edge case: on the DST spring-forward day a 23-hour calendar day counts as a
+  24-hour rest period.
 - Flights with no pilot never appear in any pilot's log.
 - PDF: a timezone label, the pilot's full legal name (§135.63(a)(4)(i)), and a list of
   flights removed that month.
-- `fmtBlock` rounds down, so a warning can read "8:00 (limit 8:00)" for 8:00:40.
 - A full edit-history view (per flight, per day, per pilot and month).
 - A pilot's default duty (`pilots.default_duty_start/end`) isn't in the edit history,
   though under (c) it's the regularly assigned duty period the days are checked against.

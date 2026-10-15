@@ -1738,10 +1738,12 @@ const trackerList = SAMPLE.trackers;
       return !(f.edit && f.edit.unpaid);
     }
 
-    function fmtBlock(secs) {
-      const h = Math.floor(secs / 3600);
-      const m = Math.floor((secs % 3600) / 60);
-      return h + ':' + String(m).padStart(2, '0');
+    // H:MM, rounded down to the minute; up: rounded up instead, for an amount over a
+    // limit, so 8:00:40 against an 8:00 limit reads 8:01, not 8:00. (Rounding down is right
+    // for an amount under a minimum: 9:59:30 of rest reads 9:59.)
+    function fmtBlock(secs, up) {
+      const mins = up ? Math.ceil(secs / 60) : Math.floor(secs / 60);
+      return Math.floor(mins / 60) + ':' + String(mins % 60).padStart(2, '0');
     }
 
     // ── Dates and times in the duty timezone ──
@@ -1826,7 +1828,8 @@ const trackerList = SAMPLE.trackers;
       }
 
       // Why a day marked rest isn't a 24-hour rest period (§135.267(f)), as warnings: it
-      // has flights, it wasn't designated in advance, or the previous duty ran past
+      // has flights, it wasn't designated in advance, or the previous day's duty or flying
+      // (spanOf, so a flight outside duty that lands after midnight counts) ran past
       // midnight. [] for a valid rest day or a day not marked rest. year: the shown year,
       // for dates.
       function restProblems(dateKey, year) {
@@ -1838,9 +1841,9 @@ const trackerList = SAMPLE.trackers;
           out.push('Rest day designated ' + _dutyShortDate(unixToTzDateStr(rec.rest_designated_at), year) +
             ', not in advance');
         }
-        const prev = dutyOf(dutyAddDays(dateKey, -1));
+        const prev = spanOf(dutyAddDays(dateKey, -1));
         if (prev && prev.end > tzLocalToEpoch(dateKey, '00:00')) {
-          out.push('Previous duty ended ' + unixToTzTime(prev.end) + ', so this rest is under 24 h');
+          out.push('Previous duty or flight ended ' + unixToTzTime(prev.end) + ', so this rest is under 24 h');
         }
         return out;
       }
@@ -1935,20 +1938,22 @@ const trackerList = SAMPLE.trackers;
       }
 
       // A day's flight time against the daily limit: under (b) its worst 24-hour window;
-      // under (c) the commercial flight time in its duty period (with its flights), up to
-      // the end of its last Part 135 flight (the same Converse ordering as flightTime24).
-      // { secs, text } (secs 0 when there's nothing to check).
+      // under (c) the whole commercial flights that start in its duty period stretched to
+      // cover its flights (spanOf: a flight outside duty still counts, besides its own
+      // warning, and none is clipped), before the end of its last Part 135 flight (the
+      // same Converse ordering as flightTime24). { secs, text }, the text rounded up for
+      // the over-limit warning (secs 0 when there's nothing to check).
       function dailyFlightOf(dateKey) {
         if (method === 'b') {
           const w = worst24Of(dateKey);
-          return { secs: w.secs, text: fmtBlock(w.secs) + ' flight time in the 24 h to ' + (w.end ? unixToTzTime(w.end) : '') };
+          return { secs: w.secs, text: fmtBlock(w.secs, true) + ' flight time in the 24 h to ' + (w.end ? unixToTzTime(w.end) : '') };
         }
         const span = spanOf(dateKey);
         if (!span || !dutyOf(dateKey)) return { secs: 0, text: '' };
         const inDuty = flights.filter(f => f.start_time >= span.start && f.start_time < span.end);
         const last135 = Math.max(-Infinity, ...inDuty.filter(f => !f.part91).map(f => f.end_time));
         const secs = inDuty.reduce((t, f) => t + (f.commercial && f.start_time < last135 ? f.secs : 0), 0);
-        return { secs, text: fmtBlock(secs) + ' flight time in the duty period' };
+        return { secs, text: fmtBlock(secs, true) + ' flight time in the duty period' };
       }
 
       // The longest stretch of [from, to] outside every duty period and flight (§135.267(d)).
@@ -2000,7 +2005,7 @@ const trackerList = SAMPLE.trackers;
           const need = L.extendedRest.find(r => prevOver <= r.overSecs).restSecs;
           const restSecs = span.start - prevSpan.end;
           if (restSecs < need) {
-            warnings.push('Rest ' + fmtBlock(Math.max(0, restSecs)) + ' after going ' + fmtBlock(prevOver) +
+            warnings.push('Rest ' + fmtBlock(Math.max(0, restSecs)) + ' after going ' + fmtBlock(prevOver, true) +
               ' over the flight time limit on ' + _dutyShortDate(prevKey, year) + ' (§135.267(e) minimum ' + fmtBlock(need) + ')');
           }
         }
@@ -2014,14 +2019,14 @@ const trackerList = SAMPLE.trackers;
           const restSecs = longestRest(duty.end - 86400, duty.end);
           if (restSecs < L.restSecs) {
             warnings.push((duty.secs > 86400 - L.restSecs
-              ? 'Duty period ' + fmtBlock(duty.secs) + ' leaves at most ' + fmtBlock(Math.max(0, 86400 - duty.secs)) + ' of rest'
+              ? 'Duty period ' + fmtBlock(duty.secs, true) + ' leaves at most ' + fmtBlock(Math.max(0, 86400 - duty.secs)) + ' of rest'
               : 'Longest rest ' + fmtBlock(restSecs)) +
               ' in the 24 h before duty ended ' + unixToTzTime(duty.end) + ' (§135.267(d) minimum ' + fmtBlock(L.restSecs) + ')');
           }
         }
         if (duty && method === 'c') {
           if (duty.secs > L.dutySecs) {
-            warnings.push('Duty period ' + fmtBlock(duty.secs) + ' (§135.267(c) limit ' + fmtBlock(L.dutySecs) + ')');
+            warnings.push('Duty period ' + fmtBlock(duty.secs, true) + ' (§135.267(c) limit ' + fmtBlock(L.dutySecs) + ')');
           }
           // The rest between two duty periods, checked once, on the later day: that covers
           // both "preceded by" and "followed by".
@@ -2116,14 +2121,13 @@ const trackerList = SAMPLE.trackers;
     // quarter containing it, that plus the previous quarter, and the calendar year, flight
     // time in the 24 h before it (all commercial flying, Part 91 included: the 24 h are the
     // window of the pilot's next flight, so any Part 91 flying in them came before it;
-    // unpaid flights left out), and 24-hour
-    // rest periods in the quarter (days marked rest that get no rest warning: no flights,
-    // designated in advance, previous duty over by midnight). flights are effective
-    // flights for every pilot; days the pilot's duty_days rows (omitted: no rest counted,
-    // as for the dashboard alert) and defaultDuty their default duty period (for the
-    // previous-duty check). Returns { asOfLabel, hours: [{ label, secs,
-    // limit, over }], flight24: { secs, limit, over }, rest: { label, taken, scheduled,
-    // required, short } }.
+    // unpaid flights left out), and 24-hour rest periods in the quarter (days marked rest
+    // that get no rest warning: no flights, designated in advance, previous day's duty and
+    // flights over by midnight). flights are effective flights for every pilot; days the
+    // pilot's duty_days rows (omitted: no rest counted, as for the dashboard alert) and
+    // defaultDuty their default duty period (for the previous-day check). Returns
+    // { asOfLabel, hours: [{ label, secs, limit, over }], flight24: { secs, limit, over },
+    // rest: { label, taken, scheduled, required, short } }.
     function dutyTotals(flights, pilotId, asOf, { days: dayRecords = [], defaultDuty = null, asOfLabel = 'now' } = {}) {
       const own = flights.filter(f => f.pilot_id === pilotId && f.end_time != null && !(f.edit && f.edit.excluded));
       const commercial = own.filter(_dutyCommercial);
@@ -2300,7 +2304,7 @@ const trackerList = SAMPLE.trackers;
         '<div class="pilot-duty-limits">' + escHtml(data.limitsLabel) + '</div>' +
         '<table class="totals-table"><tbody>' +
         totals.hours.map(t =>
-          '<tr' + (t.over ? ' class="duty-over"' : '') + '><td>' + t.label + '</td><td>' + fmtBlock(t.secs) +
+          '<tr' + (t.over ? ' class="duty-over"' : '') + '><td>' + t.label + '</td><td>' + fmtBlock(t.secs, t.over) +
           ' <span class="totals-limit">/ ' + fmtBlock(t.limit) + '</span></td></tr>').join('') +
         '<tr' + (r.short ? ' class="duty-over"' : '') + '><td>' + r.label + '</td><td>' + r.taken +
           (r.scheduled ? ' + ' + r.scheduled + ' planned' : '') +
@@ -2573,7 +2577,7 @@ const trackerList = SAMPLE.trackers;
       function totalsBlock(totals) {
         const r = totals.rest;
         const totalsRows = totals.hours.map(t =>
-          '  [' + _typStr(t.label) + '], [' + (t.over ? overFill + '[*' + fmtBlock(t.secs) + '*]' : fmtBlock(t.secs)) + '], [' + fmtBlock(t.limit) + '],\n'
+          '  [' + _typStr(t.label) + '], [' + (t.over ? overFill + '[*' + fmtBlock(t.secs, true) + '*]' : fmtBlock(t.secs)) + '], [' + fmtBlock(t.limit) + '],\n'
         ).join('') +
           '  [' + _typStr(r.label) + '], [' + (r.short ? overFill + '[*' + r.taken + '*]' : String(r.taken)) +
           (r.scheduled ? ' + ' + r.scheduled + ' planned' : '') + '], [' + r.required + '],\n';
