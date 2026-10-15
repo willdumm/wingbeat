@@ -76,6 +76,12 @@ dashboard/analytics page state (take data and elements as arguments). After chan
 of them, or their styles, re-run `nix develop path:./nix --command npm run docs:showcase`
 and commit the regenerated output. `--check` fails if it's stale. See `site/README.md`.
 
+## Tests — `npm test`
+
+Run `nix develop path:./nix --command npm test` after changing `pilot-duty.ts`, `flight-edits.ts`,
+`time.ts` or `flight-store.ts`: `test/` runs their script strings in a `node:vm` context (see
+`test/harness.mjs`) against the duty-log compliance spec in `docs/duty-log-editing-plan.md`.
+
 ## Migrations
 
 `migrations/0001_initial.sql` is the full schema. Number new migrations sequentially from
