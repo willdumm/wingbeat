@@ -91,7 +91,7 @@ log's header, or with **Edit** on the pilot in Settings.
 
 The default applies to a day with flights and no duty times or rest recorded.
 That day's Duty column shows the default marked "(default)", on screen and in
-the PDF, and the 14-hour and 10-hour-rest checks use it. A day with a record
+the PDF, and the duty and rest checks use it. A day with a record
 always uses the record. If a flight departs before or lands after the day's
 duty period, recorded or default, the day gets a warning, e.g. "Flight
 18:05–18:50 outside duty 08:00–17:00 (default)"; record the actual duty times
@@ -111,15 +111,12 @@ corrections.
 ## Warnings and totals
 
 The log checks each day against the one-pilot limits of
-[14 CFR §135.267](https://www.law.cornell.edu/cfr/text/14/135.267) and shows a
-warning under the day, without blocking anything:
+[14 CFR §135.267](https://www.ecfr.gov/current/title-14/chapter-I/subchapter-G/part-135/subpart-F)
+and shows a warning under the day, without blocking anything. Which daily
+checks run depends on the [method](#limits-b-or-c) set for your operation.
 
-- more than 8 hours of flight time in the 24 hours before the end of any of
-  the day's Part 135 flights. Part 91 flying counts when it comes before a Part
-  135 flight and is left out when it comes after the last one (FAA
-  interpretation to [Converse, 2011](https://www.faa.gov/media/13546))
-- a duty period over 14 hours, or less than 10 hours' rest since the previous
-  day's duty
+With either method:
+
 - too short a rest after a day over the flight time limit: at least 11 hours
   if it was over by up to 30 minutes, 12 hours up to an hour, 16 hours beyond
   that (§135.267(e))
@@ -128,6 +125,40 @@ warning under the day, without blocking anything:
 - a day with flights but no duty times (none recorded and no default duty),
   since the duty and rest checks need them
 - a flight that departs before or arrives after the day's duty period
+
+### Limits: (b) or (c)
+
+§135.267 lets an operator apply its daily limits in one of two ways, and the
+operator picks one. Set yours under **Duty limits (§135.267)** in
+[Global Settings](../../settings/admin-settings#general); the default is (b).
+The method is shown above the totals and on the PDF, e.g. "Limits:
+§135.267(b), flight time in any 24 hours · one-pilot crew".
+
+**(b) Flight time in any 24 hours.** For pilots who can be called at varying
+times. The log warns about:
+
+- more than 8 hours of flight time in the 24 hours before the end of any of
+  the day's Part 135 flights. Paid Part 91 flying counts when it comes before a
+  Part 135 flight and is left out when it comes after the last one (FAA
+  interpretation to [Converse, 2011](https://www.faa.gov/media/13546))
+- less than 10 consecutive hours of rest in the 24 hours before the end of each
+  duty period (§135.267(d)). Any time inside a recorded duty period or a flight
+  counts as not rest. This also catches a duty period over 14 hours, which can't
+  leave 10 hours of rest in the 24.
+
+**(c) Regularly assigned duty period.** For pilots who come to work and go home
+at the same times every day. The pilot's [default duty](#default-duty) is their
+regularly assigned duty period. The log warns about:
+
+- a duty period over 14 hours. Under (c) this is a hard limit (FAA
+  interpretation to [SevenBar, 2016](https://www.faa.gov/media/11331))
+- less than 10 hours of rest between two duty periods, shown on the later day
+- more than 8 hours of flight time in the duty period (Part 91 counted as under
+  (b))
+- duty times that differ from the regularly assigned ones, or no default duty
+  set at all
+- a duty period starting earlier on the clock than the previous day's, so the
+  duty and the rest after it add up to less than 24 hours
 
 The totals panel shows flight time this calendar quarter (limit 500 hours),
 this and the previous quarter (800), and the calendar year (1,400), including

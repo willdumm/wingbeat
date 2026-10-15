@@ -184,6 +184,7 @@ export function pilotDutyStyles(): string {
       text-transform: uppercase; letter-spacing: 0.08em;
       color: var(--text-muted); margin-bottom: 0.5rem;
     }
+    .pilot-duty-limits { font-size: var(--size-xs); color: var(--text-secondary); margin: -0.25rem 0 0.5rem; }
     .totals-table { width: 100%; border-collapse: collapse; }
     .totals-table td {
       padding: 0.25rem 0.4rem;
@@ -260,11 +261,13 @@ export function pilotDutyRenderScript(): string {
                                'July','August','September','October','November','December'];
     const _DUTY_MONTH_ABBR  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-    // §135.267, one pilot, unscheduled.
+    // §135.267, unscheduled, one-pilot crew: the one place the numbers live. A two-pilot
+    // crew would get 10 h of flight time under (b) and (c) (not yet implemented: no flight
+    // records its crew; see docs/duty-log-editing-plan.md).
     const _DUTY_LIMITS = {
-      flight24hSecs:   8 * 3600,      // (b) flight time in any 24 consecutive hours
+      flightDaySecs:   8 * 3600,      // (b) in any 24 consecutive hours; (c)(2) in the duty period
       dutySecs:        14 * 3600,     // (c) duty period
-      restBeforeSecs:  10 * 3600,     // (c)/(d) rest before a duty period
+      restSecs:        10 * 3600,     // (c)(1) rest before and after a duty period; (d) look-back
       quarterSecs:     500 * 3600,    // (a) calendar quarter
       twoQuarterSecs:  800 * 3600,    // (a) two consecutive calendar quarters
       yearSecs:        1400 * 3600,   // (a) calendar year
@@ -276,6 +279,12 @@ export function pilotDutyRenderScript(): string {
         { overSecs: 60 * 60,  restSecs: 12 * 3600 },
         { overSecs: Infinity, restSecs: 16 * 3600 },
       ],
+    };
+
+    // The operator's choice of daily limits under §135.267 (Global Settings, duty_method).
+    const _DUTY_METHODS = {
+      b: 'Limits: §135.267(b), flight time in any 24 hours · one-pilot crew',
+      c: 'Limits: §135.267(c), regularly assigned duty period · one-pilot crew',
     };
 
     const _DUTY_ICON_EDIT      = ${JSON.stringify(icon('pencil', { size: 13 }))};
@@ -412,9 +421,11 @@ export function pilotDutyRenderScript(): string {
     // manual flights added, removed flights left out) for every pilot; days are the
     // pilot's duty_days rows (GET /api/duty-days), defaultDuty the pilot's usual duty
     // period ({ duty_start, duty_end } HH:MM, or null) and unmatched the corrections whose
-    // flight is gone (flightStore.getUnmatched()).
+    // flight is gone (flightStore.getUnmatched()). method is the operator's §135.267 method,
+    // 'b' (the default) or 'c' (APP_SETTINGS.dutyMethod); it picks the daily checks.
     //
-    // Returns { pilotName, year, month, isCurrentMonth, days, upcoming, monthSecs, totals }.
+    // Returns { pilotName, year, month, isCurrentMonth, method, limitsLabel, days, upcoming,
+    // monthSecs, totals }.
     // days run through today in the current month. Each is { dateKey, label, record,
     // duty, defaultDuty, rest, restDesignatedAt, note, flights, unmatched, daySecs,
     // warnings }: duty is the day's duty period from its record or, on a flying day with
@@ -423,7 +434,8 @@ export function pilotDutyRenderScript(): string {
     // tracker's value } }. upcoming (current month only) lists the records dated after
     // today, for planning.
     function computeDutyData(allFlights, pilotId, pilotName, year, month,
-                             { days: dayRecords = [], defaultDuty = null, unmatched: unmatchedEntries = [] } = {}) {
+                             { days: dayRecords = [], defaultDuty = null, unmatched: unmatchedEntries = [], method = 'b' } = {}) {
+      if (method !== 'c') method = 'b';
       const nowEpoch = Math.floor(Date.now() / 1000);
       const todayKey = unixToTzDateStr(nowEpoch);
 
@@ -486,45 +498,115 @@ export function pilotDutyRenderScript(): string {
         return { secs, end };
       }
 
+      // A day's flight time against the daily limit: under (b) its worst 24-hour window;
+      // under (c) the commercial flight time in its duty period (with its flights), up to
+      // the end of its last Part 135 flight (the same Converse ordering as flightTime24).
+      // { secs, text } (secs 0 when there's nothing to check).
+      function dailyFlightOf(dateKey) {
+        if (method === 'b') {
+          const w = worst24Of(dateKey);
+          return { secs: w.secs, text: fmtBlock(w.secs) + ' flight time in the 24 h to ' + (w.end ? unixToTzTime(w.end) : '') };
+        }
+        const span = spanOf(dateKey);
+        if (!span || !dutyOf(dateKey)) return { secs: 0, text: '' };
+        const inDuty = flights.filter(f => f.start_time >= span.start && f.start_time < span.end);
+        const last135 = Math.max(-Infinity, ...inDuty.filter(f => !f.part91).map(f => f.end_time));
+        const secs = inDuty.reduce((t, f) => t + (f.start_time < last135 ? f.secs : 0), 0);
+        return { secs, text: fmtBlock(secs) + ' flight time in the duty period' };
+      }
+
+      // The longest stretch of [from, to] outside every duty period and flight (§135.267(d)).
+      function longestRest(from, to) {
+        const busy = [];
+        for (let k = dutyAddDays(unixToTzDateStr(from), -1); k <= unixToTzDateStr(to); k = dutyAddDays(k, 1)) {
+          const d = dutyOf(k);
+          if (d) busy.push([d.start, d.end]);
+          for (const f of flightsByDate[k] || []) busy.push([f.start_time, f.end_time]);
+        }
+        busy.sort((a, b) => a[0] - b[0]);
+        let best = 0, free = from;
+        for (const [start, end] of busy) {
+          if (end <= free) continue;
+          if (start >= to) break;
+          best = Math.max(best, start - free);
+          free = end;
+        }
+        return Math.max(best, to - free);
+      }
+
+      const _ref = method === 'b' ? '§135.267(b)' : '§135.267(c)';
+
       // 2. Days.
       function buildDay(dateKey) {
         const rec = recordByDate[dateKey] || null;
         const dayFlights = flightsByDate[dateKey] || [];
         const duty = dutyOf(dateKey);
-        const prevDuty = dutyOf(dutyAddDays(dateKey, -1));
+        const prevKey = dutyAddDays(dateKey, -1);
+        const prevDuty = dutyOf(prevKey);
+        const span = spanOf(dateKey);
         const rest = !!(rec && rec.rest);
+        const L = _DUTY_LIMITS;
         const warnings = [];
 
         warnings.push(...restProblems(dateKey, year));
-        const worst = worst24Of(dateKey);
-        if (worst.secs > _DUTY_LIMITS.flight24hSecs) {
-          warnings.push(fmtBlock(worst.secs) + ' flight time in the 24 h to ' + unixToTzTime(worst.end) +
-            ' (limit ' + fmtBlock(_DUTY_LIMITS.flight24hSecs) + ')');
+        const daily = dailyFlightOf(dateKey);
+        if (daily.secs > L.flightDaySecs) {
+          warnings.push(daily.text + ' (' + _ref + ' limit ' + fmtBlock(L.flightDaySecs) + ')');
         }
         // Without a duty period the duty and rest checks have nothing to go on.
         if (dayFlights.length && !duty && !rest) {
           warnings.push('No duty times recorded: record the duty period, including any on-call or standby time');
         }
         // §135.267(e): after going over the daily limit, a longer rest before the next duty.
-        const prevKey = dutyAddDays(dateKey, -1);
-        const prevOver = worst24Of(prevKey).secs - _DUTY_LIMITS.flight24hSecs;
-        const prevSpan = spanOf(prevKey), span = spanOf(dateKey);
+        const prevOver = dailyFlightOf(prevKey).secs - L.flightDaySecs;
+        const prevSpan = spanOf(prevKey);
         if (prevOver > 0 && prevSpan && span) {
-          const need = _DUTY_LIMITS.extendedRest.find(r => prevOver <= r.overSecs).restSecs;
+          const need = L.extendedRest.find(r => prevOver <= r.overSecs).restSecs;
           const restSecs = span.start - prevSpan.end;
           if (restSecs < need) {
             warnings.push('Rest ' + fmtBlock(Math.max(0, restSecs)) + ' after going ' + fmtBlock(prevOver) +
-              ' over the flight time limit on ' + _dutyShortDate(prevKey, year) + ' (minimum ' + fmtBlock(need) + ')');
+              ' over the flight time limit on ' + _dutyShortDate(prevKey, year) + ' (§135.267(e) minimum ' + fmtBlock(need) + ')');
+          }
+        }
+        // (c) needs a regularly assigned duty period: the pilot's default duty.
+        if (method === 'c' && !defaultDuty && (duty || dayFlights.length)) {
+          warnings.push('No regularly assigned duty period: set the pilot’s default duty (§135.267(c))');
+        }
+        if (duty && method === 'b') {
+          // (d): 10 consecutive hours of rest in the 24 h before the duty period ends. A duty
+          // period over 14 h can't leave that, so this is also the duty-length check.
+          const restSecs = longestRest(duty.end - 86400, duty.end);
+          if (restSecs < L.restSecs) {
+            warnings.push((duty.secs > 86400 - L.restSecs
+              ? 'Duty period ' + fmtBlock(duty.secs) + ' leaves at most ' + fmtBlock(Math.max(0, 86400 - duty.secs)) + ' of rest'
+              : 'Longest rest ' + fmtBlock(restSecs)) +
+              ' in the 24 h before duty ended ' + unixToTzTime(duty.end) + ' (§135.267(d) minimum ' + fmtBlock(L.restSecs) + ')');
+          }
+        }
+        if (duty && method === 'c') {
+          if (duty.secs > L.dutySecs) {
+            warnings.push('Duty period ' + fmtBlock(duty.secs) + ' (§135.267(c) limit ' + fmtBlock(L.dutySecs) + ')');
+          }
+          // The rest between two duty periods, checked once, on the later day: that covers
+          // both "preceded by" and "followed by".
+          const prevEnd = Math.max(-Infinity, ...[prevSpan, spanOf(dutyAddDays(dateKey, -2))]
+            .filter(x => x && x.end <= span.start).map(x => x.end));
+          if (span.start - prevEnd < L.restSecs) {
+            warnings.push('Rest before duty ' + fmtBlock(span.start - prevEnd) + ' (§135.267(c) minimum ' + fmtBlock(L.restSecs) + ')');
+          }
+          if (defaultDuty && !duty.isDefault &&
+              (duty.duty_start !== defaultDuty.duty_start || duty.duty_end !== defaultDuty.duty_end)) {
+            warnings.push('Duty ' + duty.duty_start + '–' + duty.duty_end + ' differs from the regularly assigned ' +
+              defaultDuty.duty_start + '–' + defaultDuty.duty_end + ' (§135.267(c))');
+          }
+          // Duty plus rest is 24 h: no duty may start earlier on the clock than the previous
+          // day's did (clock times, so a DST day doesn't warn).
+          if (prevDuty && duty.start < tzLocalToEpoch(dateKey, prevDuty.duty_start)) {
+            warnings.push('Duty starts ' + duty.duty_start + ', earlier than the previous day’s ' + prevDuty.duty_start +
+              ', so duty plus rest is under 24 h (§135.267(c))');
           }
         }
         if (duty) {
-          if (duty.secs > _DUTY_LIMITS.dutySecs) {
-            warnings.push('Duty period ' + fmtBlock(duty.secs) + ' (limit ' + fmtBlock(_DUTY_LIMITS.dutySecs) + ')');
-          }
-          if (prevDuty && duty.start - prevDuty.end < _DUTY_LIMITS.restBeforeSecs) {
-            warnings.push('Rest since previous duty ' + fmtBlock(Math.max(0, duty.start - prevDuty.end)) +
-              ' (minimum ' + fmtBlock(_DUTY_LIMITS.restBeforeSecs) + ')');
-          }
           // A default that doesn't fit the day's flying shows up here; the fix is to
           // record the actual duty times.
           for (const f of dayFlights) {
@@ -583,6 +665,8 @@ export function pilotDutyRenderScript(): string {
         year,
         month,
         isCurrentMonth,
+        method,
+        limitsLabel: _DUTY_METHODS[method],
         days,
         upcoming,
         monthSecs: days.reduce((s, d) => s + d.daySecs, 0),
@@ -642,7 +726,7 @@ export function pilotDutyRenderScript(): string {
           limitRow(quarterName(pqy, pqm) + ' + ' + quarterName(qy, qm), flownSince(_dutyKey(pqy, pqm, 1)), _DUTY_LIMITS.twoQuarterSecs),
           limitRow('Calendar year ' + qy, flownSince(_dutyKey(qy, 1, 1)), _DUTY_LIMITS.yearSecs),
         ],
-        flight24: limitRow('Last 24 h', flight24, _DUTY_LIMITS.flight24hSecs),
+        flight24: limitRow('Last 24 h', flight24, _DUTY_LIMITS.flightDaySecs),
         rest: {
           label: '24 h rest periods, ' + quarterName(qy, qm),
           taken: restTaken,
@@ -773,6 +857,7 @@ export function pilotDutyRenderScript(): string {
       const r = totals.rest;
       totalsEl.innerHTML =
         '<div class="pilot-duty-totals-label">§135.267 totals (as of ' + totals.asOfLabel + ')</div>' +
+        '<div class="pilot-duty-limits">' + escHtml(data.limitsLabel) + '</div>' +
         '<table class="totals-table"><tbody>' +
         totals.hours.map(t =>
           '<tr' + (t.over ? ' class="duty-over"' : '') + '><td>' + t.label + '</td><td>' + fmtBlock(t.secs) +
@@ -1038,6 +1123,7 @@ export function pilotDutyRenderScript(): string {
         '#stack(spacing: 7pt,\\n' +
         '  text(size: 17pt, weight: "bold", tracking: ' + _DUTY_PDF_THEME.trackingHeading + ', ' + _typStr(pilotName + ' Duty Log').slice(1) + '),\\n' +
         '  text(size: 10pt, fill: muted, ' + _typStr(dutyPeriodLabel(data)).slice(1) + '),\\n' +
+        '  text(size: 8pt, fill: muted, ' + _typStr(data.limitsLabel).slice(1) + '),\\n' +
         ')\\n\\n' +
         '#v(1.2em)\\n\\n' +
         '#table(\\n' +
@@ -1148,7 +1234,8 @@ export function pilotDutyScript(): string {
       document.getElementById('pilot-duty-period').textContent = dutyPeriodLabel({ year: _dutyYear, month: _dutyMonth });
       if (!_dutyLog) return;
       _dutyData = computeDutyData(flightStore.getCompleted(), _dutyPilotId, _dutyPilotName, _dutyYear, _dutyMonth,
-        { days: _dutyLog.days, defaultDuty: _dutyDefaultDuty(), unmatched: flightStore.getUnmatched() });
+        { days: _dutyLog.days, defaultDuty: _dutyDefaultDuty(), unmatched: flightStore.getUnmatched(),
+          method: window.APP_SETTINGS.dutyMethod });
       // Planning ahead goes through the Upcoming list, so months stop at this one.
       const [curY, curM] = currentDutyMonth();
       document.getElementById('pilot-duty-next').disabled = _dutyYear * 12 + _dutyMonth >= curY * 12 + curM;

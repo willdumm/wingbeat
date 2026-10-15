@@ -9,6 +9,9 @@ export interface AppSettings {
   gap_alert_minutes: number;
   gap_alert_stop_minutes: number;
   pushover_api_token: string;
+  /** How the duty log applies §135.267's daily limits: (b) flight time in any 24 hours, or
+   *  (c) a regularly assigned duty period. See docs/duty-log-editing-plan.md. */
+  duty_method: 'b' | 'c';
 }
 
 const DEFAULTS: AppSettings = {
@@ -20,6 +23,7 @@ const DEFAULTS: AppSettings = {
   gap_alert_minutes:  5,
   gap_alert_stop_minutes: 60,
   pushover_api_token: '',
+  duty_method:        'b',
 };
 
 // The TTL bounds cross-isolate staleness: invalidateSettingsCache only reaches the
@@ -58,6 +62,7 @@ export async function loadSettings(tenant: Tenant): Promise<AppSettings> {
     gap_alert_minutes: parseFloat(c.gap_alert_minutes ?? String(DEFAULTS.gap_alert_minutes)),
     gap_alert_stop_minutes: parseFloat(c.gap_alert_stop_minutes ?? String(DEFAULTS.gap_alert_stop_minutes)),
     pushover_api_token: c.pushover_api_token ?? DEFAULTS.pushover_api_token,
+    duty_method: c.duty_method === 'c' ? 'c' : DEFAULTS.duty_method,
   };
 }
 
@@ -68,5 +73,6 @@ export function settingsAsClientObject(s: AppSettings): string {
     mapDefaultLat:  s.map_default_lat,
     mapDefaultLng:  s.map_default_lng,
     mapDefaultZoom: s.map_default_zoom,
+    dutyMethod:     s.duty_method,
   });
 }

@@ -59,6 +59,7 @@ configuration:
 | Map default lat/lng/zoom | Where the map opens when there's no other context. **Set from map** lets you pan and zoom to it instead of typing coordinates |
 | Gap alert (minutes) | Silence threshold before an in-flight signal-gap notification fires |
 | Stop gap alerts after (minutes) | Silence after which the flight is treated as ended and repeating gap alerts stop (default 60) |
+| Duty limits (§135.267) | Which of §135.267's two methods the [pilot duty log](../../features/pilot-duty-log#limits-b-or-c) checks: **(b)** flight time in any 24 hours (the default) or **(c)** a regularly assigned duty period |
 
 ### Notifications
 

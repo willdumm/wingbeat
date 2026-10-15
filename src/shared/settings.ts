@@ -230,6 +230,13 @@ export function settingsModalMarkup(): string {
                 <div class="settings-form-label">Stop gap alerts after (minutes)</div>
                 <input type="number" id="settings-tenant-gap-stop-minutes" min="1" step="1" placeholder="60" autocomplete="off" />
               </div>
+              <div class="settings-form-row">
+                <div class="settings-form-label">Duty limits (§135.267)</div>
+                <select id="settings-tenant-duty-method">
+                  <option value="b">(b) Flight time in any 24 hours</option>
+                  <option value="c">(c) Regularly assigned duty period</option>
+                </select>
+              </div>
               <div class="settings-add-actions">
                 <button id="settings-tenant-save" class="btn-primary">Save</button>
               </div>
@@ -2789,6 +2796,7 @@ export function settingsModalScript(): string {
         document.getElementById('settings-tenant-zoom').value = d.map_default_zoom ?? '';
         document.getElementById('settings-tenant-gap-minutes').value = d.gap_alert_minutes ?? '';
         document.getElementById('settings-tenant-gap-stop-minutes').value = d.gap_alert_stop_minutes ?? '';
+        document.getElementById('settings-tenant-duty-method').value = d.duty_method === 'c' ? 'c' : 'b';
         document.getElementById('settings-tenant-pushover-token').value = d.pushover_api_token ?? '';
       } catch (_) {}
     }
@@ -2812,6 +2820,7 @@ export function settingsModalScript(): string {
         map_default_zoom: parseInt(document.getElementById('settings-tenant-zoom').value, 10),
         gap_alert_minutes: parseInt(document.getElementById('settings-tenant-gap-minutes').value, 10),
         gap_alert_stop_minutes: parseInt(document.getElementById('settings-tenant-gap-stop-minutes').value, 10),
+        duty_method: document.getElementById('settings-tenant-duty-method').value,
       };
       // Not seeded by the initial migration, so it's blank until first saved — leave the
       // server default (shown as the placeholder) in place rather than sending null.
@@ -2823,6 +2832,8 @@ export function settingsModalScript(): string {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
+        // The duty log reads the method when it computes, so it applies without a reload.
+        if (resp.ok) window.APP_SETTINGS.dutyMethod = body.duty_method;
         statusEl.style.display = '';
         statusEl.textContent = resp.ok ? 'Saved.' : 'Failed to save.';
         setTimeout(() => { statusEl.style.display = 'none'; }, 3000);

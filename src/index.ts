@@ -1910,12 +1910,13 @@ app.get('/api/settings', requireAdmin, async (c) => {
 });
 
 app.patch('/api/settings', requireAdmin, async (c) => {
-  const ALLOWED_KEYS = new Set(['app_name', 'timezone', 'map_default_lat', 'map_default_lng', 'map_default_zoom', 'gap_alert_minutes', 'gap_alert_stop_minutes', 'pushover_api_token', 'setup_dismissed']);
+  const ALLOWED_KEYS = new Set(['app_name', 'timezone', 'map_default_lat', 'map_default_lng', 'map_default_zoom', 'gap_alert_minutes', 'gap_alert_stop_minutes', 'pushover_api_token', 'setup_dismissed', 'duty_method']);
   const body = await c.req.json<Record<string, string | number>>();
   const stmts: D1PreparedStatement[] = [];
   for (const [key, value] of Object.entries(body)) {
     if (!ALLOWED_KEYS.has(key)) return c.json({ error: `Unknown setting key: ${key}` }, 400);
     if (typeof value !== 'string' && typeof value !== 'number') return c.json({ error: `Value for ${key} must be a string or number` }, 400);
+    if (key === 'duty_method' && value !== 'b' && value !== 'c') return c.json({ error: 'duty_method must be b or c' }, 400);
     stmts.push(c.var.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').bind(key, String(value)));
   }
   if (stmts.length > 0) {
