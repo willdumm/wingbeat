@@ -469,8 +469,14 @@ Where the implementation departs from, or adds to, the plan above:
   page doesn't load (deleted or inactive) are listed in the editor as "unplaced". In the
   duty log an unmatched row goes to the pilot of the same tracker's nearest flight within
   12 h, and otherwise only to the editor.
-- **Cache key.** The corrections version the client caches is the write counter plus the
-  row count and newest `updated_at`, so a counter that restarts can't match a stale copy.
+- **Incremental sync.** The flight store syncs corrections like flights, from a cursor:
+  `GET /api/flight-corrections?since=<id>` returns the rows changed after that
+  `edit_history` id (keys from the history triggers, migration 0003), the keys deleted, and
+  the new cursor (`last_history_id`); the client merges them on the key
+  (`<tracker_id>/<flight_start_time>` or `manual/<id>`). No cursor, or one past the
+  newest id (a reset database), gets every row and `full: true`. This replaced refetching
+  the whole table whenever `flight_corrections_version` (a write counter) moved; migration
+  `0004` drops that table and its triggers.
 - **Renamed.** The table holds flight corrections and manual flights, not duty-log
   entries, so `flight_log_entries` is now `flight_corrections` (version table
   `flight_corrections_version`, triggers `flight_corrections_ai/au/ad`, index

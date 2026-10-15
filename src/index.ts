@@ -1248,32 +1248,55 @@ async function parseTrackedAssign(db: D1Database, v: unknown, trackerId: number)
   return { flight_id: a.flight_id as number, set: { aircraft_tail: aircraft_tail as string | null | undefined, pilot_id: pilot_id as number | null | undefined } };
 }
 
-// Every row, for the flight store to apply to its flights. ?version=<n> (the client's
-// cached flight_corrections_version) returns { version, unchanged: true } when nothing has been
-// written since, so a refresh costs one single-row read. Readable by anyone signed in,
-// like the flights it's applied to; only writes are admin-only.
-// The client's cache key for the rows: the write counter plus the row count and newest
-// updated_at, so a counter that restarts (a reset or recreated database) can't match a
-// stale cached copy by accident. Opaque to the client.
-const ENTRIES_VERSION_SQL =
-  `SELECT version || '.' || (SELECT COUNT(*) FROM flight_corrections) || '.' ||
-          (SELECT COALESCE(MAX(updated_at), 0) FROM flight_corrections) AS version
-   FROM flight_corrections_version WHERE id = 1`;
+// The rows written since the client's cursor, for the flight store to merge into its copy
+// and apply to its flights (the same shape as GET /api/flights/complete?since=). The cursor
+// is an edit_history id: the history triggers (migration 0003) record every insert, update
+// and delete, keyed '<tracker_id>/<flight_start_time>' or 'manual/<id>', so the keys changed
+// after it are the rows to send, and a key with no row now was deleted. ?since=<id> returns
+// { entries, deleted: [keys], last_history_id }. Without it (or 0), or with one past the
+// newest id (a reset or recreated database), it returns every row and full: true, and the
+// client replaces its copy. Readable by anyone signed in, like the flights it's applied
+// to; only writes are admin-only.
+const ENTRIES_LAST_HISTORY_ID_SQL =
+  `SELECT COALESCE(MAX(id), 0) AS last_history_id FROM edit_history WHERE entity = 'flight_corrections'`;
+
+// Each key changed after ?1, with its row now (NULL columns for a deleted one), looked up by
+// primary key or the (tracker_id, flight_start_time) unique index.
+const ENTRIES_SINCE_SQL =
+  `WITH changed AS (
+     SELECT DISTINCT entity_key AS key FROM edit_history WHERE entity = 'flight_corrections' AND id > ?1
+   )
+   SELECT changed.key, fc.* FROM changed
+   LEFT JOIN flight_corrections fc ON fc.id = CASE
+     WHEN substr(changed.key, 1, 7) = 'manual/' THEN CAST(substr(changed.key, 8) AS INTEGER)
+     ELSE (SELECT id FROM flight_corrections
+           WHERE tracker_id = CAST(substr(changed.key, 1, instr(changed.key, '/') - 1) AS INTEGER)
+             AND flight_start_time = CAST(substr(changed.key, instr(changed.key, '/') + 1) AS INTEGER))
+   END`;
 
 app.get('/api/flight-corrections', async (c) => {
   c.header('Cache-Control', 'no-store');
-  const current = await c.var.db.prepare(ENTRIES_VERSION_SQL).first<{ version: string }>();
-  const version = current?.version ?? '0';
-  if (c.req.query('version') === version) return c.json({ version, unchanged: true });
-  // Re-read the version alongside the rows, so they match even if a write came in between.
-  const [v, entries] = await c.var.db.batch([
-    c.var.db.prepare(ENTRIES_VERSION_SQL),
-    c.var.db.prepare('SELECT * FROM flight_corrections ORDER BY id'),
-  ]);
-  return c.json({
-    version: (v.results[0] as { version: string } | undefined)?.version ?? '0',
-    entries: entries.results as FlightCorrection[],
-  });
+  const since = parseInt(c.req.query('since') ?? '0', 10) || 0;
+  // The cursor and the rows in one batch (a transaction), so they match even if a write
+  // comes in between; the next request picks that up.
+  const read = async (rows: D1PreparedStatement) => {
+    const [cursor, result] = await c.var.db.batch([c.var.db.prepare(ENTRIES_LAST_HISTORY_ID_SQL), rows]);
+    return { lastHistoryId: (cursor.results[0] as { last_history_id: number } | undefined)?.last_history_id ?? 0, rows: result.results };
+  };
+  if (since > 0) {
+    const { lastHistoryId, rows } = await read(c.var.db.prepare(ENTRIES_SINCE_SQL).bind(since));
+    if (since <= lastHistoryId) {
+      const entries: FlightCorrection[] = [];
+      const deleted: string[] = [];
+      for (const { key, ...row } of rows as ({ key: string } & FlightCorrection)[]) {
+        if (row.id == null) deleted.push(key);
+        else entries.push(row);
+      }
+      return c.json({ entries, deleted, last_history_id: lastHistoryId });
+    }
+  }
+  const { lastHistoryId, rows } = await read(c.var.db.prepare('SELECT * FROM flight_corrections ORDER BY id'));
+  return c.json({ entries: rows as FlightCorrection[], deleted: [], last_history_id: lastHistoryId, full: true });
 });
 
 // One pilot's duty/rest days. Flights (with corrections) come from the flight store.

@@ -5,7 +5,8 @@ import { SPEED_THRESHOLD_KMH } from '../geo';
  * Uses a single localStorage key (ft_flights_v2) across all trackers; tracker filtering
  * is a read-time concern via the optional trackerIds parameter on getAll/getCompleted.
  *
- * It also syncs the flight corrections (GET /api/flight-corrections) and serves
+ * It also syncs the flight corrections (GET /api/flight-corrections) the same way, from a
+ * cursor (since=, an edit_history id) that's advanced as deltas are merged, and serves
  * effective flights: getAll/getCompleted apply them with applyFlightEdits()
  * (flight-edits.ts, needed in the same script), so every page shows corrected times and
  * labels, manual flights, and no removed flights. getRaw() returns the tracker's own
@@ -17,7 +18,7 @@ export function flightStoreScript(): string {
     const _STORAGE_KEY  = 'ft_flights_v2';
     const _FLIGHT_KMH   = ${SPEED_THRESHOLD_KMH};
 
-    let _mem = { last_modified_at_by_tracker: {}, flights: [], entries: [], entries_version: null };
+    let _mem = _fsEmpty();
     let _cbs = [];
     let _pending = null;
     let _queued = null;              // a refresh asked for while one was in flight
@@ -31,6 +32,10 @@ export function flightStoreScript(): string {
     let _gen = 0;
     let _effCache = null;
 
+    function _fsEmpty() {
+      return { last_modified_at_by_tracker: {}, flights: [], entries: [], entries_last_history_id: 0 };
+    }
+
     function _fsSave() {
       _gen++;
       try { localStorage.setItem(_STORAGE_KEY, JSON.stringify(_mem)); } catch (_) {}
@@ -41,7 +46,11 @@ export function flightStoreScript(): string {
         const raw = localStorage.getItem(_STORAGE_KEY);
         if (raw) _mem = JSON.parse(raw);
       } catch (_) {}
-      if (!Array.isArray(_mem.entries)) { _mem.entries = []; _mem.entries_version = null; }
+      // A copy without a cursor (the old whole-table entries_version) is shown until the
+      // next refresh replaces it with a full fetch.
+      if (!Array.isArray(_mem.entries)) _mem.entries = [];
+      if (!Number.isInteger(_mem.entries_last_history_id)) _mem.entries_last_history_id = 0;
+      delete _mem.entries_version;
       _gen++;
     }
 
@@ -67,28 +76,50 @@ export function flightStoreScript(): string {
       }
     }
 
-    // The corrections, unless the cached copy is current. A failure keeps the cached copy.
-    async function _fsFetchEntries() {
-      try {
-        const v = _mem.entries_version;
-        const resp = await fetch('/api/flight-corrections' + (v != null ? '?version=' + encodeURIComponent(v) : ''));
-        if (!resp.ok) return null;
-        const data = await resp.json();
-        return data.unchanged ? null : data;
-      } catch (_) {
-        return null;
-      }
+    // GET path with since=<cursor>: what changed after the cursor and the new cursor, for
+    // the caller to merge and advance (_fsAdvance) before saving.
+    async function _fsFetchSince(path, since) {
+      const resp = await fetch(path + (path.includes('?') ? '&' : '?') + 'since=' + since);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return resp.json();
+    }
+
+    // Moves cursors[key] to next if that's later (or anywhere, with reset: a full resync).
+    // Returns whether it moved.
+    function _fsAdvance(cursors, key, next, reset = false) {
+      if (reset ? cursors[key] === next : (next ?? 0) <= (cursors[key] ?? 0)) return false;
+      cursors[key] = next;
+      return true;
+    }
+
+    // A correction's key, as edit_history and GET /api/flight-corrections' deleted list
+    // have it: '<tracker_id>/<flight_start_time>' or 'manual/<id>'. Merging on it rather than
+    // id replaces a tracked flight's row that was deleted and re-inserted under a new id.
+    function flightCorrectionKey(e) {
+      return e.tracker_id == null ? 'manual/' + e.id : e.tracker_id + '/' + e.flight_start_time;
+    }
+
+    // entries with a GET /api/flight-corrections response applied: { entries, deleted, full }.
+    // A full response replaces them; otherwise its rows replace (or join) those with the
+    // same key and deleted keys are dropped. Returns entries itself when nothing changed.
+    function mergeFlightCorrections(entries, { entries: incoming = [], deleted = [], full = false }) {
+      if (full) return JSON.stringify(incoming) === JSON.stringify(entries) ? entries : incoming;
+      if (!incoming.length && !deleted.length) return entries;
+      const byKey = new Map(entries.map(e => [flightCorrectionKey(e), e]));
+      for (const key of deleted) byKey.delete(key);
+      for (const e of incoming) byKey.set(flightCorrectionKey(e), e);
+      return [...byKey.values()];
     }
 
     async function _fsFetchMerge(trackerIds) {
+      const entriesSince = _mem.entries_last_history_id;
       const [results, entriesData] = await Promise.all([
         Promise.all(trackerIds.map(async (tid) => {
           const since = _mem.last_modified_at_by_tracker[tid] ?? 0;
-          const resp = await fetch('/api/flights/complete?tracker=' + encodeURIComponent(tid) + '&since=' + since);
-          if (!resp.ok) throw new Error('HTTP ' + resp.status);
-          return { tid, data: await resp.json() };
+          return { tid, data: await _fsFetchSince('/api/flights/complete?tracker=' + encodeURIComponent(tid), since) };
         })),
-        _fsFetchEntries(),
+        // A failure keeps the cached copy.
+        _fsFetchSince('/api/flight-corrections', entriesSince).catch(() => null),
       ]);
       let changed = false;
       let latestLastPolled = null;
@@ -100,18 +131,17 @@ export function flightStoreScript(): string {
           _fsMerge(data.flights);
           changed = true;
         }
-        if ((data.last_modified_at ?? 0) > (_mem.last_modified_at_by_tracker[tid] ?? 0)) {
-          _mem.last_modified_at_by_tracker[tid] = data.last_modified_at;
-          changed = true;
-        }
+        if (_fsAdvance(_mem.last_modified_at_by_tracker, tid, data.last_modified_at)) changed = true;
         if ((data.last_polled ?? 0) > (latestLastPolled ?? 0)) latestLastPolled = data.last_polled;
         liveLabelsByTracker[tid] = data.live_label ?? null;
         if (data.geocode_pending) anyGeocodePending = true;
       }
-      if (entriesData) {
-        _mem.entries = entriesData.entries;
-        _mem.entries_version = entriesData.version;
-        changed = true;
+      // Dropped if another tab's save moved the cursor meanwhile (the storage listener
+      // reloaded _mem): the delta may predate that copy. The next refresh continues from it.
+      if (entriesData && _mem.entries_last_history_id === entriesSince) {
+        const entries = mergeFlightCorrections(_mem.entries, entriesData);
+        if (entries !== _mem.entries) { _mem.entries = entries; changed = true; }
+        if (_fsAdvance(_mem, 'entries_last_history_id', entriesData.last_history_id, entriesData.full)) changed = true;
       }
       if (changed) { _fsSave(); _cbs.forEach(cb => cb()); }
       return { changed, lastPolled: latestLastPolled, liveLabelsByTracker, geocodePending: anyGeocodePending };
@@ -216,7 +246,7 @@ export function flightStoreScript(): string {
 
       clearCache(trackerIds = null) {
         if (!trackerIds) {
-          _mem = { last_modified_at_by_tracker: {}, flights: [], entries: [], entries_version: null };
+          _mem = _fsEmpty();
         } else {
           _mem.flights = _mem.flights.filter(f => !trackerIds.includes(f.tracker_id));
           for (const tid of trackerIds) delete _mem.last_modified_at_by_tracker[tid];

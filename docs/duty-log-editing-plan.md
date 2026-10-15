@@ -477,6 +477,11 @@ migration `0004` adds an AFTER UPDATE trigger on `flights` that records a change
 tracker's apply-assignment. Segmentation only deletes and re-inserts flights, so it adds
 no history.
 
+The same migration lets the flight store sync corrections incrementally from
+`edit_history`: `GET /api/flight-corrections?since=<id>` returns the keys changed after
+that id with their rows now (a key with no row was deleted), and an `(entity, id)` index
+serves it. That replaces `flight_corrections_version`, which 0004 drops.
+
 The day form and the flight form show "Last changed by <user>, <date time>" from
 `GET /api/edit-history`. A full history view is a follow-up.
 

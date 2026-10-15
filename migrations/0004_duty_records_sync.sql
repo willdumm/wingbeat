@@ -1,3 +1,6 @@
+-- Duty records, continued from 0003: history for a tracked flight's aircraft and pilot,
+-- and incremental sync of flight corrections from edit_history.
+
 -- Edit history for a tracked flight's aircraft and pilot (docs/duty-log-editing-plan.md,
 -- "Compliance review"). They live on flights (PUT /api/flights/assignment, the flight form's
 -- assign, a tracker's apply-assignment), not in flight_corrections, so moving a flight
@@ -17,3 +20,17 @@ BEGIN
     json_object('pilot_id', OLD.pilot_id, 'aircraft_tail', OLD.aircraft_tail),
     json_object('pilot_id', NEW.pilot_id, 'aircraft_tail', NEW.aircraft_tail);
 END;
+
+-- The flight store syncs flight corrections incrementally (GET /api/flight-corrections
+-- ?since=<edit_history id>): edit_history already records every insert, update and delete
+-- of a row, keyed like the client merges them, so the keys changed after the client's
+-- cursor are what it needs to fetch. This index serves that scan and the cursor (the
+-- newest id per entity).
+CREATE INDEX IF NOT EXISTS idx_edit_history_entity_id ON edit_history(entity, id);
+
+-- That replaces flight_corrections_version (0002), the write counter the client compared
+-- before refetching every row.
+DROP TRIGGER IF EXISTS flight_corrections_ai;
+DROP TRIGGER IF EXISTS flight_corrections_au;
+DROP TRIGGER IF EXISTS flight_corrections_ad;
+DROP TABLE IF EXISTS flight_corrections_version;
