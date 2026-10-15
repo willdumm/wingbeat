@@ -6,7 +6,7 @@ weight: 4
 
 # Pilot Duty Log
 
-Per-pilot flight and duty log, opened with **Info** on a pilot's entry in
+Per-pilot flight and duty log, opened with **Duty log** on a pilot's entry in
 Settings. It shows one month at a time, through today in the current month;
 use the arrows to move back through the pilot's history. It's built from the
 pilot's flights, with any [corrections](../editing-flights) applied, and admins

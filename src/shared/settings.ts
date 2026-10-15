@@ -2250,11 +2250,11 @@ export function settingsModalScript(): string {
         }
         const actions = document.createElement('div');
         actions.className = 'settings-aircraft-actions';
-        const infoBtn = document.createElement('button');
-        infoBtn.className = 'settings-action-btn';
-        infoBtn.textContent = 'Info';
-        infoBtn.addEventListener('click', () => openPilotDuty(p.id, p.name));
-        actions.appendChild(infoBtn);
+        const dutyBtn = document.createElement('button');
+        dutyBtn.className = 'settings-action-btn';
+        dutyBtn.textContent = 'Duty log';
+        dutyBtn.addEventListener('click', () => openPilotDuty(p.id, p.name));
+        actions.appendChild(dutyBtn);
         if (_settingsUser?.role === 'admin') {
           const editBtn = document.createElement('button');
           editBtn.className = 'settings-action-btn';
