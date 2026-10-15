@@ -11,7 +11,7 @@ import { generateToken, deviceNameFromUA, noAccessHTML, joinHTML, joinErrorHTML 
 import { loadSettings, invalidateSettingsCache } from './settings';
 import { keyedBasemapPreset, readEnvSecret, substituteTileUrl } from './shared/map-controls';
 import { lookupTileMetadata, sanitizeAttribution } from './tile-metadata';
-import { MAX_DUTY_DAYS_PER_REQUEST, MAX_FLIGHT_TEXT_LENGTH, MAX_DUTY_NOTE_LENGTH } from './shared/record-limits';
+import { MAX_DUTY_DAYS_PER_REQUEST, MAX_FLIGHT_TEXT_LENGTH, MAX_DUTY_NOTE_LENGTH, MAX_FLIGHT_SECS } from './shared/record-limits';
 
 const SESSION_COOKIE = 'session';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 365;
@@ -988,15 +988,18 @@ const EDIT_HISTORY_ENTITIES = new Set(['flight_corrections', 'duty_days', 'fligh
 
 // One record's history, newest first:
 // ?entity=flight_corrections|duty_days|flight_assignment&key=<entity_key> (see migrations
-// 0003 and 0004) and optionally &limit=<n> (default and maximum 100).
+// 0003 and 0004) and optionally &limit=<n> (default and maximum 100). entity can list
+// several, comma-separated, for entities sharing a key (a tracked flight's corrections and
+// its aircraft/pilot): their rows come interleaved, newest first.
 app.get('/api/edit-history', requireAdmin, async (c) => {
-  const entity = c.req.query('entity') ?? '';
+  const entities = [...new Set((c.req.query('entity') ?? '').split(','))];
   const key = c.req.query('key') ?? '';
-  if (!EDIT_HISTORY_ENTITIES.has(entity) || !key) return c.json({ error: 'entity and key required' }, 400);
+  if (!entities.every(e => EDIT_HISTORY_ENTITIES.has(e)) || !key) return c.json({ error: 'entity and key required' }, 400);
   const limit = Math.min(Math.max(parseInt(c.req.query('limit') ?? '100', 10) || 100, 1), 100);
   const { results } = await c.var.db.prepare(
-    'SELECT * FROM edit_history WHERE entity = ? AND entity_key = ? ORDER BY id DESC LIMIT ?'
-  ).bind(entity, key, limit).all();
+    `SELECT * FROM edit_history WHERE entity IN (${entities.map(() => '?').join(', ')}) AND entity_key = ?
+     ORDER BY id DESC LIMIT ?`
+  ).bind(...entities, key, limit).all();
   c.header('Cache-Control', 'no-store');
   return c.json({ history: results });
 });
@@ -1190,6 +1193,17 @@ async function parseEntryFields(db: D1Database, body: Record<string, unknown>, t
   };
   if (fields.start_time != null && fields.end_time != null && fields.end_time <= fields.start_time) {
     return 'end_time must be after start_time';
+  }
+  // A flight over a day is a mistyped time (the flight form reads an arrival before the
+  // departure as the next day). A tracked flight's uncorrected time is its tracker's.
+  let start = fields.start_time, end = fields.end_time;
+  if (tracked && (start == null) !== (end == null)) {
+    start ??= body.flight_start_time as number;
+    end ??= (await db.prepare('SELECT end_time FROM flights WHERE tracker_id = ? AND start_time = ?')
+      .bind(body.tracker_id, body.flight_start_time).first<{ end_time: number | null }>())?.end_time ?? null;
+  }
+  if (start != null && end != null && end - start > MAX_FLIGHT_SECS) {
+    return `A flight can't be longer than ${MAX_FLIGHT_SECS / 3600} hours: check the departure and arrival times (an arrival before the departure is the next day)`;
   }
   // Part 135 is flying for compensation, so only Part 91 can be unpaid.
   if (fields.unpaid && !fields.part91) return 'Only a Part 91 flight can be unpaid';

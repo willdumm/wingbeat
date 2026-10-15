@@ -159,10 +159,29 @@ export function formModalScript(): string {
   return `
     // ── Form modal ────────────────────────────────────────────────────────────
 
+    // Runs a form's write: fn() with controls (its buttons) disabled and errorEl cleared,
+    // then the controls enabled again. A failure's message goes in errorEl. Returns whether
+    // fn went through. Shared by the flight form, the flight editor's bulk actions and the
+    // duty log's forms.
+    async function runFormAction(controls, errorEl, fn) {
+      controls.forEach(c => { c.disabled = true; });
+      errorEl.textContent = '';
+      try {
+        await fn();
+        return true;
+      } catch (e) {
+        errorEl.textContent = e && e.message ? e.message : String(e);
+        return false;
+      } finally {
+        controls.forEach(c => { c.disabled = false; });
+      }
+    }
+
     // Opens a form modal (formModalStyles()) and returns { modal, close }. bodyHtml and
     // footerHtml are trusted markup; the caller wires up its own buttons. Escape, the
-    // close button and the backdrop close it; a backdrop click (easy to make by accident
-    // on a phone) asks first once a field has been changed. Tab stays inside the dialog.
+    // close button and the backdrop close it; Escape and a backdrop click (easy to make by
+    // accident on a phone) ask first once a field has been changed. Tab stays inside the
+    // dialog.
     // Extra classes go on the root (e.g. 'form-modal-wide').
     function openFormModal({ id, title, bodyHtml, footerHtml, className = '' }) {
       const existing = document.getElementById(id);
@@ -199,7 +218,7 @@ export function formModalScript(): string {
       function onKey(e) {
         if (e.key === 'Escape') {
           e.stopPropagation();
-          close();
+          closeUnlessKept();
           return;
         }
         if (e.key !== 'Tab') return;
@@ -220,10 +239,12 @@ export function formModalScript(): string {
         modal.remove();
         if (opener && opener.isConnected) opener.focus();
       }
-      document.addEventListener('keydown', onKey, true);
-      modal.querySelector('.form-modal-backdrop').addEventListener('click', () => {
+      // Closes, after asking when a field has been changed.
+      function closeUnlessKept() {
         if (!dirty || confirm('Discard your changes?')) close();
-      });
+      }
+      document.addEventListener('keydown', onKey, true);
+      modal.querySelector('.form-modal-backdrop').addEventListener('click', closeUnlessKept);
       modal.querySelector('.form-modal-close').addEventListener('click', close);
       return { modal, close };
     }

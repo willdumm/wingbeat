@@ -12,3 +12,10 @@ export const MAX_FLIGHT_TEXT_LENGTH = 200;
 
 /** Longest duty-day note, in characters. */
 export const MAX_DUTY_NOTE_LENGTH = 1000;
+
+/**
+ * Longest flight, in seconds: a correction or manual flight whose arrival is more than
+ * this after its departure is refused (the flight form reads an arrival before the
+ * departure as the next day, so a mistyped time otherwise saves a day-long flight).
+ */
+export const MAX_FLIGHT_SECS = 24 * 3600;

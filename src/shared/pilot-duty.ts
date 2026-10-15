@@ -606,11 +606,12 @@ export function pilotDutyRenderScript(): string {
             warnings.push('Duty period ' + fmtBlock(duty.secs, true) + ' (§135.267(c) limit ' + fmtBlock(L.dutySecs) + ')');
           }
           // The rest between two duty periods, checked once, on the later day: that covers
-          // both "preceded by" and "followed by".
+          // both "preceded by" and "followed by". Busy time that runs into this duty period
+          // (an overnight flight, a previous duty past its start) leaves no rest at all.
           const prevEnd = Math.max(-Infinity, ...[prevSpan, spanOf(dutyAddDays(dateKey, -2))]
-            .filter(x => x && x.end <= span.start).map(x => x.end));
+            .filter(x => x && x.start < span.start).map(x => x.end));
           if (span.start - prevEnd < L.restSecs) {
-            warnings.push('Rest before duty ' + fmtBlock(span.start - prevEnd) + ' (§135.267(c) minimum ' + fmtBlock(L.restSecs) + ')');
+            warnings.push('Rest before duty ' + fmtBlock(Math.max(0, span.start - prevEnd)) + ' (§135.267(c) minimum ' + fmtBlock(L.restSecs) + ')');
           }
           if (defaultDuty && !duty.isDefault &&
               (duty.duty_start !== defaultDuty.duty_start || duty.duty_end !== defaultDuty.duty_end)) {
@@ -1395,7 +1396,7 @@ export function pilotDutyScript(): string {
         edit: _dutyCanEdit ? {
           onFlight: f => openFlightForm(f),
           onDay: _dutyOpenDayForm,
-          onDeleteEntry: _dutyDeleteUnmatched,
+          onDeleteEntry: async e => { if (await deleteUnappliedCorrections(e.id, _dutyFetchLog)) _dutyLoad(); },
         } : null,
       });
       _dutyRenderDefault();
@@ -1551,16 +1552,7 @@ export function pilotDutyScript(): string {
     // in errorEl. Returns whether the save went through (a failed reload doesn't count:
     // _dutyFetchLog says so itself).
     async function _dutySave(buttons, errorEl, fn) {
-      buttons.forEach(b => { b.disabled = true; });
-      errorEl.textContent = '';
-      try {
-        await fn();
-      } catch (e) {
-        errorEl.textContent = e && e.message ? e.message : String(e);
-        return false;
-      } finally {
-        buttons.forEach(b => { b.disabled = false; });
-      }
+      if (!await runFormAction(buttons, errorEl, fn)) return false;
       await _dutyFetchLog();
       _dutyLoad();
       return true;
@@ -1674,17 +1666,6 @@ export function pilotDutyScript(): string {
         const ok = await _dutySave(buttons, errorEl, () => flightApi('POST', pilotUrl + '/clear', { dates: keys }));
         if (ok) close();
       });
-    }
-
-    async function _dutyDeleteUnmatched(entry) {
-      if (!confirm('Delete these corrections? The flight they belonged to is no longer in the tracker’s history.')) return;
-      try {
-        await flightApi('DELETE', '/api/flight-corrections/' + entry.id);
-      } catch (e) {
-        alert('Delete failed: ' + (e && e.message ? e.message : String(e)));
-      }
-      await Promise.all([_dutyFetchLog(), flightStore.refresh().catch(() => {})]);
-      _dutyLoad();
     }
   `;
 }

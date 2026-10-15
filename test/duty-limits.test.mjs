@@ -148,20 +148,17 @@ describe('method (c): regularly assigned duty period', () => {
       ['Rest before duty 8:30 (§135.267(c) minimum 10:00)']);
   });
 
-  // Spec: "Less than 10 h of rest between consecutive duty periods" warns. buildDay only
-  // considers previous spans that end by the day's start (x.end <= span.start), so when the
+  // Spec: "Less than 10 h of rest between consecutive duty periods" warns. When the
   // previous day's busy time runs INTO this day's duty (an overnight flight landing after
-  // it starts, or a previous duty past midnight that overlaps it) there's no rest at all
-  // and no "Rest before duty" warning. Other warnings usually fire as well ((e), "outside
-  // duty", "earlier than the previous day's"), but not this one.
-  test('busy time overlapping the next duty period is rest under 10 h', {
-    todo: 'engine skips overlapping previous spans in the (c) rest check (x.end <= span.start)',
-  }, () => {
+  // it starts, or a previous duty past midnight that overlaps it) there's no rest at all.
+  test('busy time overlapping the next duty period is rest under 10 h', () => {
     const days = [duty(D1, '08:00', '17:00'), duty(D2, '08:00', '17:00')];
     const fl = [flight(`${D1} 23:00`, `${D2} 08:15`)];
-    assert.equal(matching(warningsOn(fl, D2, c(days)), /^Rest before duty/).length, 1);
+    assert.deepEqual(matching(warningsOn(fl, D2, c(days)), /^Rest before duty/),
+      ['Rest before duty 0:00 (§135.267(c) minimum 10:00)']);
     const overlapping = [duty(D1, '20:00', '09:00'), duty(D2, '08:00', '17:00')];
-    assert.equal(matching(warningsOn([], D2, c(overlapping)), /^Rest before duty/).length, 1);
+    assert.deepEqual(matching(warningsOn([], D2, c(overlapping)), /^Rest before duty/),
+      ['Rest before duty 0:00 (§135.267(c) minimum 10:00)']);
   });
 
   test('duty differing from the default, starting earlier than the previous day’s', () => {

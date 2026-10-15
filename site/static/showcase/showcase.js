@@ -1676,6 +1676,28 @@ const trackerList = SAMPLE.trackers;
       if (value == null || value === '') return '(none)';
       return field === 'start_time' || field === 'end_time' ? unixToTzTime(value) : String(value);
     }
+
+    // The flight form saves a flight longer than this only once confirmed, and never one
+    // longer than the server's limit (record-limits.ts).
+    const FLIGHT_CONFIRM_SECS = 12 * 3600;
+    const FLIGHT_MAX_SECS = 86400;
+
+    // The flight form's date and Dep/Arr times (YYYY-MM-DD, HH:MM, HH:MM) as a flight: an
+    // arrival before the departure is the next day. Returns { start_time, end_time, secs,
+    // nextDay, long (over FLIGHT_CONFIRM_SECS: ask first), tooLong (over FLIGHT_MAX_SECS:
+    // refuse), hint (the form's line under the times; '' for a same-day arrival) }.
+    function flightFormTimes(dateKey, dep, arr) {
+      const nextDay = arr < dep;
+      const start_time = tzLocalToEpoch(dateKey, dep);
+      const end_time = tzLocalToEpoch(nextDay ? dutyAddDays(dateKey, 1) : dateKey, arr);
+      const secs = end_time - start_time;
+      return {
+        start_time, end_time, secs, nextDay,
+        long: secs > FLIGHT_CONFIRM_SECS,
+        tooLong: secs > FLIGHT_MAX_SECS,
+        hint: nextDay ? 'Arrives the next day, ' + fmtBlock(secs) + ' after departure.' : '',
+      };
+    }
   
 
     // ── Pilot duty log rendering ──────────────────────────────────────────────
@@ -2029,11 +2051,12 @@ const trackerList = SAMPLE.trackers;
             warnings.push('Duty period ' + fmtBlock(duty.secs, true) + ' (§135.267(c) limit ' + fmtBlock(L.dutySecs) + ')');
           }
           // The rest between two duty periods, checked once, on the later day: that covers
-          // both "preceded by" and "followed by".
+          // both "preceded by" and "followed by". Busy time that runs into this duty period
+          // (an overnight flight, a previous duty past its start) leaves no rest at all.
           const prevEnd = Math.max(-Infinity, ...[prevSpan, spanOf(dutyAddDays(dateKey, -2))]
-            .filter(x => x && x.end <= span.start).map(x => x.end));
+            .filter(x => x && x.start < span.start).map(x => x.end));
           if (span.start - prevEnd < L.restSecs) {
-            warnings.push('Rest before duty ' + fmtBlock(span.start - prevEnd) + ' (§135.267(c) minimum ' + fmtBlock(L.restSecs) + ')');
+            warnings.push('Rest before duty ' + fmtBlock(Math.max(0, span.start - prevEnd)) + ' (§135.267(c) minimum ' + fmtBlock(L.restSecs) + ')');
           }
           if (defaultDuty && !duty.isDefault &&
               (duty.duty_start !== defaultDuty.duty_start || duty.duty_end !== defaultDuty.duty_end)) {

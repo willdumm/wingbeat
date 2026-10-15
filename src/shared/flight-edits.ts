@@ -1,4 +1,5 @@
 import { statusChip } from './status';
+import { MAX_FLIGHT_SECS } from './record-limits';
 
 /**
  * The marks every flight view shares: † on a corrected value (the tracker's value in its
@@ -153,6 +154,28 @@ export function flightEditsScript(): string {
     function flightOriginalText(field, value) {
       if (value == null || value === '') return '(none)';
       return field === 'start_time' || field === 'end_time' ? unixToTzTime(value) : String(value);
+    }
+
+    // The flight form saves a flight longer than this only once confirmed, and never one
+    // longer than the server's limit (record-limits.ts).
+    const FLIGHT_CONFIRM_SECS = 12 * 3600;
+    const FLIGHT_MAX_SECS = ${MAX_FLIGHT_SECS};
+
+    // The flight form's date and Dep/Arr times (YYYY-MM-DD, HH:MM, HH:MM) as a flight: an
+    // arrival before the departure is the next day. Returns { start_time, end_time, secs,
+    // nextDay, long (over FLIGHT_CONFIRM_SECS: ask first), tooLong (over FLIGHT_MAX_SECS:
+    // refuse), hint (the form's line under the times; '' for a same-day arrival) }.
+    function flightFormTimes(dateKey, dep, arr) {
+      const nextDay = arr < dep;
+      const start_time = tzLocalToEpoch(dateKey, dep);
+      const end_time = tzLocalToEpoch(nextDay ? dutyAddDays(dateKey, 1) : dateKey, arr);
+      const secs = end_time - start_time;
+      return {
+        start_time, end_time, secs, nextDay,
+        long: secs > FLIGHT_CONFIRM_SECS,
+        tooLong: secs > FLIGHT_MAX_SECS,
+        hint: nextDay ? 'Arrives the next day, ' + fmtBlock(secs) + ' after departure.' : '',
+      };
     }
   `;
 }
