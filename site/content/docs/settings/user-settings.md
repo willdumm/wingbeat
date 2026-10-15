@@ -6,7 +6,9 @@ weight: 1
 
 # User Settings
 
-Available to any signed-in user, Viewer or Admin.
+Available to any signed-in user, Viewer or Admin. Settings opens with
+**Help**, which links to these docs, then the fleet lists (Aircraft, Pilots,
+Trackers), the settings below, and last the admin-only sections.
 
 ## Appearance
 
@@ -19,19 +21,19 @@ Which basemaps are enabled, the active basemap choice, and per-layer color
 correction (saturation/contrast/brightness). Also where a custom tile URL can
 be added. Stored per device — see [Map Tools](../../features/map-tools).
 
-## Data
-
-**Clear local cache** — wipes the local flight-data cache and re-downloads
-everything from the server. Wingbeat keeps a full local copy of flight data
-for speed; this is the escape hatch if that local copy ever looks wrong or
-stale.
-
 ## My Devices
 
 Manage sessions on your own account: rename a device, revoke another
 device's session, sign out the current device, or generate a link to add
 another device to your account. See
 [Users & Devices](../../features/users-and-devices).
+
+## Data
+
+**Clear local cache** — wipes the local flight-data cache and re-downloads
+everything from the server. Wingbeat keeps a full local copy of flight data
+for speed; this is the escape hatch if that local copy ever looks wrong or
+stale.
 
 ## Viewing fleet lists
 

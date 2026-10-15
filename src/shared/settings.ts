@@ -38,6 +38,16 @@ export function settingsModalMarkup(): string {
       <div class="settings-views">
         <div class="settings-view" id="settings-view-main">
           <div class="settings-modal-body">
+            <div class="settings-section">
+              <div class="settings-section-label">Help</div>
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-row-title">Documentation</span>
+                  <span class="settings-row-desc">How tracking, flight editing, the duty log and settings work</span>
+                </div>
+                ${docsLinkMarkup('', 'Open docs')}
+              </div>
+            </div>
             ${setupGuideMarkup()}
             <div class="settings-section">
               <div class="settings-section-label">Aircraft</div>
@@ -119,28 +129,9 @@ export function settingsModalMarkup(): string {
               <div class="settings-section-label">Map layers</div>
               ${mapLayersSettingsRowsMarkup()}
             </div>
-            <div class="settings-section">
-              <div class="settings-section-label">Overlays</div>
-              <p class="settings-section-desc">Extra tile layers (e.g. a sectional chart or custom imagery) shown on top of the basemap. Listed for everyone in the map's overlay legend; each has a default on/off state a viewer can override there.</p>
-              <div id="settings-overlay-list"></div>
-              <details id="settings-add-overlay" class="settings-add-tracker">
-                <summary>Add overlay</summary>
-                <div class="settings-add-inner">
-                  <input type="text" id="settings-add-overlay-label" placeholder="Label (e.g. Sectional chart)" autocomplete="off" />
-                  <input type="text" id="settings-add-overlay-url" placeholder="Tile URL, e.g. https://example.com/{z}/{x}/{y}.png" autocomplete="off" />
-                  <input type="text" id="settings-add-overlay-attribution" placeholder="Attribution (optional)" autocomplete="off" />
-                  <input type="number" id="settings-add-overlay-maxzoom" placeholder="Max native zoom (optional)" min="1" max="22" step="1" autocomplete="off" />
-                  <label><input type="checkbox" id="settings-add-overlay-default" /> On by default (fallback for basemaps not set below)</label>
-                  <div class="settings-form-label">Default per basemap (optional)</div>
-                  <div id="settings-add-overlay-basemap-defaults" class="settings-basemap-defaults"></div>
-                  <p id="settings-add-overlay-lookup-status" class="settings-msg" aria-live="polite"></p>
-                  <div class="settings-add-actions">
-                    <button id="settings-add-overlay-submit" class="btn-primary">Add</button>
-                    <button id="settings-add-overlay-lookup" class="btn-secondary">Look up details</button>
-                    <button id="settings-add-overlay-cancel" class="btn-secondary">Cancel</button>
-                  </div>
-                </div>
-              </details>
+            <div class="settings-section" id="settings-section-devices">
+              <div class="settings-section-label">My Devices</div>
+              <div id="settings-devices-list"></div>
             </div>
             <div class="settings-section">
               <div class="settings-section-label">Data</div>
@@ -152,26 +143,12 @@ export function settingsModalMarkup(): string {
                 <button id="settings-clear-cache" class="btn-danger">Clear</button>
               </div>
             </div>
-            <div class="settings-section">
-              <div class="settings-section-label">Help</div>
-              <div class="settings-row">
-                <div class="settings-row-info">
-                  <span class="settings-row-title">Documentation</span>
-                  <span class="settings-row-desc">How tracking, flight editing, the duty log and settings work</span>
-                </div>
-                ${docsLinkMarkup('', 'Open docs')}
-              </div>
-            </div>
-            <div class="settings-section" id="settings-section-devices">
-              <div class="settings-section-label">My Devices</div>
-              <div id="settings-devices-list"></div>
-            </div>
             <div class="settings-section" id="settings-section-app" style="display:none">
               <div class="settings-section-label">Admin</div>
               <div class="settings-row">
                 <div class="settings-row-info">
                   <span class="settings-row-title">Global Settings</span>
-                  <span class="settings-row-desc">Timezone, regions, and named points</span>
+                  <span class="settings-row-desc">Timezone, duty limits, notifications, overlays, regions and named points</span>
                 </div>
                 <button class="settings-action-btn" id="settings-tenant-open-btn" aria-label="Open global settings">${icon('chevron-right', { size: 14 })}</button>
               </div>
@@ -289,6 +266,29 @@ export function settingsModalMarkup(): string {
                 </div>
               </details>
               <p id="settings-webhooks-status" class="settings-msg" style="display:none"></p>
+            </div>
+            <div class="settings-section">
+              <div class="settings-section-label">Overlays</div>
+              <p class="settings-section-desc">Extra tile layers (e.g. a sectional chart or custom imagery) shown on top of the basemap. Listed for everyone in the map's overlay legend; each has a default on/off state a viewer can override there.</p>
+              <div id="settings-overlay-list"></div>
+              <details id="settings-add-overlay" class="settings-add-tracker">
+                <summary>Add overlay</summary>
+                <div class="settings-add-inner">
+                  <input type="text" id="settings-add-overlay-label" placeholder="Label (e.g. Sectional chart)" autocomplete="off" />
+                  <input type="text" id="settings-add-overlay-url" placeholder="Tile URL, e.g. https://example.com/{z}/{x}/{y}.png" autocomplete="off" />
+                  <input type="text" id="settings-add-overlay-attribution" placeholder="Attribution (optional)" autocomplete="off" />
+                  <input type="number" id="settings-add-overlay-maxzoom" placeholder="Max native zoom (optional)" min="1" max="22" step="1" autocomplete="off" />
+                  <label><input type="checkbox" id="settings-add-overlay-default" /> On by default (fallback for basemaps not set below)</label>
+                  <div class="settings-form-label">Default per basemap (optional)</div>
+                  <div id="settings-add-overlay-basemap-defaults" class="settings-basemap-defaults"></div>
+                  <p id="settings-add-overlay-lookup-status" class="settings-msg" aria-live="polite"></p>
+                  <div class="settings-add-actions">
+                    <button id="settings-add-overlay-submit" class="btn-primary">Add</button>
+                    <button id="settings-add-overlay-lookup" class="btn-secondary">Look up details</button>
+                    <button id="settings-add-overlay-cancel" class="btn-secondary">Cancel</button>
+                  </div>
+                </div>
+              </details>
             </div>
             <div class="settings-section">
               <div class="settings-section-label">Regions</div>

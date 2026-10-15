@@ -10,8 +10,10 @@ weight: 2
 Which §135.267 method the duty log checks is for the operator to choose.
 {{% /compliance %}}
 
-Only visible to users with the Admin role. Split across the main Settings
-panel and a separate **Global Settings** screen.
+Only visible to users with the Admin role. In the main Settings panel the
+admin-only sections (Admin and Users) come last, and the add/edit controls
+appear on the fleet lists; everything tenant-wide is on the separate **Global
+Settings** screen.
 
 ## Setup checklist
 
@@ -34,15 +36,6 @@ lists read-only):
 - **Trackers** — add, edit, pause, soft-delete, or import history. See
   [Fleet Management](../../features/fleet-management#trackers) for how to get a
   MapShare URL.
-
-## Overlays
-
-In the main Settings panel, Admins get add/edit/delete controls for tenant
-tile overlays (Viewers see the list read-only, same as Aircraft/Pilots
-above). Each overlay needs a `{z}/{x}/{y}` tile URL, an on/off default, and
-optionally a per-basemap override of that default. See
-[Map Tools](../../features/map-tools#overlays) for how overlays behave for
-viewers.
 
 ## Users
 
@@ -69,6 +62,14 @@ configuration:
 
 The shared Pushover application token, plus the list of webhook/Pushover
 notification targets. See [Notifications](../../features/notifications).
+
+### Overlays
+
+Add, edit or delete tenant tile overlays. Each overlay needs a `{z}/{x}/{y}`
+tile URL, an on/off default, and optionally a per-basemap override of that
+default. Everyone sees them in the map's overlay legend; see
+[Map Tools](../../features/map-tools#overlays) for how overlays behave for
+viewers.
 
 ### Regions
 

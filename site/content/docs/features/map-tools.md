@@ -28,8 +28,8 @@ setting. A custom tile URL can also be added from Settings → Map layers.
 
 Tenant-configured extra tile layers shown on top of the basemap — a sectional
 chart, custom imagery, or any other `{z}/{x}/{y}` tile source — added by an
-Admin from Settings → Overlays. Unlike basemaps, which are per-device and
-mutually exclusive, overlays are shared tenant config and independently
+Admin from Settings → Admin → Global Settings → Overlays. Unlike basemaps,
+which are per-device and mutually exclusive, overlays are shared tenant config and independently
 toggleable: any number can be on at once, and everyone sees the same list.
 
 An overlay's starting on/off state is set by an Admin, and can optionally
