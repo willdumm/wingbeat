@@ -243,8 +243,18 @@ export function pilotDutyRenderScript(): string {
     // ── Pilot duty log rendering ──────────────────────────────────────────────
 
     const _DUTY_TZ = window.APP_SETTINGS.timezone;
-    // The PDF isn't themed: warnings print in light mode's --danger-fg.
-    const _DUTY_PDF_DANGER = ${JSON.stringify(lightThemeToken('--danger-fg'))};
+    // The PDF isn't themed: it prints in light mode's colors.
+    const _DUTY_PDF_THEME = ${JSON.stringify({
+      trackingHeading: lightThemeToken('--tracking-heading'),
+      trackingCaps:    lightThemeToken('--tracking-caps'),
+      ink:        lightThemeToken('--text-primary'),
+      muted:      lightThemeToken('--text-muted'),
+      faint:      lightThemeToken('--text-faint'),
+      rule:       lightThemeToken('--border'),
+      ruleSubtle: lightThemeToken('--border-subtle'),
+      danger:     lightThemeToken('--danger-fg'),
+      dangerBg:   lightThemeToken('--danger-surface'),
+    })};
     const _DUTY_DAY_NAMES   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     const _DUTY_MONTH_NAMES = ['January','February','March','April','May','June',
                                'July','August','September','October','November','December'];
@@ -267,8 +277,14 @@ export function pilotDutyRenderScript(): string {
 
     const _TYPST_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts@0.7.0/dist/esm/contrib/all-in-one-lite.bundle.js';
     const _TYPST_WASM_URL   = 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler@0.7.0/pkg/typst_ts_web_compiler_bg.wasm';
+    // The PDF's font, IBM Plex Sans (the design system's --font-body): typst.ts's bundled
+    // fonts have no sans-serif. Static OTFs (Typst can't use woff or pick a variable
+    // font's weights); Bold for *strong*, Italic for rest days.
+    const _TYPST_FONT_URLS = ['Regular', 'Bold', 'Italic'].map(style =>
+      'https://cdn.jsdelivr.net/gh/IBM/plex@v6.4.0/IBM-Plex-Sans/fonts/complete/otf/IBMPlexSans-' + style + '.otf');
     const _TYPST_CACHE_NAME = 'ft-typst-v1';
 
+    let _typstModule    = null;
     let _typstInstance  = null;
     let _typstWasmBytes = null;
 
@@ -752,57 +768,78 @@ export function pilotDutyRenderScript(): string {
       'The 8-hour limit in any 24 hours leaves out every Part 91 flight; strictly, only Part 91 ' +
       'flights flown after the Part 135 flights are exempt.';
 
+    // Fetches url, from the Cache API when it has it, and caches the response.
+    // onLoaded(bytes so far, total) reports progress (total 0 when unknown).
+    async function _typstFetchCached(cache, url, onLoaded) {
+      try {
+        const cached = cache && await cache.match(url);
+        if (cached) {
+          const buf = await cached.arrayBuffer();
+          onLoaded(buf.byteLength, buf.byteLength);
+          return buf;
+        }
+      } catch (_) {}
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const total = parseInt(res.headers.get('Content-Length') || '0', 10);
+      const reader = res.body.getReader();
+      const chunks = [];
+      let loaded = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        loaded += value.length;
+        onLoaded(loaded, total);
+      }
+      const bytes = new Uint8Array(loaded);
+      let offset = 0;
+      for (const c of chunks) { bytes.set(c, offset); offset += c.length; }
+      if (cache) {
+        try {
+          await cache.put(url, new Response(bytes, {
+            headers: { 'Content-Type': res.headers.get('Content-Type') || 'application/octet-stream' },
+          }));
+        } catch (_) {}
+      }
+      return bytes.buffer;
+    }
+
     async function _ensureTypst(onProgress, onStatus) {
       if (!_typstInstance) {
         onStatus('Loading PDF compiler…');
-        const mod = await import(_TYPST_SCRIPT_URL);
-        _typstInstance = mod.$typst;
+        _typstModule = await import(_TYPST_SCRIPT_URL);
+        _typstInstance = _typstModule.$typst;
       }
 
       if (!_typstWasmBytes) {
         onStatus('Downloading PDF engine…');
-        let data;
         // The Cache API only exists in secure contexts (https, localhost). Over plain
         // http, e.g. a LAN address, skip it and download every time.
         let cache = null;
         try { cache = await caches.open(_TYPST_CACHE_NAME); } catch (_) {}
+        // The compiler and fonts download together, on one progress bar.
+        const urls = [_TYPST_WASM_URL, ..._TYPST_FONT_URLS];
+        const loaded = urls.map(() => 0);
+        const totals = urls.map(() => 0);
+        let buffers;
         try {
-          const cached = cache && await cache.match(_TYPST_WASM_URL);
-          if (cached) {
-            onProgress(1.0);
-            data = await cached.arrayBuffer();
-          } else {
-            const res   = await fetch(_TYPST_WASM_URL);
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const total = parseInt(res.headers.get('Content-Length') || '0', 10);
-            const reader = res.body.getReader();
-            const chunks = [];
-            let loaded = 0;
-            for (;;) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              chunks.push(value);
-              loaded += value.length;
-              if (total) onProgress(Math.min(loaded / total, 1.0));
-            }
-            const bytes = new Uint8Array(loaded);
-            let offset = 0;
-            for (const c of chunks) { bytes.set(c, offset); offset += c.length; }
-            data = bytes.buffer;
-            if (cache) {
-              try {
-                await cache.put(_TYPST_WASM_URL, new Response(bytes, {
-                  headers: { 'Content-Type': 'application/wasm' },
-                }));
-              } catch (_) {}
-            }
-            onProgress(1.0);
-          }
+          buffers = await Promise.all(urls.map((url, i) => _typstFetchCached(cache, url, (n, total) => {
+            loaded[i] = n;
+            totals[i] = total;
+            const sum = totals.reduce((x, y) => x + y, 0);
+            if (sum) onProgress(Math.min(loaded.reduce((x, y) => x + y, 0) / sum, 1.0));
+          })));
         } catch (e) {
-          if (!data) throw new Error('Failed to load wasm' + (e && e.message ? ' (' + e.message + ')' : ''));
+          throw new Error('Failed to load PDF engine' + (e && e.message ? ' (' + e.message + ')' : ''));
         }
-        _typstWasmBytes = data;
-        _typstInstance.setCompilerInitOptions({ getModule: () => _typstWasmBytes });
+        onProgress(1.0);
+        const [wasm, ...fonts] = buffers;
+        _typstWasmBytes = wasm;
+        _typstInstance.setCompilerInitOptions({
+          getModule: () => _typstWasmBytes,
+          beforeBuild: [_typstModule.loadFonts(fonts.map(buf => new Uint8Array(buf)))],
+        });
       }
     }
 
@@ -859,16 +896,18 @@ export function pilotDutyRenderScript(): string {
       const { pilotName, year, month, days, totals } = data;
       const appName = window.APP_SETTINGS.appName;
       const COLS = 8;
-      const warnCell = text => 'table.cell(colspan: ' + COLS + ')[#text(fill: rgb("' + _DUTY_PDF_DANGER + '"))[' + _typStr('Warning: ' + text) + ']],\\n';
+      const warnCell = text => 'warning(' + _typStr(text).slice(1) + '),\\n';
       const footnotes = [];
       let anyManual = false;
       let rows = '';
 
       for (const day of days) {
+        // Each day starts below a rule; its flights are only hairline-separated.
+        if (rows) rows += '  table.hline(stroke: 0.6pt + rule),\\n';
         const dayText = dutyDayText(day, year) + (day.note ? ' (' + day.note + ')' : '');
         if (day.flights.length === 0) {
           rows += '  [' + day.label + '], table.cell(colspan: ' + (COLS - 1) + ')[' +
-            (day.rest ? '_' + _typStr(dayText) + '_' : _typStr(dayText)) + '],\\n';
+            (day.rest ? '#text(fill: muted)[_' + _typStr(dayText) + '_]' : _typStr(dayText)) + '],\\n';
         }
         day.flights.forEach((f, i) => {
           let mark = '';
@@ -891,7 +930,7 @@ export function pilotDutyRenderScript(): string {
           // Remarks (Part 91, a remark) span the row under the flight, from A/C on.
           const remarks = dutyRemarksText(f);
           if (remarks) {
-            rows += '  [], [], table.cell(colspan: ' + (COLS - 2) + ', align: left)[#text(size: 7.5pt, fill: luma(90))[' + _typStr(remarks) + ']],\\n';
+            rows += '  [], [], table.cell(colspan: ' + (COLS - 2) + ', align: left)[#text(size: 7pt, fill: muted)[' + _typStr(remarks) + ']],\\n';
           }
         });
         for (const e of day.unmatched) {
@@ -900,13 +939,13 @@ export function pilotDutyRenderScript(): string {
               flightEntrySummary(e) + ') are not counted.') + '],\\n';
         }
         if (day.flights.length > 0) {
-          rows += '  table.cell(colspan: 7, align: right)[*Day total*], [*' + fmtBlock(day.daySecs) + '*],\\n';
+          rows += '  table.cell(colspan: ' + (COLS - 1) + ', align: right)[#text(fill: muted)[Day total]], [*' + fmtBlock(day.daySecs) + '*],\\n';
         }
         for (const w of day.warnings) rows += '  ' + warnCell(w);
       }
 
       const r = totals.rest;
-      const overFill = '#text(fill: rgb("' + _DUTY_PDF_DANGER + '"))';
+      const overFill = '#text(fill: danger)';
       const totalsRows = totals.hours.map(t =>
         '  [' + _typStr(t.label) + '], [' + (t.over ? overFill + '[*' + fmtBlock(t.secs) + '*]' : fmtBlock(t.secs)) + '], [' + fmtBlock(t.limit) + '],\\n'
       ).join('') +
@@ -925,48 +964,55 @@ export function pilotDutyRenderScript(): string {
       if (anyManual) notes.push('#super[‡] ' + _typStr('Entered manually (not tracked).'));
       notes.push(_typStr(DUTY_TOTALS_FOOTNOTE));
 
+      const color = name => 'rgb("' + _DUTY_PDF_THEME[name] + '")';
       return (
-        '#set document(title: ' + _typStr('Pilot Duty Log -- ' + pilotName).slice(1) + ', author: ' + _typStr(appName).slice(1) + ')\\n' +
+        '#set document(title: ' + _typStr(pilotName + ' Duty Log').slice(1) + ', author: ' + _typStr(appName).slice(1) + ')\\n' +
+        '#let ink = ' + color('ink') + '\\n' +
+        '#let muted = ' + color('muted') + '\\n' +
+        '#let rule = ' + color('rule') + '\\n' +
+        '#let danger = ' + color('danger') + '\\n' +
+        // A day's warning: a full-width row, tinted and barred as well as colored, so it
+        // still stands out in black and white.
+        '#let warning(body) = table.cell(colspan: ' + COLS + ', fill: ' + color('dangerBg') + ', stroke: (left: 2pt + danger))[#text(fill: danger)[*Warning:* #body]]\\n' +
+        '#set text(font: ("IBM Plex Sans", "Libertinus Serif"), size: 8pt, fill: ink, number-width: "tabular")\\n' +
         '#set page(\\n' +
         '  paper: "us-letter",\\n' +
         '  margin: (x: 0.6in, y: 0.6in),\\n' +
         '  footer: context [\\n' +
-        '    #set text(size: 7.5pt, fill: luma(120))\\n' +
+        '    #set text(size: 7pt, fill: ' + color('faint') + ')\\n' +
         '    ' + _typStr(appName + ' · ' + pilotName + ' · ' + dutyPeriodLabel(data)) +
               ' #h(1fr) ' + _typStr('Generated ' + generated) + ' #h(1fr) Page #counter(page).display("1 of 1", both: true)\\n' +
         '  ]\\n' +
         ')\\n' +
-        '#set text(font: "Libertinus Serif", size: 8.5pt)\\n' +
-        '#set table(stroke: 0.4pt + luma(180), inset: (x: 4pt, y: 3.5pt))\\n\\n' +
-        '#align(center)[\\n' +
-        '  #text(size: 15pt, weight: "bold")[' + _typStr(appName) + ']\\n' +
-        '  #v(0.3em)\\n' +
-        '  #text(size: 12pt)[Pilot Duty Log]\\n' +
-        '  #v(0.2em)\\n' +
-        '  #text(size: 10pt)[' + _typStr(pilotName + ' | ' + dutyPeriodLabel(data)) + ']\\n' +
-        ']\\n\\n' +
-        '#v(0.8em)\\n\\n' +
+        // Rules only between rows: a heavy one under the header, hairlines between flights.
+        '#set table(inset: (x: 5pt, y: 4pt), stroke: (_, y) => if y > 0 { (top: 0.4pt + ' + color('ruleSubtle') + ') })\\n' +
+        '#show table.cell.where(y: 0): set text(size: 6.5pt, weight: "bold", fill: muted, tracking: ' + _DUTY_PDF_THEME.trackingCaps + ')\\n\\n' +
+        '#stack(spacing: 7pt,\\n' +
+        '  text(size: 17pt, weight: "bold", tracking: ' + _DUTY_PDF_THEME.trackingHeading + ', ' + _typStr(pilotName + ' Duty Log').slice(1) + '),\\n' +
+        '  text(size: 10pt, fill: muted, ' + _typStr(dutyPeriodLabel(data)).slice(1) + '),\\n' +
+        ')\\n\\n' +
+        '#v(1.2em)\\n\\n' +
         '#table(\\n' +
         '  columns: (auto, auto, auto, 1fr, auto, 1fr, auto, auto),\\n' +
-        '  fill: (col, row) => if row == 0 { luma(220) } else if calc.rem(row, 2) == 1 { luma(248) } else { white },\\n' +
         '  align: (left, left, center, left, center, left, center, right),\\n' +
-        '  table.header([*Date*], [*Duty*], [*A/C*], [*Origin*], [*Dep*], [*Dest*], [*Arr*], [*Time*]),\\n' +
+        '  table.header([DATE], [DUTY], [A/C], [ORIGIN], [DEP], [DEST], [ARR], [TIME], table.hline(stroke: 0.8pt + ink)),\\n' +
         rows +
+        '  table.hline(stroke: 0.8pt + ink),\\n' +
+        '  table.cell(colspan: ' + (COLS - 1) + ', align: right)[*Month total*], [*' + fmtBlock(data.monthSecs) + '*],\\n' +
         ')\\n\\n' +
-        '#align(right)[*Month total: ' + fmtBlock(data.monthSecs) + '*]\\n\\n' +
-        '#v(1em)\\n' +
+        '#v(1.6em)\\n' +
         '#block(breakable: false)[\\n' +
-        '#text(size: 9.5pt, weight: "bold")[' + _typStr('§135.267 totals (as of ' + totals.asOfLabel + ')') + ']\\n' +
-        '#v(0.3em)\\n' +
+        '#text(size: 10pt, weight: "bold")[' + _typStr('§135.267 totals (as of ' + totals.asOfLabel + ')') + ']\\n' +
+        '#v(0.2em)\\n' +
         '#table(\\n' +
         '  columns: (1fr, auto, auto),\\n' +
         '  align: (left, right, right),\\n' +
-        '  table.header([*Period*], [*Total*], [*Limit*]),\\n' +
+        '  table.header([PERIOD], [TOTAL], [LIMIT], table.hline(stroke: 0.8pt + ink)),\\n' +
         totalsRows +
         ')\\n' +
         ']\\n\\n' +
-        '#v(0.8em)\\n' +
-        '#set text(size: 7.5pt)\\n' +
+        '#v(1em)\\n' +
+        '#set text(size: 7pt, fill: muted)\\n' +
         notes.join('\\n\\n') + '\\n'
       );
     }
