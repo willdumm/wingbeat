@@ -2303,7 +2303,8 @@ const trackerList = SAMPLE.trackers;
           (r.scheduled ? ' + ' + r.scheduled + ' planned' : '') +
           ' <span class="totals-limit">/ ' + r.required + '</span></td></tr>' +
         '</tbody></table>' +
-        '<div class="pilot-duty-footnote">' + escHtml(DUTY_TOTALS_FOOTNOTE) + '</div>';
+        '<div class="pilot-duty-footnote">' + escHtml(DUTY_TOTALS_FOOTNOTE) + '</div>' +
+        '<div class="pilot-duty-footnote">' + escHtml(DUTY_DISCLAIMER) + '</div>';
 
       if (upcomingEl) {
         upcomingEl.hidden = !isCurrentMonth;
@@ -2338,6 +2339,11 @@ const trackerList = SAMPLE.trackers;
       'previous duty over by midnight (a rest day with a warning isn’t counted). The daily flight ' +
       'time limit counts paid Part 91 flying before a Part 135 flight and leaves out Part 91 flying ' +
       'after the last one (FAA interpretation to Converse, 2011).';
+
+    // Under the totals and at the end of the PDF.
+    const DUTY_DISCLAIMER =
+      'These checks are an aid only and depend on the records entered. The certificate holder ' +
+      'and the pilot remain responsible for compliance and for the accuracy of this record.';
 
     // Fetches url, from the Cache API when it has it, and caches the response.
     // onLoaded(bytes so far, total) reports progress (total 0 when unknown).
@@ -2534,6 +2540,7 @@ const trackerList = SAMPLE.trackers;
       }
       if (anyManual) notes.push('#super[‡] ' + _typStr('Entered manually (not tracked).'));
       notes.push(_typStr(DUTY_TOTALS_FOOTNOTE));
+      notes.push(_typStr(DUTY_DISCLAIMER));
 
       const color = name => 'rgb("' + _DUTY_PDF_THEME[name] + '")';
       return (

@@ -12,6 +12,19 @@ use the arrows to move back through the pilot's history. It's built from the
 pilot's flights, with any [corrections](../editing-flights) applied, and admins
 can record duty times and plan rest days before it's exported as a record.
 
+> [!WARNING]
+> **Wingbeat does not guarantee regulatory compliance.** Neither Dumm Software
+> LLC nor Wingbeat takes any responsibility for, or makes any guarantee of,
+> compliance with 14 CFR Part 135 or any other regulation. The duty log is only
+> a tool to make checking compliance easier: its checks are an aid, they can be
+> incomplete or wrong, and they depend entirely on the flights, duty times and
+> rest days entered. **The certificate holder and its pilots remain fully
+> responsible for compliance with the flight, duty and rest rules, and for the
+> accuracy and completeness of these records.** Check the log against the
+> regulations, your operations specifications and manual, and the FAA's
+> interpretations, and ask your FAA inspector when in doubt. The log and its
+> PDF say this too.
+
 ## Table
 
 One row per flight that month: date, duty, aircraft, origin, departure time,
@@ -26,6 +39,25 @@ The Duty column shows the day's duty period (e.g. 08:00–17:00), "08:00–17:00
 (default)" for a flying day that uses the pilot's [default duty](#default-duty),
 or "Rest · designated Oct 3" for a rest day, with the date it was marked. A day
 with no flights and nothing recorded shows "—".
+
+### How flight time is measured
+
+Flight time (14 CFR §1.1) runs from when the aircraft first moves under its own
+power for the purpose of flight until it comes to rest after landing. A tracked
+flight's times come from the tracker's position reports: it starts at the last
+report below 20 knots before the speed rises above 20 knots, and ends at the
+first report below 20 knots after it, as long as those reports are close
+enough in time. That's close to the real flight time, but not exact:
+
+- taxiing slowly for longer than one tracking interval before takeoff or after
+  landing isn't counted
+- with a long tracking interval (see
+  [Trackers and AFF](../automated-flight-following)), the start and end can be
+  off by up to that interval
+
+Where it matters, correct the flight's Dep and Arr times in the
+[flight form](../editing-flights#the-flight-form) to the times the aircraft
+started moving and came to rest.
 
 ## Editing
 
@@ -76,6 +108,45 @@ In the form:
 
 Times are in the timezone set in [Admin Settings](../../settings/admin-settings).
 
+### What to record as duty
+
+The duty and rest checks only know what's recorded, so record the pilot's
+whole duty period, not just the time around the flights.
+
+- **On-call and standby time is duty.** Rest has to be continuous, known in
+  advance, and free from all restraint by the operator. Time when the pilot has
+  to answer the phone or be ready to report if called is duty, not rest, even if
+  no call comes (FAA interpretations to
+  [Berry, 2009](https://www.faa.gov/media/14441),
+  [Jimenez, 2011](https://www.faa.gov/media/13701),
+  [Orellana, 2015](https://www.faa.gov/media/11941) and
+  [Kleiner, 2016](https://www.faa.gov/media/11541)). So the duty times must
+  include every hour the pilot could be called.
+- **Positioning.** Transportation that isn't local, that the operator requires
+  and provides, to the airport where the pilot will fly or home from the
+  airport where they were relieved, isn't rest (§135.263(c)). Record it inside
+  the day's duty times: start the duty period when that travel starts, or end
+  it when the travel home ends. Then:
+  - If the pilot **flew** the positioning flight (a ferry), it's flight time
+    and duty. Log it as a flight under **Part 91**, paid (a ferry flight the
+    operator assigns is duty and paid flying; FAA interpretation to
+    [Converse, 2011](https://www.faa.gov/media/13546)). The log counts it toward
+    the quarterly and yearly totals, and toward the daily limit when it comes
+    before the day's Part 135 flights.
+  - If the pilot **rode as a passenger** (an airline, or another pilot flying),
+    it isn't flight time for them. Don't add it as a flight in their log, since
+    every flight in the log counts as their flight time. Cover it with the duty
+    times and say what it was in the day's note, e.g. "Positioned PANC–PAKN on
+    Alaska 123".
+- **Delays beyond anyone's control.** A flight planned to end within the
+  limits that runs over because of weather or similar isn't an over-assignment
+  (§135.263(d)), but the pilot then needs the longer rest of §135.267(e), and
+  under (c) the 14-hour duty limit only bends for unexpected delays en route
+  (FAA interpretation to [SevenBar, 2016](https://www.faa.gov/media/11331)).
+  The log can't tell why a limit was exceeded, so the warning stays. Record the
+  cause in the day's note and in the flight's remark (e.g. "Weather hold at
+  PAKN, 40 min"), and give the extended rest.
+
 ### Planning duty and rest ahead
 
 FAA interpretations of the rest rules require rest to be assigned in advance,
@@ -96,13 +167,18 @@ Most pilots keep the same hours, so each pilot can have a default duty period.
 Admins set it from the "Default duty 08:00–17:00 · Change" line in the duty
 log's header, or with **Edit** on the pilot in Settings.
 
-The default applies to a day with flights and no duty times or rest recorded.
+The default applies to a day with flights and no duty times or rest recorded
+(a day with only a note uses it too).
 That day's Duty column shows the default marked "(default)", on screen and in
 the PDF, and the duty and rest checks use it. A day with a record
 always uses the record. If a flight departs before or lands after the day's
 duty period, recorded or default, the day gets a warning, e.g. "Flight
 18:05–18:50 outside duty 08:00–17:00 (default)"; record the actual duty times
 for that day.
+
+Under [method (c)](#limits-b-or-c) the default duty is the pilot's regularly
+assigned duty period, and a day whose recorded times differ from it gets a
+warning.
 
 ## Corrections that no longer match
 
@@ -132,6 +208,11 @@ With either method:
 - a day with flights but no duty times (none recorded and no default duty),
   since the duty and rest checks need them
 - a flight that departs before or arrives after the day's duty period
+
+The log assumes **one-pilot crews**. A two-pilot crew is allowed 10 hours of
+flight time instead of 8 under (b) and (c), and §135.269 covers three- and
+four-pilot crews; the log doesn't record crew size yet, so it always applies
+the one-pilot limits.
 
 ### Limits: (b) or (c)
 
@@ -199,4 +280,7 @@ or positioning flight is paid, and so is paid flight instruction.
 a PDF, generated in the browser via Typst. Corrected values are marked † with
 numbered footnotes giving the tracker's values, manual flights are marked ‡,
 default duty times are marked "(default)", and the footer says when the PDF was
-generated.
+generated. Under the title it names the limits applied (e.g. "Limits:
+§135.267(b), flight time in any 24 hours · one-pilot crew"), and the notes at
+the end repeat that the certificate holder and pilot remain responsible for
+compliance and for the accuracy of the record.
