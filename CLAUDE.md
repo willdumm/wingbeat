@@ -44,6 +44,9 @@ specs all come from there. Before writing new UI:
 3. **New scrollable overlay?** Also see `docs/frontend-patterns.md` (iOS
    touchmove allowlist) — unrelated to the design system but a common miss when
    adding new modals/panels.
+4. **Form layout on phones?** `site/scripts/preview-form.mjs` measures a dialog's fields at
+   phone width with the real stylesheet and can simulate iOS's date/time input sizing — see
+   `docs/frontend-patterns.md` ("Checking form layout at phone width").
 
 When a change can't reuse an existing token or component and genuinely needs
 something new, add it to `src/shared/` (following the existing `*Styles()` /
