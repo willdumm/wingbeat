@@ -49,11 +49,16 @@ pencil on a flight in the duty log.
 ![The flight form](/img/generated/flight-editor/flight-form.png)
 
 - **Date, Dep, Arr:** an arrival before the departure is taken as the next
-  day. An arrival equal to the departure is the same day for a tracked flight
-  (it took off and landed within the minute); a manual flight needs an arrival
-  different from its departure.
+  day, and the form says so under the times, e.g. "Arrives the next day, 1:10
+  after departure." An arrival equal to the departure is the same day for a
+  tracked flight (it took off and landed within the minute); a manual flight
+  needs an arrival different from its departure. A flight over 12 hours is
+  most likely a mistyped time, so saving one asks first ("This flight is 23:50
+  long, arriving the next day. Save it?"), and one over 24 hours can't be
+  saved. A tracked flight whose times are left as the tracker recorded them
+  saves either way.
 - **Origin, Dest:** type a place or pick one of your
-  [named points](../map-tools#regions--named-points).
+  [named points](../map-tools#regions--named-points), up to 200 characters.
 - **Aircraft, Pilot.**
 - **Operated under:** Part 135 or Part 91, shown as a "Part 91" remark. Paid
   Part 91 flying counts toward the duty log's limits as "other commercial
@@ -67,10 +72,15 @@ pencil on a flight in the duty log.
   are always paid, so the choice only appears for Part 91, and setting a
   flight back to Part 135 (here or with the bulk **Part 135** action) clears
   it.
-- **Remark:** free text such as "Training", shown under the flight.
+- **Remark:** free text such as "Training", shown under the flight, up to 200
+  characters.
 
-The form shows who last changed the flight's corrections and when; every
-change is kept in an edit history that can't be edited or deleted.
+The form shows who last changed the flight and when, e.g. "Last changed by
+Sam, Mon Oct 13 09:12." For a tracked flight that includes changes to its
+aircraft or pilot, and the line says when that was the latest change: "Pilot
+last changed by …", "Aircraft last changed by …" or "Aircraft and pilot last
+changed by …". Every change is kept in an edit history that can't be edited or
+deleted.
 
 For a tracked flight, only the values that differ from the tracker's are
 stored, and the tracker's value is shown under each corrected field. Values the
@@ -85,8 +95,8 @@ The footer has:
 - **Delete**, for a manual flight
 - **Save**
 
-Clicking outside the form closes it, but if you've changed a field it asks
-before discarding your changes.
+Pressing Escape or clicking outside the form closes it, but if you've changed
+a field it asks before discarding your changes.
 
 ## Manual flights
 

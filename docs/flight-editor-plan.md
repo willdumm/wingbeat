@@ -4,9 +4,9 @@
 the text below.
 
 Follows [duty-log-editing-plan.md](duty-log-editing-plan.md), which is implemented. That
-plan kept flight corrections inside the duty log ("Out of scope: showing duty-log edits in
-the dashboard flight list, analytics or maintenance views … merging the bulk-edit modal
-with the single-flight assignment modal into one flight editor"). This plan brings them in.
+plan first kept flight corrections inside the duty log, leaving out showing them in the
+dashboard flight list, analytics or maintenance views, and merging the bulk-edit modal
+with the single-flight assignment modal into one flight editor. This plan brings them in.
 
 ## Problems with what shipped
 
@@ -78,6 +78,8 @@ Additions to 0002:
 ALTER TABLE pilots ADD COLUMN default_duty_start TEXT;   -- HH:MM local
 ALTER TABLE pilots ADD COLUMN default_duty_end   TEXT;   -- HH:MM local; may be < start
 
+-- (Since replaced: the store syncs from edit_history and migration 0004 drops this
+-- table; see "After review", "Incremental sync".)
 -- Bumped on every write to flight_log_entries, so clients can tell cheaply whether
 -- their cached copy is current. Triggers keep it right whichever route writes.
 CREATE TABLE IF NOT EXISTS flight_log_version (
@@ -120,7 +122,8 @@ to avoid churn.
   row, or `{ version, unchanged: true }` when `n` matches `flight_log_version`. The table
   holds a few rows per corrected or manual flight, so sending all of it is fine, and the
   version check keeps the per-refresh cost to one single-row read. It's readable by any
-  signed-in user, like flights.
+  signed-in user, like flights. (Replaced by a `since=` cursor sync; see "After review",
+  "Incremental sync".)
 - `GET /api/duty-log?pilot=` returns only `{ days }`. Entries now come from the flight
   store.
 - `POST /api/flight-log-entries/bulk`. Body: `{ flights: [{ tracker_id,
@@ -159,7 +162,8 @@ sample data.
 **`flightStore`** (`flight-store.ts`):
 
 - Keeps raw flights as today and also holds `entries` + `version` in the same
-  localStorage blob.
+  localStorage blob. (As built, a history cursor instead of `version`; see "After
+  review", "Incremental sync".)
 - `refresh()` fetches `/api/flight-log-entries?version=` alongside the per-tracker calls, and
   fires `onChange` when either changes.
 - `getAll(trackerIds, { includeRemoved })` / `getCompleted(...)` return effective flights.
@@ -328,7 +332,8 @@ It takes effective flights from the store (step 1 of the old function moves to
 - Re-linking an unmatched correction to the flight that replaced it.
 - Recurring duty schedules (e.g. "rest every Sunday"). Default duty plus ranged rest
   covers the stated need.
-- Audit history beyond `updated_at`.
+- Audit history beyond `updated_at`. (Now built: `edit_history`, migrations 0003 and
+  0004; see duty-log-editing-plan.md, "Edit history".)
 
 ## Decisions (from review)
 
@@ -381,7 +386,9 @@ It takes effective flights from the store (step 1 of the old function moves to
     `--check` must pass.
   - Keep `site/scripts/doc-shots.manifest.mjs` in step with any `data-doc-shot` tags.
 - **Testing:**
-  - `npm run type-check` (in the nix shell) is the only automated check.
+  - `npm run type-check` (in the nix shell) was the only automated check then; `npm test`
+    now also runs the script-string logic (duty rules, `applyFlightEdits`, the flight
+    store's corrections merge, the flight form's times) under `node:test`.
   - For UI, drive a real browser against an ephemeral local server.
     `site/scripts/gen-doc-shots.mjs` shows how: migrations plus
     `site/scripts/doc-shots-seed.sql` into a throwaway `--persist-to` D1, `wrangler dev`
@@ -401,7 +408,8 @@ Where the implementation departs from, or adds to, the plan above:
 
 - **API.** `POST /api/flight-log-entries` gets the same empty-row cleanup as `PUT`
   (a tracked-flight body with nothing in it deletes the row and returns `{ entry:
-  null }`), so the flight form always upserts a tracked flight with `POST`. In
+  null }`), so the flight form always upserts a tracked flight with `POST`. (After
+  review, `PUT` takes manual flights only; see below.) In
   `/bulk`, an `{ entry_id }` ref updates that row whatever its kind. Assignment with
   `entry_ids` and `pilot_id: null` is rejected ("Manual flights need a pilot").
 - **Flight store.** `refresh()` with no argument reuses the last call's tracker ids, so
@@ -459,11 +467,40 @@ Where the implementation departs from, or adds to, the plan above:
 - **Saves are atomic.** The flight form saves a tracked flight's correction and its
   aircraft/pilot change in one request (`POST /api/flight-corrections` with `assign: {
   flight_id, aircraft_tail?, pilot_id? }`, one D1 batch). The day form's Through range
-  goes through `PUT /api/duty-days/:pilot` (`{ dates, … }`) and
-  `POST /api/duty-days/:pilot/clear` (`{ dates }`), one batch each. The bulk route is one
-  statement per kind of flight (`json_each` over the refs), whatever the selection size.
+  goes through `PUT /api/duty-days/:pilot` (`{ dates, … }`, also used for a single day) and
+  `POST /api/duty-days/:pilot/clear` (`{ dates }`), one statement each (`json_each`), at
+  most 366 dates (`MAX_DUTY_DAYS_PER_REQUEST` in `src/shared/record-limits.ts`, shared by
+  the server and the day form). The bulk route is one statement per kind of flight
+  (`json_each` over the refs), whatever the selection size; Part 135 and restore only
+  update existing rows, so a flight with no corrections doesn't get a row inserted and
+  deleted as empty. Tracker apply-assignment is one recorded batch too.
+- **`PUT /api/flight-corrections/:id` is for manual flights.** A tracked flight's row is
+  refused there: `POST` is the one path for tracked corrections, since it also takes the
+  assignment and drops a row left empty.
+- **Limits** (`src/shared/record-limits.ts`, shared by the server and the forms' inputs):
+  labels and remarks at most 200 characters, duty notes 1,000, and dates are real calendar
+  dates (2026-02-31 is refused). A flight longer than 24 h (`MAX_FLIGHT_SECS`) is refused,
+  except a tracked flight whose times are left as the tracker recorded them.
+- **Flight form times.** The form reads an arrival before the departure as the next day
+  (`flightFormTimes` in `flight-edits.ts`) and says so under the times: "Arrives the next
+  day, H:MM after departure." A flight over 12 h asks first ("This flight is H:MM
+  long[, arriving the next day]. Save it?"), one over 24 h is refused with a hint to check
+  the times. Neither applies when a tracked flight's times are the tracker's.
+- **Assignment history and "Last changed".** Migration 0004 records a tracked flight's
+  aircraft/pilot changes in `edit_history` (entity `flight_assignment`). The flight form's
+  "Last changed" line asks for both entities (`GET /api/edit-history?entity=
+  flight_corrections,flight_assignment`) and shows the newest: "Pilot last changed by …",
+  "Aircraft last changed by …", "Aircraft and pilot last changed by …", or "Last changed
+  by …" for a correction, or a save that changed both. See duty-log-editing-plan.md,
+  "Edit history".
+- **Shared form helpers.** `runFormAction` (`form-modal.ts`) runs a form's write with its
+  buttons disabled and shows a failure in its error line, for the flight form, the
+  editor's bulk actions and the duty log's forms; `deleteUnappliedCorrections`
+  (`flight-editor.ts`) is the confirm-delete-refresh of a "Not found" row, for the editor
+  and the duty log. `openFormModal` asks "Discard your changes?" on Escape as well as on a
+  backdrop click once a field has changed.
 - **Rest periods.** A rest day that gets a warning (flights on it, not designated in
-  advance, previous duty past midnight) doesn't count toward the quarter's 13.
+  advance, previous duty or flight past midnight) doesn't count toward the quarter's 13.
 - **Unapplied corrections.** Rows for a tracker the store refreshed but with no matching
   flight (including after its points were wiped) are unmatched; rows for trackers the
   page doesn't load (deleted or inactive) are listed in the editor as "unplaced". In the
@@ -476,10 +513,15 @@ Where the implementation departs from, or adds to, the plan above:
   (`<tracker_id>/<flight_start_time>` or `manual/<id>`). No cursor, or one past the
   newest id (a reset database), gets every row and `full: true`. This replaced refetching
   the whole table whenever `flight_corrections_version` (a write counter) moved; migration
-  `0004` drops that table and its triggers.
+  `0004` drops that table and its triggers. The cursor lives in the store's `_mem` beside
+  the per-tracker flight cursors, on the same fetch/merge/save/notify path. If the table
+  has rows but no correction history (written before 0003), the cursor stays 0 and every
+  refresh is a full fetch, which doesn't notify when nothing changed. See
+  duty-log-editing-plan.md, "Syncing corrections".
 - **Renamed.** The table holds flight corrections and manual flights, not duty-log
   entries, so `flight_log_entries` is now `flight_corrections` (version table
-  `flight_corrections_version`, triggers `flight_corrections_ai/au/ad`, index
+  `flight_corrections_version` and triggers `flight_corrections_ai/au/ad`, both dropped by
+  0004, index
   `idx_flight_corrections_pilot`), `/api/flight-log-entries[…]` is
   `/api/flight-corrections[…]`, `GET /api/duty-log?pilot=` (now only `{ days }`) is
   `GET /api/duty-days?pilot=`, the type `FlightLogEntry` is `FlightCorrection`, and the

@@ -66,10 +66,16 @@ Admins can edit the log; other users see it read-only.
   [Editing Flights](../editing-flights).
 - **Duty and rest days:** see the next section.
 
-Every change to a flight's corrections or to a day's duty, rest or note is
-kept in an edit history: who made it, when, and the values before and after.
-The history can't be edited or deleted. The day form and the flight form show
-the last change, e.g. "Last changed by Sam, Mon Oct 13 09:12."
+Every change to a flight's corrections, to a tracked flight's aircraft or
+pilot, or to a day's duty, rest or note is kept in an edit history: who made
+it, when, and the values before and after. Moving a flight to another pilot
+changes two pilots' logs, so that's recorded too. The history can't be edited
+or deleted. The day form and the flight form show the last change, e.g. "Last
+changed by Sam, Mon Oct 13 09:12.", or "Pilot last changed by Sam, …" when the
+latest change to a flight was its pilot.
+
+Pressing Escape or clicking outside a form closes it, after asking if you've
+changed a field.
 
 ## Duty times and rest days
 
@@ -96,6 +102,8 @@ In the form:
 - **Through (optional)**: applies the same duty times or rest to every day from
   the date through this one, up to 366 days at a time, e.g. a block of days off
   next month. The whole range is saved at once, or not at all.
+- **Note**: up to 1,000 characters, e.g. on-call hours or what a positioning
+  trip was.
 - **Clear** removes the duty times, rest designation and note from the day, or
   from every day in the range.
 
@@ -230,6 +238,11 @@ With either method:
   since the duty and rest checks need them
 - a flight that departs before or arrives after the day's duty period
 
+An amount over a limit is rounded up to the minute, so it never reads as equal
+to the limit: 8 hours and 40 seconds of flight time shows as 8:01 against the
+8:00 limit. Rest under a minimum is rounded down, so 9 hours 59 minutes and 30
+seconds of rest shows as 9:59.
+
 The log assumes **one-pilot crews**. A two-pilot crew is allowed 10 hours of
 flight time instead of 8 under (b) and (c), and §135.269 covers three- and
 four-pilot crews; the log doesn't record crew size yet, so it always applies
@@ -261,7 +274,11 @@ regularly assigned duty period. The log warns about:
 
 - a duty period over 14 hours. Under (c) this is a hard limit (FAA
   interpretation to [SevenBar, 2016](https://www.faa.gov/media/11331))
-- less than 10 hours of rest between two duty periods, shown on the later day
+- less than 10 hours of rest between two duty periods, shown on the later day.
+  A flight outside the duty times counts as duty here too. When an earlier
+  flight or duty period runs into the day's duty period, such as an overnight
+  flight, there's no rest at all: "Rest before duty 0:00 (§135.267(c) minimum
+  10:00)"
 - more than 8 hours of flight time in the duty period, counting the whole of any
   of the day's flights outside the duty times too (Part 91 counted as under (b))
 - duty times that differ from the regularly assigned ones, or no default duty

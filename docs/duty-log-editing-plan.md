@@ -2,7 +2,7 @@
 
 ## Problem
 
-The pilot duty log (`src/shared/pilot-duty.ts`) is a read-only view of tracked flights,
+The pilot duty log (`src/shared/pilot-duty.ts`) was a read-only view of tracked flights,
 exported to PDF. A Part 135 operator needs to correct it before it becomes a compliance
 record, and needs the corrections to persist:
 
@@ -78,23 +78,10 @@ Sources:
   [Schwarz, 15076](https://www.faa.gov/media/15076),
   [Orellana, 11941](https://www.faa.gov/media/11941) (rolling rest),
   [Kleiner, 11541](https://www.faa.gov/media/11541),
-  [Sonnenberg, 11166](https://www.faa.gov/media/11166). An earlier version of this doc cited
-  11941 for the Part 91 before/after rule; that rule is in 13546 (Converse).
+  [Sonnenberg, 11166](https://www.faa.gov/media/11166).
 
-## Current state
+## Constraints: flights are derived data
 
-- `computeDutyData` filters the flight store to one pilot's completed flights. It groups
-  them by local date, and calendar days with no flights show as "Rest".
-- The flight store is synced from `/api/flights/complete` and holds every tracker's full
-  history client-side.
-- The rolling totals use the last 24 h, 7 d, 30 d, 90 d and 12 months, plus "rest days
-  (last 90 d)". The regulation instead uses calendar quarters and calendar years, and
-  24-hour rest periods rather than days without flights.
-- The "Block" column is really tracker movement time (`end_time - start_time` of the
-  segmented flight).
-- `renderDutyLog` (screen) and `_buildTypstSource` (PDF) each have their own copy of the
-  day/flight loop, and `_buildTypstSource` builds the rolling-totals block twice (once
-  as `rollingTotalsTypst`, which is never used).
 - `flights` rows are derived data:
   - `runSegmentation()` deletes and re-inserts the newest flight on every poll that has
     new points, so it gets a new id, and its `end_time` keeps growing while it's in
@@ -109,16 +96,20 @@ Sources:
     first point.
   - Origin/destination labels come from the boundary points' `location_label`
     (`updateFlightLabelsFromCache`), filled in asynchronously by geocoding.
-- `(tracker_id, start_time)` is already treated as a flight's stable identity across
-  re-insertion (`src/dashboard/scripts/refresh.ts:45`). Resegmenting the same points
-  produces the same start times.
+- `(tracker_id, start_time)` is a flight's stable identity across re-insertion
+  (`src/dashboard/scripts/refresh.ts`). Resegmenting the same points produces the same
+  start times.
+- The flight store is synced from `/api/flights/complete` and holds every tracker's full
+  history client-side.
 
 ## Approach
 
-Leave `flights`, `points` and segmentation untouched. Add two small tables. The first is
-an overlay of duty-log corrections keyed on the stable `(tracker_id, start_time)`
-identity, which also holds manual flights. The second holds per-day duty/rest records.
-Only the duty log reads them.
+`flights`, `points` and segmentation are untouched. Two tables hold the duty records: an
+overlay of corrections keyed on the stable `(tracker_id, start_time)` identity, which also
+holds manual flights, and per-day duty/rest records. The client applies the overlay to the
+flights it loads (`applyFlightEdits` in `flight-edits.ts`, served by the flight store), so
+every page (flight list, analytics, maintenance, alerts, duty log) shows the same corrected
+flights, and one shared flight editor edits them (see flight-editor-plan.md).
 
 Why an overlay rather than new columns on `flights`:
 
@@ -135,32 +126,33 @@ rather than a full copy of the flight:
   flight's growing `end_time`) aren't frozen at whatever they were when someone first
   edited the flight.
 - "Edited" is just "column is not NULL", and the tracker's original value is always
-  available for the PDF footnote.
+  available, on screen and in the PDF's footnotes.
 
 What stays out of the overlay:
 
-- **Pilot and aircraft of tracked flights.** These already have a persistent home
-  (`PUT /api/flights/assignment`, written to `flights` and `points`). Storing a second
-  copy would let them disagree: a flight reassigned to another pilot would then appear
-  in both pilots' logs, or neither. The overlay has `pilot_id`/`aircraft_tail` for manual
-  flights only.
+- **Pilot and aircraft of tracked flights.** These already have a persistent home on
+  `flights` and their `points`. Storing a second copy would let them disagree: a flight
+  reassigned to another pilot would then appear in both pilots' logs, or neither. The
+  flight form sends a tracked flight's aircraft/pilot change with its correction (`assign`,
+  one batch), and the edit history records it (migration 0004). The overlay has
+  `pilot_id`/`aircraft_tail` for manual flights only.
 
 Why labels are in the overlay rather than written to the boundary point: a label can be
 wrong because tracking started partway through the flight, in which case the point's own
-label is correct and only the duty-log entry should change. (Correcting a raw point's
-label everywhere is a separate, later feature.)
+label is correct and only the flight's should change. (Correcting a raw point's label
+everywhere is a separate feature; see "Out of scope".)
 
-### 1. Schema — `migrations/0002_duty_log.sql`
+### 1. Schema — migrations `0002` to `0004`
 
-(As built, renamed: the migration is `0002_flight_corrections.sql`, the table
-`flight_corrections`, the routes `/api/flight-corrections` and `GET /api/duty-days?pilot=`;
-see flight-editor-plan.md, "After review".)
+`0002_flight_corrections.sql` adds the two tables and the pilot's default duty; `0003`
+adds `unpaid` and the edit history; `0004` adds the flight assignment history and drops
+the old `flight_corrections_version` counter. The tables as they stand:
 
 ```sql
--- Duty-log corrections. A row with tracker_id + flight_start_time corrects the tracked
+-- Flight corrections. A row with tracker_id + flight_start_time corrects the tracked
 -- flight with that start time: each NULL field means "use the tracker's value". A row
 -- with both NULL is a manual flight, which sets its own pilot, aircraft and times.
-CREATE TABLE IF NOT EXISTS flight_log_entries (
+CREATE TABLE flight_corrections (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   tracker_id        INTEGER REFERENCES trackers(id),
   flight_start_time INTEGER,
@@ -168,20 +160,28 @@ CREATE TABLE IF NOT EXISTS flight_log_entries (
   end_time          INTEGER,
   origin_label      TEXT,
   destination_label TEXT,
+  remark            TEXT,     -- free text (e.g. "Training"), shown under the flight
+  start_lat         REAL,     -- manual flights only: endpoints picked from named points,
+  start_lon         REAL,     -- so analytics can place them in a region
+  end_lat           REAL,
+  end_lon           REAL,
   part91            INTEGER NOT NULL DEFAULT 0,
-  excluded          INTEGER NOT NULL DEFAULT 0,   -- removed from the duty log
+  excluded          INTEGER NOT NULL DEFAULT 0,   -- removed: hidden everywhere but the flight editor
   pilot_id          INTEGER REFERENCES pilots(id),            -- manual flights only
   aircraft_tail     TEXT REFERENCES aircraft(tail_number),    -- manual flights only
   updated_at        INTEGER NOT NULL DEFAULT (unixepoch()),
+  unpaid            INTEGER NOT NULL DEFAULT 0 CHECK (unpaid = 0 OR part91 = 1),  -- 0003
   UNIQUE (tracker_id, flight_start_time),
   CHECK ((tracker_id IS NULL) = (flight_start_time IS NULL)),
   CHECK (tracker_id IS NULL OR (pilot_id IS NULL AND aircraft_tail IS NULL)),
+  CHECK (tracker_id IS NULL OR
+         (start_lat IS NULL AND start_lon IS NULL AND end_lat IS NULL AND end_lon IS NULL)),
   CHECK (tracker_id IS NOT NULL OR
          (pilot_id IS NOT NULL AND start_time IS NOT NULL AND end_time IS NOT NULL))
 );
 
 -- Per-pilot, per-local-date duty times or rest designation (not both).
-CREATE TABLE IF NOT EXISTS duty_days (
+CREATE TABLE duty_days (
   pilot_id           INTEGER NOT NULL REFERENCES pilots(id),
   date               TEXT NOT NULL,       -- YYYY-MM-DD in the tenant timezone
   duty_start         TEXT,                -- HH:MM local
@@ -192,7 +192,14 @@ CREATE TABLE IF NOT EXISTS duty_days (
   PRIMARY KEY (pilot_id, date),
   CHECK (rest = 0 OR (duty_start IS NULL AND duty_end IS NULL))
 );
+
+-- A pilot's usual duty period: a flying day with no duty times recorded uses it, and
+-- under (c) it's the regularly assigned duty period.
+ALTER TABLE pilots ADD COLUMN default_duty_start TEXT;   -- HH:MM local
+ALTER TABLE pilots ADD COLUMN default_duty_end   TEXT;   -- HH:MM local; may be < start
 ```
+
+`edit_history` and its triggers are described under "Edit history".
 
 Notes:
 
@@ -203,174 +210,250 @@ Notes:
   always the tracker's original start time; a corrected departure goes in `start_time`,
   so editing it never breaks the match.
 - **Part 91** is a classification, not a correction of tracker data, so it's a plain
-  flag (default Part 135) on both kinds of row and isn't marked as an edit.
-- **Reverting to the tracker** deletes the row.
-- **A tracked flight with no row** appears in the log as it does today.
+  flag (default Part 135) on both kinds of row and isn't marked as an edit; so is
+  `unpaid` (see "Unpaid flights").
+- **Reverting to the tracker** deletes the row, and so does a save that leaves a tracked
+  row with nothing in it.
+- **A tracked flight with no row** appears as the tracker recorded it.
+- **Removed flights** (`excluded`) are hidden in the duty log, its PDF and every other
+  view; the flight editor lists them under "Show removed", where they can be restored.
 - **Matching a row to its flight** is by exact `(tracker_id, flight_start_time)`. If no
   flight has that start time (a history import moved the flight's first point earlier),
-  the row is **unmatched**: it's shown on its `flight_start_time` date, flagged "tracked
-  flight no longer found" with its corrections listed and a delete action, and doesn't
-  count toward any totals. The new flight shows as an ordinary tracked flight, so nothing
-  is counted twice and nothing silently disappears.
+  the row is **unmatched**: the duty log shows it on its `flight_start_time` date as
+  "Tracked flight from HH:MM no longer found" with its corrections listed and a delete
+  action (the flight editor too), and it doesn't count toward any totals. The new flight
+  shows as an ordinary tracked flight, so nothing is counted twice and nothing silently
+  disappears.
 - **A rest day** is a whole local calendar day. That gives the 24-hour rest periods
   §135.267(f) counts, provided the previous day's duty and flights end by midnight
   (checked; see §3).
 
 ### 2. API — `src/index.ts`
 
-All routes are `requireAdmin`, matching the existing flight assignment routes. (As built,
-reads are open to any signed-in user; see flight-editor-plan.md, "After review".)
+Reads are open to any signed-in user;
+every write is `requireAdmin` and runs as one recorded D1 batch (`recordedBatch`; see "Edit
+history"), so a request's writes land together or not at all.
 
-- `GET /api/duty-log?pilot=<id>` returns `{ entries, days }`: every tracked-flight row
-  (they carry no pilot; the client matches them against that pilot's flights), the
-  pilot's manual rows, and the pilot's `duty_days`. There's no date range: this is a few
-  rows per flown day, and the flight store it's merged with already holds full history.
-- `POST /api/flight-log-entries` either upserts a tracked-flight row (body has
+**Flight corrections:**
+
+- `GET /api/flight-corrections?since=<edit_history id>` is the flight store's sync (see
+  "Syncing corrections"): `{ entries, deleted, last_history_id }`, the rows whose key
+  changed after `since`, the keys deleted, and the new cursor. With no `since` (or 0), or
+  one past the newest correction history id (a reset database), it returns every row and
+  `full: true`.
+  There's no date range or pilot filter: the table is a few rows per corrected or manual
+  flight.
+- `POST /api/flight-corrections` either upserts a tracked-flight row (body has
   `tracker_id` and `flight_start_time`; `INSERT … ON CONFLICT (tracker_id,
-  flight_start_time) DO UPDATE`) or inserts a manual flight.
-- `PUT /api/flight-log-entries/:id` updates a row. The body is the form's full state;
-  the client sends NULL for any field equal to the tracker's value.
-- `DELETE /api/flight-log-entries/:id` reverts a tracked flight to the tracker's values,
+  flight_start_time) DO UPDATE`) or inserts a manual flight. The body is the form's full
+  state, with NULL for any field equal to the tracker's value; a tracked body with nothing
+  left in it deletes the row and returns `{ entry: null }`. An optional `assign: {
+  flight_id, aircraft_tail?, pilot_id? }` changes the tracked flight's aircraft/pilot in
+  the same batch.
+- `PUT /api/flight-corrections/:id` updates a manual flight (the form's full state). A
+  tracked-flight row is refused: it's saved with `POST`, which also takes the assignment
+  and drops a row left empty.
+- `DELETE /api/flight-corrections/:id` reverts a tracked flight to the tracker's values,
   or deletes a manual flight or an unmatched row.
-- `PUT /api/duty-days/:pilot/:date` upserts a day. `rest_designated_at` is set the first
-  time `rest` goes 0→1 and cleared when rest is unset.
-- `DELETE /api/duty-days/:pilot/:date` clears a day.
-- Pilot/aircraft changes to a tracked flight go through the existing
-  `PUT /api/flights/assignment`.
-- Validation:
-  - `end_time > start_time` when both are set (the client checks the effective times).
-  - `date` is `YYYY-MM-DD`; duty times are `HH:MM`.
-  - The pilot exists.
-  - `aircraft_tail` is null or exists.
+- `POST /api/flight-corrections/bulk`: `{ flights: [{ tracker_id, flight_start_time } |
+  { entry_id }], set: { part91?, excluded? } }`, at most 5,000 flights, one statement per
+  kind of flight (`json_each`). Setting Part 91 or removed upserts tracked rows; Part 135
+  or restore only updates existing ones, so a flight with no row doesn't get one inserted
+  and then deleted as empty. Part 135 clears `unpaid`. Tracked rows left empty are deleted.
+
+**Aircraft and pilot:**
+
+- `PUT /api/flights/assignment`: `{ flight_ids, entry_ids, aircraft_tail?, pilot_id? }`
+  (a key left out is unchanged). Tracked flights' go to `flights` and their `points`,
+  manual flights' to their rows; a manual flight can't be left without a pilot.
+- `POST /api/trackers/:id/apply-assignment` gives the tracker's flights with no aircraft
+  or pilot the tracker's assignment, also as a recorded batch.
+
+**Duty days:**
+
+- `GET /api/duty-days?pilot=<id>` returns `{ days }`, all of them: a few rows per flown
+  day.
+- `PUT /api/duty-days/:pilot`: `{ dates: [YYYY-MM-DD, …], duty_start, duty_end, rest,
+  note }` sets every date in one statement (`json_each`), all or none. The day form uses it
+  for one day as well as for a Through range. At most `MAX_DUTY_DAYS_PER_REQUEST` (366)
+  dates, a limit the form shares (`src/shared/record-limits.ts`). A day left with nothing
+  (no times, not rest, no note) is deleted. `rest_designated_at` is set the first time
+  `rest` goes 0→1, kept on later edits, and cleared when rest is unset.
+- `POST /api/duty-days/:pilot/clear`: `{ dates }`, the same cap, deleted in one statement.
+- `PUT /api/duty-days/:pilot/:date` and `DELETE /api/duty-days/:pilot/:date` do the same
+  for one day. The UI doesn't use them.
+- `PUT /api/pilots/:id` also takes the pilot's default duty, `default_duty_start` /
+  `default_duty_end` (both HH:MM or both null).
+
+**Edit history:** `GET /api/edit-history?entity=<entity>&key=<entity_key>[&limit=<n>]`
+(admins only; `limit` defaults to and is capped at 100) returns one record's history,
+newest first. `entity` is `flight_corrections`, `duty_days` or `flight_assignment`, or
+several comma-separated for entities that share a key (a tracked flight's corrections and
+its aircraft/pilot), interleaved newest first.
+
+**Validation** (the shared numbers live in `record-limits.ts`):
+
+- Dates are real `YYYY-MM-DD` dates (`isDateKey`: 2026-02-31 is refused, not rolled over).
+  Duty times are `HH:MM`, both or neither, and a rest day has none.
+- `end_time > start_time` when both are set, and a flight over `MAX_FLIGHT_SECS` (24 h) is
+  refused. A tracked flight with one time corrected is checked against the tracker's
+  other time; one with neither corrected isn't checked, so a tracker's own overlong
+  flight can still take a remark or Part 91.
+- Labels and remarks are at most `MAX_FLIGHT_TEXT_LENGTH` (200) characters after trimming,
+  a duty note `MAX_DUTY_NOTE_LENGTH` (1,000). The form inputs carry the same `maxlength`.
+- `unpaid` needs `part91`. Tracked rows can't set pilot, aircraft or coordinates; manual
+  rows need a pilot and both times. The pilot and aircraft exist.
 
 ### 3. Duty computation — `pilotDutyRenderScript()`
 
-`computeDutyData` gains `entries` and `days` arguments and keeps taking data as
-arguments, as the showcase requires. It returns a **single row model** that both the
-screen and PDF renderers only format, so neither re-derives days, flights or warnings:
-roughly `days: [{ dateKey, label, duty, rest, restDesignatedAt, flights, unmatched,
-daySecs, warnings }]` plus `totals`.
+`computeDutyData(allFlights, pilotId, pilotName, year, month, { days, defaultDuty,
+unmatched, method })` takes data as arguments and reads no page state, as the showcase
+requires. `allFlights` are the flight store's effective flights (corrections already
+applied); `days` are the pilot's `duty_days` rows, `defaultDuty` the pilot's default duty
+period, `unmatched` the store's unmatched rows and `method` the §135.267 method. It returns
+a **single row model** that the screen (`renderDutyLog`) and the PDF (`_buildTypstSource`)
+only format, so neither re-derives days, flights or warnings: `{ pilotName, year, month,
+isCurrentMonth, method, limitsLabel, days, prevDay, upcoming, monthSecs, totals }`, each
+day `{ dateKey, label, record, duty, defaultDuty, rest, restDesignatedAt, note, flights,
+unmatched, daySecs, warnings }`.
 
-1. **Effective flights:**
-   - Start from the pilot's completed tracked flights.
-   - Apply each matching row's non-NULL fields, and drop flights whose row has
-     `excluded = 1`.
-   - Add the pilot's manual rows.
-   - Each flight carries `manual`, `part91`, and the set of edited fields with the
-     tracker's original values.
-   - Rows that match no flight become the day's `unmatched` list.
-2. **Days:** attach each `duty_days` row to its date.
-   - A day with no flights and no record shows as a blank "—", not "Rest".
-   - A day marked rest shows "Rest", with "designated <date>". If designated on or after
-     that day, it's flagged as not prospective.
+1. **Flights:** the pilot's completed flights, less removed ones. Each carries `manual`,
+   `part91`, `commercial` (Part 135, or Part 91 not marked unpaid), its `remarks` ("Part
+   91", "Part 91 (unpaid)", the remark), and `edited`, the corrected fields with the
+   tracker's values.
+2. **Days:** every day of the month, through today in the current month (later days are
+   planned through the Upcoming list), plus `prevDay`, the previous month's last day, built
+   the same way.
+   - A day's duty period comes from its record, or on a flying day with no duty times from
+     the pilot's default duty ("08:00–17:00 (default)").
+   - A day with no flights and no record shows a blank "—", not "Rest".
+   - A day marked rest shows "Rest · designated <date>". If designated on or after that
+     day, it's flagged as not prospective.
    - Flights on a rest day are a warning.
    - A rest day after a day whose duty or flying ran past midnight is a warning (not a
-     full 24 h): the previous day's duty period stretched to cover its flights, so a
-     flight outside duty that lands after midnight, including one that departs the
-     evening before and lands on the rest day, counts too ("Previous duty or flight
-     ended 00:40, so this rest is under 24 h").
-3. **Limits for §135.267, one pilot**, replacing the current rolling list:
-   - Per day: if flight time in the 24 h ending at any of that day's flights exceeds
-     8:00, excluding Part 91 flights, the day gets a warning.
-   - Per day: duty period length over 14 h is a warning. When duty times are set, a gap
-     under 10 h since the previous duty end is a warning.
-   - Totals panel: current calendar quarter (500 h), this plus the previous quarter
-     (800 h), and calendar year (1,400 h), all including Part 91 flights; and 24-hour
-     rest periods this calendar quarter, counted as days marked rest (13 required).
-   - Over a limit means a warning colour (`var(--danger)`); nothing is blocked.
-   - Totals are "as of now" for the current month and "as of month end" for past months,
-     so a past month's PDF is reproducible.
+     full 24 h): the previous day's duty period stretched to cover its flights (`spanOf`),
+     so a flight outside duty that lands after midnight, including one that departs the
+     evening before and lands on the rest day, counts too ("Previous duty or flight ended
+     00:40, so this rest is under 24 h").
+   - A flying day with no duty times and no default gets "No duty times recorded", and a
+     flight outside the day's duty period gets its own warning.
+   - The daily flight-time, duty and rest limits depend on the method: see "Compliance
+     review", "The §135.267 method", and G3 for (e) extended rest.
+3. **Totals** (`dutyTotals`, which the dashboard's duty alert also uses): commercial
+   flight time in the current calendar quarter (500 h), this plus the previous quarter
+   (800 h) and the calendar year (1,400 h); commercial flight time in the last 24 h (8 h);
+   and 24-hour rest periods this calendar quarter (13 required): days marked rest with no
+   rest warning, taken so far plus "planned" later in the quarter, flagged short once 13
+   can no longer be reached. Totals are "as of now" for the current month and "as of month
+   end" for past months, so a past month's PDF is reproducible.
 
-Simplification: Part 91 flights are always left out of the 24-hour total. Strictly,
-the exemption only covers Part 91 flights flown after the Part 135 legs. The totals
-panel says so in a footnote. (Superseded: see "Compliance review", G1. Paid Part 91 flying
-before a Part 135 flight now counts.)
+Formatting and severity:
+
+- An amount over a limit is rounded up to the minute (`fmtBlock(secs, true)`), so it
+  never reads as equal to the limit: 8:00:40 of flight time shows "8:01 … (limit 8:00)".
+  An amount under a minimum (rest) is rounded down, so 9:59:30 reads 9:59.
+- Over a limit means a warning colour (`var(--danger)`); nothing is blocked.
 
 ### 4. Duty log UI — `src/shared/pilot-duty.ts`
 
-Reuse `buttons.ts`, `segmented-control.ts`, `status.ts`, the `icon()` helper and existing
-modal patterns (follow `docs/frontend-patterns.md` for the scrollable overlay). Take
-colors, radii and fonts from theme tokens.
+A full-screen Settings view, opened from a pilot's "Duty log" button. It uses
+`buttons.ts`, `segmented-control.ts`, `status.ts`, `icon()`, the shared form modal
+(`form-modal.ts`) and theme tokens, and follows `docs/frontend-patterns.md` for the
+scrollable overlay. Admins get the edit controls; other signed-in users see the log
+read-only.
 
-- **Table columns:** Date | Duty (start–end, or "Rest · designated Oct 3") | A/C | Origin |
-  Dep | Dest | Arr | Time | 91. Edited cells get a marker; manual and unmatched rows get
-  a small status chip.
-- **Per-flight edit** (pencil on each row) opens a small form:
-  - dep/arr time (local, in `APP_SETTINGS.timezone`)
-  - origin and destination
-  - aircraft (and pilot), saved through `PUT /api/flights/assignment` for tracked flights
-  - a Part 91 / 135 toggle (segmented control)
-  - "Remove from log", and for edited tracked flights "Revert to tracker", with the
-    tracker's values shown for reference
-- **Per-day edit** (click the date cell, which carries a calendar icon, or "Duty / rest"
-  in the toolbar): duty start/end, or a "Rest day" toggle, plus a note. An optional
-  "Through" date applies the same to a range of days (one request and one statement for
-  the range, up to 366 days), so a block of rest can be designated in one go.
-- **Toolbar:** "Add flight" opens the flight form with a date picker.
-- **Future months:** the month navigation goes up to 12 months ahead so rest can be
-  designated in advance. A future month's totals are as of now, with its rest days
-  counted as planned.
-- The narrow (`@container`) layout keeps working: edit affordances move into the
-  compact cell.
+- **Month table:** Date | Duty | A/C | Origin | Dep | Dest | Arr | Time, plus a pencil
+  column for admins. Corrected values are marked † (the tracker's value on hover), a
+  manual flight gets a "Manual" chip, and a flight's remarks ("Part 91", "Part 91
+  (unpaid)", its remark) span a row under it. Unmatched rows and each day's warnings get
+  full-width rows. The narrow (`@container`) layout folds a flight into one compact cell.
+- **Flight edits:** the pencil opens the shared flight form (`flight-editor.ts`; see
+  flight-editor-plan.md): Date, Dep, Arr, Origin, Dest, Aircraft, Pilot, Operated under
+  (Part 135 / Part 91), Pay (for Part 91), Remark; Remove, Revert to tracker or Delete;
+  the tracker's value under each corrected field and the newest change ("Last changed by
+  …"). A tracked flight's aircraft/pilot change goes in the same `POST` as its
+  correction.
+  - An arrival before the departure is the next day, and "Arrives the next day, H:MM
+    after departure." shows under the times whenever it is. Saving a flight over 12 h asks
+    first ("This flight is 14:30 long, arriving the next day. Save it?"), and one over
+    24 h is refused, as on the server. Both apply only when the times differ from the
+    tracker's, so a tracked flight left as recorded can still be saved.
+- **Day edits:** the date cell (with a calendar icon), an Upcoming entry, or "Plan duty or
+  rest" opens the day form: duty start/end, or Rest day, plus a note, and an optional
+  Through date that applies the same to every day up to it (up to 366 days, refused in the
+  form before sending). Saving always goes through the range route
+  (`PUT /api/duty-days/:pilot`), one request and one statement, so the range saves whole
+  or not at all; Clear removes the days' records (`…/clear`).
+- **Toolbar:** the month navigation, the pilot's default duty ("Default duty 08:00–17:00
+  · Change", or "No default duty · Set"; the form sets it with `PUT /api/pilots/:id`), "Plan
+  duty or rest" (the day form on tomorrow, any date allowed), "Edit flights" (the flight
+  editor filtered to this pilot and month; its "Add flight" enters a manual flight) and
+  "Export PDF" (the export form; see "Exporting a range of months").
+- **Planning ahead:** the table lists days through today, and the month navigation stops
+  at the current month. The current month's **Upcoming** list, shown before the totals,
+  lists every record dated after today in date order (rest with its designation date, or
+  duty times, and the note), each opening the day form ("Nothing planned after today."
+  when empty). Planned rest later in the quarter counts in the totals as "planned".
+- **Totals panel:** the totals from §3, with the method's label ("Limits: §135.267(b),
+  one-pilot crew") and a footnote on how rest periods and the daily flight time are
+  counted. In the current month it shows first, with Upcoming; in a past month, after the
+  table.
+- **Forms** (`openFormModal`): Escape or a backdrop click on a form with a changed field
+  asks "Discard your changes?"; the close button closes without asking. Saves go through
+  the shared `runFormAction` (buttons disabled, error shown in the form).
+- **Refresh:** an open log re-renders when the flight store changes; a closed one isn't
+  recomputed (`_dutyIsOpen`), and opening it fetches and renders afresh.
 
-After `pilot-duty.ts` changes, re-run `nix develop path:./nix --command npm run docs:showcase`
-and update the sample data in `src/showcase/` so the home page demo includes an edited
-flight, a manual flight, a Part 91 flight and a designated rest day.
+The showcase (`src/showcase/`, `npm run docs:showcase`) renders the log from sample data
+that includes an edited flight, a manual flight, a Part 91 flight and a designated rest
+day; re-run it after changing the render chunks.
 
 ### 5. PDF — `_buildTypstSource`
 
-Rebuilt on the row model from §3:
+Built from the same row model as the screen:
 
-- **Columns and totals:** the same columns, warnings and totals as the screen.
-- **Edited cells:** marked †, with a footnote listing the original tracker values for
-  each edited flight.
-- **Rest days:** show "Rest (designated <date>)".
+- **Title and layout:** "<Pilot> Duty Log", the period, and the method's label; one
+  section per exported month, each starting on a new page (see "Exporting a range of
+  months").
+- **Rows:** the screen's columns, remarks rows and warnings (full-width, tinted rows),
+  opening with the previous day so the month's first rolling checks can be followed.
+- **Corrected values:** marked †n, with numbered footnotes listing what the tracker
+  recorded ("Oct 3, flight at 09:00: the tracker recorded Dep 09:12."); a manual flight is
+  marked ‡.
+- **Rest days:** "Rest · designated <date>".
 - **Unmatched rows:** listed with their flag, as on screen.
-- **Footer:** "Generated <timestamp>".
-- **Cleanup:** remove the duplicated rolling-totals block (`rollingTotalsTypst` is built
-  but unused).
+- **Totals:** as on screen, as of the month's end (or now, for the current month).
+- **Footer:** "Generated <timestamp>" and the page number.
 
 ## Out of scope / later
 
-- Showing duty-log edits in the dashboard flight list, analytics or maintenance views.
-- Bulk duty-log edits (Part 91 / remove) from the dashboard's bulk-edit modal, and
-  merging that modal with the single-flight assignment modal into one flight editor.
 - Correcting a raw boundary point's label everywhere (adding a named point only labels
   points that have no label yet).
-- A toggle in the duty log screen to show removed (`excluded`) flights, greyed out, so
-  they can be reviewed and restored. Until then they're hidden on screen and in the PDF.
+- A toggle in the duty log itself to show removed flights greyed out. They're hidden in
+  the log and the PDF; the flight editor's "Show removed" lists and restores them.
 - Re-linking an unmatched row to the flight that replaced it; for now it's deleted and
   re-entered.
-- Two-pilot crews and §135.265 (scheduled operations). (The per-tenant choice between
-  §135.267(b) and (c) is now built; see "Compliance review".)
+- Two-pilot crews and §135.265 (scheduled operations); see "Not yet implemented:
+  multi-pilot crews".
 - Pilot self-service. Users aren't linked to pilots (`users` has no `pilot_id`).
-- Monthly sign-off or locking. (Edit history is now built; see "Compliance review".)
-- Deadhead/transport tracking as its own record. (The exact Part 91 before/after rule and
-  §135.267(e) extended rest are now built; see "Compliance review".)
+- Monthly sign-off or locking. (The edit history records every change; see "Edit
+  history".)
+- Deadhead/transport tracking as its own record.
 
 ## Open questions for the operator
 
 - Does their manual (GOM) define duty start/end, e.g. report time before the first
-  flight and release after the last? If so, default to that when a day has flights but
-  no duty times.
+  flight and release after the last? If so, the pilot's default duty should be set to it.
 - Does their inspector expect original tracker times on the form, or only the
-  corrected ones? (The plan shows both.)
-- Do their pilots fly commercially for anyone else? Manual entries cover that, but it
+  corrected ones? (The log shows the corrected ones, with the tracker's in footnotes.)
+- Do their pilots fly commercially for anyone else? Manual flights cover that, but it
   affects how prominent "Add flight" should be.
-
-## Implementation order
-
-1. Migration and API routes.
-2. `computeDutyData` row model, merge and new limits; `renderDutyLog` and
-   `_buildTypstSource` moved onto the row model; showcase sample data updated.
-3. Duty log edit UI (flight form, day form, Add flight).
-4. PDF additions (edit footnotes, rest designation, footer).
 
 ## Compliance review (October 2026)
 
 A review of the duty log against the regulation text and the interpretations listed under
 "Regulatory background" found gaps in the checks and in record integrity. This section
-records what changes and why. The checks stay warnings: nothing is blocked.
+describes the checks that came out of it and why. The checks stay warnings: nothing is blocked.
 
 ### Compliance fixes
 
@@ -407,14 +490,13 @@ and the totals: (a) and (f) apply either way.
 **Under (b)** (the default):
 
 - Flight time in the 24 h ending at each Part 135 flight's end, over 8 h (G1).
-- **(d) look-back**, replacing "rest since previous duty ≥ 10 h": for each day's duty
+- **(d) look-back**: for each day's duty
   period, the 24 h before its end must contain at least 10 consecutive hours outside every
   duty period and flight. Busy time is the union of the duty periods of the surrounding
   days and all the pilot's flights (a flight outside the recorded duty is still duty).
-  The duty period's end stands in for the assignment's planned completion. The old check
-  was an approximation of this: it compared only the gap since the previous duty end, so
-  it flagged a short gap even when a full 10 h rest came earlier in the window, and missed
-  rest broken up by a flight outside duty.
+  The duty period's end stands in for the assignment's planned completion. Checking only the
+  gap since the previous duty end would flag a short gap even when a full 10 h rest came
+  earlier in the window, and miss rest broken up by a flight outside duty.
 - **No separate 14-hour duty warning.** In this model it's a consequence of (d): a duty
   period over 14 h leaves less than 10 h of the 24 h before its end, so (d) always fires
   for it. The (d) warning names the duty length in that case ("Duty period 15:00 leaves at
@@ -426,7 +508,12 @@ and the totals: (a) and (f) apply either way.
 - Duty period over 14 h: a hard limit (SevenBar).
 - Less than 10 h of rest between consecutive duty periods. Each gap is checked once and
   reported on the later day, which covers both "preceded by" and "followed by" (the rest
-  after the last duty so far isn't known yet).
+  after the last duty so far isn't known yet). Like the flight time check below, it uses
+  each day's duty period stretched to cover its flights (`spanOf`): the rest runs from the
+  latest end of the previous two days' spans that start before this one to the start of
+  this day's span. Busy time that runs into this duty period (an overnight flight, a
+  previous duty past this one's start) leaves no rest: "Rest before duty 0:00
+  (§135.267(c) minimum 10:00)".
 - Commercial flight time in the duty period over 8 h: the whole commercial flights that
   start in the duty period stretched to cover the day's flights, before the end of its
   last Part 135 flight (the Converse ordering again). Nothing is clipped, so a flight
@@ -460,16 +547,16 @@ the operator, so it errs on the side of a warning.
 
 ### Edit history
 
-`duty_days` and `flight_corrections` are overwritten and deleted in place and didn't
-record who changed them. Migration `0003` adds one append-only table, `edit_history`:
+`duty_days` and `flight_corrections` are overwritten and deleted in place, so on their own
+they don't record who changed them. Migration `0003` adds one append-only table, `edit_history`:
 when, which user (id and name at the time; no foreign key, since users can be deleted),
 which table and row (`entity`, `entity_key`), the action (insert, update or delete), and
 the row before and after as JSON. Triggers on both tables write it, and BEFORE UPDATE /
 DELETE triggers on `edit_history` refuse changes.
 
-Triggers rather than per-route inserts, following `flight_corrections_version`: every
-write is recorded whichever route makes it, including the bulk `json_each` upsert, the
-cleanup of emptied rows and manual flights' assignment, with exact before/after values.
+Triggers rather than per-route inserts: every write is recorded whichever route makes it,
+including the bulk `json_each` upsert, the cleanup of emptied rows and manual flights'
+assignment, with exact before/after values.
 They learn the user from a one-row `edit_actor` table: `recordedBatch()` in `src/index.ts`
 (the one shared helper) runs a route's writes as one `db.batch` that sets `edit_actor` to
 `c.var.user` first and clears it last. A D1 batch is a transaction, so the history rows
@@ -484,13 +571,50 @@ migration `0004` adds an AFTER UPDATE trigger on `flights` that records a change
 tracker's apply-assignment. Segmentation only deletes and re-inserts flights, so it adds
 no history.
 
-The same migration lets the flight store sync corrections incrementally from
-`edit_history`: `GET /api/flight-corrections?since=<id>` returns the keys changed after
-that id with their rows now (a key with no row was deleted), and an `(entity, id)` index
-serves it. That replaces `flight_corrections_version`, which 0004 drops.
+The day form and the flight form show the newest change from `GET /api/edit-history`:
+"Last changed by <user>, <date time>". A tracked flight's form asks for its corrections
+and its assignment together (`entity=flight_corrections,flight_assignment`), so an
+aircraft or pilot change counts too and says which: "Pilot last changed by …", "Aircraft
+last changed by …" or "Aircraft and pilot last changed by …". A save that changed both the
+corrections and the assignment (one batch, so the same time and user) reads "Last changed
+by …". A full history view is a follow-up.
 
-The day form and the flight form show "Last changed by <user>, <date time>" from
-`GET /api/edit-history`. A full history view is a follow-up.
+The triggers list their columns explicitly (`json_object('pilot_id', OLD.pilot_id, …)`,
+and the AFTER UPDATE triggers compare those lists to decide whether anything changed), so
+a migration that adds a column to `flight_corrections` or `duty_days`, or another
+assignment field to `flights`, has to drop and recreate the affected triggers. Otherwise
+the new column is missing from the before/after JSON, and a change to it alone isn't
+recorded at all.
+
+### Syncing corrections
+
+The flight store syncs `flight_corrections` incrementally from `edit_history`, the same
+way it syncs each tracker's flights from a `modified_at` cursor. The history already
+records every insert, update and delete of a row under the key the client merges on
+(`<tracker_id>/<flight_start_time>` or `manual/<id>`), so the keys changed after the
+client's cursor are the rows to send:
+
+- `GET /api/flight-corrections?since=<id>` returns those keys' rows now as `entries`, the
+  keys with no row now as `deleted`, and the newest correction history id as
+  `last_history_id`, read in one batch so the cursor matches the rows. Migration 0004's
+  `(entity, id)` index on `edit_history` serves the scan and the cursor.
+- With no cursor (or 0), or one past the newest id (a reset or recreated database), it
+  returns every row and `full: true`, and the client replaces its copy.
+- The client (`flight-store.ts`) keeps the cursor in `_mem` as `entries_last_history_id`,
+  saved to localStorage next to the flights' per-tracker cursors, and fetches corrections
+  alongside the trackers' flights on the same fetch/merge/save/notify path
+  (`_fsFetchSince`, `_fsAdvance`). `mergeFlightCorrections` merges on the key, not the id,
+  so a tracked flight's row that was deleted and re-inserted under a new id replaces the
+  old one. A delta is dropped if another tab moved the cursor meanwhile; the next refresh
+  continues from the newer one.
+
+Migration 0004 drops the earlier `flight_corrections_version` counter (which the client
+compared before refetching every row) and its triggers.
+
+Known limitation: if the table has rows but no correction history (rows only written
+before 0003 was deployed), the newest id is 0, the cursor stays 0, and every refresh does
+a full fetch. An unchanged full fetch doesn't notify, so it costs only the request; the
+first correction written after 0003 ends it.
 
 ### Not yet implemented: multi-pilot crews
 
@@ -506,7 +630,8 @@ crew size. The user docs say the log assumes one-pilot crews.
 the limits run over calendar quarters and years, and the rolling checks at the start of a
 month reach back into the previous one. So Export PDF asks for a range: Month (the one
 shown, the default), Quarter (its calendar quarter, through this month), 12 months, or
-any From/To months up to 24. `_buildTypstSource` takes one month's row model or several:
+any From/To months up to 24, offered from the pilot's first flight (at least the last 12
+months) through this month. `_buildTypstSource` takes one month's row model or several:
 
 - each month is its own section, as before, starting on a new page;
 - each month's table opens with the previous day (`prevDay` in the row model): its duty,
@@ -514,6 +639,14 @@ any From/To months up to 24. `_buildTypstSource` takes one month's row model or 
 - each calendar quarter in a multi-month export ends with a summary page: flight time,
   rest periods and days with warnings by month, the totals as of the quarter's last
   exported month, and every warning in it.
+
+### Tests
+
+`npm test` (`node --test`, in the nix shell) runs `test/`: `test/harness.mjs` evaluates the
+real script strings of `pilot-duty.ts`, `flight-edits.ts`, `time.ts` and `flight-store.ts`
+in a `node:vm` context with a settable clock. The suites cover the rules in this doc: the
+(b), (c), (d) and (e) checks, rest days, the quarter and year totals, DST days,
+`applyFlightEdits`, the corrections delta merge, and the flight form's times.
 
 ### Follow-ups (not built)
 

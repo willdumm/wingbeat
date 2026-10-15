@@ -11,6 +11,10 @@
 -- segmentation re-inserting the flight under a new id. Segmentation only deletes and
 -- inserts flights, never updates these columns, so only real reassignments are recorded;
 -- an update that sets them to what they already were isn't.
+--
+-- Like 0003's triggers, this one lists its columns: a later migration that adds an
+-- assignment field to flights (or a column to flight_corrections or duty_days, for 0003's)
+-- has to drop and recreate the trigger, or the new column isn't recorded.
 CREATE TRIGGER IF NOT EXISTS flights_assignment_history_au AFTER UPDATE OF pilot_id, aircraft_tail ON flights
 WHEN OLD.pilot_id IS NOT NEW.pilot_id OR OLD.aircraft_tail IS NOT NEW.aircraft_tail
 BEGIN
