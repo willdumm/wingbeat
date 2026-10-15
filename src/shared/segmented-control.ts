@@ -61,15 +61,16 @@ export function segmentedControlScript(): string {
   return `
     // ── Segmented control ─────────────────────────────────────────────────────
 
-    // A .segmented radiogroup named name, from [value, label] options (labels are
+    // A .segmented radiogroup named name, from [value, label, docShot?] options (labels are
     // trusted markup), with value selected. Name it with { label } or { labelledBy }.
     function segmentedHtml(name, options, value, { label, labelledBy } = {}) {
       return '<div class="segmented" role="radiogroup" data-segmented="' + name + '"' +
         (labelledBy ? ' aria-labelledby="' + labelledBy + '"' : '') +
         (label ? ' aria-label="' + label + '"' : '') + '>' +
-        options.map(([v, text]) =>
+        options.map(([v, text, docShot]) =>
           '<button type="button" role="radio" class="segmented-btn' + (v === value ? ' active' : '') +
-          '" aria-checked="' + (v === value) + '" data-value="' + v + '">' + text + '</button>').join('') +
+          '" aria-checked="' + (v === value) + '" data-value="' + v + '"' +
+          (docShot ? ' data-doc-shot="' + docShot + '"' : '') + '>' + text + '</button>').join('') +
         '</div>';
     }
 

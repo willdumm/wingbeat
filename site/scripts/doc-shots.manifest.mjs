@@ -25,7 +25,8 @@ export const manifest = [
   {
     slug: 'flight-editor.flight-form',
     route: '/',
-    setup: ['flight-editor.open-button', 'flight-editor.add-flight'],
+    // Part 91 picked, so the form shows its Pay control too.
+    setup: ['flight-editor.open-button', 'flight-editor.add-flight', 'flight-editor.part91'],
     theme: 'light',
     output: 'flight-editor/flight-form',
   },

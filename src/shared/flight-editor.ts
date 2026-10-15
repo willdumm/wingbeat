@@ -486,7 +486,7 @@ export function flightEditorScript(): string {
           // only while Part 91 is picked.
           '<div class="form-field-row">' +
             '<div class="form-field"><span class="form-field-label" id="fe-f-part-label">Operated under</span>' +
-              segmentedHtml('part', [['135', 'Part 135'], ['91', 'Part 91']], edit && edit.part91 ? '91' : '135', { labelledBy: 'fe-f-part-label' }) + '</div>' +
+              segmentedHtml('part', [['135', 'Part 135'], ['91', 'Part 91', 'flight-editor.part91']], edit && edit.part91 ? '91' : '135', { labelledBy: 'fe-f-part-label' }) + '</div>' +
             '<div class="form-field" data-fe-pay' + (edit && edit.part91 ? '' : ' hidden') + '><span class="form-field-label" id="fe-f-pay-label">Pay</span>' +
               segmentedHtml('pay', [['paid', 'Paid'], ['unpaid', 'Unpaid']], edit && edit.unpaid ? 'unpaid' : 'paid', { labelledBy: 'fe-f-pay-label' }) + '</div>' +
           '</div>' +

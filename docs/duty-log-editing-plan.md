@@ -497,8 +497,6 @@ crew size. The user docs say the log assumes one-pilot crews.
   though under (c) it's the regularly assigned duty period the days are checked against.
   Adding the same triggers to `pilots` (and routing `PUT /api/pilots/:id` through
   `recordedBatch`) would cover it.
-- The flight form's doc screenshot (`flight-editor.flight-form`) wasn't regenerated
-  for the Pay control, which only shows for a Part 91 flight.
 - §135.263(d) / SevenBar: an overrun caused by unexpected en-route delays isn't a
   violation, but the log can't know the cause, so it keeps warning. The day's note and
   the flight's remark record the cause.
