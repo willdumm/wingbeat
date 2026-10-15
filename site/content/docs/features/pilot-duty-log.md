@@ -294,9 +294,26 @@ or positioning flight is paid, and so is paid flight instruction.
 
 ## Export
 
-**Export PDF** renders the month (table, remarks rows, warnings and totals) as
-a PDF, generated in the browser via Typst. Corrected values are marked † with
-numbered footnotes giving the tracker's values, manual flights are marked ‡,
+**Export PDF** asks which months to export, then renders them as one PDF,
+generated in the browser via Typst. Pick a period, or choose **From** and
+**To** months yourself (up to 24 months):
+
+- **Month** (the default): the month on screen.
+- **Quarter**: the calendar quarter of the month on screen, through this month.
+- **12 months**: the last 12 months through this month, the period
+  §135.63 requires these records to be kept for.
+
+Each month gets its own section, laid out as on screen: the table, remarks
+rows, warnings, the month total and the §135.267 totals as of the month's end
+(or now, for the current month). The table starts with the day before the
+month, its duty and flight time, so the month's first 24-hour and rest checks
+can be followed from the page. An export of more than one month starts each
+month on a new page and follows each calendar quarter with a summary page:
+flight time, rest periods and days with warnings for each month, the totals as
+of the quarter's last exported month, and a list of every warning in it.
+
+Corrected values are marked † with numbered footnotes giving the tracker's
+values, manual flights are marked ‡,
 default duty times are marked "(default)", and the footer says when the PDF was
 generated. Under the title it names the limits applied (e.g. "Limits:
 §135.267(b), flight time in any 24 hours · one-pilot crew"), and the notes at

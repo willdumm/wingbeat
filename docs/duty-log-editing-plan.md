@@ -481,6 +481,21 @@ flight, which nothing records today (a flight has one `pilot_id`). The likely sh
 crew-size column on `flight_corrections` (or a crew list), with `_DUTY_LIMITS` keyed by
 crew size. The user docs say the log assumes one-pilot crews.
 
+### Exporting a range of months
+
+§135.63 doesn't set a record period, and a monthly log is the usual sign-off unit, but
+the limits run over calendar quarters and years, and the rolling checks at the start of a
+month reach back into the previous one. So Export PDF asks for a range: Month (the one
+shown, the default), Quarter (its calendar quarter, through this month), 12 months, or
+any From/To months up to 24. `_buildTypstSource` takes one month's row model or several:
+
+- each month is its own section, as before, starting on a new page;
+- each month's table opens with the previous day (`prevDay` in the row model): its duty,
+  flight time and flights, so the first day's 24-hour and rest checks can be followed;
+- each calendar quarter in a multi-month export ends with a summary page: flight time,
+  rest periods and days with warnings by month, the totals as of the quarter's last
+  exported month, and every warning in it.
+
 ### Follow-ups (not built)
 
 - The duty log only sees flights from active, non-deleted trackers (the flight store's
