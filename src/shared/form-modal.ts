@@ -115,6 +115,7 @@ export function formModalStyles(): string {
       line-height: 1.5;
     }
     .form-modal-hint { font-size: var(--size-xs); }
+    .form-modal-hint:empty { display: none; }
     .form-modal-error { font-size: var(--size-xs); color: var(--danger-fg); }
     .form-modal-error:empty { display: none; }
     .form-modal-footer {

@@ -1399,6 +1399,7 @@ export function pilotDutyScript(): string {
           '<p class="form-modal-hint" data-duty-rest-hint></p>' +
           '<div class="form-field"><label for="duty-d-note">Note</label>' +
             '<textarea id="duty-d-note" rows="2"></textarea></div>' +
+          '<p class="form-modal-hint" data-duty-last-edit></p>' +
           '<div class="form-modal-error" role="alert"></div>',
         footerHtml:
           '<button class="btn-danger btn-md" data-act="clear">Clear</button>' +
@@ -1440,6 +1441,7 @@ export function pilotDutyScript(): string {
         $('#duty-d-start').value = (rec ? rec.duty_start : def && def.duty_start) || '';
         $('#duty-d-end').value = (rec ? rec.duty_end : def && def.duty_end) || '';
         $('#duty-d-note').value = (rec && rec.note) || '';
+        showLastEdit($('[data-duty-last-edit]'), 'duty_days', _dutyPilotId + '/' + $('#duty-d-date').value);
         restHint.textContent = rec && rec.rest && rec.rest_designated_at != null
           ? 'Designated ' + dutyDateLabel(unixToTzDateStr(rec.rest_designated_at)) + ', ' + unixToTzTime(rec.rest_designated_at) + '.'
           : 'Today is recorded as the date the rest was designated. Rest has to be designated before the day it falls on.';

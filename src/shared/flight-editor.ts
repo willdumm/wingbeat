@@ -328,6 +328,23 @@ export function flightEditorScript(): string {
       return resp.json();
     }
 
+    // "Last changed by <user>, <date> <time>" for a duty record into el, from its edit
+    // history (GET /api/edit-history; entity and key as in migration 0003); el stays empty
+    // when it has none. Shared by the flight form and the duty log's day form.
+    async function showLastEdit(el, entity, key) {
+      el.textContent = '';
+      el.dataset.editKey = key;   // the day form asks again when its date changes
+      try {
+        const resp = await fetch('/api/edit-history?entity=' + encodeURIComponent(entity) +
+          '&key=' + encodeURIComponent(key) + '&limit=1');
+        if (!resp.ok) return;
+        const h = (await resp.json()).history[0];
+        if (!h || el.dataset.editKey !== key) return;
+        el.textContent = 'Last changed by ' + (h.user_name || 'an unknown user') + ', ' +
+          dutyDateLabel(unixToTzDateStr(h.at)) + ' ' + unixToTzTime(h.at) + '.';
+      } catch (_) {}
+    }
+
     // The bulk route's key for a flight: its tracker's original start time, or its row.
     function _feFlightRef(f) {
       if (f.tracker_id == null) return { entry_id: f.edit.entry.id };
@@ -475,6 +492,7 @@ export function flightEditorScript(): string {
           '</div>' +
           '<div class="form-field"><label for="fe-f-remark">Remark</label>' +
             '<input type="text" id="fe-f-remark" placeholder="e.g. Training" value="' + escHtml((edit && edit.remark) || '') + '"></div>' +
+          '<p class="form-modal-hint" data-fe-last-edit></p>' +
           '<div class="form-modal-error" role="alert"></div>',
         footerHtml:
           (!isNew ? (removed
@@ -492,6 +510,10 @@ export function flightEditorScript(): string {
       const getPart = wireSegmented(modal, 'part', part => { $('[data-fe-pay]').hidden = part !== '91'; });
       const getPay = wireSegmented(modal, 'pay');
       const errorEl = $('.form-modal-error');
+      // A tracked flight's corrections are keyed by its tracker's start time, so their
+      // history survives a revert; a manual flight's by its row.
+      if (tracked) showLastEdit($('[data-fe-last-edit]'), 'flight_corrections', orig.tracker_id + '/' + orig.start_time);
+      else if (entry) showLastEdit($('[data-fe-last-edit]'), 'flight_corrections', 'manual/' + entry.id);
       const buttons = [...modal.querySelectorAll('.form-modal-footer button')];
       const btn = act => modal.querySelector('[data-act="' + act + '"]');
       btn('cancel').addEventListener('click', close);

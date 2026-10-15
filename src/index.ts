@@ -959,6 +959,39 @@ app.delete('/api/overlays/:id', requireAdmin, async (c) => {
   return c.json({ ok: true });
 });
 
+// ── Edit history ──────────────────────────────────────────────────────────────
+
+// Runs a route's writes as one batch with the signed-in user recorded for the
+// edit_history triggers on flight_corrections and duty_days (migration 0003): edit_actor
+// is set first and cleared last, and a D1 batch is one transaction, so each change and its
+// history rows land together or not at all. Every route that writes either table goes
+// through it. Returns the results of stmts.
+async function recordedBatch(c: Context<{ Bindings: Env; Variables: Variables }>, stmts: D1PreparedStatement[]): Promise<D1Result[]> {
+  const db = c.var.db;
+  const results = await db.batch([
+    db.prepare('INSERT OR REPLACE INTO edit_actor (id, user_id, user_name) VALUES (1, ?, ?)').bind(c.var.user.id, c.var.user.name),
+    ...stmts,
+    db.prepare('DELETE FROM edit_actor'),
+  ]);
+  return results.slice(1, -1);
+}
+
+const EDIT_HISTORY_ENTITIES = new Set(['flight_corrections', 'duty_days']);
+
+// One record's history, newest first: ?entity=flight_corrections|duty_days&key=<entity_key>
+// (see migration 0003) and optionally &limit=<n> (default and maximum 100).
+app.get('/api/edit-history', requireAdmin, async (c) => {
+  const entity = c.req.query('entity') ?? '';
+  const key = c.req.query('key') ?? '';
+  if (!EDIT_HISTORY_ENTITIES.has(entity) || !key) return c.json({ error: 'entity and key required' }, 400);
+  const limit = Math.min(Math.max(parseInt(c.req.query('limit') ?? '100', 10) || 100, 1), 100);
+  const { results } = await c.var.db.prepare(
+    'SELECT * FROM edit_history WHERE entity = ? AND entity_key = ? ORDER BY id DESC LIMIT ?'
+  ).bind(entity, key, limit).all();
+  c.header('Cache-Control', 'no-store');
+  return c.json({ history: results });
+});
+
 // ── Bulk flight assignment route ──────────────────────────────────────────────
 
 // The writes that set aircraft and/or pilot (undefined = unchanged) on tracked flights
@@ -1056,7 +1089,7 @@ app.put('/api/flights/assignment', requireAdmin, async (c) => {
   }
 
   const stmts = assignmentStatements(c.var.db, { ids, entryIds, trackerId, aircraft_tail, pilot_id });
-  await c.var.db.batch(stmts);
+  await recordedBatch(c, stmts);
 
   let pilot_name: string | null = null;
   if (pilot_id != null) {
@@ -1264,14 +1297,14 @@ app.post('/api/flight-corrections', requireAdmin, async (c) => {
     if (typeof assign === 'string') return c.json({ error: assign }, 400);
     const assignStmts = assign ? assignmentStatements(c.var.db, { ids: [assign.flight_id], entryIds: [], ...assign.set }) : [];
     if (isEmptyTrackedEntry(fields)) {
-      await c.var.db.batch([
+      await recordedBatch(c, [
         c.var.db.prepare('DELETE FROM flight_corrections WHERE tracker_id = ? AND flight_start_time = ?')
           .bind(body.tracker_id, body.flight_start_time),
         ...assignStmts,
       ]);
       return c.json({ entry: null });
     }
-    const [upsert] = await c.var.db.batch([
+    const [upsert] = await recordedBatch(c, [
       c.var.db.prepare(
         `INSERT INTO flight_corrections (tracker_id, flight_start_time, ${ENTRY_COLUMNS.join(', ')})
          VALUES (?, ?, ${ENTRY_COLUMNS.map(() => '?').join(', ')})
@@ -1283,10 +1316,11 @@ app.post('/api/flight-corrections', requireAdmin, async (c) => {
     ]);
     entry = (upsert.results[0] as FlightCorrection | undefined) ?? null;
   } else {
-    entry = await c.var.db.prepare(
+    const [insert] = await recordedBatch(c, [c.var.db.prepare(
       `INSERT INTO flight_corrections (${ENTRY_COLUMNS.join(', ')})
        VALUES (${ENTRY_COLUMNS.map(() => '?').join(', ')}) RETURNING *`
-    ).bind(...vals).first<FlightCorrection>();
+    ).bind(...vals)]);
+    entry = (insert.results[0] as FlightCorrection | undefined) ?? null;
   }
   return c.json({ entry });
 });
@@ -1302,14 +1336,14 @@ app.put('/api/flight-corrections/:id', requireAdmin, async (c) => {
   const fields = await parseEntryFields(c.var.db, body, existing.tracker_id != null);
   if (typeof fields === 'string') return c.json({ error: fields }, 400);
   if (existing.tracker_id != null && isEmptyTrackedEntry(fields)) {
-    await c.var.db.prepare('DELETE FROM flight_corrections WHERE id = ?').bind(id).run();
+    await recordedBatch(c, [c.var.db.prepare('DELETE FROM flight_corrections WHERE id = ?').bind(id)]);
     return c.json({ entry: null });
   }
-  const entry = await c.var.db.prepare(
+  const [update] = await recordedBatch(c, [c.var.db.prepare(
     `UPDATE flight_corrections SET ${ENTRY_COLUMNS.map(k => `${k} = ?`).join(', ')}, updated_at = unixepoch()
      WHERE id = ? RETURNING *`
-  ).bind(...ENTRY_COLUMNS.map(k => fields[k]), id).first<FlightCorrection>();
-  return c.json({ entry });
+  ).bind(...ENTRY_COLUMNS.map(k => fields[k]), id)]);
+  return c.json({ entry: (update.results[0] as FlightCorrection | undefined) ?? null });
 });
 
 // Sets Part 91 and/or removed on many flights at once (the flight editor's bulk actions),
@@ -1365,14 +1399,14 @@ app.post('/api/flight-corrections/bulk', requireAdmin, async (c) => {
     ).bind(JSON.stringify(entryIds), part91, excluded));
   }
   stmts.push(c.var.db.prepare(`DELETE FROM flight_corrections WHERE ${EMPTY_TRACKED_ENTRY_SQL}`));
-  await c.var.db.batch(stmts);
+  await recordedBatch(c, stmts);
   return c.json({ ok: true });
 });
 
 app.delete('/api/flight-corrections/:id', requireAdmin, async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (Number.isNaN(id)) return c.json({ error: 'Invalid id' }, 400);
-  const result = await c.var.db.prepare('DELETE FROM flight_corrections WHERE id = ?').bind(id).run();
+  const [result] = await recordedBatch(c, [c.var.db.prepare('DELETE FROM flight_corrections WHERE id = ?').bind(id)]);
   if (result.meta.changes === 0) return c.json({ error: 'Not found' }, 404);
   return c.json({ ok: true });
 });
@@ -1445,7 +1479,7 @@ app.put('/api/duty-days/:pilot/:date', requireAdmin, async (c) => {
   const fields = parseDutyDayFields(body);
   if (typeof fields === 'string') return c.json({ error: fields }, 400);
   if (!await pilotExists(c.var.db, key.pilotId)) return c.json({ error: 'Pilot not found' }, 404);
-  const [r] = await c.var.db.batch(dutyDayStatements(c.var.db, key.pilotId, [key.date], fields));
+  const [r] = await recordedBatch(c, dutyDayStatements(c.var.db, key.pilotId, [key.date], fields));
   return c.json({ day: (r.results[0] as DutyDay | undefined) ?? null });
 });
 
@@ -1461,14 +1495,14 @@ app.put('/api/duty-days/:pilot', requireAdmin, async (c) => {
   const fields = parseDutyDayFields(body);
   if (typeof fields === 'string') return c.json({ error: fields }, 400);
   if (!await pilotExists(c.var.db, pilotId)) return c.json({ error: 'Pilot not found' }, 404);
-  const results = await c.var.db.batch(dutyDayStatements(c.var.db, pilotId, dates, fields));
+  const results = await recordedBatch(c, dutyDayStatements(c.var.db, pilotId, dates, fields));
   return c.json({ days: results.flatMap(r => r.results as DutyDay[]) });
 });
 
 app.delete('/api/duty-days/:pilot/:date', requireAdmin, async (c) => {
   const key = parseDutyDayKey(c);
   if (typeof key === 'string') return c.json({ error: key }, 400);
-  await c.var.db.prepare('DELETE FROM duty_days WHERE pilot_id = ? AND date = ?').bind(key.pilotId, key.date).run();
+  await recordedBatch(c, [c.var.db.prepare('DELETE FROM duty_days WHERE pilot_id = ? AND date = ?').bind(key.pilotId, key.date)]);
   return c.json({ ok: true });
 });
 
@@ -1480,8 +1514,8 @@ app.post('/api/duty-days/:pilot/clear', requireAdmin, async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
   const dates = parseDutyDates(body.dates);
   if (typeof dates === 'string') return c.json({ error: dates }, 400);
-  await c.var.db.prepare('DELETE FROM duty_days WHERE pilot_id = ? AND date IN (SELECT value FROM json_each(?))')
-    .bind(pilotId, JSON.stringify(dates)).run();
+  await recordedBatch(c, [c.var.db.prepare('DELETE FROM duty_days WHERE pilot_id = ? AND date IN (SELECT value FROM json_each(?))')
+    .bind(pilotId, JSON.stringify(dates))]);
   return c.json({ ok: true });
 });
 

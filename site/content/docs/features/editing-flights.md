@@ -64,6 +64,9 @@ pencil on a flight in the duty log.
   it.
 - **Remark:** free text such as "Training", shown under the flight.
 
+The form shows who last changed the flight's corrections and when; every
+change is kept in an edit history that can't be edited or deleted.
+
 For a tracked flight, only the values that differ from the tracker's are
 stored, and the tracker's value is shown under each corrected field. Values the
 tracker is still filling in (a newly geocoded destination, for example) keep

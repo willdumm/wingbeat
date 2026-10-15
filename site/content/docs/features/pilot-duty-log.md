@@ -41,6 +41,11 @@ Admins can edit the log; other users see it read-only.
   [Editing Flights](../editing-flights).
 - **Duty and rest days:** see the next section.
 
+Every change to a flight's corrections or to a day's duty, rest or note is
+kept in an edit history: who made it, when, and the values before and after.
+The history can't be edited or deleted. The day form and the flight form show
+the last change, e.g. "Last changed by Sam, Mon Oct 13 09:12."
+
 ## Duty times and rest days
 
 Each day can hold a duty period or a rest designation, plus an optional note.
