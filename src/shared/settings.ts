@@ -2,6 +2,7 @@ import { namedPointsEditorMarkup, namedPointsEditorScript } from './named-points
 import { regionsEditorMarkup, regionsEditorScript } from './regions-editor';
 import { mapLayersSettingsRowsMarkup, mapLayersSettingsScript } from './map-controls';
 import { icon } from './icons';
+import { docsLinkMarkup } from './help';
 import { pilotDutyMarkup, typstLoadOverlayMarkup } from './pilot-duty';
 import { flightEditorMarkup } from './flight-editor';
 import { formControlStyles } from './form-modal';
@@ -151,6 +152,16 @@ export function settingsModalMarkup(): string {
                 <button id="settings-clear-cache" class="btn-danger">Clear</button>
               </div>
             </div>
+            <div class="settings-section">
+              <div class="settings-section-label">Help</div>
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-row-title">Documentation</span>
+                  <span class="settings-row-desc">How tracking, flight editing, the duty log and settings work</span>
+                </div>
+                ${docsLinkMarkup('', 'Open docs')}
+              </div>
+            </div>
             <div class="settings-section" id="settings-section-devices">
               <div class="settings-section-label">My Devices</div>
               <div id="settings-devices-list"></div>
@@ -236,6 +247,7 @@ export function settingsModalMarkup(): string {
                   <option value="b">(b) Flight time in any 24 hours</option>
                   <option value="c">(c) Regularly assigned duty period</option>
                 </select>
+                <p class="settings-section-desc">${docsLinkMarkup('features/pilot-duty-log/#limits-b-or-c', 'How the two methods differ')}</p>
               </div>
               <div class="settings-add-actions">
                 <button id="settings-tenant-save" class="btn-primary">Save</button>

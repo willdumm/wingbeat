@@ -1,5 +1,6 @@
 import { icon } from './icons';
 import { lightThemeToken } from './theme';
+import { complianceNoticeMarkup } from './help';
 
 /** Duty log view body: month navigation + export toolbar, then the table and totals. */
 export function pilotDutyMarkup(): string {
@@ -16,6 +17,7 @@ export function pilotDutyMarkup(): string {
             </div>
           </div>
           <div class="pilot-duty-body">
+            ${complianceNoticeMarkup('features/pilot-duty-log/')}
             <div id="pilot-duty-upcoming" class="pilot-duty-upcoming" hidden></div>
             <div id="pilot-duty-content" class="pilot-duty-content"></div>
             <div id="pilot-duty-totals" class="pilot-duty-totals"></div>
@@ -82,6 +84,7 @@ export function pilotDutyStyles(): string {
       gap: 1.5rem;
     }
     /* The current month leads with Upcoming and the totals (renderDutyLog). */
+    .pilot-duty-body > .compliance-notice { order: -3; }
     .pilot-duty-body[data-lead-totals] .pilot-duty-upcoming { order: -2; }
     .pilot-duty-body[data-lead-totals] .pilot-duty-totals { order: -1; }
     .pilot-duty-loading { font-size: var(--size-sm); color: var(--text-muted); }
@@ -876,8 +879,7 @@ export function pilotDutyRenderScript(): string {
           (r.scheduled ? ' + ' + r.scheduled + ' planned' : '') +
           ' <span class="totals-limit">/ ' + r.required + '</span></td></tr>' +
         '</tbody></table>' +
-        '<div class="pilot-duty-footnote">' + escHtml(DUTY_TOTALS_FOOTNOTE) + '</div>' +
-        '<div class="pilot-duty-footnote">' + escHtml(DUTY_DISCLAIMER) + '</div>';
+        '<div class="pilot-duty-footnote">' + escHtml(DUTY_TOTALS_FOOTNOTE) + '</div>';
 
       if (upcomingEl) {
         upcomingEl.hidden = !isCurrentMonth;
@@ -913,7 +915,7 @@ export function pilotDutyRenderScript(): string {
       'time limit counts paid Part 91 flying before a Part 135 flight and leaves out Part 91 flying ' +
       'after the last one (FAA interpretation to Converse, 2011).';
 
-    // Under the totals and at the end of the PDF.
+    // At the end of the PDF. The screen has complianceNoticeMarkup (help.ts) at the top instead.
     const DUTY_DISCLAIMER =
       'These checks are an aid only and depend on the records entered. The certificate holder ' +
       'and the pilot remain responsible for compliance and for the accuracy of this record.';

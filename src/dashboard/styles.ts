@@ -3,6 +3,7 @@ import { sharedSidebarToggleStyles } from '../shared/sidebar';
 import { settingsModalStyles } from '../shared/settings';
 import { filterStyles } from '../shared/filters';
 import { pilotDutyStyles } from '../shared/pilot-duty';
+import { helpStyles } from '../shared/help';
 import { aircraftInfoStyles } from '../shared/aircraft-info';
 import { sharedButtonStyles } from '../shared/buttons';
 import { elevationToolStyles } from '../shared/elevation';
@@ -782,6 +783,8 @@ export function dashboardStyles(): string {
     .alert-action-btn { flex-shrink: 0; font-size: 0.72rem; padding: 0.18rem 0.45rem; white-space: nowrap; }
 
 
+
+    ${helpStyles()}
 
     ${settingsModalStyles()}
 

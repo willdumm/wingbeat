@@ -3,6 +3,7 @@ import { sharedSidebarToggleStyles } from '../shared/sidebar';
 import { settingsModalStyles } from '../shared/settings';
 import { filterStyles } from '../shared/filters';
 import { pilotDutyStyles } from '../shared/pilot-duty';
+import { helpStyles } from '../shared/help';
 import { aircraftInfoStyles } from '../shared/aircraft-info';
 import { sharedButtonStyles } from '../shared/buttons';
 
@@ -612,6 +613,8 @@ export function analyticsStyles(): string {
     ${sharedMapControlsStyles()}
 
     ${tileOverlayLegendStyles()}
+
+    ${helpStyles()}
 
     ${settingsModalStyles()}
 
