@@ -11,6 +11,7 @@ import { generateToken, deviceNameFromUA, noAccessHTML, joinHTML, joinErrorHTML 
 import { loadSettings, invalidateSettingsCache } from './settings';
 import { keyedBasemapPreset, readEnvSecret, substituteTileUrl } from './shared/map-controls';
 import { lookupTileMetadata, sanitizeAttribution } from './tile-metadata';
+import { MAX_DUTY_DAYS_PER_REQUEST, MAX_FLIGHT_TEXT_LENGTH, MAX_DUTY_NOTE_LENGTH } from './shared/record-limits';
 
 const SESSION_COOKIE = 'session';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 365;
@@ -68,11 +69,17 @@ async function queryTileOverlays(db: D1Database) {
   }));
 }
 
+/** Whether s is a real `YYYY-MM-DD` date (not e.g. 2026-02-31, which Date rolls over). */
+function isDateKey(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10) === s;
+}
+
 /** `YYYY-MM-DD` → UTC midnight; null when missing or malformed. */
 function parseDateParam(s: string | undefined): Date | null {
-  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
-  const d = new Date(s + 'T00:00:00Z');
-  return isNaN(d.getTime()) ? null : d;
+  if (!s || !isDateKey(s)) return null;
+  return new Date(s + 'T00:00:00Z');
 }
 
 /** Completed flights still missing an origin or destination label. */
@@ -846,7 +853,8 @@ app.post('/api/trackers/:id/apply-assignment', requireAdmin, async (c) => {
     );
   }
   if (stmts.length === 0) return c.json({ error: 'Nothing to apply' }, 400);
-  const results = await c.var.db.batch(stmts);
+  // Recorded: each flight given an aircraft or pilot gets an edit_history row (migration 0004).
+  const results = await recordedBatch(c, stmts);
   // Flight UPDATEs are at even indices (each is followed by its points UPDATE); a flight
   // missing both fields is counted by both, so report the larger count.
   const flights = Math.max(...results.filter((_, i) => i % 2 === 0).map((r) => r.meta.changes ?? 0));
@@ -962,10 +970,10 @@ app.delete('/api/overlays/:id', requireAdmin, async (c) => {
 // ── Edit history ──────────────────────────────────────────────────────────────
 
 // Runs a route's writes as one batch with the signed-in user recorded for the
-// edit_history triggers on flight_corrections and duty_days (migration 0003): edit_actor
-// is set first and cleared last, and a D1 batch is one transaction, so each change and its
-// history rows land together or not at all. Every route that writes either table goes
-// through it. Returns the results of stmts.
+// edit_history triggers on flight_corrections and duty_days (migration 0003) and on
+// flights' aircraft/pilot (0004): edit_actor is set first and cleared last, and a D1 batch
+// is one transaction, so each change and its history rows land together or not at all.
+// Every route that writes those goes through it. Returns the results of stmts.
 async function recordedBatch(c: Context<{ Bindings: Env; Variables: Variables }>, stmts: D1PreparedStatement[]): Promise<D1Result[]> {
   const db = c.var.db;
   const results = await db.batch([
@@ -976,10 +984,11 @@ async function recordedBatch(c: Context<{ Bindings: Env; Variables: Variables }>
   return results.slice(1, -1);
 }
 
-const EDIT_HISTORY_ENTITIES = new Set(['flight_corrections', 'duty_days']);
+const EDIT_HISTORY_ENTITIES = new Set(['flight_corrections', 'duty_days', 'flight_assignment']);
 
-// One record's history, newest first: ?entity=flight_corrections|duty_days&key=<entity_key>
-// (see migration 0003) and optionally &limit=<n> (default and maximum 100).
+// One record's history, newest first:
+// ?entity=flight_corrections|duty_days|flight_assignment&key=<entity_key> (see migrations
+// 0003 and 0004) and optionally &limit=<n> (default and maximum 100).
 app.get('/api/edit-history', requireAdmin, async (c) => {
   const entity = c.req.query('entity') ?? '';
   const key = c.req.query('key') ?? '';
@@ -1147,7 +1156,9 @@ async function parseEntryFields(db: D1Database, body: Record<string, unknown>, t
     const v = body[k];
     if (v == null) return null;
     if (typeof v !== 'string') return { error: `${k} must be a string or null` };
-    return v.trim() || null;
+    const t = v.trim();
+    if (t.length > MAX_FLIGHT_TEXT_LENGTH) return { error: `${k} must be at most ${MAX_FLIGHT_TEXT_LENGTH} characters` };
+    return t || null;
   };
   const start_time = int('start_time');
   const end_time = int('end_time');
@@ -1325,20 +1336,22 @@ app.post('/api/flight-corrections', requireAdmin, async (c) => {
   return c.json({ entry });
 });
 
+// Updates a manual flight (the body is the form's full state).
 app.put('/api/flight-corrections/:id', requireAdmin, async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (Number.isNaN(id)) return c.json({ error: 'Invalid id' }, 400);
   const existing = await c.var.db.prepare('SELECT tracker_id FROM flight_corrections WHERE id = ?')
     .bind(id).first<{ tracker_id: number | null }>();
   if (!existing) return c.json({ error: 'Not found' }, 404);
+  // A tracked flight's correction is saved by POST (keyed by tracker and start time), which
+  // also takes the flight's aircraft/pilot change and drops a row left empty.
+  if (existing.tracker_id != null) {
+    return c.json({ error: 'Tracked-flight corrections are saved with POST /api/flight-corrections' }, 400);
+  }
   let body: Record<string, unknown>;
   try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
-  const fields = await parseEntryFields(c.var.db, body, existing.tracker_id != null);
+  const fields = await parseEntryFields(c.var.db, body, false);
   if (typeof fields === 'string') return c.json({ error: fields }, 400);
-  if (existing.tracker_id != null && isEmptyTrackedEntry(fields)) {
-    await recordedBatch(c, [c.var.db.prepare('DELETE FROM flight_corrections WHERE id = ?').bind(id)]);
-    return c.json({ entry: null });
-  }
   const [update] = await recordedBatch(c, [c.var.db.prepare(
     `UPDATE flight_corrections SET ${ENTRY_COLUMNS.map(k => `${k} = ?`).join(', ')}, updated_at = unixepoch()
      WHERE id = ? RETURNING *`
@@ -1382,14 +1395,24 @@ app.post('/api/flight-corrections/bulk', requireAdmin, async (c) => {
   // refs), so a large selection stays well inside D1's per-request query limit.
   const stmts: D1PreparedStatement[] = [];
   if (tracked.length) {
-    stmts.push(c.var.db.prepare(
-      `INSERT INTO flight_corrections (tracker_id, flight_start_time, part91, excluded)
-       SELECT json_extract(value, '$.tracker_id'), json_extract(value, '$.flight_start_time'), COALESCE(?2, 0), COALESCE(?3, 0)
-       FROM json_each(?1) WHERE true
-       ON CONFLICT (tracker_id, flight_start_time) DO UPDATE SET
-         part91 = COALESCE(?2, part91), unpaid = CASE WHEN COALESCE(?2, part91) = 0 THEN 0 ELSE unpaid END,
-         excluded = COALESCE(?3, excluded), updated_at = unixepoch()`
-    ).bind(JSON.stringify(tracked), part91, excluded));
+    // A flight with no row only needs one when this sets Part 91 or removed; otherwise
+    // (Part 135, restore) only existing rows are updated, so a flight with no corrections
+    // doesn't get a row inserted and then deleted as empty (two pointless history rows).
+    stmts.push(part91 === 1 || excluded === 1
+      ? c.var.db.prepare(
+        `INSERT INTO flight_corrections (tracker_id, flight_start_time, part91, excluded)
+         SELECT json_extract(value, '$.tracker_id'), json_extract(value, '$.flight_start_time'), COALESCE(?2, 0), COALESCE(?3, 0)
+         FROM json_each(?1) WHERE true
+         ON CONFLICT (tracker_id, flight_start_time) DO UPDATE SET
+           part91 = COALESCE(?2, part91), unpaid = CASE WHEN COALESCE(?2, part91) = 0 THEN 0 ELSE unpaid END,
+           excluded = COALESCE(?3, excluded), updated_at = unixepoch()`
+      ).bind(JSON.stringify(tracked), part91, excluded)
+      : c.var.db.prepare(
+        `UPDATE flight_corrections SET part91 = COALESCE(?2, part91), unpaid = CASE WHEN COALESCE(?2, part91) = 0 THEN 0 ELSE unpaid END,
+           excluded = COALESCE(?3, excluded), updated_at = unixepoch()
+         WHERE (tracker_id, flight_start_time) IN
+           (SELECT json_extract(value, '$.tracker_id'), json_extract(value, '$.flight_start_time') FROM json_each(?1))`
+      ).bind(JSON.stringify(tracked), part91, excluded));
   }
   if (entryIds.length) {
     stmts.push(c.var.db.prepare(
@@ -1415,7 +1438,7 @@ function parseDutyDayKey(c: Context<{ Bindings: Env; Variables: Variables }>): {
   const pilotId = parseInt(c.req.param('pilot') ?? '', 10);
   const date = c.req.param('date') ?? '';
   if (Number.isNaN(pilotId)) return 'Invalid pilot id';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date + 'T00:00:00Z'))) return 'date must be YYYY-MM-DD';
+  if (!isDateKey(date)) return 'date must be YYYY-MM-DD';
   return { pilotId, date };
 }
 
@@ -1432,35 +1455,37 @@ function parseDutyDayFields(body: { duty_start?: unknown; duty_end?: unknown; re
   if (rest && dutyStart != null) return 'A rest day has no duty times';
   if (body.note != null && typeof body.note !== 'string') return 'note must be a string';
   const note = typeof body.note === 'string' ? body.note.trim() || null : null;
+  if (note != null && note.length > MAX_DUTY_NOTE_LENGTH) return `The note must be at most ${MAX_DUTY_NOTE_LENGTH} characters`;
   return { dutyStart, dutyEnd, rest, note };
 }
 
-// The writes that set one pilot's dates to fields. A day with nothing left to record is
-// cleared rather than kept as an empty row. rest_designated_at records when rest was first
-// marked (FAA interpretations require rest to be known in advance), so later edits to the
-// note keep it; unmarking rest clears it.
-function dutyDayStatements(db: D1Database, pilotId: number, dates: string[], f: DutyDayFields): D1PreparedStatement[] {
+// The write that sets one pilot's dates to fields: one statement whatever the number of
+// dates (json_each over them), since D1 counts each statement in a batch against its
+// per-request query limit. A day with nothing left to record is cleared rather than kept
+// as an empty row. rest_designated_at records when rest was first marked (FAA
+// interpretations require rest to be known in advance), so later edits to the note keep
+// it; unmarking rest clears it.
+function dutyDayStatement(db: D1Database, pilotId: number, dates: string[], f: DutyDayFields): D1PreparedStatement {
   if (!f.rest && f.dutyStart == null && f.note == null) {
-    return dates.map(date => db.prepare('DELETE FROM duty_days WHERE pilot_id = ? AND date = ?').bind(pilotId, date));
+    return db.prepare('DELETE FROM duty_days WHERE pilot_id = ? AND date IN (SELECT value FROM json_each(?))')
+      .bind(pilotId, JSON.stringify(dates));
   }
-  return dates.map(date => db.prepare(
+  // WHERE true: SQLite needs it to parse an upsert's ON CONFLICT after a SELECT.
+  return db.prepare(
     `INSERT INTO duty_days (pilot_id, date, duty_start, duty_end, rest, rest_designated_at, note)
-     VALUES (?1, ?2, ?3, ?4, ?5, CASE WHEN ?5 = 1 THEN unixepoch() END, ?6)
+     SELECT ?1, value, ?3, ?4, ?5, CASE WHEN ?5 = 1 THEN unixepoch() END, ?6 FROM json_each(?2) WHERE true
      ON CONFLICT (pilot_id, date) DO UPDATE SET
        duty_start = excluded.duty_start, duty_end = excluded.duty_end, rest = excluded.rest, note = excluded.note,
-       rest_designated_at = CASE WHEN excluded.rest = 1 THEN COALESCE(duty_days.rest_designated_at, unixepoch()) END
-     RETURNING *`
-  ).bind(pilotId, date, f.dutyStart, f.dutyEnd, f.rest, f.note));
+       rest_designated_at = CASE WHEN excluded.rest = 1 THEN COALESCE(duty_days.rest_designated_at, unixepoch()) END`
+  ).bind(pilotId, JSON.stringify(dates), f.dutyStart, f.dutyEnd, f.rest, f.note);
 }
-
-const MAX_DUTY_DAYS_PER_REQUEST = 366;
 
 // { dates: [YYYY-MM-DD, …] } of a range request, or an error message.
 function parseDutyDates(v: unknown): string[] | string {
   if (!Array.isArray(v) || v.length === 0) return 'dates must be a non-empty array';
   if (v.length > MAX_DUTY_DAYS_PER_REQUEST) return `At most ${MAX_DUTY_DAYS_PER_REQUEST} days at a time`;
   for (const d of v) {
-    if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z'))) {
+    if (typeof d !== 'string' || !isDateKey(d)) {
       return 'dates must be YYYY-MM-DD';
     }
   }
@@ -1479,12 +1504,12 @@ app.put('/api/duty-days/:pilot/:date', requireAdmin, async (c) => {
   const fields = parseDutyDayFields(body);
   if (typeof fields === 'string') return c.json({ error: fields }, 400);
   if (!await pilotExists(c.var.db, key.pilotId)) return c.json({ error: 'Pilot not found' }, 404);
-  const [r] = await recordedBatch(c, dutyDayStatements(c.var.db, key.pilotId, [key.date], fields));
-  return c.json({ day: (r.results[0] as DutyDay | undefined) ?? null });
+  await recordedBatch(c, [dutyDayStatement(c.var.db, key.pilotId, [key.date], fields)]);
+  return c.json({ ok: true });
 });
 
 // The same for many dates at once ({ dates, duty_start, duty_end, rest, note }), in one
-// batch: the day form's Through range. All the days are written, or none.
+// statement: the day form's Through range. All the days are written, or none.
 app.put('/api/duty-days/:pilot', requireAdmin, async (c) => {
   const pilotId = parseInt(c.req.param('pilot') ?? '', 10);
   if (Number.isNaN(pilotId)) return c.json({ error: 'Invalid pilot id' }, 400);
@@ -1495,8 +1520,8 @@ app.put('/api/duty-days/:pilot', requireAdmin, async (c) => {
   const fields = parseDutyDayFields(body);
   if (typeof fields === 'string') return c.json({ error: fields }, 400);
   if (!await pilotExists(c.var.db, pilotId)) return c.json({ error: 'Pilot not found' }, 404);
-  const results = await recordedBatch(c, dutyDayStatements(c.var.db, pilotId, dates, fields));
-  return c.json({ days: results.flatMap(r => r.results as DutyDay[]) });
+  await recordedBatch(c, [dutyDayStatement(c.var.db, pilotId, dates, fields)]);
+  return c.json({ ok: true });
 });
 
 app.delete('/api/duty-days/:pilot/:date', requireAdmin, async (c) => {

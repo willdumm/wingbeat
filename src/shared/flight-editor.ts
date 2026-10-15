@@ -1,5 +1,6 @@
 import { icon } from './icons';
 import { formControlStyles } from './form-modal';
+import { MAX_FLIGHT_TEXT_LENGTH } from './record-limits';
 
 /**
  * The flight editor: a full-screen settings view listing effective flights (filterable,
@@ -471,9 +472,9 @@ export function flightEditorScript(): string {
           '</div>' +
           '<div class="form-field-row">' +
             '<div class="form-field"><label for="fe-f-origin">Origin</label>' +
-              '<input type="text" id="fe-f-origin" list="fe-f-places" autocomplete="off" value="' + escHtml((f && f.origin_label) || '') + '">' + hint('origin_label') + '</div>' +
+              '<input type="text" id="fe-f-origin" list="fe-f-places" autocomplete="off" maxlength="${MAX_FLIGHT_TEXT_LENGTH}" value="' + escHtml((f && f.origin_label) || '') + '">' + hint('origin_label') + '</div>' +
             '<div class="form-field"><label for="fe-f-dest">Dest</label>' +
-              '<input type="text" id="fe-f-dest" list="fe-f-places" autocomplete="off" value="' + escHtml((f && f.destination_label) || '') + '">' + hint('destination_label') + '</div>' +
+              '<input type="text" id="fe-f-dest" list="fe-f-places" autocomplete="off" maxlength="${MAX_FLIGHT_TEXT_LENGTH}" value="' + escHtml((f && f.destination_label) || '') + '">' + hint('destination_label') + '</div>' +
           '</div>' +
           '<div class="form-field-row">' +
             '<div class="form-field"><label for="fe-f-aircraft">Aircraft</label>' +
@@ -491,7 +492,7 @@ export function flightEditorScript(): string {
               segmentedHtml('pay', [['paid', 'Paid'], ['unpaid', 'Unpaid']], edit && edit.unpaid ? 'unpaid' : 'paid', { labelledBy: 'fe-f-pay-label' }) + '</div>' +
           '</div>' +
           '<div class="form-field"><label for="fe-f-remark">Remark</label>' +
-            '<input type="text" id="fe-f-remark" placeholder="e.g. Training" value="' + escHtml((edit && edit.remark) || '') + '"></div>' +
+            '<input type="text" id="fe-f-remark" placeholder="e.g. Training" maxlength="${MAX_FLIGHT_TEXT_LENGTH}" value="' + escHtml((edit && edit.remark) || '') + '"></div>' +
           '<p class="form-modal-hint" data-fe-last-edit></p>' +
           '<div class="form-modal-error" role="alert"></div>',
         footerHtml:

@@ -1,6 +1,7 @@
 import { icon } from './icons';
 import { lightThemeToken } from './theme';
 import { complianceNoticeMarkup } from './help';
+import { MAX_DUTY_DAYS_PER_REQUEST, MAX_DUTY_NOTE_LENGTH } from './record-limits';
 
 /** Duty log view body: month navigation + export toolbar, then the table and totals. */
 export function pilotDutyMarkup(): string {
@@ -1553,8 +1554,8 @@ export function pilotDutyScript(): string {
       return true;
     }
 
-    // The day form's Through range covers at most this many days.
-    const _DUTY_MAX_RANGE_DAYS = 62;
+    // The day form's Through range covers at most this many days (the server's limit).
+    const _DUTY_MAX_RANGE_DAYS = ${MAX_DUTY_DAYS_PER_REQUEST};
 
     // Day form: duty start/end, or a rest day, plus a note, for dateKey or, with a
     // "Through" date, for every day from it to that date (e.g. a block of rest days planned
@@ -1581,7 +1582,7 @@ export function pilotDutyScript(): string {
           '</div>' +
           '<p class="form-modal-hint" data-duty-rest-hint></p>' +
           '<div class="form-field"><label for="duty-d-note">Note</label>' +
-            '<textarea id="duty-d-note" rows="2"></textarea></div>' +
+            '<textarea id="duty-d-note" rows="2" maxlength="${MAX_DUTY_NOTE_LENGTH}"></textarea></div>' +
           '<p class="form-modal-hint" data-duty-last-edit></p>' +
           '<div class="form-modal-error" role="alert"></div>',
         footerHtml:

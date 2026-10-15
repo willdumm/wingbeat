@@ -94,7 +94,7 @@ In the form:
   note later keeps the original designation date; switching the day back to
   duty and then to rest again records a new one.
 - **Through (optional)**: applies the same duty times or rest to every day from
-  the date through this one, up to 62 days at a time, e.g. a block of days off
+  the date through this one, up to 366 days at a time, e.g. a block of days off
   next month. The whole range is saved at once, or not at all.
 - **Clear** removes the duty times, rest designation and note from the day, or
   from every day in the range.

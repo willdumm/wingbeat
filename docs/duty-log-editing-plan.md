@@ -300,8 +300,8 @@ colors, radii and fonts from theme tokens.
     tracker's values shown for reference
 - **Per-day edit** (click the date cell, which carries a calendar icon, or "Duty / rest"
   in the toolbar): duty start/end, or a "Rest day" toggle, plus a note. An optional
-  "Through" date applies the same to a range of days (one `PUT` each, up to 62), so a
-  block of rest can be designated in one go.
+  "Through" date applies the same to a range of days (one request and one statement for
+  the range, up to 366 days), so a block of rest can be designated in one go.
 - **Toolbar:** "Add flight" opens the flight form with a date picker.
 - **Future months:** the month navigation goes up to 12 months ahead so rest can be
   designated in advance. A future month's totals are as of now, with its rest days
@@ -469,6 +469,13 @@ They learn the user from a one-row `edit_actor` table: `recordedBatch()` in `src
 land with the change or not at all. Every route that writes either table goes through it.
 A write made any other way is still recorded, with no user. An update that changes
 nothing (or only `updated_at`) isn't recorded.
+
+A tracked flight's aircraft and pilot live on `flights`, not `flight_corrections`, so
+migration `0004` adds an AFTER UPDATE trigger on `flights` that records a change to either
+(entity `flight_assignment`, key `<tracker_id>/<start_time>`, before/after
+`{ pilot_id, aircraft_tail }`), from the assignment route, the flight form's `assign` and a
+tracker's apply-assignment. Segmentation only deletes and re-inserts flights, so it adds
+no history.
 
 The day form and the flight form show "Last changed by <user>, <date time>" from
 `GET /api/edit-history`. A full history view is a follow-up.
