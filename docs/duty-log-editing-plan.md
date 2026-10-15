@@ -19,41 +19,67 @@ possible. The target is a single-pilot operator under §135.267.
 
 ## Regulatory background
 
-Unscheduled one-pilot crews fall under **14 CFR §135.267**:
+Unscheduled operations (and any operation solely within Alaska) fall under
+**14 CFR §135.267** (§135.261(c)). It gives the operator two ways to apply the daily limits,
+and the operator picks one (FAA legal interpretations to Berry, 2009, and Jimenez, 2011):
 
 - (a) Total flight time in all commercial flying may not exceed 500 h per calendar
   quarter, 800 h per two consecutive calendar quarters, or 1,400 h per calendar year.
-- (b) Flight time in any 24 consecutive hours may not exceed 8 h (one pilot).
-- (c) A regularly assigned duty period of no more than 14 h, preceded and followed by
-  10 h of rest, is the alternative framing.
-- (d) Each assignment must provide 10 consecutive hours of rest during the 24 h before its
-  planned completion.
-- (e) Going over the daily limit for reasons outside anyone's control requires 11, 12 or
-  16 h of rest afterwards.
+- (b) In any 24 consecutive hours, the assigned flight time plus any other commercial
+  flying may not exceed 8 h (one pilot) or 10 h (two pilots).
+- (c) Instead, flight time may go past (b)'s window if it falls in a *regularly assigned*
+  duty period of no more than 14 h. That period must be immediately preceded and followed
+  by at least 10 consecutive hours of rest. The flight time in it, plus other commercial
+  flying, may be at most 8 h (one pilot) or 10 h (two pilots), and the duty and rest periods
+  add up to 24 h. "Regularly assigned" means the start and end times don't vary from day
+  to day (Berry; SevenBar, 2016). The 14 h is a hard limit, except for unexpected en-route
+  delays (SevenBar).
+- (d) Each assignment under (b) must give 10 consecutive hours of rest during the 24 h
+  before its planned completion.
+- (e) A pilot who goes over the daily limit for reasons outside anyone's control needs
+  11, 12 or 16 h of rest before the next flight assignment (over by at most 30 min, at most
+  60 min, more than 60 min).
 - (f) 13 rest periods of at least 24 consecutive hours each per calendar quarter.
 
 Related rules:
 
-- **§135.263:** no duty may be assigned during required rest. Deadhead transport the
-  operator requires is not rest.
+- **§135.263:**
+  - (b) No duty may be assigned during required rest.
+  - (c) Non-local transportation that the operator requires and provides, to the airport
+    of a flight or home from the airport where the pilot was relieved, is not rest.
+  - (d) A flight planned to end within the limits that runs over for reasons beyond
+    anyone's control isn't an over-assignment.
 - **§135.63(a)(4)(vii):** the operator keeps each pilot's flight time "in sufficient detail
   to determine compliance," for 12 months. The PDF is that record, so edits should be
   visible as edits.
 - **FAA interpretations on rest:** rest must be continuous, prospective (known in
-  advance), and free from all restraint by the operator. Hence recording when a rest day
+  advance), and free from all restraint by the operator. On-call, standby or reserve time,
+  or any obligation to answer the operator's calls, is duty, not rest (Berry, 2009;
+  Jimenez, 2011; Orellana, 2015; Kleiner, 2016). That's why the log records when a rest day
   was designated.
-- **FAA interpretations on Part 91 flights:**
-  - Part 91 flights flown after the Part 135 legs (e.g. a ferry home) don't count toward
-    the §135.267(b) 24-hour limit.
-  - They do count toward the quarterly and yearly limits in (a).
-  - Part 91 flights before or between Part 135 legs are not rest.
+- **FAA interpretations on "other commercial flying":** any non-military flying as a
+  required crewmember, other than in air transportation, *for which the crewmember is
+  paid* (Martindell, 2009; Rodriguez, 2012). Uncompensated flying isn't commercial.
+- **FAA interpretations on Part 91 flights** (Converse, 2011, media 13546):
+  - Paid Part 91 flying (a ferry, paid instruction) before the Part 135 flights counts
+    toward the §135.267(b) 24-hour limit. Flying after them doesn't.
+  - It always counts toward the quarterly and yearly limits in (a).
+  - A ferry flight the operator assigns is duty, so it isn't rest for (d).
 
 Sources:
-- [14 CFR 135.267](https://www.law.cornell.edu/cfr/text/14/135.267)
-- [14 CFR 135.263](https://www.law.cornell.edu/cfr/text/14/135.263)
+- [14 CFR 135.261–135.273](https://www.ecfr.gov/current/title-14/chapter-I/subchapter-G/part-135/subpart-F)
 - [14 CFR 135.63](https://www.law.cornell.edu/cfr/text/14/135.63)
-- FAA legal interpretations: [13546](https://www.faa.gov/media/13546),
-  [11941](https://www.faa.gov/media/11941), [11166](https://www.faa.gov/media/11166)
+- FAA legal interpretations: [Berry, 14441](https://www.faa.gov/media/14441),
+  [Jimenez, 13701](https://www.faa.gov/media/13701),
+  [SevenBar, 11331](https://www.faa.gov/media/11331),
+  [Converse, 13546](https://www.faa.gov/media/13546) (Part 91 before/after the Part 135
+  flights), [Martindell, 14636](https://www.faa.gov/media/14636),
+  [Rodriguez, 13326](https://www.faa.gov/media/13326),
+  [Schwarz, 15076](https://www.faa.gov/media/15076),
+  [Orellana, 11941](https://www.faa.gov/media/11941) (rolling rest),
+  [Kleiner, 11541](https://www.faa.gov/media/11541),
+  [Sonnenberg, 11166](https://www.faa.gov/media/11166). An earlier version of this doc cited
+  11941 for the Part 91 before/after rule; that rule is in 13546 (Converse).
 
 ## Current state
 
@@ -253,7 +279,8 @@ daySecs, warnings }]` plus `totals`.
 
 Simplification: Part 91 flights are always left out of the 24-hour total. Strictly,
 the exemption only covers Part 91 flights flown after the Part 135 legs. The totals
-panel says so in a footnote.
+panel says so in a footnote. (Superseded: see "Compliance review", G1. Paid Part 91 flying
+before a Part 135 flight now counts.)
 
 ### 4. Duty log UI — `src/shared/pilot-duty.ts`
 
@@ -310,12 +337,12 @@ Rebuilt on the row model from §3:
   they can be reviewed and restored. Until then they're hidden on screen and in the PDF.
 - Re-linking an unmatched row to the flight that replaced it; for now it's deleted and
   re-entered.
-- Two-pilot crews and §135.265 (scheduled operations), and a per-tenant rule-set
-  setting.
+- Two-pilot crews and §135.265 (scheduled operations). (The per-tenant choice between
+  §135.267(b) and (c) is now built; see "Compliance review".)
 - Pilot self-service. Users aren't linked to pilots (`users` has no `pilot_id`).
-- Monthly sign-off or locking, and audit history beyond `updated_at`.
-- Exact Part 91 tail-end logic, deadhead/transport tracking, and §135.267(e) extended
-  rest after weather overruns.
+- Monthly sign-off or locking. (Edit history is now built; see "Compliance review".)
+- Deadhead/transport tracking as its own record. (The exact Part 91 before/after rule and
+  §135.267(e) extended rest are now built; see "Compliance review".)
 
 ## Open questions for the operator
 
@@ -334,3 +361,137 @@ Rebuilt on the row model from §3:
    `_buildTypstSource` moved onto the row model; showcase sample data updated.
 3. Duty log edit UI (flight form, day form, Add flight).
 4. PDF additions (edit footnotes, rest designation, footer).
+
+## Compliance review (October 2026)
+
+A review of the duty log against the regulation text and the interpretations listed under
+"Regulatory background" found gaps in the checks and in record integrity. This section
+records what changes and why. The checks stay warnings: nothing is blocked.
+
+### Compliance fixes
+
+- **G1. Other commercial flying in the 24-hour limit.** `flightTime24` sums every
+  *commercial* flight in the window: Part 135, plus Part 91 that isn't marked unpaid. It
+  still evaluates windows only at the end of each Part 135 flight, which applies Converse
+  exactly: paid Part 91 flown before the last Part 135 flight of a window counts, and Part
+  91 flown after it falls outside every window. The dashboard's "Last 24 h" (`dutyTotals`'s
+  `flight24`) is a check on the *next* assignment, so all commercial flying in the 24 h
+  before now counts there, Part 91 included.
+- **G2. Flying days without duty times.** A day with flights but no duty period gets a
+  warning ("No duty times recorded"), since the duty and rest checks can't run without
+  one. `dutyOf` treats a `duty_days` record with only a note (no times, not rest) like a
+  missing record: the pilot's default duty applies.
+- **G3. §135.267(e) extended rest.** After a day whose daily flight time went over the
+  limit, the rest before the next duty must be 11 h (over by up to 30 min), 12 h (up to
+  60 min) or 16 h (more). The rest runs from the end of the over-limit day's duty or last
+  flight, whichever is later, to the start of the next day's duty or first flight. A
+  shorter rest is a warning on the later day. The regulation only requires this when the
+  overrun was beyond anyone's control; any other overrun is a violation of (b) or (c)
+  itself, which the day's own warning already shows.
+
+### The §135.267 method: (b) or (c)
+
+A tenant-wide setting, `duty_method` (`b` or `c`, default `b`), in the `settings` table
+like the other global settings: edited under Settings → Global Settings, served to the
+page as `APP_SETTINGS.dutyMethod`, and passed into `computeDutyData` as an option (the
+render chunks don't read page state). The row model carries the method and a label
+("Limits: §135.267(b), one-pilot crew"), which the screen and PDF print.
+
+Both methods keep the rest-day checks, the outside-duty and no-duty-times warnings, (e)
+and the totals: (a) and (f) apply either way.
+
+**Under (b)** (the default):
+
+- Flight time in the 24 h ending at each Part 135 flight's end, over 8 h (G1).
+- **(d) look-back**, replacing "rest since previous duty ≥ 10 h": for each day's duty
+  period, the 24 h before its end must contain at least 10 consecutive hours outside every
+  duty period and flight. Busy time is the union of the duty periods of the surrounding
+  days and all the pilot's flights (a flight outside the recorded duty is still duty).
+  The duty period's end stands in for the assignment's planned completion. The old check
+  was an approximation of this: it compared only the gap since the previous duty end, so
+  it flagged a short gap even when a full 10 h rest came earlier in the window, and missed
+  rest broken up by a flight outside duty.
+- **No separate 14-hour duty warning.** In this model it's a consequence of (d): a duty
+  period over 14 h leaves less than 10 h of the 24 h before its end, so (d) always fires
+  for it. The (d) warning names the duty length in that case ("Duty period 15:00 leaves at
+  most 9:00 of rest…") so the cause is still obvious. §135.267(b) itself has no duty limit
+  (Jimenez, Kleiner).
+
+**Under (c):**
+
+- Duty period over 14 h: a hard limit (SevenBar).
+- Less than 10 h of rest between consecutive duty periods. Each gap is checked once and
+  reported on the later day, which covers both "preceded by" and "followed by" (the rest
+  after the last duty so far isn't known yet).
+- Commercial flight time in the duty period over 8 h: commercial flights clipped to the
+  duty period, up to the end of its last Part 135 flight (the Converse ordering again).
+- Duty times that differ from the regularly assigned times, which are the pilot's default
+  duty. With no default set, flying days get a "No regularly assigned duty period" warning.
+- Duty plus rest equals 24 h: a duty period starting earlier on the clock than the
+  previous day's started (so the previous duty plus the rest after it is under 24 h).
+  Comparing clock times rather than epochs keeps DST days from warning.
+
+`_DUTY_LIMITS` stays the one place the numbers live (including the (e) thresholds), so
+crew size can change them later (see "Not yet implemented").
+
+### Unpaid flights
+
+A flight can be marked **Unpaid** (`flight_corrections.unpaid`, migration `0003`, default
+paid), stored like `part91`. Unpaid flying isn't commercial (Martindell, Rodriguez), so it
+doesn't count toward the (a) totals or the daily limits. The flight stays in the log, the
+day and month totals and everywhere else (aircraft hours, maintenance), and its remarks
+read "Part 91 (unpaid)", on screen and in the PDF.
+
+Only Part 91 flights can be unpaid: Part 135 is air transportation for compensation by
+definition, so an unpaid Part 135 flight would be a contradiction. The flight form shows
+the Unpaid checkbox next to the Part 135 / Part 91 control only while Part 91 is selected
+(and sends `unpaid: false` otherwise); the bulk "Part 135" action clears it; the server
+rejects `unpaid` without `part91`, and a CHECK constraint backs that up. An unpaid flight
+still counts as busy time for the rest checks: the log can't tell whether it was done for
+the operator, so it errs on the side of a warning.
+
+### Edit history
+
+`duty_days` and `flight_corrections` are overwritten and deleted in place and didn't
+record who changed them. Migration `0003` adds one append-only table, `edit_history`:
+when, which user (id and name at the time; no foreign key, since users can be deleted),
+which table and row (`entity`, `entity_key`), the action (insert, update or delete), and
+the row before and after as JSON. Triggers on both tables write it, and BEFORE UPDATE /
+DELETE triggers on `edit_history` refuse changes.
+
+Triggers rather than per-route inserts, following `flight_corrections_version`: every
+write is recorded whichever route makes it, including the bulk `json_each` upsert, the
+cleanup of emptied rows and manual flights' assignment, with exact before/after values.
+They learn the user from a one-row `edit_actor` table: `recordedBatch()` in `src/index.ts`
+(the one shared helper) runs a route's writes as one `db.batch` that sets `edit_actor` to
+`c.var.user` first and clears it last. A D1 batch is a transaction, so the history rows
+land with the change or not at all. Every route that writes either table goes through it.
+A write made any other way is still recorded, with no user. An update that changes
+nothing (or only `updated_at`) isn't recorded.
+
+The day form and the flight form show "Last changed by <user>, <date time>" from
+`GET /api/edit-history`. A full history view is a follow-up.
+
+### Not yet implemented: multi-pilot crews
+
+The limits assume a one-pilot crew. A two-pilot crew gets 10 h instead of 8 h under (b)
+and (c), and §135.269 covers three- and four-pilot crews. That needs the crew size per
+flight, which nothing records today (a flight has one `pilot_id`). The likely shape is a
+crew-size column on `flight_corrections` (or a crew list), with `_DUTY_LIMITS` keyed by
+crew size. The user docs say the log assumes one-pilot crews.
+
+### Follow-ups (not built)
+
+- The duty log only sees flights from active, non-deleted trackers (the flight store's
+  source), so a retired tracker's history can be missing from the log and its totals.
+- Rest-day edge cases: a flight that starts the evening before and lands on a rest day
+  doesn't invalidate the rest day; on the DST spring-forward day a 23-hour calendar day
+  counts as a 24-hour rest period.
+- Flights with no pilot never appear in any pilot's log.
+- PDF: a timezone label, the pilot's full legal name (§135.63(a)(4)(i)), and a list of
+  flights removed that month.
+- `fmtBlock` rounds down, so a warning can read "8:00 (limit 8:00)" for 8:00:40.
+- A full edit-history view (per flight, per day, per pilot and month).
+- §135.263(d) / SevenBar: an overrun caused by unexpected en-route delays isn't a
+  violation, but the log can't know the cause, so it keeps warning. The day's note and
+  the flight's remark record the cause.
