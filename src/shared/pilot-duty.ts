@@ -269,6 +269,13 @@ export function pilotDutyRenderScript(): string {
       twoQuarterSecs:  800 * 3600,    // (a) two consecutive calendar quarters
       yearSecs:        1400 * 3600,   // (a) calendar year
       quarterRestDays: 13,            // (f) 24-hour rest periods per calendar quarter
+      // (e) rest after going over the daily limit, by how far over: the first row whose
+      // overSecs isn't exceeded.
+      extendedRest: [
+        { overSecs: 30 * 60,  restSecs: 11 * 3600 },
+        { overSecs: 60 * 60,  restSecs: 12 * 3600 },
+        { overSecs: Infinity, restSecs: 16 * 3600 },
+      ],
     };
 
     const _DUTY_ICON_EDIT      = ${JSON.stringify(icon('pencil', { size: 13 }))};
@@ -351,13 +358,28 @@ export function pilotDutyRenderScript(): string {
       for (const r of dayRecords) recordByDate[r.date] = r;
 
       // A day's duty period: its record's times, or the default on a flying day with no
-      // record (a rest day has none). { ..., isDefault } or null.
+      // times recorded (no record, or one with only a note); a rest day has none.
+      // { ..., isDefault } or null.
       function dutyOf(dateKey) {
         const rec = recordByDate[dateKey];
-        if (rec) return rec.rest ? null : _dutyInterval(dateKey, rec);
+        if (rec && rec.rest) return null;
+        if (rec && rec.duty_start) return _dutyInterval(dateKey, rec);
         if (!defaultDuty || !flightsByDate[dateKey]) return null;
         const d = _dutyInterval(dateKey, defaultDuty);
         return d && { ...d, isDefault: true };
+      }
+
+      // The time a day keeps the pilot busy: its duty period stretched to cover its flights
+      // (a flight outside duty is still duty), as { start, end }, or null for a day with
+      // neither.
+      function spanOf(dateKey) {
+        const duty = dutyOf(dateKey);
+        let start = duty ? duty.start : Infinity, end = duty ? duty.end : -Infinity;
+        for (const f of flightsByDate[dateKey] || []) {
+          start = Math.min(start, f.start_time);
+          end = Math.max(end, f.end_time);
+        }
+        return start < end ? { start, end } : null;
       }
 
       // Why a day marked rest isn't a 24-hour rest period (§135.267(f)), as warnings: it
@@ -380,7 +402,7 @@ export function pilotDutyRenderScript(): string {
         return out;
       }
 
-      return { flightsByDate, recordByDate, dutyOf, restProblems };
+      return { flightsByDate, recordByDate, dutyOf, spanOf, restProblems };
     }
 
     // ── The row model ──
@@ -417,7 +439,6 @@ export function pilotDutyRenderScript(): string {
         secs: Math.max(0, f.end_time - f.start_time),
       }));
       flights.sort((a, b) => a.start_time - b.start_time);
-      const flights135 = flights.filter(f => !f.part91);
 
       // A row whose flight is gone (a history import moved its first point) carries no
       // pilot, so it goes to the pilot of the same tracker's flight nearest its start time
@@ -437,17 +458,32 @@ export function pilotDutyRenderScript(): string {
         (unmatchedByDate[dk] = unmatchedByDate[dk] || []).push(e);
       }
 
-      const { flightsByDate, recordByDate, dutyOf, restProblems } = _dutyCalendar(flights, dayRecords, defaultDuty);
+      const { flightsByDate, recordByDate, dutyOf, spanOf, restProblems } = _dutyCalendar(flights, dayRecords, defaultDuty);
 
-      // Flight time in the 24 h ending at end, Part 91 flights left out.
+      // Flight time in the 24 h ending at end, in all commercial flying (§135.267(b)): Part
+      // 135 and Part 91 alike. Only evaluated at the end of a Part 135 flight, so Part 91
+      // flying before a Part 135 flight counts and Part 91 flying after the last one falls
+      // in no window (FAA interpretation to Converse, 2011).
       function flightTime24(end) {
         const from = end - 86400;
         let s = 0;
-        for (const g of flights135) {
+        for (const g of flights) {
           if (g.end_time <= from || g.start_time >= end) continue;
           s += Math.min(g.end_time, end) - Math.max(g.start_time, from);
         }
         return s;
+      }
+
+      // A day's worst 24-hour flight time, at the end of one of its Part 135 flights:
+      // { secs, end } (secs 0 on a day without Part 135 flights).
+      function worst24Of(dateKey) {
+        let secs = 0, end = null;
+        for (const f of flightsByDate[dateKey] || []) {
+          if (f.part91) continue;
+          const s = flightTime24(f.end_time);
+          if (s > secs) { secs = s; end = f.end_time; }
+        }
+        return { secs, end };
       }
 
       // 2. Days.
@@ -460,15 +496,26 @@ export function pilotDutyRenderScript(): string {
         const warnings = [];
 
         warnings.push(...restProblems(dateKey, year));
-        let worst24 = 0, worstEnd = null;
-        for (const f of dayFlights) {
-          if (f.part91) continue;
-          const s = flightTime24(f.end_time);
-          if (s > worst24) { worst24 = s; worstEnd = f.end_time; }
-        }
-        if (worst24 > _DUTY_LIMITS.flight24hSecs) {
-          warnings.push(fmtBlock(worst24) + ' flight time in the 24 h to ' + unixToTzTime(worstEnd) +
+        const worst = worst24Of(dateKey);
+        if (worst.secs > _DUTY_LIMITS.flight24hSecs) {
+          warnings.push(fmtBlock(worst.secs) + ' flight time in the 24 h to ' + unixToTzTime(worst.end) +
             ' (limit ' + fmtBlock(_DUTY_LIMITS.flight24hSecs) + ')');
+        }
+        // Without a duty period the duty and rest checks have nothing to go on.
+        if (dayFlights.length && !duty && !rest) {
+          warnings.push('No duty times recorded: record the duty period, including any on-call or standby time');
+        }
+        // §135.267(e): after going over the daily limit, a longer rest before the next duty.
+        const prevKey = dutyAddDays(dateKey, -1);
+        const prevOver = worst24Of(prevKey).secs - _DUTY_LIMITS.flight24hSecs;
+        const prevSpan = spanOf(prevKey), span = spanOf(dateKey);
+        if (prevOver > 0 && prevSpan && span) {
+          const need = _DUTY_LIMITS.extendedRest.find(r => prevOver <= r.overSecs).restSecs;
+          const restSecs = span.start - prevSpan.end;
+          if (restSecs < need) {
+            warnings.push('Rest ' + fmtBlock(Math.max(0, restSecs)) + ' after going ' + fmtBlock(prevOver) +
+              ' over the flight time limit on ' + _dutyShortDate(prevKey, year) + ' (minimum ' + fmtBlock(need) + ')');
+          }
         }
         if (duty) {
           if (duty.secs > _DUTY_LIMITS.dutySecs) {
@@ -544,8 +591,9 @@ export function pilotDutyRenderScript(): string {
     }
 
     // One pilot's §135.267 totals as of the epoch asOf: flight time in the calendar
-    // quarter containing it, that plus the previous quarter, and the calendar year (all
-    // including Part 91), flight time in the 24 h before it (Part 91 left out), and 24-hour
+    // quarter containing it, that plus the previous quarter, and the calendar year, flight
+    // time in the 24 h before it (all including Part 91: the 24 h are the window of the
+    // pilot's next flight, so any Part 91 flying in them came before it), and 24-hour
     // rest periods in the quarter (days marked rest that get no rest warning: no flights,
     // designated in advance, previous duty over by midnight). flights are effective
     // flights for every pilot; days the pilot's duty_days rows (omitted: no rest counted,
@@ -570,7 +618,7 @@ export function pilotDutyRenderScript(): string {
       }
       let flight24 = 0;
       for (const f of own) {
-        if ((f.edit && f.edit.part91) || f.end_time <= asOf - 86400 || f.start_time >= asOf) continue;
+        if (f.end_time <= asOf - 86400 || f.start_time >= asOf) continue;
         flight24 += Math.min(f.end_time, asOf) - Math.max(f.start_time, asOf - 86400);
       }
 
@@ -765,8 +813,8 @@ export function pilotDutyRenderScript(): string {
     const DUTY_TOTALS_FOOTNOTE =
       'Hour totals include Part 91 flights. Rest periods are days marked rest in advance, with no ' +
       'flights and the previous duty over by midnight (a rest day with a warning isn’t counted). ' +
-      'The 8-hour limit in any 24 hours leaves out every Part 91 flight; strictly, only Part 91 ' +
-      'flights flown after the Part 135 flights are exempt.';
+      'The 8-hour limit in any 24 hours counts Part 91 flying before a Part 135 flight and leaves ' +
+      'out Part 91 flying after the last one (FAA interpretation to Converse, 2011).';
 
     // Fetches url, from the Cache API when it has it, and caches the response.
     // onLoaded(bytes so far, total) reports progress (total 0 when unknown).

@@ -114,12 +114,19 @@ The log checks each day against the one-pilot limits of
 [14 CFR §135.267](https://www.law.cornell.edu/cfr/text/14/135.267) and shows a
 warning under the day, without blocking anything:
 
-- more than 8 hours of flight time in the 24 hours before any of the day's
-  flights (Part 91 flights left out)
+- more than 8 hours of flight time in the 24 hours before the end of any of
+  the day's Part 135 flights. Part 91 flying counts when it comes before a Part
+  135 flight and is left out when it comes after the last one (FAA
+  interpretation to [Converse, 2011](https://www.faa.gov/media/13546))
 - a duty period over 14 hours, or less than 10 hours' rest since the previous
   day's duty
+- too short a rest after a day over the flight time limit: at least 11 hours
+  if it was over by up to 30 minutes, 12 hours up to an hour, 16 hours beyond
+  that (§135.267(e))
 - flights on a rest day, a rest day designated on or after the day itself, or
   a rest day after a duty that ran past midnight (so it's under 24 hours)
+- a day with flights but no duty times (none recorded and no default duty),
+  since the duty and rest checks need them
 - a flight that departs before or arrives after the day's duty period
 
 The totals panel shows flight time this calendar quarter (limit 500 hours),
