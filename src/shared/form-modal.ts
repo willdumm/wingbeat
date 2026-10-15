@@ -14,6 +14,9 @@ export function formControlStyles(selector: string): string {
       color: var(--text-primary);
       font-family: var(--font-ui);
       font-size: var(--size-md);
+      /* Explicit, so a filled date/time field is as tall as an empty one (whose height
+         comes from the min-height below, not from its font's own line height). */
+      line-height: var(--leading-snug);
       width: 100%;
       min-width: 0;
       box-sizing: border-box;
@@ -22,13 +25,13 @@ export function formControlStyles(selector: string): string {
     :is(${selector}):hover:not(:disabled) { border-color: var(--border-strong); }
     :is(${selector}):focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--ring-focus); }
     /* Without the native look a date/time input sizes like any other field (as filters.ts
-       does for its dates). An empty one would then collapse to no height on iOS, and its
-       value would be centered. */
+       does for its dates). An empty one would then collapse to no height on iOS, so its
+       value gets one line's height, and it would be centered. */
     :is(${selector}):is([type="date"], [type="time"], [type="datetime-local"]) {
       -webkit-appearance: none;
       appearance: none;
     }
-    :is(${selector})::-webkit-date-and-time-value { min-height: 1.2em; text-align: left; }
+    :is(${selector})::-webkit-date-and-time-value { height: calc(var(--leading-snug) * 1em); text-align: left; }
     /* iOS sizes date/time inputs as content-box whatever box-sizing says (WebKit bug
        301648), so width: 100% plus the padding and border overflows the field and two side
        by side overlap. On iOS only (-webkit-touch-callout), such an input has no border
