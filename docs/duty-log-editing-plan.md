@@ -219,11 +219,15 @@ Notes:
   view; the flight editor lists them under "Show removed", where they can be restored.
 - **Matching a row to its flight** is by exact `(tracker_id, flight_start_time)`. If no
   flight has that start time (a history import moved the flight's first point earlier),
-  the row is **unmatched**: the duty log shows it on its `flight_start_time` date as
-  "Tracked flight from HH:MM no longer found" with its corrections listed and a delete
-  action (the flight editor too), and it doesn't count toward any totals. The new flight
-  shows as an ordinary tracked flight, so nothing is counted twice and nothing silently
-  disappears.
+  the row is **unmatched**. It records no pilot, so the duty log shows it (on its
+  `flight_start_time` date, as "Tracked flight from HH:MM no longer found" with its
+  corrections listed and a delete action) only for the pilot of the same tracker's
+  flight nearest its start time within 12 h, usually the flight that replaced it. With
+  no flight that close it's in no pilot's log. Either way the flight editor lists it, as
+  a "Not found" row among the corrections that apply to no flight (when its date is in
+  the editor's range), with the same delete action. It doesn't count toward any totals.
+  The new flight shows as an ordinary tracked flight, so nothing is counted twice, and
+  nothing silently disappears: an unmatched row is always in the editor.
 - **A rest day** is a whole local calendar day. That gives the 24-hour rest periods
   §135.267(f) counts, provided the previous day's duty and flights end by midnight
   (checked; see §3).
