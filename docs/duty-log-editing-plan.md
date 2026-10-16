@@ -847,3 +847,24 @@ edit conflicts (`worker-sql.test.mjs`, `worker-dated-defaults.test.mjs`, which a
 - §135.263(d) / SevenBar: an overrun caused by unexpected en-route delays isn't a
   violation, but the log can't know the cause, so it keeps warning. The day's note and
   the flight's remark record the cause.
+- The flights sync's `modified_at` cursor is in whole seconds and compared with `>`, so a
+  reassignment in the same second as the previous sync's newest change is never fetched
+  until the flight changes again (see "Edit conflicts", known limitation). Reading the
+  assignment from the same snapshot as the corrections cursor would also close the
+  conflict check's gap for aircraft/pilot changes.
+- The day form's early conflict notice (a change newer than the log, shown on open) stays
+  up after the user changes the form's date to one that has no conflict.
+- Removing the last duty-method entry silently falls back to §135.267(b) everywhere,
+  including past months; the route could refuse removing the only entry.
+- Edit conflicts elsewhere. Only the flight form, the day form, the default-duty form and
+  the duty-method form are checked. The other full-state saves have no history and no
+  `updated_at` to check against, so each needs a migration first:
+  - the aircraft `maintenance_schedule` (the real risk: every add, edit or delete of an
+    item rewrites the whole JSON array, so two admins editing at once drop each other's
+    changes; per-item routes or a version column plus a 409 would fix it), and the
+    Hobbs/tach meter values;
+  - a pilot's name, and the Global Settings tenant form (`PATCH /api/settings` sends every
+    field);
+  - trackers, overlays, named points, regions and webhooks (rarely edited at once).
+- `docs/flight-editor-plan.md` still describes `pilots.default_duty_start/end`, which
+  migration 0005 replaced with `pilot_default_duty`; it's left as the plan was written.
