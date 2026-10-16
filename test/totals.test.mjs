@@ -142,3 +142,30 @@ describe('fmtDuration', () => {
     assert.equal(engine.fmtDuration(59 * 60 + 1, true), '1:00');
   });
 });
+
+describe('hoursOnly (the dashboard alert)', () => {
+  const asOf = at('2026-05-15 12:00');
+  const fl = [
+    flight('2026-01-10 10:00', '14:00'),
+    flight('2026-04-02 09:00', '12:30'),
+    flight('2026-05-14 20:00', '2026-05-15 02:00'),
+    flight('2026-05-15 08:00', '10:00', { part91: true }),
+    flight('2026-05-15 09:00', '11:00', { pilot: 2 }),   // another pilot's
+  ];
+  const days = [{ date: '2026-05-10', rest: 1, rest_designated_at: at('2026-05-01 00:00') }];
+
+  test('gives the same hours and last 24 h as the full totals, without rest', () => {
+    const full = engine.dutyTotals(fl, 1, asOf, { days });
+    const cheap = engine.dutyTotals(fl, 1, asOf, { hoursOnly: true });
+    assert.deepEqual(plain(cheap.hours), plain(full.hours));
+    assert.deepEqual(plain(cheap.flight24), plain(full.flight24));
+    assert.equal(cheap.rest, null);
+    assert.equal(full.rest.taken, 1);
+  });
+
+  test('the alert’s per-pilot grouping changes nothing', () => {
+    const own = fl.filter(f => f.pilot_id === 1);
+    assert.deepEqual(plain(engine.dutyTotals(own, 1, asOf, { hoursOnly: true })),
+      plain(engine.dutyTotals(fl, 1, asOf, { hoursOnly: true })));
+  });
+});

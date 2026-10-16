@@ -671,12 +671,13 @@ export function pilotDutyRenderScript(): string {
     // window of the pilot's next flight, so any Part 91 flying in them came before it;
     // unpaid flights left out), and 24-hour rest periods in the quarter (days marked rest
     // that get no rest warning: no flights, designated in advance, previous day's duty and
-    // flights over by midnight). flights are effective flights for every pilot; days the
-    // pilot's duty_days rows (omitted: no rest counted, as for the dashboard alert) and
-    // defaultDuty their default duty period (for the previous-day check). Returns
+    // flights over by midnight). flights are effective flights, any pilot's (only pilotId's
+    // count); days the pilot's duty_days rows (omitted: no rest counted) and defaultDuty
+    // their default duty period (for the previous-day check). Returns
     // { asOfLabel, hours: [{ label, secs, limit, over }], flight24: { secs, limit, over },
-    // rest: { label, taken, scheduled, required, short } }.
-    function dutyTotals(flights, pilotId, asOf, { days: dayRecords = [], defaultDuty = null, asOfLabel = 'now' } = {}) {
+    // rest: { label, taken, scheduled, required, short } }. With hoursOnly (the dashboard
+    // alert, which shows no rest) rest is null and the rest checks are skipped.
+    function dutyTotals(flights, pilotId, asOf, { days: dayRecords = [], defaultDuty = null, asOfLabel = 'now', hoursOnly = false } = {}) {
       const own = flights.filter(f => f.pilot_id === pilotId && f.end_time != null && !(f.edit && f.edit.excluded));
       const commercial = own.filter(_dutyCommercial);
       const secsOf = f => Math.max(0, f.end_time - f.start_time);
@@ -697,6 +698,18 @@ export function pilotDutyRenderScript(): string {
         if (f.end_time <= asOf - 86400 || f.start_time >= asOf) continue;
         flight24 += Math.min(f.end_time, asOf) - Math.max(f.start_time, asOf - 86400);
       }
+      const limitRow = (label, secs, limit) => ({ label, secs, limit, over: secs > limit });
+      const totals = {
+        asOfLabel,
+        hours: [
+          limitRow(quarterName(qy, qm), flownSince(qStartKey), _DUTY_LIMITS.quarterSecs),
+          limitRow(quarterName(pqy, pqm) + ' + ' + quarterName(qy, qm), flownSince(tzDateKey(pqy, pqm, 1)), _DUTY_LIMITS.twoQuarterSecs),
+          limitRow('Calendar year ' + qy, flownSince(tzDateKey(qy, 1, 1)), _DUTY_LIMITS.yearSecs),
+        ],
+        flight24: limitRow('Last 24 h', flight24, _DUTY_LIMITS.flightDaySecs),
+        rest: null,
+      };
+      if (hoursOnly) return totals;
 
       // Rest periods: days marked rest that the duty log doesn't warn about.
       const { restProblems } = _dutyCalendar(own, dayRecords, defaultDuty);
@@ -710,15 +723,8 @@ export function pilotDutyRenderScript(): string {
       const tomorrow = tzAddDays(asOfDateKey, 1);
       for (let k = tomorrow > qStartKey ? tomorrow : qStartKey; k <= qEndKey; k = tzAddDays(k, 1)) daysLeft++;
 
-      const limitRow = (label, secs, limit) => ({ label, secs, limit, over: secs > limit });
       return {
-        asOfLabel,
-        hours: [
-          limitRow(quarterName(qy, qm), flownSince(qStartKey), _DUTY_LIMITS.quarterSecs),
-          limitRow(quarterName(pqy, pqm) + ' + ' + quarterName(qy, qm), flownSince(tzDateKey(pqy, pqm, 1)), _DUTY_LIMITS.twoQuarterSecs),
-          limitRow('Calendar year ' + qy, flownSince(tzDateKey(qy, 1, 1)), _DUTY_LIMITS.yearSecs),
-        ],
-        flight24: limitRow('Last 24 h', flight24, _DUTY_LIMITS.flightDaySecs),
+        ...totals,
         rest: {
           label: '24 h rest periods, ' + quarterName(qy, qm),
           taken: restTaken,

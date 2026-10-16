@@ -117,11 +117,18 @@ export function dashboardScriptsAlerts(): string {
       }
 
       // 3. Pilot duty alerts: the duty log's §135.267 totals (dutyTotals, pilot-duty.ts),
-      // flagged at 90% of a limit; the worst one per pilot.
+      // flagged at 90% of a limit; the worst one per pilot. Flights are grouped by pilot
+      // once (dutyTotals keeps only the pilot's own anyway).
+      var flightsByPilot = new Map();
+      for (var _pi = 0; _pi < flights.length; _pi++) {
+        var _pf = flights[_pi];
+        if (!flightsByPilot.has(_pf.pilot_id)) flightsByPilot.set(_pf.pilot_id, []);
+        flightsByPilot.get(_pf.pilot_id).push(_pf);
+      }
       var activePilots = pilotList.filter(function(p) { return p.active; });
       for (var m = 0; m < activePilots.length; m++) {
         var pilot = activePilots[m];
-        var totals = dutyTotals(flights, pilot.id, now);
+        var totals = dutyTotals(flightsByPilot.get(pilot.id) || [], pilot.id, now, { hoursOnly: true });
         var worstAlert = null;
         totals.hours.concat([totals.flight24]).forEach(function(row) {
           var pct = row.secs / row.limit;
