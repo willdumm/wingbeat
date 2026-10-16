@@ -25,6 +25,8 @@ export function flightEditsStyles(): string {
  *
  * Takes data as arguments and touches no page state, so the flight store
  * (flight-store.ts), the duty log and the docs-site showcase all call it the same way.
+ * Needs tzCalendarScript() (shared/time.ts) and htmlEscapeScript() (shared/html.ts) in
+ * the same script.
  */
 export function flightEditsScript(): string {
   return `
@@ -36,12 +38,6 @@ export function flightEditsScript(): string {
     const FLIGHT_CHIP_MANUAL    = ${JSON.stringify(statusChip('Manual', 'neutral', 'wb-chip--sm flight-chip'))};
     const FLIGHT_CHIP_REMOVED   = ${JSON.stringify(statusChip('Removed', 'danger', 'wb-chip--sm flight-chip'))};
     const FLIGHT_CHIP_UNMATCHED = ${JSON.stringify(statusChip('Not found', 'warn', 'wb-chip--sm flight-chip'))};
-
-    // HTML-escapes text (null/undefined → '') for markup and attribute values. The one
-    // escape helper for the flight views, the duty log and the alerts.
-    function escHtml(s) {
-      return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
 
     // Applies entries (GET /api/flight-corrections rows) to flights (flight store records)
     // and returns { flights, unmatched, unplaced }, flights sorted by (corrected) start time.
@@ -168,13 +164,13 @@ export function flightEditsScript(): string {
     function flightFormTimes(dateKey, dep, arr) {
       const nextDay = arr < dep;
       const start_time = tzLocalToEpoch(dateKey, dep);
-      const end_time = tzLocalToEpoch(nextDay ? dutyAddDays(dateKey, 1) : dateKey, arr);
+      const end_time = tzLocalToEpoch(nextDay ? tzAddDays(dateKey, 1) : dateKey, arr);
       const secs = end_time - start_time;
       return {
         start_time, end_time, secs, nextDay,
         long: secs > FLIGHT_CONFIRM_SECS,
         tooLong: secs > FLIGHT_MAX_SECS,
-        hint: nextDay ? 'Arrives the next day, ' + fmtBlock(secs) + ' after departure.' : '',
+        hint: nextDay ? 'Arrives the next day, ' + fmtDuration(secs) + ' after departure.' : '',
       };
     }
 

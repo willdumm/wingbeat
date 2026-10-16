@@ -2316,7 +2316,7 @@ export function settingsModalScript(): string {
       const form = document.createElement('div');
       form.className = 'settings-edit-form';
       form.innerHTML =
-        '<input type="text" class="edit-pilot-name" placeholder="Pilot name" value="' + settingsEscAttr(pilot.name) + '" />' +
+        '<input type="text" class="edit-pilot-name" placeholder="Pilot name" value="' + escHtml(pilot.name) + '" />' +
         // The usual duty period, used by the duty log for flying days with no duty times.
         '<label class="settings-edit-form-label">Default duty (start – end)</label>' +
         '<div class="settings-edit-form-times">' +
@@ -2387,20 +2387,16 @@ export function settingsModalScript(): string {
       document.getElementById('settings-add-pilot').open = false;
     });
 
-    function settingsEscAttr(s) {
-      return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-
     function settingsAircraftOptionHtml(a, selectedTail) {
-      return '<option value="' + settingsEscAttr(a.tail_number) + '"' +
+      return '<option value="' + escHtml(a.tail_number) + '"' +
         (a.tail_number === selectedTail ? ' selected' : '') + '>' +
-        settingsEscAttr(a.tail_number + (a.name ? ' – ' + a.name : '')) + '</option>';
+        escHtml(a.tail_number + (a.name ? ' – ' + a.name : '')) + '</option>';
     }
 
     function settingsPilotOptionHtml(p, selectedId) {
       return '<option value="' + p.id + '"' +
         (p.id === selectedId ? ' selected' : '') + '>' +
-        settingsEscAttr(p.name) + '</option>';
+        escHtml(p.name) + '</option>';
     }
 
     // ── Link display card ─────────────────────────────────────────────────────
@@ -2563,7 +2559,7 @@ export function settingsModalScript(): string {
       const form = document.createElement('div');
       form.className = 'settings-edit-form';
       form.innerHTML =
-        '<input type="text" class="edit-device-name" placeholder="Device name" value="' + settingsEscAttr(session.device_name ?? '') + '" />' +
+        '<input type="text" class="edit-device-name" placeholder="Device name" value="' + escHtml(session.device_name ?? '') + '" />' +
         '<div class="settings-edit-form-actions">' +
           '<button class="settings-action-btn save-edit-btn">Save</button>' +
           '<button class="settings-action-btn settings-cancel-btn">Cancel</button>' +

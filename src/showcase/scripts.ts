@@ -25,6 +25,7 @@ import { dashboardScriptsPointPicker } from '../dashboard/scripts/point-picker';
 import { elevationToolScript } from '../shared/elevation';
 import { analyticsScriptsRegion } from '../analytics/scripts/region';
 import { tzCalendarScript } from '../shared/time';
+import { htmlEscapeScript } from '../shared/html';
 import { analyticsScriptsAccounting } from '../analytics/scripts/accounting';
 import { analyticsScriptsStreamgraphRender } from '../analytics/scripts/streamgraph';
 import { analyticsScriptsLayers } from '../analytics/scripts/layers';
@@ -57,6 +58,7 @@ export function showcaseScript(sample: SampleData): string {
     `const formatLocalDateTime = ${formatLocalDateTime.toString()};`,
     `const trackerList = SAMPLE.trackers;`,
     tzCalendarScript(),
+    htmlEscapeScript(),
     themeRuntimeScript(),
     mapLayerColorRuntimeScript(),
     // No app Worker behind the docs site to hold the Carto key, so keyed basemaps use a

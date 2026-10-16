@@ -14,6 +14,8 @@ import { aircraftInfoScript } from '../../shared/aircraft-info';
 import { analyticsScriptsRegion } from './region';
 import { analyticsScriptsAccounting } from './accounting';
 import { tzCalendarScript } from '../../shared/time';
+import { htmlEscapeScript } from '../../shared/html';
+import { editHistoryScript } from '../../shared/edit-history';
 import { analyticsScriptsStreamgraphRender, analyticsScriptsStreamgraph } from './streamgraph';
 import { analyticsScriptsLayers } from './layers';
 import { analyticsScriptsMap } from './map';
@@ -27,10 +29,12 @@ export function analyticsScripts(env: Env): string {
     overlayLegendRuntimeScript(),
     toggleScript(),
     tzCalendarScript(),
+    htmlEscapeScript(),
     flightEditsScript(),
     flightStoreScript(),
     filterScript(),
     formModalScript(),
+    editHistoryScript(),
     segmentedControlScript(),
     settingsModalScript(),
     pilotDutyScript(),

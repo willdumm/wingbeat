@@ -433,7 +433,8 @@ Where the implementation departs from, or adds to, the plan above:
 - **Editor.** It lists completed flights (`getCompleted`), so an in-progress flight is
   editable once it lands. "Set aircraft…" and "Set pilot…" are selects in the selection
   bar; Remove/Restore show according to what's selected. The editor's write helpers
-  (`flightApi`, `flightAssign`, `flightSetFlags`) replace the duty log's `_dutyApi`.
+  (`flightAssign`, `flightSetFlags`, over `apiWrite` in `form-modal.ts`) replace the duty
+  log's `_dutyApi`.
   Manual flights can be removed (and restored) as well as deleted.
 - **Analytics.** The null-coordinate handling ("Unknown location", skipping points-less
   flights in the map layers) landed with the store change (step 2), because manual

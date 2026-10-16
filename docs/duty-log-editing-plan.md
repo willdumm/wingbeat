@@ -354,7 +354,7 @@ unmatched, daySecs, warnings }`.
 
 Formatting and severity:
 
-- An amount over a limit is rounded up to the minute (`fmtBlock(secs, true)`), so it
+- An amount over a limit is rounded up to the minute (`fmtDuration(secs, true)`), so it
   never reads as equal to the limit: 8:00:40 of flight time shows "8:01 … (limit 8:00)".
   An amount under a minimum (rest) is rounded down, so 9:59:30 reads 9:59.
 - Over a limit means a warning colour (`var(--danger)`); nothing is blocked.
@@ -656,8 +656,8 @@ months) through this month. `_buildTypstSource` takes one month's row model or s
 ### Tests
 
 `npm test` (`node --test`, in the nix shell) runs `test/`: `test/harness.mjs` evaluates the
-real script strings of `pilot-duty.ts`, `flight-edits.ts`, `time.ts` and `flight-store.ts`
-in a `node:vm` context with a settable clock. The suites cover the rules in this doc: the
+real script strings of `pilot-duty.ts`, `flight-edits.ts`, `time.ts`, `html.ts` and
+`flight-store.ts` in a `node:vm` context with a settable clock. The suites cover the rules in this doc: the
 (b), (c), (d) and (e) checks, rest days, the quarter and year totals, DST days,
 `applyFlightEdits`, the corrections delta merge, and the flight form's times.
 

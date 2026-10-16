@@ -4,8 +4,8 @@ import { icon } from '../../shared/icons';
  * Flight list rows: groups flights into days and builds the day headings and flight rows.
  * Takes its data as arguments rather than reading dashboard state, so the docs-site
  * showcase (src/showcase/) renders the same list from sample data. Needs dayKey/fmtDay/
- * fmtTime from helpers.ts and the flight-edits.ts helpers (flights are effective flights:
- * corrections marked †, manual flights chipped).
+ * fmtTime from helpers.ts, escHtml (shared/html.ts) and the flight-edits.ts helpers
+ * (flights are effective flights: corrections marked †, manual flights chipped).
  */
 export function dashboardScriptsFlightListRender(): string {
   const chevronIconHtml = icon('chevron-right', { size: 14 });

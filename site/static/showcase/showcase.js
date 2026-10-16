@@ -136,6 +136,50 @@ const trackerList = SAMPLE.trackers;
       const p = _tzParts(unix);
       return p.hour + ':' + p.minute;
     }
+
+    // ── Date keys (YYYY-MM-DD, no timezone involved) and durations ──
+
+    const _TZ_DAY_NAMES  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const _TZ_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    // The date key n days after dateKey (before it for a negative n).
+    function tzAddDays(dateKey, n) {
+      const [y, m, d] = dateKey.split('-').map(Number);
+      return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+    }
+    function tzDateKey(y, m, d) {
+      return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    }
+    // [year, month] n months after month m of year y.
+    function tzAddMonths(y, m, n) {
+      const t = y * 12 + (m - 1) + n;
+      return [Math.floor(t / 12), t % 12 + 1];
+    }
+    // "Mon Oct 3"
+    function tzDateLabel(dateKey) {
+      const [y, m, d] = dateKey.split('-').map(Number);
+      return _TZ_DAY_NAMES[new Date(Date.UTC(y, m - 1, d)).getUTCDay()] + ' ' + _TZ_MONTH_ABBR[m - 1] + ' ' + d;
+    }
+    // "Oct 3" (with the year when it isn't sameYear)
+    function tzShortDate(dateKey, sameYear) {
+      const [y, m, d] = dateKey.split('-').map(Number);
+      return _TZ_MONTH_ABBR[m - 1] + ' ' + d + (y === sameYear ? '' : ', ' + y);
+    }
+
+    // H:MM, rounded down to the minute; up: rounded up instead, for an amount over a
+    // limit, so 8:00:40 against an 8:00 limit reads 8:01, not 8:00. (Rounding down is right
+    // for an amount under a minimum: 9:59:30 of rest reads 9:59.)
+    function fmtDuration(secs, up) {
+      const mins = up ? Math.ceil(secs / 60) : Math.floor(secs / 60);
+      return Math.floor(mins / 60) + ':' + String(mins % 60).padStart(2, '0');
+    }
+  
+
+    // HTML-escapes text (null/undefined → '') for markup and attribute values in double
+    // quotes (& < > "; not ').
+    function escHtml(s) {
+      return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
   
 
     // ── Theme runtime ─────────────────────────────────────────────────────────
@@ -1374,11 +1418,6 @@ const trackerList = SAMPLE.trackers;
     }
   
 
-    function _acEsc(s) {
-      return String(s === null || s === undefined ? '' : s)
-        .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-
     function _acFormatDate(ts) {
       if (!ts) return 'unknown';
       return new Date(ts * 1000).toLocaleDateString();
@@ -1488,17 +1527,17 @@ const trackerList = SAMPLE.trackers;
           var item = items[i];
           var st = _maintenanceStatus(item, estHobbs, estTach);
           rows +=
-            '<div class="ac-sched-row" data-item-id="' + _acEsc(item.id) + '">' +
+            '<div class="ac-sched-row" data-item-id="' + escHtml(item.id) + '">' +
               '<div class="ac-sched-info">' +
                 _acStatusDotHtml(st.status) +
-                '<span class="ac-sched-name">' + _acEsc(item.name) + '</span>' +
+                '<span class="ac-sched-name">' + escHtml(item.name) + '</span>' +
                 _acBadgeHtml(item.schedule_type) +
-                '<span class="ac-sched-due ' + st.status + '">' + _acEsc(st.due_label) + '</span>' +
+                '<span class="ac-sched-due ' + st.status + '">' + escHtml(st.due_label) + '</span>' +
               '</div>' +
               (isAdmin
                 ? '<div class="ac-sched-actions">' +
-                    '<button class="ac-link-btn ac-sched-edit-btn" data-item-id="' + _acEsc(item.id) + '">Edit</button>' +
-                    '<button class="ac-link-btn ac-sched-delete-btn" data-item-id="' + _acEsc(item.id) + '">Delete</button>' +
+                    '<button class="ac-link-btn ac-sched-edit-btn" data-item-id="' + escHtml(item.id) + '">Edit</button>' +
+                    '<button class="ac-link-btn ac-sched-delete-btn" data-item-id="' + escHtml(item.id) + '">Delete</button>' +
                   '</div>'
                 : '') +
             '</div>';
@@ -1557,12 +1596,6 @@ const trackerList = SAMPLE.trackers;
     const FLIGHT_CHIP_MANUAL    = "<span class=\"wb-chip wb-chip--neutral wb-chip--sm flight-chip\"><span class=\"wb-dot wb-dot--neutral wb-chip__dot\"></span>Manual</span>";
     const FLIGHT_CHIP_REMOVED   = "<span class=\"wb-chip wb-chip--danger wb-chip--sm flight-chip\"><span class=\"wb-dot wb-dot--danger wb-chip__dot\"></span>Removed</span>";
     const FLIGHT_CHIP_UNMATCHED = "<span class=\"wb-chip wb-chip--warn wb-chip--sm flight-chip\"><span class=\"wb-dot wb-dot--warn wb-chip__dot\"></span>Not found</span>";
-
-    // HTML-escapes text (null/undefined → '') for markup and attribute values. The one
-    // escape helper for the flight views, the duty log and the alerts.
-    function escHtml(s) {
-      return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
 
     // Applies entries (GET /api/flight-corrections rows) to flights (flight store records)
     // and returns { flights, unmatched, unplaced }, flights sorted by (corrected) start time.
@@ -1689,13 +1722,13 @@ const trackerList = SAMPLE.trackers;
     function flightFormTimes(dateKey, dep, arr) {
       const nextDay = arr < dep;
       const start_time = tzLocalToEpoch(dateKey, dep);
-      const end_time = tzLocalToEpoch(nextDay ? dutyAddDays(dateKey, 1) : dateKey, arr);
+      const end_time = tzLocalToEpoch(nextDay ? tzAddDays(dateKey, 1) : dateKey, arr);
       const secs = end_time - start_time;
       return {
         start_time, end_time, secs, nextDay,
         long: secs > FLIGHT_CONFIRM_SECS,
         tooLong: secs > FLIGHT_MAX_SECS,
-        hint: nextDay ? 'Arrives the next day, ' + fmtBlock(secs) + ' after departure.' : '',
+        hint: nextDay ? 'Arrives the next day, ' + fmtDuration(secs) + ' after departure.' : '',
       };
     }
 
@@ -1719,10 +1752,8 @@ const trackerList = SAMPLE.trackers;
     const _DUTY_TZ = window.APP_SETTINGS.timezone;
     // The PDF isn't themed: it prints in light mode's colors.
     const _DUTY_PDF_THEME = {"trackingHeading":"-0.015em","trackingCaps":"0.09em","ink":"#0F1A24","muted":"#566574","faint":"#7C8A98","rule":"#D3DBE2","ruleSubtle":"#E9EEF2","danger":"#9C2F27","dangerBg":"#FCECEA"};
-    const _DUTY_DAY_NAMES   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     const _DUTY_MONTH_NAMES = ['January','February','March','April','May','June',
                                'July','August','September','October','November','December'];
-    const _DUTY_MONTH_ABBR  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
     // §135.267, unscheduled, one-pilot crew: the one place the numbers live. A two-pilot
     // crew would get 10 h of flight time under (b) and (c) (not yet implemented: no flight
@@ -1774,39 +1805,10 @@ const trackerList = SAMPLE.trackers;
       return !(f.edit && f.edit.unpaid);
     }
 
-    // H:MM, rounded down to the minute; up: rounded up instead, for an amount over a
-    // limit, so 8:00:40 against an 8:00 limit reads 8:01, not 8:00. (Rounding down is right
-    // for an amount under a minimum: 9:59:30 of rest reads 9:59.)
-    function fmtBlock(secs, up) {
-      const mins = up ? Math.ceil(secs / 60) : Math.floor(secs / 60);
-      return Math.floor(mins / 60) + ':' + String(mins % 60).padStart(2, '0');
-    }
-
     // ── Dates and times in the duty timezone ──
 
-    // Dates and times come from tzCalendarScript() (shared/time.ts): unixToTzDateStr,
-    // unixToTzTime, tzLocalToEpoch.
-    function dutyAddDays(dateKey, n) {
-      const [y, m, d] = dateKey.split('-').map(Number);
-      return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
-    }
-    function _dutyKey(y, m, d) {
-      return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-    }
-    function _dutyAddMonths(y, m, n) {
-      const t = y * 12 + (m - 1) + n;
-      return [Math.floor(t / 12), t % 12 + 1];
-    }
-    // "Mon Oct 3"
-    function dutyDateLabel(dateKey) {
-      const [y, m, d] = dateKey.split('-').map(Number);
-      return _DUTY_DAY_NAMES[new Date(Date.UTC(y, m - 1, d)).getUTCDay()] + ' ' + _DUTY_MONTH_ABBR[m - 1] + ' ' + d;
-    }
-    // "Oct 3" (with the year when it isn't sameYear)
-    function _dutyShortDate(dateKey, sameYear) {
-      const [y, m, d] = dateKey.split('-').map(Number);
-      return _DUTY_MONTH_ABBR[m - 1] + ' ' + d + (y === sameYear ? '' : ', ' + y);
-    }
+    // Dates, date keys (tzAddDays, tzDateKey, tzDateLabel, ...) and H:MM durations
+    // (fmtDuration) come from tzCalendarScript() (shared/time.ts).
 
     // [year, month] of the current month in the duty timezone.
     function currentDutyMonth() {
@@ -1822,7 +1824,7 @@ const trackerList = SAMPLE.trackers;
     function _dutyInterval(dateKey, times) {
       if (!times || !times.duty_start || !times.duty_end) return null;
       const start = tzLocalToEpoch(dateKey, times.duty_start);
-      const end = tzLocalToEpoch(times.duty_end > times.duty_start ? dateKey : dutyAddDays(dateKey, 1), times.duty_end);
+      const end = tzLocalToEpoch(times.duty_end > times.duty_start ? dateKey : tzAddDays(dateKey, 1), times.duty_end);
       return { start, end, secs: end - start, duty_start: times.duty_start, duty_end: times.duty_end };
     }
 
@@ -1874,10 +1876,10 @@ const trackerList = SAMPLE.trackers;
         const out = [];
         if (flightsByDate[dateKey]) out.push('Flights on a rest day');
         if (rec.rest_designated_at != null && unixToTzDateStr(rec.rest_designated_at) >= dateKey) {
-          out.push('Rest day designated ' + _dutyShortDate(unixToTzDateStr(rec.rest_designated_at), year) +
+          out.push('Rest day designated ' + tzShortDate(unixToTzDateStr(rec.rest_designated_at), year) +
             ', not in advance');
         }
-        const prev = spanOf(dutyAddDays(dateKey, -1));
+        const prev = spanOf(tzAddDays(dateKey, -1));
         if (prev && prev.end > tzLocalToEpoch(dateKey, '00:00')) {
           out.push('Previous duty or flight ended ' + unixToTzTime(prev.end) + ', so this rest is under 24 h');
         }
@@ -1982,20 +1984,20 @@ const trackerList = SAMPLE.trackers;
       function dailyFlightOf(dateKey) {
         if (method === 'b') {
           const w = worst24Of(dateKey);
-          return { secs: w.secs, text: fmtBlock(w.secs, true) + ' flight time in the 24 h to ' + (w.end ? unixToTzTime(w.end) : '') };
+          return { secs: w.secs, text: fmtDuration(w.secs, true) + ' flight time in the 24 h to ' + (w.end ? unixToTzTime(w.end) : '') };
         }
         const span = spanOf(dateKey);
         if (!span || !dutyOf(dateKey)) return { secs: 0, text: '' };
         const inDuty = flights.filter(f => f.start_time >= span.start && f.start_time < span.end);
         const last135 = Math.max(-Infinity, ...inDuty.filter(f => !f.part91).map(f => f.end_time));
         const secs = inDuty.reduce((t, f) => t + (f.commercial && f.start_time < last135 ? f.secs : 0), 0);
-        return { secs, text: fmtBlock(secs, true) + ' flight time in the duty period' };
+        return { secs, text: fmtDuration(secs, true) + ' flight time in the duty period' };
       }
 
       // The longest stretch of [from, to] outside every duty period and flight (§135.267(d)).
       function longestRest(from, to) {
         const busy = [];
-        for (let k = dutyAddDays(unixToTzDateStr(from), -1); k <= unixToTzDateStr(to); k = dutyAddDays(k, 1)) {
+        for (let k = tzAddDays(unixToTzDateStr(from), -1); k <= unixToTzDateStr(to); k = tzAddDays(k, 1)) {
           const d = dutyOf(k);
           if (d) busy.push([d.start, d.end]);
           for (const f of flightsByDate[k] || []) busy.push([f.start_time, f.end_time]);
@@ -2018,7 +2020,7 @@ const trackerList = SAMPLE.trackers;
         const rec = recordByDate[dateKey] || null;
         const dayFlights = flightsByDate[dateKey] || [];
         const duty = dutyOf(dateKey);
-        const prevKey = dutyAddDays(dateKey, -1);
+        const prevKey = tzAddDays(dateKey, -1);
         const prevDuty = dutyOf(prevKey);
         const span = spanOf(dateKey);
         const rest = !!(rec && rec.rest);
@@ -2028,7 +2030,7 @@ const trackerList = SAMPLE.trackers;
         warnings.push(...restProblems(dateKey, year));
         const daily = dailyFlightOf(dateKey);
         if (daily.secs > L.flightDaySecs) {
-          warnings.push(daily.text + ' (' + _ref + ' limit ' + fmtBlock(L.flightDaySecs) + ')');
+          warnings.push(daily.text + ' (' + _ref + ' limit ' + fmtDuration(L.flightDaySecs) + ')');
         }
         // Without a duty period the duty and rest checks have nothing to go on.
         if (dayFlights.length && !duty && !rest) {
@@ -2041,8 +2043,8 @@ const trackerList = SAMPLE.trackers;
           const need = L.extendedRest.find(r => prevOver <= r.overSecs).restSecs;
           const restSecs = span.start - prevSpan.end;
           if (restSecs < need) {
-            warnings.push('Rest ' + fmtBlock(Math.max(0, restSecs)) + ' after going ' + fmtBlock(prevOver, true) +
-              ' over the flight time limit on ' + _dutyShortDate(prevKey, year) + ' (§135.267(e) minimum ' + fmtBlock(need) + ')');
+            warnings.push('Rest ' + fmtDuration(Math.max(0, restSecs)) + ' after going ' + fmtDuration(prevOver, true) +
+              ' over the flight time limit on ' + tzShortDate(prevKey, year) + ' (§135.267(e) minimum ' + fmtDuration(need) + ')');
           }
         }
         // (c) needs a regularly assigned duty period: the pilot's default duty.
@@ -2055,22 +2057,22 @@ const trackerList = SAMPLE.trackers;
           const restSecs = longestRest(duty.end - 86400, duty.end);
           if (restSecs < L.restSecs) {
             warnings.push((duty.secs > 86400 - L.restSecs
-              ? 'Duty period ' + fmtBlock(duty.secs, true) + ' leaves at most ' + fmtBlock(Math.max(0, 86400 - duty.secs)) + ' of rest'
-              : 'Longest rest ' + fmtBlock(restSecs)) +
-              ' in the 24 h before duty ended ' + unixToTzTime(duty.end) + ' (§135.267(d) minimum ' + fmtBlock(L.restSecs) + ')');
+              ? 'Duty period ' + fmtDuration(duty.secs, true) + ' leaves at most ' + fmtDuration(Math.max(0, 86400 - duty.secs)) + ' of rest'
+              : 'Longest rest ' + fmtDuration(restSecs)) +
+              ' in the 24 h before duty ended ' + unixToTzTime(duty.end) + ' (§135.267(d) minimum ' + fmtDuration(L.restSecs) + ')');
           }
         }
         if (duty && method === 'c') {
           if (duty.secs > L.dutySecs) {
-            warnings.push('Duty period ' + fmtBlock(duty.secs, true) + ' (§135.267(c) limit ' + fmtBlock(L.dutySecs) + ')');
+            warnings.push('Duty period ' + fmtDuration(duty.secs, true) + ' (§135.267(c) limit ' + fmtDuration(L.dutySecs) + ')');
           }
           // The rest between two duty periods, checked once, on the later day: that covers
           // both "preceded by" and "followed by". Busy time that runs into this duty period
           // (an overnight flight, a previous duty past its start) leaves no rest at all.
-          const prevEnd = Math.max(-Infinity, ...[prevSpan, spanOf(dutyAddDays(dateKey, -2))]
+          const prevEnd = Math.max(-Infinity, ...[prevSpan, spanOf(tzAddDays(dateKey, -2))]
             .filter(x => x && x.start < span.start).map(x => x.end));
           if (span.start - prevEnd < L.restSecs) {
-            warnings.push('Rest before duty ' + fmtBlock(Math.max(0, span.start - prevEnd)) + ' (§135.267(c) minimum ' + fmtBlock(L.restSecs) + ')');
+            warnings.push('Rest before duty ' + fmtDuration(Math.max(0, span.start - prevEnd)) + ' (§135.267(c) minimum ' + fmtDuration(L.restSecs) + ')');
           }
           if (defaultDuty && !duty.isDefault &&
               (duty.duty_start !== defaultDuty.duty_start || duty.duty_end !== defaultDuty.duty_end)) {
@@ -2097,7 +2099,7 @@ const trackerList = SAMPLE.trackers;
 
         return {
           dateKey,
-          label: dutyDateLabel(dateKey),
+          label: tzDateLabel(dateKey),
           record: rec,
           duty,
           defaultDuty: !!(duty && duty.isDefault),
@@ -2117,12 +2119,12 @@ const trackerList = SAMPLE.trackers;
       const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
       const lastDay = isCurrentMonth ? Number(todayKey.slice(8, 10)) : daysInMonth;
       const days = [];
-      for (let d = 1; d <= lastDay; d++) days.push(buildDay(_dutyKey(year, month, d)));
-      const prevDay = buildDay(dutyAddDays(_dutyKey(year, month, 1), -1));
+      for (let d = 1; d <= lastDay; d++) days.push(buildDay(tzDateKey(year, month, d)));
+      const prevDay = buildDay(tzAddDays(tzDateKey(year, month, 1), -1));
 
       const upcoming = isCurrentMonth
         ? dayRecords.filter(r => r.date > todayKey).sort((a, b) => a.date < b.date ? -1 : 1).map(r => ({
-            dateKey: r.date, label: dutyDateLabel(r.date), record: r, rest: !!r.rest,
+            dateKey: r.date, label: tzDateLabel(r.date), record: r, rest: !!r.rest,
             restDesignatedAt: r.rest ? r.rest_designated_at : null, note: r.note,
             duty: _dutyInterval(r.date, r), defaultDuty: false,
           }))
@@ -2131,12 +2133,12 @@ const trackerList = SAMPLE.trackers;
       // 3. Totals: as of now for the current month, as of month end for a past one, so a
       // past month's PDF comes out the same whenever it's exported. Planned rest later in
       // the quarter counts as "planned".
-      const [nextY, nextM] = _dutyAddMonths(year, month, 1);
-      const asOf = isCurrentMonth ? nowEpoch : tzLocalToEpoch(_dutyKey(nextY, nextM, 1), '00:00');
+      const [nextY, nextM] = tzAddMonths(year, month, 1);
+      const asOf = isCurrentMonth ? nowEpoch : tzLocalToEpoch(tzDateKey(nextY, nextM, 1), '00:00');
       const totals = dutyTotals(completed, pilotId, asOf, {
         days: dayRecords,
         defaultDuty,
-        asOfLabel: isCurrentMonth ? 'now' : _dutyShortDate(_dutyKey(year, month, daysInMonth), null),
+        asOfLabel: isCurrentMonth ? 'now' : tzShortDate(tzDateKey(year, month, daysInMonth), null),
       });
 
       return {
@@ -2172,10 +2174,10 @@ const trackerList = SAMPLE.trackers;
       const asOfDateKey = unixToTzDateStr(asOf - 1);
       const [year, month] = asOfDateKey.split('-').map(Number);
       const qy = year, qm = Math.floor((month - 1) / 3) * 3 + 1;
-      const [pqy, pqm] = _dutyAddMonths(qy, qm, -3);
-      const [nqy, nqm] = _dutyAddMonths(qy, qm, 3);
-      const qStartKey = _dutyKey(qy, qm, 1);
-      const qEndKey = dutyAddDays(_dutyKey(nqy, nqm, 1), -1);
+      const [pqy, pqm] = tzAddMonths(qy, qm, -3);
+      const [nqy, nqm] = tzAddMonths(qy, qm, 3);
+      const qStartKey = tzDateKey(qy, qm, 1);
+      const qEndKey = tzAddDays(tzDateKey(nqy, nqm, 1), -1);
       const quarterName = (y, m) => 'Q' + ((m - 1) / 3 + 1) + ' ' + y;
       function flownSince(dateKey) {
         const from = tzLocalToEpoch(dateKey, '00:00');
@@ -2196,16 +2198,16 @@ const trackerList = SAMPLE.trackers;
       }
       // Days still to come in the quarter.
       let daysLeft = 0;
-      const tomorrow = dutyAddDays(asOfDateKey, 1);
-      for (let k = tomorrow > qStartKey ? tomorrow : qStartKey; k <= qEndKey; k = dutyAddDays(k, 1)) daysLeft++;
+      const tomorrow = tzAddDays(asOfDateKey, 1);
+      for (let k = tomorrow > qStartKey ? tomorrow : qStartKey; k <= qEndKey; k = tzAddDays(k, 1)) daysLeft++;
 
       const limitRow = (label, secs, limit) => ({ label, secs, limit, over: secs > limit });
       return {
         asOfLabel,
         hours: [
           limitRow(quarterName(qy, qm), flownSince(qStartKey), _DUTY_LIMITS.quarterSecs),
-          limitRow(quarterName(pqy, pqm) + ' + ' + quarterName(qy, qm), flownSince(_dutyKey(pqy, pqm, 1)), _DUTY_LIMITS.twoQuarterSecs),
-          limitRow('Calendar year ' + qy, flownSince(_dutyKey(qy, 1, 1)), _DUTY_LIMITS.yearSecs),
+          limitRow(quarterName(pqy, pqm) + ' + ' + quarterName(qy, qm), flownSince(tzDateKey(pqy, pqm, 1)), _DUTY_LIMITS.twoQuarterSecs),
+          limitRow('Calendar year ' + qy, flownSince(tzDateKey(qy, 1, 1)), _DUTY_LIMITS.yearSecs),
         ],
         flight24: limitRow('Last 24 h', flight24, _DUTY_LIMITS.flightDaySecs),
         rest: {
@@ -2223,7 +2225,7 @@ const trackerList = SAMPLE.trackers;
     function dutyDayText(day, year) {
       if (day.rest) {
         return 'Rest' + (day.restDesignatedAt != null
-          ? ' · designated ' + _dutyShortDate(unixToTzDateStr(day.restDesignatedAt), year) : '');
+          ? ' · designated ' + tzShortDate(unixToTzDateStr(day.restDesignatedAt), year) : '');
       }
       if (day.duty) return day.duty.duty_start + '–' + day.duty.duty_end + (day.defaultDuty ? ' (default)' : '');
       return '—';
@@ -2246,7 +2248,7 @@ const trackerList = SAMPLE.trackers;
         const r = restLost[0];
         if (!r || r.rest_designated_at == null) return null;
         return 'This rest day was designated ' +
-          _dutyShortDate(unixToTzDateStr(r.rest_designated_at), Number(r.date.slice(0, 4))) +
+          tzShortDate(unixToTzDateStr(r.rest_designated_at), Number(r.date.slice(0, 4))) +
           '. Unmarking it drops that designation: marking it rest again records the day you do. Save?';
       }
       if (!replaced.length) return null;
@@ -2322,7 +2324,7 @@ const trackerList = SAMPLE.trackers;
             '<td>' + time(f, 'start_time') + '</td>' +
             '<td>' + label(f, 'destination_label') + '</td>' +
             '<td>' + time(f, 'end_time') + '</td>' +
-            '<td class="duty-col-block">' + fmtBlock(f.secs) + '</td>' +
+            '<td class="duty-col-block">' + fmtDuration(f.secs) + '</td>' +
             (edit ? '<td class="duty-col-edit"><button class="duty-edit-btn" data-duty-target="' +
               action(() => edit.onFlight(f)) + '" aria-label="Edit flight" title="Edit flight">' + _DUTY_ICON_EDIT + '</button></td>' : '') +
             '</tr>';
@@ -2347,7 +2349,7 @@ const trackerList = SAMPLE.trackers;
         if (day.flights.length > 0) {
           html += '<tr class="duty-row-day-total">' +
             '<td class="duty-total-label" colspan="7">Day total</td>' +
-            '<td class="duty-col-block">' + fmtBlock(day.daySecs) + '</td>' +
+            '<td class="duty-col-block">' + fmtDuration(day.daySecs) + '</td>' +
             (edit ? '<td></td>' : '') + '</tr>';
         }
         for (const w of day.warnings) {
@@ -2356,7 +2358,7 @@ const trackerList = SAMPLE.trackers;
         }
       }
       html += '</tbody></table>' +
-        '<div class="duty-month-total">Month total: ' + fmtBlock(data.monthSecs) + '</div>';
+        '<div class="duty-month-total">Month total: ' + fmtDuration(data.monthSecs) + '</div>';
 
       content.innerHTML = html;
       content.onclick = e => {
@@ -2370,8 +2372,8 @@ const trackerList = SAMPLE.trackers;
         '<div class="pilot-duty-limits">' + escHtml(data.limitsLabel) + '</div>' +
         '<table class="totals-table"><tbody>' +
         totals.hours.map(t =>
-          '<tr' + (t.over ? ' class="duty-over"' : '') + '><td>' + t.label + '</td><td>' + fmtBlock(t.secs, t.over) +
-          ' <span class="totals-limit">/ ' + fmtBlock(t.limit) + '</span></td></tr>').join('') +
+          '<tr' + (t.over ? ' class="duty-over"' : '') + '><td>' + t.label + '</td><td>' + fmtDuration(t.secs, t.over) +
+          ' <span class="totals-limit">/ ' + fmtDuration(t.limit) + '</span></td></tr>').join('') +
         '<tr' + (r.short ? ' class="duty-over"' : '') + '><td>' + r.label + '</td><td>' + r.taken +
           (r.scheduled ? ' + ' + r.scheduled + ' planned' : '') +
           ' <span class="totals-limit">/ ' + r.required + '</span></td></tr>' +
@@ -2385,7 +2387,7 @@ const trackerList = SAMPLE.trackers;
           ? '<ul class="duty-upcoming-list">' + data.upcoming.map(u => {
               upTargets.push(() => edit.onDay(u.dateKey));
               return '<li class="duty-upcoming-item' + (u.rest ? ' duty-row-rest' : '') + '">' +
-                '<span class="duty-upcoming-date">' + escHtml(_dutyShortDate(u.dateKey, year)) +
+                '<span class="duty-upcoming-date">' + escHtml(tzShortDate(u.dateKey, year)) +
                   ' <span class="duty-upcoming-dow">' + escHtml(u.label.slice(0, 3)) + '</span></span>' +
                 '<span class="duty-upcoming-what">' + escHtml(dutyDayText(u, year)) +
                   (u.note ? '<span class="duty-note">' + escHtml(u.note) + '</span>' : '') + '</span>' +
@@ -2574,11 +2576,11 @@ const trackerList = SAMPLE.trackers;
         const p = data.prevDay;
         if (!p) return '';
         const parts = [p.rest || p.duty ? dutyDayText(p, data.year) : 'No duty recorded'];
-        if (p.daySecs) parts.push(fmtBlock(p.daySecs) + ' flight time');
+        if (p.daySecs) parts.push(fmtDuration(p.daySecs) + ' flight time');
         if (p.flights.length) {
           parts.push('flights ' + p.flights.map(f => unixToTzTime(f.start_time) + '–' + unixToTzTime(f.end_time)).join(', '));
         }
-        return '  [' + _typStr(_dutyShortDate(p.dateKey, data.year)) + '], table.cell(colspan: ' + (COLS - 1) + ')[#text(fill: muted)[_' +
+        return '  [' + _typStr(tzShortDate(p.dateKey, data.year)) + '], table.cell(colspan: ' + (COLS - 1) + ')[#text(fill: muted)[_' +
           _typStr('Previous day: ' + parts.join(' · ')) + '_]],\n';
       }
 
@@ -2610,7 +2612,7 @@ const trackerList = SAMPLE.trackers;
               cell('start_time', unixToTzTime(f.start_time)) + ', ' +
               cell('destination_label', f.destination_label || '—') + ', ' +
               cell('end_time', unixToTzTime(f.end_time)) + ', ' +
-              '[' + fmtBlock(f.secs) + '],\n';
+              '[' + fmtDuration(f.secs) + '],\n';
             // Remarks (Part 91, a remark) span the row under the flight, from A/C on.
             const remarks = dutyRemarksText(f);
             if (remarks) {
@@ -2623,7 +2625,7 @@ const trackerList = SAMPLE.trackers;
                 flightEntrySummary(e) + ') are not counted.') + '],\n';
           }
           if (day.flights.length > 0) {
-            rows += '  table.cell(colspan: ' + (COLS - 1) + ', align: right)[#text(fill: muted)[Day total]], [*' + fmtBlock(day.daySecs) + '*],\n';
+            rows += '  table.cell(colspan: ' + (COLS - 1) + ', align: right)[#text(fill: muted)[Day total]], [*' + fmtDuration(day.daySecs) + '*],\n';
           }
           for (const w of day.warnings) rows += '  ' + warnCell(w);
         }
@@ -2634,7 +2636,7 @@ const trackerList = SAMPLE.trackers;
           '  table.header([DATE], [DUTY], [A/C], [ORIGIN], [DEP], [DEST], [ARR], [TIME], table.hline(stroke: 0.8pt + ink)),\n' +
           rows +
           '  table.hline(stroke: 0.8pt + ink),\n' +
-          '  table.cell(colspan: ' + (COLS - 1) + ', align: right)[*Month total*], [*' + fmtBlock(data.monthSecs) + '*],\n' +
+          '  table.cell(colspan: ' + (COLS - 1) + ', align: right)[*Month total*], [*' + fmtDuration(data.monthSecs) + '*],\n' +
           ')\n\n'
         );
       }
@@ -2643,7 +2645,7 @@ const trackerList = SAMPLE.trackers;
       function totalsBlock(totals) {
         const r = totals.rest;
         const totalsRows = totals.hours.map(t =>
-          '  [' + _typStr(t.label) + '], [' + (t.over ? overFill + '[*' + fmtBlock(t.secs, true) + '*]' : fmtBlock(t.secs)) + '], [' + fmtBlock(t.limit) + '],\n'
+          '  [' + _typStr(t.label) + '], [' + (t.over ? overFill + '[*' + fmtDuration(t.secs, true) + '*]' : fmtDuration(t.secs)) + '], [' + fmtDuration(t.limit) + '],\n'
         ).join('') +
           '  [' + _typStr(r.label) + '], [' + (r.short ? overFill + '[*' + r.taken + '*]' : String(r.taken)) +
           (r.scheduled ? ' + ' + r.scheduled + ' planned' : '') + '], [' + r.required + '],\n';
@@ -2669,11 +2671,11 @@ const trackerList = SAMPLE.trackers;
         const byMonth = qMonths.map(m => {
           const restDays = m.days.filter(d => d.rest && !d.warnings.length).length;
           const warnDays = m.days.filter(d => d.warnings.length).length;
-          return '  [' + _typStr(dutyPeriodLabel(m)) + '], [' + fmtBlock(m.monthSecs) + '], [' + restDays + '], [' +
+          return '  [' + _typStr(dutyPeriodLabel(m)) + '], [' + fmtDuration(m.monthSecs) + '], [' + restDays + '], [' +
             (warnDays ? overFill + '[*' + warnDays + '*]' : '0') + '],\n';
         }).join('');
         const warnRows = qMonths.flatMap(m => m.days.flatMap(d => d.warnings.map(w =>
-          '  [' + _typStr(_dutyShortDate(d.dateKey, m.year)) + '], [' + overFill + '[' + _typStr(w) + ']],\n'))).join('');
+          '  [' + _typStr(tzShortDate(d.dateKey, m.year)) + '], [' + overFill + '[' + _typStr(w) + ']],\n'))).join('');
         return (
           '#pagebreak()\n' +
           '#text(size: 13pt, weight: "bold")[' + _typStr(qName + ' summary') + ']\n' +

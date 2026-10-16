@@ -42,16 +42,16 @@ describe('tzCalendarScript', () => {
     assert.equal(engine.unixToTzDateStr(utc('2026-11-01T10:30:00Z')), '2026-11-01');
   });
 
-  test('dutyAddDays crosses month and year ends', () => {
-    assert.equal(engine.dutyAddDays('2026-02-28', 1), '2026-03-01');
-    assert.equal(engine.dutyAddDays('2026-01-01', -1), '2025-12-31');
-    assert.equal(engine.dutyAddDays('2026-03-08', 1), '2026-03-09');
+  test('tzAddDays crosses month and year ends', () => {
+    assert.equal(engine.tzAddDays('2026-02-28', 1), '2026-03-01');
+    assert.equal(engine.tzAddDays('2026-01-01', -1), '2025-12-31');
+    assert.equal(engine.tzAddDays('2026-03-08', 1), '2026-03-09');
   });
 });
 
 describe('duty log across DST', () => {
   for (const [label, month, dstDay] of [['spring forward', '2026-03', '2026-03-08'], ['fall back', '2026-11', '2026-11-01']]) {
-    const before = engine.dutyAddDays(dstDay, -1), after = engine.dutyAddDays(dstDay, 1);
+    const before = engine.tzAddDays(dstDay, -1), after = engine.tzAddDays(dstDay, 1);
     const keys = [before, dstDay, after];
 
     test(`${label}: every day of the month once, in order`, () => {
@@ -60,7 +60,7 @@ describe('duty log across DST', () => {
       assert.equal(new Set(dk).size, dk.length);
       assert.equal(dk[0], month + '-01');
       assert.ok(dk.includes(dstDay));
-      for (let i = 1; i < dk.length; i++) assert.equal(dk[i], engine.dutyAddDays(dk[i - 1], 1));
+      for (let i = 1; i < dk.length; i++) assert.equal(dk[i], engine.tzAddDays(dk[i - 1], 1));
     });
 
     test(`${label}: regular duty and flying on the days around it give no warnings`, () => {

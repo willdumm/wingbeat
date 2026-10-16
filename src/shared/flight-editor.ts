@@ -9,8 +9,9 @@ import { MAX_FLIGHT_TEXT_LENGTH } from './record-limits';
  * modals and the duty log's own flight form. See docs/flight-editor-plan.md, §4.
  *
  * The view lives in the settings modal (settings.ts places flightEditorMarkup()); the
- * script needs the flight store, flight-edits.ts, form-modal.ts, segmented-control.ts,
- * tzCalendarScript() and the duty log's date helpers (pilot-duty.ts), all on both pages.
+ * script needs the flight store, flight-edits.ts, form-modal.ts (apiWrite,
+ * runFormAction), segmented-control.ts, edit-history.ts, html.ts (escHtml) and
+ * tzCalendarScript(), all on both pages.
  */
 export function flightEditorMarkup(): string {
   return /* html */ `
@@ -227,7 +228,7 @@ export function flightEditorScript(): string {
       let html = '';
       for (const [e, why] of unapplied) {
         html += '<div class="fe-row fe-row-unmatched"><span></span><span class="fe-unmatched-text">' +
-          FLIGHT_CHIP_UNMATCHED + ' ' + escHtml(dutyDateLabel(unixToTzDateStr(e.flight_start_time)) + ' ' +
+          FLIGHT_CHIP_UNMATCHED + ' ' + escHtml(tzDateLabel(unixToTzDateStr(e.flight_start_time)) + ' ' +
           unixToTzTime(e.flight_start_time)) + ': ' + escHtml(why) + '; its corrections (' +
           escHtml(flightEntrySummary(e)) + ') aren’t applied.' +
           (_feCanEdit ? '<button class="fe-link-btn" data-fe-delete-entry="' + e.id + '">Delete</button>' : '') +
@@ -265,9 +266,9 @@ export function flightEditorScript(): string {
         '<input type="checkbox" class="fe-check" aria-label="Select flight"' + (sel ? ' checked' : '') + (_feCanEdit ? '' : ' disabled') + '>' +
         (_feCanEdit
           ? '<button type="button" class="fe-date fe-open" aria-label="' +
-            escHtml('Edit flight ' + dutyDateLabel(unixToTzDateStr(f.start_time)) + ' ' + unixToTzTime(f.start_time)) + '">' +
-            escHtml(dutyDateLabel(unixToTzDateStr(f.start_time))) + '</button>'
-          : '<span class="fe-date">' + escHtml(dutyDateLabel(unixToTzDateStr(f.start_time))) + '</span>') +
+            escHtml('Edit flight ' + tzDateLabel(unixToTzDateStr(f.start_time)) + ' ' + unixToTzTime(f.start_time)) + '">' +
+            escHtml(tzDateLabel(unixToTzDateStr(f.start_time))) + '</button>'
+          : '<span class="fe-date">' + escHtml(tzDateLabel(unixToTzDateStr(f.start_time))) + '</span>') +
         '<span class="fe-times">' + unixToTzTime(f.start_time) + flightEditedMark(f, ['start_time']) + '–' +
           unixToTzTime(f.end_time) + flightEditedMark(f, ['end_time']) + '</span>' +
         '<span class="fe-route">' + escHtml(f.origin_label || '—') + flightEditedMark(f, ['origin_label']) + ' → ' +
@@ -275,7 +276,7 @@ export function flightEditorScript(): string {
           (manual ? FLIGHT_CHIP_MANUAL : '') + (removed ? FLIGHT_CHIP_REMOVED : '') + '</span>' +
         '<span class="fe-ac">' + escHtml(f.aircraft_tail || '—') + '</span>' +
         '<span class="fe-pilot">' + escHtml(f.pilot_name || '—') + '</span>' +
-        '<span class="fe-dur">' + fmtBlock(secs) + '</span>' +
+        '<span class="fe-dur">' + fmtDuration(secs) + '</span>' +
         flightRemarksHtml(f) +
       '</div>';
     }
@@ -325,52 +326,6 @@ export function flightEditorScript(): string {
     // Corrections saved from the form (or a poll's new flights) show up in the open list.
     flightStore.onChange(_feRender);
 
-    // Sends a flight write; throws with the server's message when it fails.
-    async function flightApi(method, url, body) {
-      const resp = await fetch(url, {
-        method,
-        headers: body ? { 'Content-Type': 'application/json' } : undefined,
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(err.error || ('HTTP ' + resp.status));
-      }
-      return resp.json();
-    }
-
-    // "Last changed by <user>, <date> <time>" for a duty record into el, from its edit
-    // history (GET /api/edit-history; entities and key as in migrations 0003 and 0004); el
-    // stays empty when it has none. entities: one entity, or several sharing the key (a
-    // tracked flight's corrections and its aircraft/pilot), whose newest change is shown.
-    // Shared by the flight form and the duty log's day form.
-    async function showLastEdit(el, entities, key) {
-      el.textContent = '';
-      el.dataset.editKey = key;   // the day form asks again when its date changes
-      try {
-        const resp = await fetch('/api/edit-history?entity=' + encodeURIComponent([].concat(entities).join(',')) +
-          '&key=' + encodeURIComponent(key) + '&limit=2');
-        if (!resp.ok) return;
-        const [h, prev] = (await resp.json()).history;
-        if (!h || el.dataset.editKey !== key) return;
-        // An aircraft/pilot change on its own says which; one saved together with the
-        // flight's corrections (the flight form writes both in one batch) is a plain change.
-        const withPrev = prev && prev.entity !== h.entity && prev.at === h.at && prev.user_id === h.user_id;
-        el.textContent = (h.entity === 'flight_assignment' && !withPrev ? _feAssignmentChanged(h) : 'Last changed') +
-          ' by ' + (h.user_name || 'an unknown user') + ', ' +
-          dutyDateLabel(unixToTzDateStr(h.at)) + ' ' + unixToTzTime(h.at) + '.';
-      } catch (_) {}
-    }
-
-    // "Pilot last changed", "Aircraft last changed" or both, for a flight_assignment
-    // history row (before/after: { pilot_id, aircraft_tail } as JSON).
-    function _feAssignmentChanged(h) {
-      let before = {}, after = {};
-      try { before = JSON.parse(h.before) || {}; after = JSON.parse(h.after) || {}; } catch (_) {}
-      const aircraft = before.aircraft_tail !== after.aircraft_tail, pilot = before.pilot_id !== after.pilot_id;
-      return (aircraft && pilot ? 'Aircraft and pilot' : aircraft ? 'Aircraft' : pilot ? 'Pilot' : 'Aircraft or pilot') + ' last changed';
-    }
-
     // The bulk route's key for a flight: its tracker's original start time, or its row.
     function _feFlightRef(f) {
       if (f.tracker_id == null) return { entry_id: f.edit.entry.id };
@@ -382,13 +337,13 @@ export function flightEditorScript(): string {
     function flightAssign(flights, assign) {
       const tracked = flights.filter(f => f.tracker_id != null);
       const manual = flights.filter(f => f.tracker_id == null);
-      return flightApi('PUT', '/api/flights/assignment', {
+      return apiWrite('PUT', '/api/flights/assignment', {
         flight_ids: tracked.map(f => f.id), entry_ids: manual.map(f => f.edit.entry.id), ...assign,
       });
     }
 
     function flightSetFlags(flights, set) {
-      return flightApi('POST', '/api/flight-corrections/bulk', { flights: flights.map(_feFlightRef), set });
+      return apiWrite('POST', '/api/flight-corrections/bulk', { flights: flights.map(_feFlightRef), set });
     }
 
     async function _feBulk(fn) {
@@ -427,7 +382,7 @@ export function flightEditorScript(): string {
     async function deleteUnappliedCorrections(entryId, reload) {
       if (!confirm('Delete these corrections? The flight they belonged to is no longer in the tracker’s history.')) return false;
       try {
-        await flightApi('DELETE', '/api/flight-corrections/' + entryId);
+        await apiWrite('DELETE', '/api/flight-corrections/' + entryId);
       } catch (e) {
         alert('Delete failed: ' + (e && e.message ? e.message : String(e)));
         return false;
@@ -487,7 +442,7 @@ export function flightEditorScript(): string {
         bodyHtml:
           (tracked
             ? '<p class="form-modal-hint">Corrections show everywhere except the recorded track. Tracker: ' +
-              escHtml(dutyDateLabel(unixToTzDateStr(orig.start_time)) + ', ' + unixToTzTime(orig.start_time) + '–' +
+              escHtml(tzDateLabel(unixToTzDateStr(orig.start_time)) + ', ' + unixToTzTime(orig.start_time) + '–' +
               unixToTzTime(orig.end_time) + ', ' + (orig.origin_label || '—') + ' → ' + (orig.destination_label || '—')) + '.</p>'
             : '') +
           (removed ? '<p class="form-modal-hint">' + FLIGHT_CHIP_REMOVED + ' Hidden everywhere except the flight editor.</p>' : '') +
@@ -622,7 +577,7 @@ export function flightEditorScript(): string {
         if (typeof v === 'string') { errorEl.textContent = v; return; }
         // A long flight is most likely a mistyped time read as the next day.
         const t = readTimes();
-        if (t.long && timesChanged(t) && !confirm('This flight is ' + fmtBlock(t.secs) + ' long' + (t.nextDay ? ', arriving the next day' : '') +
+        if (t.long && timesChanged(t) && !confirm('This flight is ' + fmtDuration(t.secs) + ' long' + (t.nextDay ? ', arriving the next day' : '') +
           '. Save it?')) return;
         save(async () => {
           if (!tracked) {
@@ -630,8 +585,8 @@ export function flightEditorScript(): string {
             const [startLat, startLon] = coords(v.origin_label);
             const [endLat, endLon] = coords(v.destination_label);
             const body = { ...v, excluded: removed, start_lat: startLat, start_lon: startLon, end_lat: endLat, end_lon: endLon };
-            if (entry) await flightApi('PUT', '/api/flight-corrections/' + entry.id, body);
-            else await flightApi('POST', '/api/flight-corrections', body);
+            if (entry) await apiWrite('PUT', '/api/flight-corrections/' + entry.id, body);
+            else await apiWrite('POST', '/api/flight-corrections', body);
             return;
           }
           // Only what differs from the tracker is stored (the server drops a row left
@@ -642,7 +597,7 @@ export function flightEditorScript(): string {
           const assign = {};
           if (v.aircraft_tail !== (orig.aircraft_tail || null)) assign.aircraft_tail = v.aircraft_tail;
           if (v.pilot_id !== (orig.pilot_id ?? null)) assign.pilot_id = v.pilot_id;
-          await flightApi('POST', '/api/flight-corrections', {
+          await apiWrite('POST', '/api/flight-corrections', {
             tracker_id: orig.tracker_id, flight_start_time: orig.start_time,
             start_time: times.start_time, end_time: times.end_time,
             origin_label: v.origin_label === (orig.origin_label || null) ? null : v.origin_label,
@@ -661,11 +616,11 @@ export function flightEditorScript(): string {
       btn('restore')?.addEventListener('click', () => save(() => flightSetFlags([f], { excluded: false })));
       btn('revert')?.addEventListener('click', () => {
         if (!confirm('Drop this flight’s corrections, Part 91 and unpaid marks and remark, and show it as the tracker recorded it?')) return;
-        save(() => flightApi('DELETE', '/api/flight-corrections/' + entry.id));
+        save(() => apiWrite('DELETE', '/api/flight-corrections/' + entry.id));
       });
       btn('delete')?.addEventListener('click', () => {
         if (!confirm('Delete this manual flight?')) return;
-        save(() => flightApi('DELETE', '/api/flight-corrections/' + entry.id));
+        save(() => apiWrite('DELETE', '/api/flight-corrections/' + entry.id));
       });
     }
   `;

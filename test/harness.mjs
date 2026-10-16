@@ -1,5 +1,6 @@
 // Test harness for the client-side scripts that live inside TypeScript template strings
-// (pilotDutyRenderScript(), flightEditsScript(), tzCalendarScript(), flightStoreScript()).
+// (tzCalendarScript(), htmlEscapeScript(), flightEditsScript(), pilotDutyRenderScript(),
+// flightStoreScript()).
 // tsc can't see into those strings, so the tests run the real script text instead:
 //
 //   1. esbuild bundles a tiny in-memory entry that re-exports the script-string functions
@@ -24,6 +25,7 @@ const bundle = await build({
   stdin: {
     contents: `
       export { tzCalendarScript } from './src/shared/time';
+      export { htmlEscapeScript } from './src/shared/html';
       export { flightEditsScript } from './src/shared/flight-edits';
       export { pilotDutyRenderScript } from './src/shared/pilot-duty';
       export { flightStoreScript } from './src/shared/flight-store';
@@ -48,10 +50,11 @@ const scripts = await import(
 const EXPORTS = [
   // time.ts
   'tzLocalToEpoch', 'unixToTzDateStr', 'unixToTzTime', 'unixToTzMonthKey', 'tzDayStartUnix', 'tzDayEndUnix',
+  'tzAddDays', 'fmtDuration',
   // flight-edits.ts
   'applyFlightEdits', 'flightRemarks', 'flightEntrySummary', 'flightFormTimes', 'flightTrackedTimes',
   // pilot-duty.ts
-  'computeDutyData', 'dutyTotals', 'fmtBlock', 'dutyAddDays', 'dutyDayText', 'currentDutyMonth', '_DUTY_LIMITS',
+  'computeDutyData', 'dutyTotals', 'dutyDayText', 'currentDutyMonth', '_DUTY_LIMITS',
   'dutySaveConfirmText',
   // flight-store.ts
   'flightCorrectionKey', 'mergeFlightCorrections',
@@ -79,6 +82,7 @@ export function loadEngine({ settings = {}, now = '2026-10-15 12:00' } = {}) {
   vm.runInContext('Date.now = () => __clock.ms;', context);
   const source = [
     scripts.tzCalendarScript(),
+    scripts.htmlEscapeScript(),
     scripts.flightEditsScript(),
     scripts.pilotDutyRenderScript(),
     scripts.flightStoreScript(),
@@ -120,7 +124,7 @@ export function fixtures(engine) {
   function arrival(dep, arr) {
     if (/^\d{4}-/.test(arr)) return at(arr);
     const [date, depTime] = splitLocal(dep);
-    return arr > depTime ? at(date + ' ' + arr) : at(engine.dutyAddDays(date, 1) + ' ' + arr);
+    return arr > depTime ? at(date + ' ' + arr) : at(engine.tzAddDays(date, 1) + ' ' + arr);
   }
 
   function flight(dep, arr, { pilot = 1, part91 = false, unpaid = false, manual = false, tracker = 1, id } = {}) {
@@ -146,7 +150,7 @@ export function fixtures(engine) {
   }
 
   /** A duty_days rest row, designated at a local time (default: a week before). */
-  function rest(date, { designated = engine.dutyAddDays(date, -7) + ' 12:00', note = null } = {}) {
+  function rest(date, { designated = engine.tzAddDays(date, -7) + ' 12:00', note = null } = {}) {
     return { date, duty_start: null, duty_end: null, rest: 1, rest_designated_at: designated == null ? null : at(designated), note };
   }
 

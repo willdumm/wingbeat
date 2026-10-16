@@ -1,5 +1,5 @@
 // §135.267(a) totals (calendar quarter, two quarters, calendar year), the "Last 24 h"
-// check on the next assignment, as-of dates, and fmtBlock rounding.
+// check on the next assignment, as-of dates, and fmtDuration rounding.
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -126,19 +126,19 @@ describe('as of now / as of month end', () => {
   });
 });
 
-describe('fmtBlock', () => {
+describe('fmtDuration', () => {
   test('rounds down by default', () => {
-    assert.equal(engine.fmtBlock(0), '0:00');
-    assert.equal(engine.fmtBlock(59), '0:00');
-    assert.equal(engine.fmtBlock(8 * H + 40), '8:00');
-    assert.equal(engine.fmtBlock(9 * H + 59 * 60 + 30), '9:59');
-    assert.equal(engine.fmtBlock(125 * H + 5 * 60), '125:05');
+    assert.equal(engine.fmtDuration(0), '0:00');
+    assert.equal(engine.fmtDuration(59), '0:00');
+    assert.equal(engine.fmtDuration(8 * H + 40), '8:00');
+    assert.equal(engine.fmtDuration(9 * H + 59 * 60 + 30), '9:59');
+    assert.equal(engine.fmtDuration(125 * H + 5 * 60), '125:05');
   });
 
   test('up rounds up, so an amount over a limit never prints equal to it', () => {
-    assert.equal(engine.fmtBlock(8 * H + 40, true), '8:01');
-    assert.equal(engine.fmtBlock(8 * H + 1, true), '8:01');
-    assert.equal(engine.fmtBlock(8 * H, true), '8:00');
-    assert.equal(engine.fmtBlock(59 * 60 + 1, true), '1:00');
+    assert.equal(engine.fmtDuration(8 * H + 40, true), '8:01');
+    assert.equal(engine.fmtDuration(8 * H + 1, true), '8:01');
+    assert.equal(engine.fmtDuration(8 * H, true), '8:00');
+    assert.equal(engine.fmtDuration(59 * 60 + 1, true), '1:00');
   });
 });
