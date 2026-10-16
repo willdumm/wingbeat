@@ -91,7 +91,8 @@ every migration applied (see `test/worker.mjs`).
 `0002_` up, never edit one that has shipped, and keep tenant data (trackers, named points,
 regions) out of them (see README.md, "Database migrations").
 
-The `edit_history` triggers (0003 on `flight_corrections` and `duty_days`, 0004 on the
-`pilot_id`/`aircraft_tail` of `flights`) list their columns explicitly. A migration that adds
-a column to one of those tables (or another assignment field to `flights`) must drop and
-recreate the affected triggers, or the new column isn't recorded in the history.
+The `edit_history` triggers (0002, on `flight_corrections`, `duty_days`, `pilot_default_duty`,
+`duty_method_history` and the `pilot_id`/`aircraft_tail` of `flights`) list their columns
+explicitly. A migration that adds a column to one of those tables (or another assignment field
+to `flights`) must drop and recreate the affected triggers, or the new column isn't recorded in
+the history.

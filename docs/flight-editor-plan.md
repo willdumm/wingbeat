@@ -552,3 +552,8 @@ Where the implementation departs from, or adds to, the plan above:
   `GET /api/duty-days?pilot=`, the type `FlightLogEntry` is `FlightCorrection`, and the
   migration `0002_duty_log.sql` is `0002_flight_corrections.sql`. The sections above keep
   the old names. Staging needed the reset in §1 (it had the original 0002 applied).
+- **One migration.** Before the branch reached production, migrations 0002 to 0005 (the
+  corrections and duty days, then the edit history, the assignment history and the dated
+  defaults) were folded into one, `0002_duty_records.sql`, with the final schema: no
+  `flight_corrections_version` and no `pilots.default_duty_start/end`. Staging, which had
+  the four applied, was reset the same way as in §1.

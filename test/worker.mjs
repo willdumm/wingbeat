@@ -58,15 +58,13 @@ export function splitSql(sql) {
 /**
  * Starts the Worker on a fresh database: migrations applied, an admin (user 1, "Ada
  * Admin") and a viewer (user 2) signed in. Call dispose() when done (it stops workerd).
- * beforeMigration(file, db), if given, runs before each migration file is applied, to
- * seed data as an older schema had it (a migration's data copy).
  *
  * Returns { db, request, sql, all, first, dispose, migrations }:
  *   request(method, path, body?, { as: 'admin' | 'viewer' })  → { status, body }
  *   db                                    the D1 binding, for seeding and checking rows
  *   all(sql, ...params) / first(sql, ...params) / run(sql, ...params)  shorthands on it
  */
-export async function startWorker({ beforeMigration } = {}) {
+export async function startWorker() {
   const bundle = await build({
     entryPoints: [path.join(ROOT, 'src/index.ts')],
     bundle: true,
@@ -88,7 +86,6 @@ export async function startWorker({ beforeMigration } = {}) {
     const db = await mf.getD1Database('DB');
     const migrations = readdirSync(path.join(ROOT, 'migrations')).filter(f => /^\d{4}_.*\.sql$/.test(f)).sort();
     for (const file of migrations) {
-      if (beforeMigration) await beforeMigration(file, db);
       const stmts = splitSql(readFileSync(path.join(ROOT, 'migrations', file), 'utf8'));
       await db.batch(stmts.map(s => db.prepare(s)));
     }

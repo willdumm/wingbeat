@@ -274,9 +274,7 @@ wingbeat/
 │   └── shared/                         # Shared components (settings modal, flight store, …)
 ├── migrations/
 │   ├── 0001_initial.sql                # full schema; new migrations start at 0002_
-│   ├── 0002_flight_corrections.sql     # flight corrections, manual flights, duty/rest days
-│   ├── 0003_duty_records.sql           # unpaid flag, append-only edit_history (triggers)
-│   └── 0004_duty_records_sync.sql      # flight assignment history, corrections sync index
+│   └── 0002_duty_records.sql           # flight corrections, duty/rest days, dated defaults, edit_history
 ├── site/                               # docs site (Hugo) + showcase; own Worker, see site/README.md
 ├── test/                               # node:test unit tests (npm test); harness.mjs runs the script strings in node:vm
 ├── wrangler.example.toml               # template — copy to wrangler.toml (gitignored) and fill in

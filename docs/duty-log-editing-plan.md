@@ -134,7 +134,7 @@ What stays out of the overlay:
   `flights` and their `points`. Storing a second copy would let them disagree: a flight
   reassigned to another pilot would then appear in both pilots' logs, or neither. The
   flight form sends a tracked flight's aircraft/pilot change with its correction (`assign`,
-  one batch), and the edit history records it (migration 0004). The overlay has
+  one batch), and the edit history records it. The overlay has
   `pilot_id`/`aircraft_tail` for manual flights only.
 
 Why labels are in the overlay rather than written to the boundary point: a label can be
@@ -142,12 +142,12 @@ wrong because tracking started partway through the flight, in which case the poi
 label is correct and only the flight's should change. (Correcting a raw point's label
 everywhere is a separate feature; see "Out of scope".)
 
-### 1. Schema — migrations `0002` to `0005`
+### 1. Schema — migration `0002`
 
-`0002_flight_corrections.sql` adds the two tables and the pilot's default duty; `0003`
-adds `unpaid` and the edit history; `0004` adds the flight assignment history and drops
-the old `flight_corrections_version` counter; `0005` makes the default duty and the
-§135.267 method dated lists (see "Dated default duty and method"). The tables as they stand:
+`0002_duty_records.sql` adds the corrections and duty-day tables, the dated default duty
+and §135.267 method (see "Dated default duty and method") and the edit history. (It was
+four migrations while the branch was built; they were folded into one before it reached
+production.) The tables:
 
 ```sql
 -- Flight corrections. A row with tracker_id + flight_start_time corrects the tracked
@@ -167,11 +167,11 @@ CREATE TABLE flight_corrections (
   end_lat           REAL,
   end_lon           REAL,
   part91            INTEGER NOT NULL DEFAULT 0,
+  unpaid            INTEGER NOT NULL DEFAULT 0 CHECK (unpaid = 0 OR part91 = 1),
   excluded          INTEGER NOT NULL DEFAULT 0,   -- removed: hidden everywhere but the flight editor
   pilot_id          INTEGER REFERENCES pilots(id),            -- manual flights only
   aircraft_tail     TEXT REFERENCES aircraft(tail_number),    -- manual flights only
   updated_at        INTEGER NOT NULL DEFAULT (unixepoch()),
-  unpaid            INTEGER NOT NULL DEFAULT 0 CHECK (unpaid = 0 OR part91 = 1),  -- 0003
   UNIQUE (tracker_id, flight_start_time),
   CHECK ((tracker_id IS NULL) = (flight_start_time IS NULL)),
   CHECK (tracker_id IS NULL OR (pilot_id IS NULL AND aircraft_tail IS NULL)),
@@ -194,8 +194,7 @@ CREATE TABLE duty_days (
   CHECK (rest = 0 OR (duty_start IS NULL AND duty_end IS NULL))
 );
 
--- A pilot's usual duty period from effective_date until the next entry (0005; it replaced
--- 0002's pilots.default_duty_start/end): a flying day with no duty times recorded uses the
+-- A pilot's usual duty period from effective_date until the next entry: a flying day with no duty times recorded uses the
 -- one in force that day, and under (c) it's the regularly assigned duty period. Both
 -- times NULL: no default from that date.
 CREATE TABLE pilot_default_duty (
@@ -207,8 +206,8 @@ CREATE TABLE pilot_default_duty (
   CHECK ((duty_start IS NULL) = (duty_end IS NULL))
 );
 
--- The operator's §135.267 method from effective_date until the next entry (0005; it
--- replaced the duty_method setting).
+-- The operator's §135.267 method from effective_date until the next entry. It starts with
+-- one (b) entry dated 2000-01-01.
 CREATE TABLE duty_method_history (
   effective_date TEXT PRIMARY KEY,   -- YYYY-MM-DD in the tenant timezone
   method         TEXT NOT NULL CHECK (method IN ('b', 'c'))
@@ -545,7 +544,7 @@ describes the checks that came out of it and why. The checks stay warnings: noth
 
 ### The §135.267 method: (b) or (c)
 
-A tenant-wide choice (`b` or `c`, default `b`), dated since migration 0005
+A tenant-wide choice (`b` or `c`, default `b`), dated
 (`duty_method_history`; see "Dated default duty and method"): edited under Settings →
 Global Settings, read by the duty log with its days (`GET /api/duty-days`'s
 `duty_methods`) and passed into `computeDutyData` as an option (the render chunks don't
@@ -602,7 +601,7 @@ crew size can change them later (see "Not yet implemented").
 
 ### Unpaid flights
 
-A flight can be marked **Unpaid** (`flight_corrections.unpaid`, migration `0003`, default
+A flight can be marked **Unpaid** (`flight_corrections.unpaid`, default
 paid), stored like `part91`. Unpaid flying isn't commercial (Martindell, Rodriguez), so it
 doesn't count toward the (a) totals or the daily limits. The flight stays in the log, the
 day and month totals and everywhere else (aircraft hours, maintenance), and its remarks
@@ -620,7 +619,7 @@ the operator, so it errs on the side of a warning.
 ### Edit history
 
 `duty_days` and `flight_corrections` are overwritten and deleted in place, so on their own
-they don't record who changed them. Migration `0003` adds one append-only table, `edit_history`:
+they don't record who changed them. Migration `0002` adds one append-only table, `edit_history`:
 when, which user (id and name at the time; no foreign key, since users can be deleted),
 which table and row (`entity`, `entity_key`), the action (insert, update or delete), and
 the row before and after as JSON. Triggers on both tables write it, and BEFORE UPDATE /
@@ -637,7 +636,7 @@ A write made any other way is still recorded, with no user. An update that chang
 nothing (or only `updated_at`) isn't recorded.
 
 A tracked flight's aircraft and pilot live on `flights`, not `flight_corrections`, so
-migration `0004` adds an AFTER UPDATE trigger on `flights` that records a change to either
+the migration adds an AFTER UPDATE trigger on `flights` that records a change to either
 (entity `flight_assignment`, key `<tracker_id>/<start_time>`, before/after
 `{ pilot_id, aircraft_tail }`), from the assignment route, the flight form's `assign` and a
 tracker's apply-assignment. Segmentation only deletes and re-inserts flights, so it adds
@@ -651,18 +650,18 @@ last changed by …" or "Aircraft and pilot last changed by …". A save that ch
 corrections and the assignment (one batch, so the same time and user) reads "Last changed
 by …". A full history view is a follow-up.
 
-Migration `0005` adds the same triggers to the dated default duty and method
+The same triggers record the dated default duty and method
 (`pilot_default_duty`, keyed `<pilot_id>`, and `duty_method`, keyed `tenant`; see "Dated
 default duty and method"), whose forms show "Last changed by …" for the whole list.
 
 ### Dated default duty and method
 
 A day with no duty times takes the pilot's default duty, and the §135.267 method picks the
-daily checks. Both used to be one current value (`pilots.default_duty_start/end`, the
-`duty_method` setting) that every month was re-checked with, so changing either rewrote
-past months' duty periods, warnings and the (c) "differs from regularly assigned" check,
-and nothing recorded the change. Migration `0005` makes each a dated list and records
-every change:
+daily checks. Kept as one current value, each would re-check every month with today's
+value, so changing either would rewrite past months' duty periods, warnings and the (c)
+"differs from regularly assigned" check, unrecorded. (An earlier version of the branch
+did that, with `pilots.default_duty_start/end` and a `duty_method` setting.) Instead each
+is a dated list, and every change is recorded:
 
 - **Tables:** `pilot_default_duty (pilot_id, effective_date, duty_start, duty_end)` and
   `duty_method_history (effective_date, method)` (see §1). A default entry with no times is
@@ -680,15 +679,13 @@ every change:
   keep their value; **correcting** a typo is editing the entry (which does change the
   days it covered, as it should, and is recorded). Removing an entry hands its days to
   the remaining ones.
-- **One source of truth:** the migration copies the old values into each list's first
-  entry and drops `pilots.default_duty_start/end` and the `duty_method` setting, rather
-  than keeping them as a copy to keep in sync. The copy's date is a fixed `2000-01-01`: the
-  earliest entry covers everything before it anyway, and a fixed date means a change "from
-  today" on the day 0005 is deployed adds an entry instead of overwriting the copy (which
-  would rewrite every past month again). The method always gets a first entry, (b) when it
-  was never set, so the first change to (c) doesn't reach back to every past month. The
-  copies aren't in the edit history (the triggers come after them).
-- **History:** AFTER INSERT/UPDATE/DELETE triggers on both tables, like 0003's, attributed
+- **The method's first entry:** the migration gives the method one entry, (b), so the
+  first change to (c) doesn't become the earliest entry and reach back to every past month.
+  Its date is a fixed `2000-01-01`: the earliest entry covers everything before it anyway,
+  and a fixed date means a change "from today" on deploy day adds an entry instead of
+  overwriting it. It isn't in the edit history (the triggers come after it). Pilots start
+  with no default duty.
+- **History:** AFTER INSERT/UPDATE/DELETE triggers on both tables, like the others, attributed
   through `edit_actor`; the routes go through `recordedBatch`. Each list is one record to
   the edit history and to its form (`pilot_default_duty` / `<pilot_id>`, `duty_method` /
   `tenant`), since the form shows and saves against all of it.
@@ -774,7 +771,7 @@ client's cursor are the rows to send:
   just of corrections, so it also serves as the flight form's `base_history_id` (see
   "Edit conflicts"): every correction change up to it is in the store. A change to
   another entity moves it without changing a row; the store saves the cursor but doesn't
-  re-render. Migration 0004's `(entity, id)` index on `edit_history` serves the scan.
+  re-render. The migration's `(entity, id)` index on `edit_history` serves the scan.
 - With no cursor (or 0), or one past the newest id (a reset or recreated database), it
   returns every row and `full: true`, and the client replaces its copy.
 - The client (`flight-store.ts`) keeps the cursor in `_mem` as `entries_last_history_id`,
@@ -785,13 +782,12 @@ client's cursor are the rows to send:
   old one. A delta is dropped if another tab moved the cursor meanwhile; the next refresh
   continues from the newer one.
 
-Migration 0004 drops the earlier `flight_corrections_version` counter (which the client
-compared before refetching every row) and its triggers.
+This replaced an earlier `flight_corrections_version` counter, which the client compared
+before refetching every row.
 
-If the table has rows but no history at all (rows only written before 0003 was deployed),
-the newest id is 0, the cursor stays 0, and every refresh does a full fetch. An unchanged
-full fetch doesn't notify, so it costs only the request; the first recorded change of any
-kind ends it.
+On a freshly migrated database, until the first recorded change of any kind, the newest
+id is 0, the cursor stays 0, and every refresh does a full fetch. An unchanged full fetch
+doesn't notify, so it costs only the request.
 
 ### Not yet implemented: multi-pilot crews
 
@@ -826,8 +822,7 @@ real script strings of `pilot-duty.ts`, `flight-edits.ts`, `time.ts`, `html.ts` 
 default duty and method (`dated-defaults.test.mjs`), `applyFlightEdits`, the corrections
 delta merge, and the flight form's times. `test/worker.mjs` runs the real Worker in
 Miniflare with every migration applied, for the routes' SQL, the history triggers and
-edit conflicts (`worker-sql.test.mjs`, `worker-dated-defaults.test.mjs`, which also checks
-0005's copy of the old values).
+edit conflicts (`worker-sql.test.mjs`, `worker-dated-defaults.test.mjs`).
 
 ### Follow-ups (not built)
 

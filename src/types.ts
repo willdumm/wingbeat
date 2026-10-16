@@ -36,7 +36,7 @@ export interface Pilot {
   id: number;
   name: string;
   active: boolean;
-  /** Usual duty period by date, oldest first (migration 0005): used for flying days with
+  /** Usual duty period by date, oldest first (migration 0002): used for flying days with
    *  no duty times recorded. */
   default_duties: DefaultDuty[];
 }

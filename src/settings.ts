@@ -9,7 +9,7 @@ export interface AppSettings {
   gap_alert_minutes: number;
   gap_alert_stop_minutes: number;
   pushover_api_token: string;
-  // The §135.267 method isn't here: it's dated (duty_method_history, migration 0005), and
+  // The §135.267 method isn't here: it's dated (duty_method_history, migration 0002), and
   // the duty log reads it with its days (GET /api/duty-days).
 }
 

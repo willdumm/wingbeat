@@ -1,5 +1,5 @@
 // The pilot's default duty and the operator's §135.267 method as dated lists (migration
-// 0005): each day uses the entry in force on it, the earliest entry also applies before its
+// 0002): each day uses the entry in force on it, the earliest entry also applies before its
 // date, and a later entry doesn't change the days before it, so a past month comes out the
 // same. Spec: docs/duty-log-editing-plan.md, "Dated default duty and method".
 

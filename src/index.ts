@@ -49,7 +49,7 @@ async function queryAircraft(db: D1Database, activeOnly = false) {
   return results.map(r => ({ ...r, maintenance_schedule: r.maintenance_schedule ? JSON.parse(r.maintenance_schedule) : null }));
 }
 
-// Pilots with their dated default duties (default_duties, oldest first; migration 0005),
+// Pilots with their dated default duties (default_duties, oldest first; migration 0002),
 // for the pilot list's "Default duty" line.
 async function queryPilots(db: D1Database, activeOnly = false): Promise<Pilot[]> {
   const query = activeOnly
@@ -863,7 +863,7 @@ app.post('/api/trackers/:id/apply-assignment', requireAdmin, async (c) => {
     );
   }
   if (stmts.length === 0) return c.json({ error: 'Nothing to apply' }, 400);
-  // Recorded: each flight given an aircraft or pilot gets an edit_history row (migration 0004).
+  // Recorded: each flight given an aircraft or pilot gets an edit_history row (migration 0002).
   const results = await recordedBatch(c, stmts);
   // Flight UPDATEs are at even indices (each is followed by its points UPDATE); a flight
   // missing both fields is counted by both, so report the larger count.
@@ -980,8 +980,8 @@ app.delete('/api/overlays/:id', requireAdmin, async (c) => {
 // ── Edit history ──────────────────────────────────────────────────────────────
 
 // Runs a route's writes as one batch with the signed-in user recorded for the
-// edit_history triggers on flight_corrections and duty_days (migration 0003), on
-// flights' aircraft/pilot (0004) and on the dated default duties and duty method (0005):
+// edit_history triggers on flight_corrections and duty_days, on
+// flights' aircraft/pilot and on the dated default duties and duty method (migration 0002):
 // edit_actor is set first and cleared last, and a D1 batch
 // is one transaction, so each change and its history rows land together or not at all.
 // Every route that writes those goes through it. Returns the results of stmts.
@@ -1030,7 +1030,7 @@ async function recordedBatch(c: Context<{ Bindings: Env; Variables: Variables }>
 //
 // Any record with history can use it: pass recordedBatch() its refs and the client's id.
 
-// A record's history: [entity, entity_key] (keys as in migrations 0003 to 0005).
+// A record's history: [entity, entity_key] (keys as in migration 0002).
 type HistoryRef = [entity: string, key: string];
 // A full-state save's base_history_id and the records it replaces.
 type SaveBase = { id: number; refs: HistoryRef[] };
@@ -1071,7 +1071,7 @@ const EDIT_HISTORY_ENTITIES = new Set(['flight_corrections', 'duty_days', 'fligh
 
 // One record's history, newest first:
 // ?entity=flight_corrections|duty_days|flight_assignment|pilot_default_duty|duty_method
-// &key=<entity_key> (see migrations 0003 to 0005) and optionally &limit=<n> (default and maximum 100). entity can list
+// &key=<entity_key> (see migration 0002) and optionally &limit=<n> (default and maximum 100). entity can list
 // several, comma-separated, for entities sharing a key (a tracked flight's corrections and
 // its aircraft/pilot): their rows come interleaved, newest first.
 app.get('/api/edit-history', requireAdmin, async (c) => {
@@ -1359,7 +1359,7 @@ async function parseTrackedAssign(db: D1Database, v: unknown, flight: TrackerFli
 
 // The rows written since the client's cursor, for the flight store to merge into its copy
 // and apply to its flights (the same shape as GET /api/flights/complete?since=). The cursor
-// is an edit_history id: the history triggers (migration 0003) record every insert, update
+// is an edit_history id: the history triggers (migration 0002) record every insert, update
 // and delete, keyed '<tracker_id>/<flight_start_time>' or 'manual/<id>', so the keys changed
 // after it are the rows to send, and a key with no row now was deleted. ?since=<id> returns
 // { entries, deleted: [keys], last_history_id } (LAST_HISTORY_ID_SQL: the newest id of any
@@ -1409,7 +1409,7 @@ app.get('/api/flight-corrections', async (c) => {
 
 // One pilot's duty log: { days, default_duties, duty_methods, last_history_id }, read in
 // one batch: their duty/rest days, their dated default duties and the operator's dated
-// §135.267 method (both oldest first; migration 0005), everything the log computes from
+// §135.267 method (both oldest first; migration 0002), everything the log computes from
 // besides flights (which, with corrections, come from the flight store). last_history_id
 // is the day form's and the default-duty form's base_history_id.
 app.get('/api/duty-days', async (c) => {
@@ -1712,7 +1712,7 @@ app.post('/api/duty-days/:pilot/clear', requireAdmin, async (c) => {
 });
 
 // ── Dated default duty and duty method ────────────────────────────────────────
-// Each is a list of entries by effective date (migration 0005): a day uses the entry with
+// Each is a list of entries by effective date (migration 0002): a day uses the entry with
 // the latest date on or before it, or the earliest entry when they're all later. A change
 // is a new entry from its date on, so past months keep the value they were checked with;
 // editing or removing an entry (a typo fix) changes the days it covered, and the edit
@@ -2257,7 +2257,7 @@ app.patch('/api/settings', requireAdmin, async (c) => {
   const body = await c.req.json<Record<string, string | number>>();
   const stmts: D1PreparedStatement[] = [];
   for (const [key, value] of Object.entries(body)) {
-    // Dated now (migration 0005), so not a plain setting.
+    // Dated now (migration 0002), so not a plain setting.
     if (key === 'duty_method') return c.json({ error: 'Set the duty method with PUT /api/duty-methods' }, 400);
     if (!ALLOWED_KEYS.has(key)) return c.json({ error: `Unknown setting key: ${key}` }, 400);
     if (typeof value !== 'string' && typeof value !== 'number') return c.json({ error: `Value for ${key} must be a string or number` }, 400);

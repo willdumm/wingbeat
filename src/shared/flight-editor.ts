@@ -522,7 +522,7 @@ export function flightEditorScript(): string {
       const onConflict = conflict => showEditConflict(errorEl, conflict, { reload, changed: isDirty });
       // A tracked flight's corrections are keyed by its tracker's start time, so their
       // history survives a revert; a manual flight's by its row.
-      // Its aircraft/pilot history (migration 0004) shares the corrections' key.
+      // Its aircraft/pilot history (migration 0002) shares the corrections' key.
       // A change newer than the store's copy is shown as a conflict right away, rather
       // than after the user has made their edits.
       const lastEdit = tracked ? showLastEdit($('[data-fe-last-edit]'), ['flight_corrections', 'flight_assignment'], orig.tracker_id + '/' + orig.start_time)

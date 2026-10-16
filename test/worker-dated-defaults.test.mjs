@@ -1,8 +1,8 @@
-// The dated default duty and duty method through the Worker's routes (migration 0005):
+// The dated default duty and duty method through the Worker's routes (migration 0002):
 // PUT/DELETE /api/pilots/:id/default-duty and /api/duty-methods, their edit_history
 // triggers and attribution, the edit conflict check against the whole list, the reads
 // that carry the lists (GET /api/duty-days, /api/pilots, /api/duty-methods), the old
-// single-value fields refused, and 0005's copy of the old values.
+// single-value fields refused, and the migration's first (b) entry.
 // test/worker.mjs runs src/index.ts in Miniflare on a fresh D1 database with every
 // migration applied.
 
@@ -141,7 +141,7 @@ describe('PUT/DELETE /api/pilots/:id/default-duty', () => {
 
 describe('/api/duty-methods', () => {
   test('dated entries: add, update, move, remove, all recorded under one key', async () => {
-    // A fresh database starts with migration 0005's (b) entry.
+    // A fresh database starts with the migration's (b) entry.
     const seed = { effective_date: '2000-01-01', method: 'b' };
     assert.deepEqual((await w.request('GET', '/api/duty-methods')).body.methods, [seed]);
     const m = await mark();
@@ -193,30 +193,11 @@ describe('/api/duty-methods', () => {
   });
 });
 
-describe('migration 0005 copies the old single values', () => {
-  test('pilots’ default duty and the settings duty_method become each list’s first entry, unrecorded', async () => {
-    const old = await startWorker({
-      beforeMigration: async (file, db) => {
-        if (!file.startsWith('0005_')) return;
-        await db.batch([
-          db.prepare(`INSERT INTO pilots (id, name, default_duty_start, default_duty_end) VALUES
-            (1, 'Pat', '08:00', '17:00'), (2, 'Quinn', NULL, NULL)`),
-          db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('duty_method', 'c')"),
-        ]);
-      },
-    });
-    try {
-      assert.deepEqual(await old.all('SELECT * FROM pilot_default_duty'),
-        [{ pilot_id: 1, effective_date: '2000-01-01', duty_start: '08:00', duty_end: '17:00' }]);
-      assert.deepEqual(await old.all('SELECT * FROM duty_method_history'), [{ effective_date: '2000-01-01', method: 'c' }]);
-      assert.equal(await old.first("SELECT 1 FROM settings WHERE key = 'duty_method'"), null);
-      assert.deepEqual((await old.all('PRAGMA table_info(pilots)')).map(c => c.name), ['id', 'name', 'active']);
-      assert.equal((await old.first("SELECT COUNT(*) AS n FROM edit_history WHERE entity IN ('pilot_default_duty', 'duty_method')")).n, 0);
-      // A change "from today" on deploy day adds an entry rather than overwriting the copy.
-      const r = await old.request('PUT', '/api/pilots/1/default-duty', { effective_date: '2026-10-15', duty_start: '07:00', duty_end: '16:00' });
-      assert.equal(r.body.default_duties.length, 2);
-    } finally {
-      await old.dispose();
-    }
+describe('migration 0002', () => {
+  test('the method starts with one (b) entry, unrecorded; pilots keep their columns', async () => {
+    assert.deepEqual(await w.all("SELECT * FROM duty_method_history WHERE effective_date = '2000-01-01'"),
+      [{ effective_date: '2000-01-01', method: 'b' }]);
+    assert.equal(await w.first("SELECT 1 FROM edit_history WHERE entity = 'duty_method' AND after LIKE '%2000-01-01%' AND action = 'insert'"), null);
+    assert.deepEqual((await w.all('PRAGMA table_info(pilots)')).map(c => c.name), ['id', 'name', 'active']);
   });
 });

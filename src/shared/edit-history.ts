@@ -1,7 +1,7 @@
 /**
  * The "Last changed by …" line of the flight form (flight-editor.ts) and the duty log's
  * day form (pilot-duty.ts), from a record's edit history (GET /api/edit-history; the
- * edit_history triggers of migrations 0003 and 0004), and what those forms show when a
+ * edit_history triggers of migration 0002), and what those forms show when a
  * save is refused because the record changed since they loaded it (409, "Edit conflicts"
  * in src/index.ts). Needs tzCalendarScript() (shared/time.ts) in the same script.
  */
@@ -10,7 +10,7 @@ export function editHistoryScript(): string {
     // ── Edit history ──────────────────────────────────────────────────────────
 
     // "Last changed by <user>, <date> <time>" for a duty record into el, from its edit
-    // history (entities and key as in migrations 0003 and 0004); el stays empty when it
+    // history (entities and key as in migration 0002); el stays empty when it
     // has none. entities: one entity, or several sharing the key (a tracked flight's
     // corrections and its aircraft/pilot), whose newest change is shown. Resolves to that
     // history row (null when there's none, the fetch failed or el has moved on to another

@@ -2863,7 +2863,7 @@ export function settingsModalScript(): string {
 
     // ── Duty method, by date ──
     // The operator's §135.267 method as dated entries (GET /api/duty-methods; migration
-    // 0005), each day of the duty log using the one in force on it (dutyMethodOn,
+    // 0002), each day of the duty log using the one in force on it (dutyMethodOn,
     // pilot-duty.ts). Save adds an entry from its Effective from date, or with Edit fixes
     // one (moved to a new date, if changed); Remove drops one. Writes send the list's
     // history id as base_history_id, so a change another admin made since it loaded is

@@ -1,5 +1,5 @@
 // The Worker's SQL, through its real routes: the bulk flight-corrections upsert, the
-// duty-day statement, the edit_history triggers (migrations 0003 and 0004), the
+// duty-day statement, the edit_history triggers (migration 0002), the
 // incremental corrections sync (ENTRIES_SINCE_SQL) and the edit conflict check
 // (base_history_id), plus route validation around them.
 // test/worker.mjs runs src/index.ts in Miniflare on a fresh D1 database with every
@@ -197,7 +197,7 @@ describe('PUT /api/duty-days/:pilot', () => {
   });
 });
 
-describe('edit_history triggers (migration 0003)', () => {
+describe('edit_history triggers (migration 0002)', () => {
   test('flight_corrections: insert, update and delete, with the row before and after', async () => {
     const a = next();
     const m = await mark();
@@ -277,7 +277,7 @@ describe('edit_history triggers (migration 0003)', () => {
   });
 });
 
-describe('flights_assignment_history_au (migration 0004)', () => {
+describe('flights_assignment_history_au (migration 0002)', () => {
   test("a tracked flight's reassignment is recorded under <tracker_id>/<start_time>", async () => {
     const s = next();
     const id = await trackerFlight(s);
