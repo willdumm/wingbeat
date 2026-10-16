@@ -356,8 +356,11 @@ generated in the browser via Typst. Pick a period, or choose **From** and
 **To** months yourself (up to 24 months):
 
 - **Month** (the default): the month on screen.
-- **Quarter**: the calendar quarter of the month on screen, through this month.
-- **12 months**: the last 12 months through this month, the period
+- **This qtr**: the calendar quarter of the month on screen, through this month
+  (only October, if October is on screen).
+- **Last qtr**: the calendar quarter before that one, in full: the usual
+  quarterly sign-off. It isn't offered if the log has no months that early.
+- **12 mo**: the last 12 months through this month, the period
   §135.63 requires these records to be kept for.
 
 Each month gets its own section, laid out as on screen: the table, remarks

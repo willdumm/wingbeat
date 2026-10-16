@@ -2614,6 +2614,24 @@ const trackerList = SAMPLE.trackers;
       }
     }
 
+    // The Export PDF form's period presets as { key, label, from, to } (month indexes,
+    // year * 12 + month - 1): the shown month, its calendar quarter (through this month,
+    // cur), the quarter before it (the usual quarterly sign-off), and the last 12 months.
+    // Each is clamped to earliest..cur, the months the From/To selects offer; a quarter
+    // wholly before earliest is left out. The labels are short so that five segments (with
+    // Custom) fit a 320px phone; the From/To selects show the months a preset picked.
+    function dutyExportPresets(shown, cur, earliest) {
+      const qStart = shown - (shown % 12) % 3;
+      const clamp = (from, to) => [Math.max(from, earliest), Math.min(to, cur)];
+      const out = [{ key: 'month', label: 'Month', from: shown, to: shown }];
+      for (const [key, label, start] of [['quarter', 'This qtr', qStart], ['prevQuarter', 'Last qtr', qStart - 3]]) {
+        const [from, to] = clamp(start, start + 2);
+        if (from <= to) out.push({ key, label, from, to });
+      }
+      out.push({ key: 'year', label: '12 mo', from: cur - 11, to: cur });
+      return out;
+    }
+
     // A Typst string literal in markup (#"…"), so labels and notes print verbatim
     // whatever markup characters they contain.
     function _typStr(s) {
@@ -2641,7 +2659,8 @@ const trackerList = SAMPLE.trackers;
       const periodLabel = dutyRangeLabel(months);
       const appName = window.APP_SETTINGS.appName;
       const COLS = 8;
-      const warnCell = text => 'warning(' + _typStr(text).slice(1) + '),\n';
+      // A warning is indented past the DATE column, so that column holds the day's whole block.
+      const warnCell = text => '  [], warning(' + _typStr(text).slice(1) + '),\n';
       const footnotes = [];
       let anyManual = false;
 
@@ -2663,7 +2682,7 @@ const trackerList = SAMPLE.trackers;
         const { year, days } = data;
         let rows = prevDayRow(data);
         for (const day of days) {
-          // Each day starts below a rule; its flights are only hairline-separated.
+          // Each day starts below a rule, and those are the only rules between rows.
           if (rows) rows += '  table.hline(stroke: 0.6pt + rule),\n';
           const dayText = dutyDayText(day, year) + (day.note ? ' (' + day.note + ')' : '');
           if (day.flights.length === 0) {
@@ -2702,10 +2721,11 @@ const trackerList = SAMPLE.trackers;
           if (day.flights.length > 0) {
             rows += '  table.cell(colspan: ' + (COLS - 1) + ', align: right)[#text(fill: muted)[Day total]], [*' + fmtDuration(day.daySecs) + '*],\n';
           }
-          for (const w of day.warnings) rows += '  ' + warnCell(w);
+          for (const w of day.warnings) rows += warnCell(w);
         }
         return (
           '#table(\n' +
+          '  stroke: none,\n' +
           '  columns: (auto, auto, auto, 1fr, auto, 1fr, auto, auto),\n' +
           '  align: (left, left, center, left, center, left, center, right),\n' +
           '  table.header([DATE], [DUTY], [A/C], [ORIGIN], [DEP], [DEST], [ARR], [TIME], table.hline(stroke: 0.8pt + ink)),\n' +
@@ -2815,9 +2835,9 @@ const trackerList = SAMPLE.trackers;
         '#let muted = ' + color('muted') + '\n' +
         '#let rule = ' + color('rule') + '\n' +
         '#let danger = ' + color('danger') + '\n' +
-        // A day's warning: a full-width row, tinted and barred as well as colored, so it
-        // still stands out in black and white.
-        '#let warning(body) = table.cell(colspan: ' + COLS + ', fill: ' + color('dangerBg') + ', stroke: (left: 2pt + danger))[#text(fill: danger)[*Warning:* #body]]\n' +
+        // A day's warning: a row from after the DATE column, tinted and barred as well as
+        // colored, so it still stands out in black and white.
+        '#let warning(body) = table.cell(colspan: ' + (COLS - 1) + ', fill: ' + color('dangerBg') + ', stroke: (left: 2pt + danger))[#text(fill: danger)[*Warning:* #body]]\n' +
         '#set text(font: ("IBM Plex Sans", "Libertinus Serif"), size: 8pt, fill: ink, number-width: "tabular")\n' +
         '#set page(\n' +
         '  paper: "us-letter",\n' +
@@ -2828,7 +2848,8 @@ const trackerList = SAMPLE.trackers;
               ' #h(1fr) ' + _typStr('Generated ' + generated) + ' #h(1fr) Page #counter(page).display("1 of 1", both: true)\n' +
         '  ]\n' +
         ')\n' +
-        // Rules only between rows: a heavy one under the header, hairlines between flights.
+        // Hairlines between rows, for the summary tables; the month table turns them off and
+        // draws only a heavy rule under the header and a rule between days.
         '#set table(inset: (x: 5pt, y: 4pt), stroke: (_, y) => if y > 0 { (top: 0.4pt + ' + color('ruleSubtle') + ') })\n' +
         '#show table.cell.where(y: 0): set text(size: 6.5pt, weight: "bold", fill: muted, tracking: ' + _DUTY_PDF_THEME.trackingCaps + ')\n\n' +
         '#stack(spacing: 7pt,\n' +

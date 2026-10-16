@@ -481,8 +481,11 @@ Built from the same row model as the screen:
 - **Title and layout:** "<Pilot> Duty Log", the period, and the method's label; one
   section per exported month, each starting on a new page (see "Exporting a range of
   months").
-- **Rows:** the screen's columns, remarks rows and warnings (full-width, tinted rows),
-  opening with the previous day so the month's first rolling checks can be followed.
+- **Rows:** the screen's columns, remarks rows and warnings (tinted rows), opening with the
+  previous day so the month's first rolling checks can be followed. The only rules between
+  rows are the one under the header and one above each day, and a day's warnings are
+  indented to start after the DATE column, so the date column holds the day's whole block
+  and a warning can't be read as the next day's.
 - **Corrected values:** marked †n, with numbered footnotes listing what the tracker
   recorded ("Oct 3, flight at 09:00: the tracker recorded Dep 09:12."); a manual flight is
   marked ‡.
@@ -802,7 +805,9 @@ crew size. The user docs say the log assumes one-pilot crews.
 §135.63 doesn't set a record period, and a monthly log is the usual sign-off unit, but
 the limits run over calendar quarters and years, and the rolling checks at the start of a
 month reach back into the previous one. So Export PDF asks for a range: Month (the one
-shown, the default), Quarter (its calendar quarter, through this month), 12 months, or
+shown, the default), This qtr (its calendar quarter, through this month), Last qtr (the
+calendar quarter before that, in full, for a quarterly sign-off; left out if it is before
+the earliest month offered), 12 mo, or
 any From/To months up to 24, offered from the pilot's first flight (at least the last 12
 months) through this month. `_buildTypstSource` takes one month's row model or several:
 
