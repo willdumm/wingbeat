@@ -63,7 +63,7 @@ export function pilotDutyStyles(): string {
     .pilot-duty-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-left: auto; }
     .pilot-duty-add-btn[hidden], .pilot-duty-default [hidden] { display: none; }
     .pilot-duty-default { font-size: var(--size-sm); color: var(--text-muted); }
-    .pilot-duty-default .duty-link-btn { color: var(--accent-text); margin-left: 0.3rem; }
+    .pilot-duty-default .duty-link-btn, .duty-default-hint .duty-link-btn { color: var(--accent-text); margin-left: 0.3rem; }
 
     .pilot-duty-upcoming[hidden] { display: none; }
     .duty-upcoming-list { list-style: none; margin: 0; padding: 0; font-size: var(--size-sm); }
@@ -770,6 +770,35 @@ export function pilotDutyRenderScript(): string {
       return '—';
     }
 
+    // The question the day form's Save asks before writing values ({ duty_start, duty_end,
+    // rest, note }) to keys over records (the pilot's duty_days rows), or null when nothing
+    // recorded is lost. A record already the same as values, as the server stores them
+    // (note trimmed, empty as none), isn't replaced. Over a range, any other record on a
+    // key is; for one day, only unmarking a rest day with its designation on record asks,
+    // since that drops when it was designated for good.
+    function dutySaveConfirmText(records, keys, values) {
+      const norm = r => JSON.stringify([r.duty_start || null, r.duty_end || null, !!r.rest, (r.note || '').trim() || null]);
+      const want = norm(values);
+      const byDate = {};
+      for (const r of records) byDate[r.date] = r;
+      const replaced = keys.map(k => byDate[k]).filter(r => r && norm(r) !== want);
+      const restLost = values.rest ? [] : replaced.filter(r => r.rest);
+      if (keys.length === 1) {
+        const r = restLost[0];
+        if (!r || r.rest_designated_at == null) return null;
+        return 'This rest day was designated ' +
+          _dutyShortDate(unixToTzDateStr(r.rest_designated_at), Number(r.date.slice(0, 4))) +
+          '. Unmarking it drops that designation: marking it rest again records the day you do. Save?';
+      }
+      if (!replaced.length) return null;
+      return (replaced.length === keys.length ? 'All ' + keys.length + ' of these days already have'
+          : replaced.length + ' of these ' + keys.length + ' days already ' + (replaced.length === 1 ? 'has a record' : 'have')) +
+        (replaced.length === 1 ? ' that will be replaced' : ' records that will be replaced') +
+        (restLost.length === 1 ? ', including a rest day that loses its designation'
+          : restLost.length ? ', including ' + restLost.length + ' rest days that lose their designation' : '') +
+        '. Save?';
+    }
+
     // "Remarks: Part 91 · Training" for a flight with remarks, else ''.
     function dutyRemarksText(f) {
       return f.remarks.length ? 'Remarks: ' + f.remarks.join(' · ') : '';
@@ -1451,6 +1480,7 @@ export function pilotDutyScript(): string {
       modal.querySelector('[data-act="save"]').addEventListener('click', () => {
         const start = modal.querySelector('#duty-def-start').value, end = modal.querySelector('#duty-def-end').value;
         if (!start || !end) { errorEl.textContent = 'Enter both times, or Clear.'; return; }
+        if (start === end) { errorEl.textContent = 'The duty end must differ from its start.'; return; }
         save(start, end);
       });
     }
@@ -1586,6 +1616,8 @@ export function pilotDutyScript(): string {
             '<div class="form-field"><label for="duty-d-end">Duty end</label>' +
               '<input type="time" id="duty-d-end"></div>' +
           '</div>' +
+          '<p class="form-modal-hint duty-default-hint" data-duty-default-hint><span></span>' +
+            '<button type="button" class="duty-link-btn" data-duty-use-default>Use default</button></p>' +
           '<p class="form-modal-hint" data-duty-rest-hint></p>' +
           '<div class="form-field"><label for="duty-d-note">Note</label>' +
             '<textarea id="duty-d-note" rows="2" maxlength="${MAX_DUTY_NOTE_LENGTH}"></textarea></div>' +
@@ -1602,10 +1634,14 @@ export function pilotDutyScript(): string {
       const errorEl = $('.form-modal-error');
       const buttons = [...modal.querySelectorAll('.form-modal-footer button')];
       const restHint = $('[data-duty-rest-hint]');
-      let rec = null;
+      const defaultHint = $('[data-duty-default-hint]');
+      // def: the pilot's default duty for the first date, offered with "Use default"
+      // rather than filled in, so a day saved with a note alone keeps using it.
+      let rec = null, def = null;
       function showKind(kind) {
         $('[data-duty-times]').hidden = kind === 'rest';
         restHint.hidden = kind !== 'rest';
+        defaultHint.hidden = kind === 'rest' || !def;
       }
       const getKind = wireSegmented(modal, 'kind', showKind);
       // From code, so filling the form (on open and on a date change) isn't a change of the
@@ -1627,11 +1663,12 @@ export function pilotDutyScript(): string {
       // Fills the form from the first date's record, and offers Clear when the range has one.
       function load() {
         rec = recordOf($('#duty-d-date').value);
+        def = _dutyDefaultDuty();
+        defaultHint.firstChild.textContent = def
+          ? 'Default duty ' + def.duty_start + '–' + def.duty_end + ' applies on a flying day with no times recorded.' : '';
         setKind(rec && rec.rest ? 'rest' : 'duty');
-        // A day with no record starts from the pilot's default duty.
-        const def = rec ? null : _dutyDefaultDuty();
-        $('#duty-d-start').value = (rec ? rec.duty_start : def && def.duty_start) || '';
-        $('#duty-d-end').value = (rec ? rec.duty_end : def && def.duty_end) || '';
+        $('#duty-d-start').value = (rec && rec.duty_start) || '';
+        $('#duty-d-end').value = (rec && rec.duty_end) || '';
         $('#duty-d-note').value = (rec && rec.note) || '';
         showLastEdit($('[data-duty-last-edit]'), 'duty_days', _dutyPilotId + '/' + $('#duty-d-date').value);
         restHint.textContent = rec && rec.rest && rec.rest_designated_at != null
@@ -1645,6 +1682,13 @@ export function pilotDutyScript(): string {
       }
       $('#duty-d-date').addEventListener('change', load);
       $('#duty-d-through').addEventListener('change', updateClear);
+      // A change of the user's: the change events mark the form changed for Escape.
+      $('[data-duty-use-default]').addEventListener('click', () => {
+        for (const [sel, v] of [['#duty-d-start', def.duty_start], ['#duty-d-end', def.duty_end]]) {
+          $(sel).value = v;
+          $(sel).dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
       load();
 
       // The whole range in one request, which the server writes in one batch: every day is
@@ -1659,7 +1703,10 @@ export function pilotDutyScript(): string {
         const dutyStart = rest ? null : ($('#duty-d-start').value || null);
         const dutyEnd = rest ? null : ($('#duty-d-end').value || null);
         if ((dutyStart == null) !== (dutyEnd == null)) { errorEl.textContent = 'Enter both duty start and end, or neither.'; return; }
+        if (dutyStart != null && dutyStart === dutyEnd) { errorEl.textContent = 'The duty end must differ from its start.'; return; }
         const body = { dates: keys, duty_start: dutyStart, duty_end: dutyEnd, rest, note: $('#duty-d-note').value };
+        const ask = dutySaveConfirmText((_dutyLog && _dutyLog.days) || [], keys, body);
+        if (ask && !confirm(ask)) return;
         const ok = await _dutySave(buttons, errorEl, () => flightApi('PUT', pilotUrl, body));
         if (ok) close();
       });

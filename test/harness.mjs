@@ -52,6 +52,7 @@ const EXPORTS = [
   'applyFlightEdits', 'flightRemarks', 'flightEntrySummary', 'flightFormTimes', 'flightTrackedTimes',
   // pilot-duty.ts
   'computeDutyData', 'dutyTotals', 'fmtBlock', 'dutyAddDays', 'dutyDayText', 'currentDutyMonth', '_DUTY_LIMITS',
+  'dutySaveConfirmText',
   // flight-store.ts
   'flightCorrectionKey', 'mergeFlightCorrections',
 ];

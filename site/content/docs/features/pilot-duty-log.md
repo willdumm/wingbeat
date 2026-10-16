@@ -86,8 +86,11 @@ Open the day form in either of two ways:
 - use **Plan duty or rest** in the toolbar. The form starts on tomorrow, since
   rest is usually planned ahead, and takes any date.
 
-A day with nothing recorded starts with the pilot's default duty times filled
-in.
+A day with no duty times recorded starts with them empty, and the form shows
+the pilot's [default duty](#default-duty), e.g. "Default duty 08:00–17:00
+applies on a flying day with no times recorded." Leave the times empty to keep
+using the default (saving just a note keeps it too), or click **Use default** to
+fill them in and record them as the day's actual duty.
 
 In the form:
 
@@ -98,10 +101,14 @@ In the form:
   you save it is recorded as when the rest was designated and shown in the
   table and on the PDF, e.g. "Rest · designated Oct 3". Changing a rest day's
   note later keeps the original designation date; switching the day back to
-  duty and then to rest again records a new one.
+  duty and then to rest again records a new one, so saving a rest day as duty
+  asks first.
 - **Through (optional)**: applies the same duty times or rest to every day from
   the date through this one, up to 366 days at a time, e.g. a block of days off
-  next month. The whole range is saved at once, or not at all.
+  next month. The whole range is saved at once, or not at all. If some of the
+  days already have different duty times, rest or notes, Save first asks, e.g.
+  "3 of these 6 days already have records that will be replaced. Save?", and
+  says so when rest days would lose their designation.
 - **Note**: up to 1,000 characters, e.g. on-call hours or what a positioning
   trip was.
 - **Clear** removes the duty times, rest designation and note from the day, or

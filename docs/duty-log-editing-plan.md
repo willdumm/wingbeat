@@ -386,9 +386,15 @@ read-only.
 - **Day edits:** the date cell (with a calendar icon), an Upcoming entry, or "Plan duty or
   rest" opens the day form: duty start/end, or Rest day, plus a note, and an optional
   Through date that applies the same to every day up to it (up to 366 days, refused in the
-  form before sending). Saving always goes through the range route
-  (`PUT /api/duty-days/:pilot`), one request and one statement, so the range saves whole
-  or not at all; Clear removes the days' records (`…/clear`).
+  form before sending). A day with no duty times starts with them empty, the default duty
+  shown as a hint with a "Use default" button that fills them in (so a note saved alone
+  stays a note-only row, which still uses the default). Equal start and end are refused,
+  as on the server, here and in the default-duty form. Saving always goes through the
+  range route (`PUT /api/duty-days/:pilot`), one request and one statement, so the range
+  saves whole or not at all; before it, `dutySaveConfirmText` asks when a range would
+  replace records that differ from what's saved ("3 of these 6 days already have records
+  that will be replaced", naming rest days that lose their designation) or one day would
+  unmark a designated rest day. Clear removes the days' records (`…/clear`).
 - **Toolbar:** the month navigation, the pilot's default duty ("Default duty 08:00–17:00
   · Change", or "No default duty · Set"; the form sets it with `PUT /api/pilots/:id`), "Plan
   duty or rest" (the day form on tomorrow, any date allowed), "Edit flights" (the flight
