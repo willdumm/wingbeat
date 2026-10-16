@@ -499,7 +499,7 @@ Where the implementation departs from, or adds to, the plan above:
   editor's bulk actions and the duty log's forms; `deleteUnappliedCorrections`
   (`flight-editor.ts`) is the confirm-delete-refresh of a "Not found" row, for the editor
   and the duty log. `openFormModal` asks "Discard your changes?" on Escape as well as on a
-  backdrop click once a field has changed.
+  backdrop click once a field has changed, Part 135/91 and Paid/Unpaid included.
 - **Rest periods.** A rest day that gets a warning (flights on it, not designated in
   advance, previous duty or flight past midnight) doesn't count toward the quarter's 13.
 - **Unapplied corrections.** Rows for a tracker the store refreshed but with no matching

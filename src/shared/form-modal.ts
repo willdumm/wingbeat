@@ -177,15 +177,26 @@ export function formModalScript(): string {
       }
     }
 
+    // Each open form modal's teardown (its keydown listener and element), by its root.
+    // It returns the modal's opener, which a modal replacing it takes over.
+    const _formModalDisposers = new WeakMap();
+
     // Opens a form modal (formModalStyles()) and returns { modal, close }. bodyHtml and
     // footerHtml are trusted markup; the caller wires up its own buttons. Escape, the
     // close button and the backdrop close it; Escape and a backdrop click (easy to make by
     // accident on a phone) ask first once a field has been changed. Tab stays inside the
-    // dialog.
+    // dialog. One already open with the same id is replaced, and focus goes back to its
+    // opener when the new one closes.
     // Extra classes go on the root (e.g. 'form-modal-wide').
     function openFormModal({ id, title, bodyHtml, footerHtml, className = '' }) {
+      // Where focus goes back on close. Replacing an open one (a double click on what opens
+      // it, say), it's that one's opener, not its panel.
+      let opener = document.activeElement;
       const existing = document.getElementById(id);
-      if (existing) existing.remove();
+      if (existing) {
+        const dispose = _formModalDisposers.get(existing);
+        if (dispose) opener = dispose(); else existing.remove();
+      }
 
       const modal = document.createElement('div');
       modal.id = id;
@@ -206,8 +217,7 @@ export function formModalScript(): string {
       modal.querySelector('.form-modal-title').textContent = title;
       document.body.appendChild(modal);
       // Move focus into the dialog (the panel, so a phone doesn't pop its keyboard for the
-      // first field), and give it back on close.
-      const opener = document.activeElement;
+      // first field).
       const panel = modal.querySelector('.form-modal-panel');
       panel.focus();
 
@@ -234,9 +244,16 @@ export function formModalScript(): string {
           e.preventDefault(); first.focus();
         }
       }
-      function close() {
+      function dispose() {
         document.removeEventListener('keydown', onKey, true);
         modal.remove();
+        _formModalDisposers.delete(modal);
+        return opener;
+      }
+      // A no-op once closed or replaced, so a replaced form's late save can't take the focus.
+      function close() {
+        if (!_formModalDisposers.has(modal)) return;
+        dispose();
         if (opener && opener.isConnected) opener.focus();
       }
       // Closes, after asking when a field has been changed.
@@ -244,6 +261,7 @@ export function formModalScript(): string {
         if (!dirty || confirm('Discard your changes?')) close();
       }
       document.addEventListener('keydown', onKey, true);
+      _formModalDisposers.set(modal, dispose);
       modal.querySelector('.form-modal-backdrop').addEventListener('click', closeUnlessKept);
       modal.querySelector('.form-modal-close').addEventListener('click', close);
       return { modal, close };

@@ -49,7 +49,7 @@ const EXPORTS = [
   // time.ts
   'tzLocalToEpoch', 'unixToTzDateStr', 'unixToTzTime', 'unixToTzMonthKey', 'tzDayStartUnix', 'tzDayEndUnix',
   // flight-edits.ts
-  'applyFlightEdits', 'flightRemarks', 'flightEntrySummary', 'flightFormTimes',
+  'applyFlightEdits', 'flightRemarks', 'flightEntrySummary', 'flightFormTimes', 'flightTrackedTimes',
   // pilot-duty.ts
   'computeDutyData', 'dutyTotals', 'fmtBlock', 'dutyAddDays', 'dutyDayText', 'currentDutyMonth', '_DUTY_LIMITS',
   // flight-store.ts

@@ -177,5 +177,19 @@ export function flightEditsScript(): string {
         hint: nextDay ? 'Arrives the next day, ' + fmtBlock(secs) + ' after departure.' : '',
       };
     }
+
+    // The corrected times a tracked flight's form saves, from the form's times t
+    // (flightFormTimes()) and the tracker's flight orig: { start_time, end_time }, each
+    // null where it's the tracker's. Times compare to the minute, since the form has no
+    // seconds. Dep left alone and Arr set to the same minute (a flight under a minute)
+    // would put the arrival at the minute's start, before the tracker's departure (10:05
+    // against 10:05:40), which the server refuses: it lands at the departure instead.
+    function flightTrackedTimes(t, orig) {
+      const sameMinute = (a, b) => Math.floor(a / 60) === Math.floor(b / 60);
+      const start_time = sameMinute(t.start_time, orig.start_time) ? null : t.start_time;
+      let end_time = sameMinute(t.end_time, orig.end_time) ? null : t.end_time;
+      if (start_time == null && end_time != null && end_time < orig.start_time) end_time = orig.start_time;
+      return { start_time, end_time };
+    }
   `;
 }

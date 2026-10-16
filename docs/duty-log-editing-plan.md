@@ -404,7 +404,9 @@ read-only.
   counted. In the current month it shows first, with Upcoming; in a past month, after the
   table.
 - **Forms** (`openFormModal`): Escape or a backdrop click on a form with a changed field
-  asks "Discard your changes?"; the close button closes without asking. Saves go through
+  (a segmented toggle such as Duty / Rest counts; `wireSegmented` fires `change` on a
+  click that changes it, not when the form sets it) asks "Discard your changes?"; the
+  close button closes without asking. Saves go through
   the shared `runFormAction` (buttons disabled, error shown in the form).
 - **Refresh:** an open log re-renders when the flight store changes; a closed one isn't
   recomputed (`_dutyIsOpen`), and opening it fetches and renders afresh.

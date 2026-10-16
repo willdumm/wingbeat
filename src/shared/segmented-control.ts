@@ -75,19 +75,29 @@ export function segmentedControlScript(): string {
     }
 
     // Wires the segmentedHtml() group named name inside root: clicks select a button and
-    // call onChange(value). Returns a getter for the selected value.
+    // call onChange(value). A click that changes the selection also fires a bubbling
+    // change event, as a radio button would, so a form modal (form-modal.ts) counts it as
+    // a changed field. Returns a getter for the selected value, whose .set(value) selects
+    // one from code: onChange runs, but no change event fires.
     function wireSegmented(root, name, onChange) {
       const group = root.querySelector('[data-segmented="' + name + '"]');
-      group.addEventListener('click', e => {
-        const btn = e.target.closest('.segmented-btn');
-        if (!btn) return;
+      function select(btn) {
         group.querySelectorAll('.segmented-btn').forEach(b => {
           b.classList.toggle('active', b === btn);
           b.setAttribute('aria-checked', String(b === btn));
         });
         if (onChange) onChange(btn.dataset.value);
+      }
+      group.addEventListener('click', e => {
+        const btn = e.target.closest('.segmented-btn');
+        if (!btn) return;
+        const changed = !btn.classList.contains('active');
+        select(btn);
+        if (changed) group.dispatchEvent(new Event('change', { bubbles: true }));
       });
-      return () => group.querySelector('.segmented-btn.active').dataset.value;
+      const get = () => group.querySelector('.segmented-btn.active').dataset.value;
+      get.set = value => select(group.querySelector('.segmented-btn[data-value="' + value + '"]'));
+      return get;
     }
   `;
 }

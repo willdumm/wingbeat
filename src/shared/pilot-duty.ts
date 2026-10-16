@@ -1508,9 +1508,11 @@ export function pilotDutyScript(): string {
         fromEl.value = String(presets[name][0]);
         toEl.value = String(presets[name][1]);
       }
-      wireSegmented(modal, 'period', applyPreset);
+      const period = wireSegmented(modal, 'period', applyPreset);
       applyPreset('month');
-      const toCustom = () => modal.querySelector('[data-segmented="period"] [data-value="custom"]').click();
+      // Picking a month by hand makes the period Custom (the select's own change already
+      // marks the form changed).
+      const toCustom = () => period.set('custom');
       fromEl.addEventListener('change', toCustom);
       toEl.addEventListener('change', toCustom);
       modal.querySelector('[data-act="cancel"]').addEventListener('click', close);
@@ -1606,7 +1608,9 @@ export function pilotDutyScript(): string {
         restHint.hidden = kind !== 'rest';
       }
       const getKind = wireSegmented(modal, 'kind', showKind);
-      const setKind = kind => $('[data-segmented="kind"] [data-value="' + kind + '"]').click();
+      // From code, so filling the form (on open and on a date change) isn't a change of the
+      // user's that Escape would ask about.
+      const setKind = getKind.set;
 
       // The date range as day keys, or an error message.
       function readDates() {

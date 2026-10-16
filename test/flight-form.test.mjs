@@ -1,6 +1,7 @@
 // The flight form's Dep/Arr reading: flightFormTimes() (flight-edits.ts). An arrival
 // before the departure is the next day, which the form says under the times; over 12 h
 // asks before saving and over 24 h (the server's limit, record-limits.ts) is refused.
+// And what a tracked flight's form saves of them: flightTrackedTimes().
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,7 +9,7 @@ import { loadEngine, fixtures, plain } from './harness.mjs';
 
 const engine = loadEngine({ now: '2026-10-15 12:00' });
 const { at } = fixtures(engine);
-const { flightFormTimes } = engine;
+const { flightFormTimes, flightTrackedTimes } = engine;
 
 describe('flightFormTimes', () => {
   test('a same-day flight: no hint, no confirm', () => {
@@ -57,5 +58,39 @@ describe('flightFormTimes', () => {
     const t = flightFormTimes('2026-03-07', '22:00', '06:00');
     assert.equal(t.end_time, at('2026-03-08 06:00'));
     assert.equal(t.secs, 7 * 3600);
+  });
+});
+
+describe('flightTrackedTimes', () => {
+  // The tracker's flight, with seconds the form can't show.
+  const orig = { start_time: at('2026-03-10 10:05') + 40, end_time: at('2026-03-10 10:42') + 15 };
+
+  test('times left as the tracker’s, to the minute, are no correction', () => {
+    assert.deepEqual(plain(flightTrackedTimes(flightFormTimes('2026-03-10', '10:05', '10:42'), orig)),
+      { start_time: null, end_time: null });
+  });
+
+  test('a changed time is saved as typed, the other left to the tracker', () => {
+    assert.deepEqual(plain(flightTrackedTimes(flightFormTimes('2026-03-10', '10:05', '10:50'), orig)),
+      { start_time: null, end_time: at('2026-03-10 10:50') });
+    assert.deepEqual(plain(flightTrackedTimes(flightFormTimes('2026-03-10', '10:00', '10:42'), orig)),
+      { start_time: at('2026-03-10 10:00'), end_time: null });
+  });
+
+  test('Arr set to the tracker’s departure minute lands at the departure, not before it', () => {
+    // 10:05:00 would be 40 s before the tracker's 10:05:40, which the server refuses.
+    assert.deepEqual(plain(flightTrackedTimes(flightFormTimes('2026-03-10', '10:05', '10:05'), orig)),
+      { start_time: null, end_time: orig.start_time });
+  });
+
+  test('Dep and Arr both moved to the same minute are kept as typed', () => {
+    assert.deepEqual(plain(flightTrackedTimes(flightFormTimes('2026-03-10', '10:00', '10:00'), orig)),
+      { start_time: at('2026-03-10 10:00'), end_time: at('2026-03-10 10:00') });
+  });
+
+  test('Dep moved to the tracker’s arrival minute stays before the arrival', () => {
+    const t = flightTrackedTimes(flightFormTimes('2026-03-10', '10:42', '10:42'), orig);
+    assert.deepEqual(plain(t), { start_time: at('2026-03-10 10:42'), end_time: null });
+    assert.ok(t.start_time <= orig.end_time);
   });
 });
