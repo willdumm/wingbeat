@@ -501,6 +501,16 @@ Where the implementation departs from, or adds to, the plan above:
   (`flight-editor.ts`) is the confirm-delete-refresh of a "Not found" row, for the editor
   and the duty log. `openFormModal` asks "Discard your changes?" on Escape as well as on a
   backdrop click once a field has changed, Part 135/91 and Paid/Unpaid included.
+- **Edit conflicts.** The flight form's save, Revert to tracker and Delete send the flight
+  store's cursor (`flightStore.historyId()`, the history id its corrections are as of) as
+  `base_history_id`; the server refuses the write with a 409 when the flight's
+  corrections or (for a tracked flight) its aircraft/pilot have history after it, so two
+  admins editing one flight can't silently overwrite each other. The form then says
+  "Changed by Sam since this was loaded (…)" with a Reload button that refreshes the store
+  and reopens the form on the flight's new values (`showEditConflict`, `edit-history.ts`),
+  and shows the same as soon as it opens when the "Last changed" row is already newer
+  than the store. The day form does the same. See duty-log-editing-plan.md, "Edit
+  conflicts".
 - **Rest periods.** A rest day that gets a warning (flights on it, not designated in
   advance, previous duty or flight past midnight) doesn't count toward the quarter's 13.
 - **Unapplied corrections.** Rows for a tracker the store refreshed but with no matching
@@ -511,14 +521,15 @@ Where the implementation departs from, or adds to, the plan above:
 - **Incremental sync.** The flight store syncs corrections like flights, from a cursor:
   `GET /api/flight-corrections?since=<id>` returns the rows changed after that
   `edit_history` id (keys from the history triggers, migration 0003), the keys deleted, and
-  the new cursor (`last_history_id`); the client merges them on the key
+  the new cursor (`last_history_id`, the newest history id of any entity, which the flight
+  form also saves with: see "Edit conflicts"); the client merges them on the key
   (`<tracker_id>/<flight_start_time>` or `manual/<id>`). No cursor, or one past the
   newest id (a reset database), gets every row and `full: true`. This replaced refetching
   the whole table whenever `flight_corrections_version` (a write counter) moved; migration
   `0004` drops that table and its triggers. The cursor lives in the store's `_mem` beside
   the per-tracker flight cursors, on the same fetch/merge/save/notify path. If the table
-  has rows but no correction history (written before 0003), the cursor stays 0 and every
-  refresh is a full fetch, which doesn't notify when nothing changed. See
+  has rows but there's no history at all (written before 0003), the cursor stays 0 and
+  every refresh is a full fetch, which doesn't notify when nothing changed. See
   duty-log-editing-plan.md, "Syncing corrections".
 - **Renamed.** The table holds flight corrections and manual flights, not duty-log
   entries, so `flight_log_entries` is now `flight_corrections` (version table

@@ -242,9 +242,9 @@ history"), so a request's writes land together or not at all.
 
 - `GET /api/flight-corrections?since=<edit_history id>` is the flight store's sync (see
   "Syncing corrections"): `{ entries, deleted, last_history_id }`, the rows whose key
-  changed after `since`, the keys deleted, and the new cursor. With no `since` (or 0), or
-  one past the newest correction history id (a reset database), it returns every row and
-  `full: true`.
+  changed after `since`, the keys deleted, and the new cursor (the newest history id of
+  any entity). With no `since` (or 0), or one past the newest history id (a reset
+  database), it returns every row and `full: true`.
   There's no date range or pilot filter: the table is a few rows per corrected or manual
   flight.
 - `POST /api/flight-corrections` either upserts a tracked-flight row (body has
@@ -255,12 +255,13 @@ history"), so a request's writes land together or not at all.
   aircraft_tail?, pilot_id? }` changes the tracked flight's aircraft/pilot in the same
   batch. The server finds that flight by the row's key (the tracker's flight starting at
   `flight_start_time`), so the assignment can only go to the flight being corrected, and
-  is refused if the tracker has no such flight.
-- `PUT /api/flight-corrections/:id` updates a manual flight (the form's full state). A
-  tracked-flight row is refused: it's saved with `POST`, which also takes the assignment
-  and drops a row left empty.
-- `DELETE /api/flight-corrections/:id` reverts a tracked flight to the tracker's values,
-  or deletes a manual flight or an unmatched row.
+  is refused if the tracker has no such flight. A tracked-flight save takes an optional
+  `base_history_id` (see "Edit conflicts").
+- `PUT /api/flight-corrections/:id` updates a manual flight (the form's full state, with
+  an optional `base_history_id`). A tracked-flight row is refused: it's saved with
+  `POST`, which also takes the assignment and drops a row left empty.
+- `DELETE /api/flight-corrections/:id[?base_history_id=<id>]` reverts a tracked flight
+  to the tracker's values, or deletes a manual flight or an unmatched row.
 - `POST /api/flight-corrections/bulk`: `{ flights: [{ tracker_id, flight_start_time } |
   { entry_id }], set: { part91?, excluded? } }`, at most 5,000 flights, one statement per
   kind of flight (`json_each`). Setting Part 91 or removed upserts tracked rows; Part 135
@@ -279,15 +280,17 @@ history"), so a request's writes land together or not at all.
 
 **Duty days:**
 
-- `GET /api/duty-days?pilot=<id>` returns `{ days }`, all of them: a few rows per flown
-  day.
+- `GET /api/duty-days?pilot=<id>` returns `{ days, last_history_id }`: all the days (a
+  few rows per flown day) and the newest history id when they were read (the day form's
+  `base_history_id`; see "Edit conflicts").
 - `PUT /api/duty-days/:pilot`: `{ dates: [YYYY-MM-DD, …], duty_start, duty_end, rest,
-  note }` sets every date in one statement (`json_each`), all or none. The day form uses it
+  note, base_history_id? }` sets every date in one statement (`json_each`), all or none. The day form uses it
   for one day as well as for a Through range. At most `MAX_DUTY_DAYS_PER_REQUEST` (366)
   dates, a limit the form shares (`src/shared/record-limits.ts`). A day left with nothing
   (no times, not rest, no note) is deleted. `rest_designated_at` is set the first time
   `rest` goes 0→1, kept on later edits, and cleared when rest is unset.
-- `POST /api/duty-days/:pilot/clear`: `{ dates }`, the same cap, deleted in one statement.
+- `POST /api/duty-days/:pilot/clear`: `{ dates, base_history_id? }`, the same cap,
+  deleted in one statement.
 - `PUT /api/pilots/:id` also takes the pilot's default duty, `default_duty_start` /
   `default_duty_end` (both HH:MM or both null, and not equal).
 
@@ -596,6 +599,61 @@ last changed by …" or "Aircraft and pilot last changed by …". A save that ch
 corrections and the assignment (one batch, so the same time and user) reads "Last changed
 by …". A full history view is a follow-up.
 
+### Edit conflicts
+
+The flight form and the day form save a record's full state, so two admins with the same
+flight or day open would silently overwrite each other (the history would show it, but
+nobody would notice). Instead, a save from either form says which version of the record
+its values came from, and the server refuses it when the record has changed since:
+
+- **The version** is an `edit_history` id: the `last_history_id` of the read the form's
+  values came from, which is the newest history id of any entity when that read ran
+  (`LAST_HISTORY_ID_SQL`, in the same batch as the rows). Every change up to it is in
+  those values, so a history row for the record after it is a change the form didn't
+  show. The flight form takes the flight store's corrections cursor
+  (`flightStore.historyId()`, from `GET /api/flight-corrections`); the day form takes the
+  duty log's (`GET /api/duty-days`). That's the version the form's values were loaded
+  from, not the record's newest version when the form opened: a stale cache (a store
+  that hasn't synced lately, a duty log open for an hour) is caught too. It's also known
+  the moment the form opens, so there's no request to wait for and no window in which a
+  save could go out without it.
+- **The request** sends it as `base_history_id` (body; a query parameter for `DELETE`):
+  the flight form's save, Revert to tracker and Delete, and the day form's Save and Clear.
+  Without it the server doesn't check, so other callers work as before. Remove/Restore
+  and the editor's bulk actions set one flag on a selection rather than a whole record,
+  and aren't checked.
+- **The check** (`recordedBatch(c, stmts, base)` and `staleSince()` in `src/index.ts`)
+  looks for history rows after the base for the record's keys: for a tracked flight, its
+  corrections and its assignment (`flight_corrections` and `flight_assignment` under
+  `<tracker_id>/<flight_start_time>`), so a bulk action or an aircraft/pilot change since
+  counts; for a manual flight, `manual/<id>`; for a day form save or clear, every date of
+  the range (`duty_days` under `<pilot_id>/<date>`), since the form and its confirm
+  (`dutySaveConfirmText`) showed them all. It's a statement in the save's own batch (an
+  `INSERT` of a second `edit_actor` row when a newer row exists, which fails on the
+  primary key and so aborts the transaction), so nothing can be written between the check
+  and the save. When the batch fails, `staleSince()` looks up the newest change and the
+  route answers 409 `{ error, conflict: { id, at, user_id, user_name } }`.
+- **The form** (`showEditConflict()` in `edit-history.ts`, through `runFormAction()`'s
+  `onConflict`) shows "Changed by Sam since this was loaded (Tue Oct 13 09:12)." in its
+  error line with a Reload button, which reopens the form from refreshed data (the flight
+  store refreshed, or the duty log fetched again, on the same dates), after asking
+  "Discard your changes and load the latest?" when a field has been changed. There's no
+  "save anyway": the user looks at the other change first, then makes theirs again. The
+  "Last changed" fetch (`showLastEdit()`) returns the newest row too, so a form whose
+  data is already older than the record shows the conflict as soon as it opens.
+
+Any record with history can use it: a route passes `recordedBatch()` the client's
+`base_history_id` and the record's `[entity, key]` refs, and the GET its form reads from
+returns `last_history_id`.
+
+Known limitation: a tracked flight's aircraft and pilot reach the store with its flights
+(`GET /api/flights/complete?since=<modified_at>`), fetched alongside the corrections but
+not in the same read, so the cursor only approximately covers them: an assignment change
+landing between the two reads can be missed (or reported when it was already shown).
+The flights' `modified_at` cursor is in whole seconds and compared with `>`, so a change
+in the same second as the previous sync's newest one isn't fetched at all until the
+flight changes again; the check then can't tell the store missed it.
+
 The triggers list their columns explicitly (`json_object('pilot_id', OLD.pilot_id, …)`,
 and the AFTER UPDATE triggers compare those lists to decide whether anything changed), so
 a migration that adds a column to `flight_corrections` or `duty_days`, or another
@@ -612,9 +670,12 @@ records every insert, update and delete of a row under the key the client merges
 client's cursor are the rows to send:
 
 - `GET /api/flight-corrections?since=<id>` returns those keys' rows now as `entries`, the
-  keys with no row now as `deleted`, and the newest correction history id as
-  `last_history_id`, read in one batch so the cursor matches the rows. Migration 0004's
-  `(entity, id)` index on `edit_history` serves the scan and the cursor.
+  keys with no row now as `deleted`, and the newest history id as `last_history_id`,
+  read in one batch so the cursor matches the rows. It's the newest id of any entity, not
+  just of corrections, so it also serves as the flight form's `base_history_id` (see
+  "Edit conflicts"): every correction change up to it is in the store. A change to
+  another entity moves it without changing a row; the store saves the cursor but doesn't
+  re-render. Migration 0004's `(entity, id)` index on `edit_history` serves the scan.
 - With no cursor (or 0), or one past the newest id (a reset or recreated database), it
   returns every row and `full: true`, and the client replaces its copy.
 - The client (`flight-store.ts`) keeps the cursor in `_mem` as `entries_last_history_id`,
@@ -628,10 +689,10 @@ client's cursor are the rows to send:
 Migration 0004 drops the earlier `flight_corrections_version` counter (which the client
 compared before refetching every row) and its triggers.
 
-Known limitation: if the table has rows but no correction history (rows only written
-before 0003 was deployed), the newest id is 0, the cursor stays 0, and every refresh does
-a full fetch. An unchanged full fetch doesn't notify, so it costs only the request; the
-first correction written after 0003 ends it.
+If the table has rows but no history at all (rows only written before 0003 was deployed),
+the newest id is 0, the cursor stays 0, and every refresh does a full fetch. An unchanged
+full fetch doesn't notify, so it costs only the request; the first recorded change of any
+kind ends it.
 
 ### Not yet implemented: multi-pilot crews
 

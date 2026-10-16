@@ -1,5 +1,6 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
+import { HTTPException } from 'hono/http-exception';
 import { Env, Tenant, Point, Flight, FlightRecord, FlightPoint, Tracker, Aircraft, Pilot, InviteToken, Webhook, TileOverlay, FlightCorrection, DutyDay } from './types';
 import { maybePoll, pollAllActive, pollAllActiveForce, testFeed } from './poller';
 import { resegment } from './segmentation';
@@ -974,14 +975,84 @@ app.delete('/api/overlays/:id', requireAdmin, async (c) => {
 // flights' aircraft/pilot (0004): edit_actor is set first and cleared last, and a D1 batch
 // is one transaction, so each change and its history rows land together or not at all.
 // Every route that writes those goes through it. Returns the results of stmts.
-async function recordedBatch(c: Context<{ Bindings: Env; Variables: Variables }>, stmts: D1PreparedStatement[]): Promise<D1Result[]> {
+//
+// With base (a full-state save's base_history_id and the records it replaces), the batch
+// is refused with a 409 when any of them changed after base.id (see "Edit conflicts"
+// below). The check is a statement in the same batch, so no write can slip in between it
+// and the save.
+async function recordedBatch(c: Context<{ Bindings: Env; Variables: Variables }>, stmts: D1PreparedStatement[],
+  base?: SaveBase): Promise<D1Result[]> {
   const db = c.var.db;
-  const results = await db.batch([
-    db.prepare('INSERT OR REPLACE INTO edit_actor (id, user_id, user_name) VALUES (1, ?, ?)').bind(c.var.user.id, c.var.user.name),
-    ...stmts,
-    db.prepare('DELETE FROM edit_actor'),
-  ]);
-  return results.slice(1, -1);
+  // Inserting a second edit_actor row fails on its primary key, which aborts the batch
+  // (a D1 batch is one transaction): the only way to raise an error from plain SQL
+  // outside a trigger.
+  const guard = base ? [db.prepare(
+    `INSERT INTO edit_actor (id, user_id, user_name) SELECT 1, 0, '' WHERE EXISTS (SELECT 1 ${STALE_HISTORY_SQL})`
+  ).bind(base.id, JSON.stringify(base.refs))] : [];
+  let results: D1Result[];
+  try {
+    results = await db.batch([
+      db.prepare('INSERT OR REPLACE INTO edit_actor (id, user_id, user_name) VALUES (1, ?, ?)').bind(c.var.user.id, c.var.user.name),
+      ...guard,
+      ...stmts,
+      db.prepare('DELETE FROM edit_actor'),
+    ]);
+  } catch (e) {
+    // Whatever failed, a change since base is the error worth reporting.
+    const conflict = base && await staleSince(db, base.refs, base.id);
+    if (conflict) {
+      throw new HTTPException(409, { res: c.json({ error: `Changed by ${conflict.user_name ?? 'another user'} since you opened it. Reload and try again.`, conflict }, 409) });
+    }
+    throw e;
+  }
+  return results.slice(1 + guard.length, -1);
+}
+
+// ── Edit conflicts ────────────────────────────────────────────────────────────
+// The flight form and the duty log's day form save a record's full state, so two admins
+// editing the same flight or day would silently overwrite each other. Such a save sends
+// base_history_id: the edit_history id the form's values are as of (the last_history_id
+// of the GET its data came from: the flight store's corrections, the duty log's days).
+// A history row for the record after it means someone changed it since, and the save is
+// refused with 409 { error, conflict: { id, at, user_id, user_name } }, the newest such
+// change. Without base_history_id the save isn't checked.
+//
+// Any record with history can use it: pass recordedBatch() its refs and the client's id.
+
+// A record's history: [entity, entity_key] (keys as in migrations 0003 and 0004).
+type HistoryRef = [entity: string, key: string];
+// A full-state save's base_history_id and the records it replaces.
+type SaveBase = { id: number; refs: HistoryRef[] };
+type EditConflict = { id: number; at: number; user_id: number | null; user_name: string | null };
+
+// The history rows for refs (?2, as JSON) after id ?1, for staleSince() and
+// recordedBatch()'s guard. Any number of refs (a Through range's days) in one statement.
+const STALE_HISTORY_SQL =
+  `FROM edit_history WHERE id > ?1 AND (entity, entity_key) IN
+     (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?2))`;
+
+// The newest change to refs after history id baseId, or null when there's none.
+async function staleSince(db: D1Database, refs: HistoryRef[], baseId: number): Promise<EditConflict | null> {
+  return db.prepare(`SELECT id, at, user_id, user_name ${STALE_HISTORY_SQL} ORDER BY id DESC LIMIT 1`)
+    .bind(baseId, JSON.stringify(refs)).first<EditConflict>();
+}
+
+// A request's base_history_id: undefined when it has none (no check), the id, or an
+// error message.
+function parseBaseHistoryId(v: unknown): number | undefined | string {
+  if (v == null || v === '') return undefined;
+  const n = typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : v;
+  return Number.isSafeInteger(n) && (n as number) >= 0 ? n as number : 'base_history_id must be a non-negative integer';
+}
+
+// The newest edit_history id, any entity: what a snapshot of records with history (GET
+// /api/flight-corrections, GET /api/duty-days) is as of, read in the same batch as it.
+// Every change up to it is in the snapshot, so it's both the corrections sync's cursor
+// and the base_history_id of a form filled from the snapshot.
+const LAST_HISTORY_ID_SQL = 'SELECT COALESCE(MAX(id), 0) AS last_history_id FROM edit_history';
+
+function lastHistoryIdOf(result: D1Result): number {
+  return (result.results[0] as { last_history_id: number } | undefined)?.last_history_id ?? 0;
 }
 
 const EDIT_HISTORY_ENTITIES = new Set(['flight_corrections', 'duty_days', 'flight_assignment']);
@@ -1279,12 +1350,11 @@ async function parseTrackedAssign(db: D1Database, v: unknown, flight: TrackerFli
 // is an edit_history id: the history triggers (migration 0003) record every insert, update
 // and delete, keyed '<tracker_id>/<flight_start_time>' or 'manual/<id>', so the keys changed
 // after it are the rows to send, and a key with no row now was deleted. ?since=<id> returns
-// { entries, deleted: [keys], last_history_id }. Without it (or 0), or with one past the
-// newest id (a reset or recreated database), it returns every row and full: true, and the
-// client replaces its copy. Readable by anyone signed in, like the flights it's applied
-// to; only writes are admin-only.
-const ENTRIES_LAST_HISTORY_ID_SQL =
-  `SELECT COALESCE(MAX(id), 0) AS last_history_id FROM edit_history WHERE entity = 'flight_corrections'`;
+// { entries, deleted: [keys], last_history_id } (LAST_HISTORY_ID_SQL: the newest id of any
+// entity, so it's also the flight form's base_history_id). Without it (or 0), or with one
+// past the newest id (a reset or recreated database), it returns every row and full: true,
+// and the client replaces its copy. Readable by anyone signed in, like the flights it's
+// applied to; only writes are admin-only.
 
 // Each key changed after ?1, with its row now (NULL columns for a deleted one), looked up by
 // primary key or the (tracker_id, flight_start_time) unique index.
@@ -1306,8 +1376,8 @@ app.get('/api/flight-corrections', async (c) => {
   // The cursor and the rows in one batch (a transaction), so they match even if a write
   // comes in between; the next request picks that up.
   const read = async (rows: D1PreparedStatement) => {
-    const [cursor, result] = await c.var.db.batch([c.var.db.prepare(ENTRIES_LAST_HISTORY_ID_SQL), rows]);
-    return { lastHistoryId: (cursor.results[0] as { last_history_id: number } | undefined)?.last_history_id ?? 0, rows: result.results };
+    const [cursor, result] = await c.var.db.batch([c.var.db.prepare(LAST_HISTORY_ID_SQL), rows]);
+    return { lastHistoryId: lastHistoryIdOf(cursor), rows: result.results };
   };
   if (since > 0) {
     const { lastHistoryId, rows } = await read(c.var.db.prepare(ENTRIES_SINCE_SQL).bind(since));
@@ -1325,14 +1395,17 @@ app.get('/api/flight-corrections', async (c) => {
   return c.json({ entries: rows as FlightCorrection[], deleted: [], last_history_id: lastHistoryId, full: true });
 });
 
-// One pilot's duty/rest days. Flights (with corrections) come from the flight store.
+// One pilot's duty/rest days: { days, last_history_id } (the day form's base_history_id),
+// read in one batch. Flights (with corrections) come from the flight store.
 app.get('/api/duty-days', async (c) => {
   const pilotId = parseInt(c.req.query('pilot') ?? '', 10);
   if (Number.isNaN(pilotId)) return c.json({ error: 'pilot must be an integer' }, 400);
-  const { results } = await c.var.db.prepare('SELECT * FROM duty_days WHERE pilot_id = ? ORDER BY date')
-    .bind(pilotId).all<DutyDay>();
+  const [cursor, days] = await c.var.db.batch([
+    c.var.db.prepare(LAST_HISTORY_ID_SQL),
+    c.var.db.prepare('SELECT * FROM duty_days WHERE pilot_id = ? ORDER BY date').bind(pilotId),
+  ]);
   c.header('Cache-Control', 'no-store');
-  return c.json({ days: results });
+  return c.json({ days: days.results as DutyDay[], last_history_id: lastHistoryIdOf(cursor) });
 });
 
 app.post('/api/flight-corrections', requireAdmin, async (c) => {
@@ -1351,6 +1424,8 @@ app.post('/api/flight-corrections', requireAdmin, async (c) => {
   const fields = await parseEntryFields(c.var.db, body, tracked && { flight });
   if (typeof fields === 'string') return c.json({ error: fields }, 400);
   const vals = ENTRY_COLUMNS.map(k => fields[k]);
+  const baseId = parseBaseHistoryId(body.base_history_id);
+  if (typeof baseId === 'string') return c.json({ error: baseId }, 400);
 
   let entry: FlightCorrection | null;
   if (tracked) {
@@ -1363,12 +1438,17 @@ app.post('/api/flight-corrections', requireAdmin, async (c) => {
     const assign = await parseTrackedAssign(c.var.db, body.assign, flight);
     if (typeof assign === 'string') return c.json({ error: assign }, 400);
     const assignStmts = assign ? assignmentStatements(c.var.db, { ids: [assign.flight_id], entryIds: [], ...assign.set }) : [];
+    // The form showed the flight's corrections and its aircraft/pilot, so a change to
+    // either since (the bulk actions and PUT /api/flights/assignment included) is a conflict.
+    const key = `${body.tracker_id}/${body.flight_start_time}`;
+    const base = baseId === undefined ? undefined
+      : { id: baseId, refs: [['flight_corrections', key], ['flight_assignment', key]] as HistoryRef[] };
     if (isEmptyTrackedEntry(fields)) {
       await recordedBatch(c, [
         c.var.db.prepare('DELETE FROM flight_corrections WHERE tracker_id = ? AND flight_start_time = ?')
           .bind(body.tracker_id, body.flight_start_time),
         ...assignStmts,
-      ]);
+      ], base);
       return c.json({ entry: null });
     }
     const [upsert] = await recordedBatch(c, [
@@ -1380,9 +1460,10 @@ app.post('/api/flight-corrections', requireAdmin, async (c) => {
          RETURNING *`
       ).bind(body.tracker_id, body.flight_start_time, ...vals),
       ...assignStmts,
-    ]);
+    ], base);
     entry = (upsert.results[0] as FlightCorrection | undefined) ?? null;
   } else {
+    // A new manual flight: there's nothing to conflict with, so base_history_id is ignored.
     const [insert] = await recordedBatch(c, [c.var.db.prepare(
       `INSERT INTO flight_corrections (${ENTRY_COLUMNS.join(', ')})
        VALUES (${ENTRY_COLUMNS.map(() => '?').join(', ')}) RETURNING *`
@@ -1392,7 +1473,8 @@ app.post('/api/flight-corrections', requireAdmin, async (c) => {
   return c.json({ entry });
 });
 
-// Updates a manual flight (the body is the form's full state).
+// Updates a manual flight (the body is the form's full state, with base_history_id: see
+// "Edit conflicts").
 app.put('/api/flight-corrections/:id', requireAdmin, async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (Number.isNaN(id)) return c.json({ error: 'Invalid id' }, 400);
@@ -1408,10 +1490,13 @@ app.put('/api/flight-corrections/:id', requireAdmin, async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
   const fields = await parseEntryFields(c.var.db, body, false);
   if (typeof fields === 'string') return c.json({ error: fields }, 400);
+  const baseId = parseBaseHistoryId(body.base_history_id);
+  if (typeof baseId === 'string') return c.json({ error: baseId }, 400);
   const [update] = await recordedBatch(c, [c.var.db.prepare(
     `UPDATE flight_corrections SET ${ENTRY_COLUMNS.map(k => `${k} = ?`).join(', ')}, updated_at = unixepoch()
      WHERE id = ? RETURNING *`
-  ).bind(...ENTRY_COLUMNS.map(k => fields[k]), id)]);
+  ).bind(...ENTRY_COLUMNS.map(k => fields[k]), id)],
+  baseId === undefined ? undefined : { id: baseId, refs: [['flight_corrections', `manual/${id}`]] });
   return c.json({ entry: (update.results[0] as FlightCorrection | undefined) ?? null });
 });
 
@@ -1489,10 +1574,23 @@ app.post('/api/flight-corrections/bulk', requireAdmin, async (c) => {
   return c.json({ ok: true });
 });
 
+// The flight form's Revert to tracker and Delete send ?base_history_id= (see "Edit
+// conflicts"), checked against the row's corrections only: a revert leaves the flight's
+// aircraft/pilot as they are.
 app.delete('/api/flight-corrections/:id', requireAdmin, async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (Number.isNaN(id)) return c.json({ error: 'Invalid id' }, 400);
-  const [result] = await recordedBatch(c, [c.var.db.prepare('DELETE FROM flight_corrections WHERE id = ?').bind(id)]);
+  const baseId = parseBaseHistoryId(c.req.query('base_history_id'));
+  if (typeof baseId === 'string') return c.json({ error: baseId }, 400);
+  let base: SaveBase | undefined;
+  if (baseId !== undefined) {
+    const row = await c.var.db.prepare('SELECT id, tracker_id, flight_start_time FROM flight_corrections WHERE id = ?')
+      .bind(id).first<Pick<FlightCorrection, 'id' | 'tracker_id' | 'flight_start_time'>>();
+    if (!row) return c.json({ error: 'Not found' }, 404);
+    const key = row.tracker_id == null ? `manual/${row.id}` : `${row.tracker_id}/${row.flight_start_time}`;
+    base = { id: baseId, refs: [['flight_corrections', key]] };
+  }
+  const [result] = await recordedBatch(c, [c.var.db.prepare('DELETE FROM flight_corrections WHERE id = ?').bind(id)], base);
   if (result.meta.changes === 0) return c.json({ error: 'Not found' }, 404);
   return c.json({ ok: true });
 });
@@ -1549,32 +1647,45 @@ function parseDutyDates(v: unknown): string[] | string {
   return [...new Set(v as string[])];
 }
 
-// Sets one pilot's dates ({ dates, duty_start, duty_end, rest, note }) in one statement:
-// the day form, for one day or a Through range. All the days are written, or none.
+// A day form save's base (see "Edit conflicts"): every date of the range, since the form
+// (and its confirm, dutySaveConfirmText) showed them all from the same GET /api/duty-days.
+function dutyDaysBase(pilotId: number, dates: string[], v: unknown): SaveBase | undefined | string {
+  const id = parseBaseHistoryId(v);
+  if (typeof id === 'string') return id;
+  return id === undefined ? undefined : { id, refs: dates.map(d => ['duty_days', `${pilotId}/${d}`]) };
+}
+
+// Sets one pilot's dates ({ dates, duty_start, duty_end, rest, note, base_history_id }) in
+// one statement: the day form, for one day or a Through range. All the days are written,
+// or none.
 app.put('/api/duty-days/:pilot', requireAdmin, async (c) => {
   const pilotId = parseInt(c.req.param('pilot') ?? '', 10);
   if (Number.isNaN(pilotId)) return c.json({ error: 'Invalid pilot id' }, 400);
-  let body: { dates?: unknown; duty_start?: unknown; duty_end?: unknown; rest?: unknown; note?: unknown };
+  let body: { dates?: unknown; duty_start?: unknown; duty_end?: unknown; rest?: unknown; note?: unknown; base_history_id?: unknown };
   try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
   const dates = parseDutyDates(body.dates);
   if (typeof dates === 'string') return c.json({ error: dates }, 400);
   const fields = parseDutyDayFields(body);
   if (typeof fields === 'string') return c.json({ error: fields }, 400);
+  const base = dutyDaysBase(pilotId, dates, body.base_history_id);
+  if (typeof base === 'string') return c.json({ error: base }, 400);
   if (!await pilotExists(c.var.db, pilotId)) return c.json({ error: 'Pilot not found' }, 404);
-  await recordedBatch(c, [dutyDayStatement(c.var.db, pilotId, dates, fields)]);
+  await recordedBatch(c, [dutyDayStatement(c.var.db, pilotId, dates, fields)], base);
   return c.json({ ok: true });
 });
 
-// Clears many dates at once ({ dates }), in one statement.
+// Clears many dates at once ({ dates, base_history_id }), in one statement.
 app.post('/api/duty-days/:pilot/clear', requireAdmin, async (c) => {
   const pilotId = parseInt(c.req.param('pilot') ?? '', 10);
   if (Number.isNaN(pilotId)) return c.json({ error: 'Invalid pilot id' }, 400);
-  let body: { dates?: unknown };
+  let body: { dates?: unknown; base_history_id?: unknown };
   try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
   const dates = parseDutyDates(body.dates);
   if (typeof dates === 'string') return c.json({ error: dates }, 400);
+  const base = dutyDaysBase(pilotId, dates, body.base_history_id);
+  if (typeof base === 'string') return c.json({ error: base }, 400);
   await recordedBatch(c, [c.var.db.prepare('DELETE FROM duty_days WHERE pilot_id = ? AND date IN (SELECT value FROM json_each(?))')
-    .bind(pilotId, JSON.stringify(dates))]);
+    .bind(pilotId, JSON.stringify(dates))], base);
   return c.json({ ok: true });
 });
 

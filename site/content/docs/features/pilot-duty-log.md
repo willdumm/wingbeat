@@ -74,6 +74,14 @@ or deleted. The day form and the flight form show the last change, e.g. "Last
 changed by Sam, Mon Oct 13 09:12.", or "Pilot last changed by Sam, …" when the
 latest change to a flight was its pilot.
 
+If someone else changes a day or a flight while you have its form open, your
+save doesn't overwrite their change. The form says "Changed by Sam since this
+was loaded (Mon Oct 13 09:12)." with a **Reload** button, which reopens the
+form with the current values (asking first if you've changed a field). Make
+your change again from there. For a range of days, a change to any of them
+counts. The form says the same as soon as it opens if the page's copy is
+already older than the latest change.
+
 Pressing Escape or clicking outside a form closes it, after asking if you've
 changed a field.
 

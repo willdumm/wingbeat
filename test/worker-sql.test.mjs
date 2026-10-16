@@ -1,6 +1,7 @@
 // The Worker's SQL, through its real routes: the bulk flight-corrections upsert, the
-// duty-day statement, the edit_history triggers (migrations 0003 and 0004) and the
-// incremental corrections sync (ENTRIES_SINCE_SQL), plus route validation around them.
+// duty-day statement, the edit_history triggers (migrations 0003 and 0004), the
+// incremental corrections sync (ENTRIES_SINCE_SQL) and the edit conflict check
+// (base_history_id), plus route validation around them.
 // test/worker.mjs runs src/index.ts in Miniflare on a fresh D1 database with every
 // migration applied (Miniflare's SQLite may differ slightly from production D1's).
 //
@@ -332,7 +333,9 @@ describe('GET /api/flight-corrections?since=', () => {
     assert.notEqual(entries[`2/${reinserted}`].id, firstId, 'the re-inserted row, under its new id');
     assert.equal('key' in entries[`1/${kept}`], false);
     assert.deepEqual([...r.body.deleted].sort(), [`1/${gone}`, `manual/${doomed}`].sort());
-    const newest = (await w.first("SELECT MAX(id) AS id FROM edit_history WHERE entity = 'flight_corrections'")).id;
+    // The cursor is the newest id of any entity (the duty day's here), so it doubles as the
+    // flight form's base_history_id.
+    const newest = await mark();
     assert.equal(r.body.last_history_id, newest);
 
     // Caught up: nothing.
@@ -410,5 +413,105 @@ describe('POST /api/flight-corrections validation', () => {
     const missing = await post({ tracker_id: 1, flight_start_time: next(), remark: 'x', assign: { pilot_id: 2 } });
     assert.equal(missing.status, 400);
     assert.match(missing.body.error, /no flight starting at flight_start_time/);
+  });
+});
+
+describe('edit conflicts (base_history_id)', () => {
+  const post = (body) => w.request('POST', '/api/flight-corrections', body);
+  const putDays = (body, pilot = 1) => w.request('PUT', '/api/duty-days/' + pilot, body);
+  /** Writes fn()'s statements as another admin would (edit_actor set, as recordedBatch does). */
+  async function asOther(fn) {
+    await w.db.batch([
+      w.db.prepare("INSERT OR REPLACE INTO edit_actor (id, user_id, user_name) VALUES (1, 3, 'Bea Other')"),
+      ...fn(),
+      w.db.prepare('DELETE FROM edit_actor'),
+    ]);
+  }
+
+  test('a tracked flight: refused after a change to its corrections or its assignment, with who and when', async () => {
+    const s = next();
+    const id = await trackerFlight(s);
+    const base = await mark();
+    const save = { tracker_id: 1, flight_start_time: s, remark: 'Mine', base_history_id: base };
+
+    await asOther(() => [w.db.prepare("INSERT INTO flight_corrections (tracker_id, flight_start_time, remark) VALUES (1, ?, 'Theirs')").bind(s)]);
+    const r = await post(save);
+    assert.equal(r.status, 409);
+    assert.equal(r.body.conflict.user_name, 'Bea Other');
+    assert.ok(r.body.conflict.at > 1_700_000_000);
+    assert.equal(r.body.conflict.id, await mark());
+    assert.match(r.body.error, /Changed by Bea Other/);
+    assert.equal((await correction(1, s)).remark, 'Theirs', 'nothing written');
+    assert.equal((await w.first('SELECT COUNT(*) AS n FROM edit_actor')).n, 0);
+
+    // From the new base it goes through.
+    assert.equal((await post({ ...save, base_history_id: await mark() })).status, 200);
+    assert.equal((await correction(1, s)).remark, 'Mine');
+
+    // An aircraft/pilot change (PUT /api/flights/assignment) counts too.
+    const base2 = await mark();
+    assert.equal((await w.request('PUT', '/api/flights/assignment', { flight_ids: [id], pilot_id: 2 })).status, 200);
+    const r2 = await post({ ...save, remark: 'Again', base_history_id: base2 });
+    assert.equal(r2.status, 409);
+    assert.equal(r2.body.conflict.user_name, 'Ada Admin');
+    assert.equal((await correction(1, s)).remark, 'Mine');
+  });
+
+  test("other records' changes, and a save without base_history_id, aren't conflicts", async () => {
+    const s = next(), other = next();
+    await trackerFlight(s);
+    const base = await mark();
+    await post({ tracker_id: 1, flight_start_time: other, remark: 'Elsewhere' });
+    await putDays({ dates: ['2026-04-01'], rest: true });
+    assert.equal((await post({ tracker_id: 1, flight_start_time: s, remark: 'A', base_history_id: base })).status, 200);
+    // Stale, but unchecked: the API stays as it was for callers that don't send one.
+    assert.equal((await post({ tracker_id: 1, flight_start_time: s, remark: 'B' })).status, 200);
+    assert.equal((await correction(1, s)).remark, 'B');
+  });
+
+  test('a manual flight: PUT and DELETE are checked against its row', async () => {
+    const created = (await post({ pilot_id: 1, start_time: next(), end_time: clock + 600 })).body.entry;
+    const base = await mark();
+    const body = { pilot_id: 1, start_time: created.start_time, end_time: created.end_time, remark: 'Mine', base_history_id: base };
+    await asOther(() => [w.db.prepare("UPDATE flight_corrections SET remark = 'Theirs' WHERE id = ?").bind(created.id)]);
+    const r = await w.request('PUT', '/api/flight-corrections/' + created.id, body);
+    assert.equal(r.status, 409);
+    assert.equal(r.body.conflict.user_name, 'Bea Other');
+    const del = await w.request('DELETE', `/api/flight-corrections/${created.id}?base_history_id=${base}`);
+    assert.equal(del.status, 409);
+    assert.ok(await w.first('SELECT 1 FROM flight_corrections WHERE id = ?', created.id), 'not deleted');
+    assert.equal((await w.request('DELETE', `/api/flight-corrections/${created.id}?base_history_id=${await mark()}`)).status, 200);
+  });
+
+  test('a Through range: a change to any of its days is a conflict, for a save and a clear', async () => {
+    const dates = ['2026-05-01', '2026-05-02', '2026-05-03'];
+    const base = await mark();
+    await asOther(() => [w.db.prepare("INSERT INTO duty_days (pilot_id, date, note) VALUES (1, '2026-05-03', 'Theirs')")]);
+    const r = await putDays({ dates, rest: true, base_history_id: base });
+    assert.equal(r.status, 409);
+    assert.equal(r.body.conflict.user_name, 'Bea Other');
+    assert.equal(await dutyDay(1, '2026-05-01'), null, 'none of the days written');
+    assert.equal((await w.request('POST', '/api/duty-days/1/clear', { dates, base_history_id: base })).status, 409);
+    assert.equal((await dutyDay(1, '2026-05-03')).note, 'Theirs');
+
+    // Another pilot's same date isn't this range.
+    const base2 = await mark();
+    await putDays({ dates: ['2026-05-02'], rest: true }, 2);
+    assert.equal((await putDays({ dates, rest: true, base_history_id: base2 })).status, 200);
+  });
+
+  test("GET /api/duty-days returns the newest history id of any entity, the day form's base", async () => {
+    await post({ tracker_id: 1, flight_start_time: next(), remark: 'x' });
+    const r = await w.request('GET', '/api/duty-days?pilot=1');
+    assert.equal(r.status, 200);
+    assert.equal(r.body.last_history_id, await mark());
+    assert.ok(Array.isArray(r.body.days));
+  });
+
+  test('refuses a malformed base_history_id', async () => {
+    const r = await putDays({ dates: ['2026-05-10'], rest: true, base_history_id: -1 });
+    assert.equal(r.status, 400);
+    assert.match(r.body.error, /base_history_id/);
+    assert.equal((await w.request('DELETE', '/api/flight-corrections/1?base_history_id=abc')).status, 400);
   });
 });

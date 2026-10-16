@@ -1,6 +1,7 @@
 // The flight store's refresh (flightStore.refresh() → _fsFetchMerge() in flight-store.ts):
 // merging a corrections response into the cached copy, dropping one that another tab's
-// save overtook, and queueing a refresh asked for while one is in flight.
+// save overtook, the cursor the flight form saves with (historyId()), and queueing a
+// refresh asked for while one is in flight.
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -98,6 +99,23 @@ describe('flightStore.refresh: corrections', () => {
     assert.deepEqual(mem().entries, [entry(7, 700, { excluded: 1 })]);
     assert.equal(mem().entries_last_history_id, 3);
     assert.deepEqual(saved().entries.map(e => e.id), [7]);
+  });
+
+  test("historyId() is the cursor; one moved by another entity's change is saved without notifying", async () => {
+    const { engine, calls, saved } = storeWith([entry(1, 100)], 5);
+    assert.equal(engine.flightStore.historyId(), 5);
+    let notified = 0;
+    engine.flightStore.onChange(() => notified++);
+    const done = engine.flightStore.refresh([1]);
+    await settle();
+    calls.find(c => !isCorrections(c)).respond(noFlights);
+    // A duty day was changed: the newest history id moved, no correction did.
+    calls.find(isCorrections).respond({ entries: [], deleted: [], last_history_id: 12 });
+    const result = await done;
+    assert.equal(result.changed, false);
+    assert.equal(notified, 0);
+    assert.equal(engine.flightStore.historyId(), 12);
+    assert.equal(saved().entries_last_history_id, 12);
   });
 
   test('a failed corrections fetch keeps the cached copy', async () => {

@@ -82,6 +82,15 @@ last changed by …", "Aircraft last changed by …" or "Aircraft and pilot last
 changed by …". Every change is kept in an edit history that can't be edited or
 deleted.
 
+If someone else changes the flight (its corrections, or a tracked flight's
+aircraft or pilot) while you have the form open, saving doesn't overwrite their
+change. The form says "Changed by Sam since this was loaded (Mon Oct 13
+09:12)." with a **Reload** button, which reopens the form with the flight's
+current values (asking first if you've changed a field); make your change again
+from there. Revert to tracker and Delete are checked the same way. The form
+says so as soon as it opens if the page's copy of the flight is already older
+than its latest change.
+
 For a tracked flight, only the values that differ from the tracker's are
 stored, and the tracker's value is shown under each corrected field. Values the
 tracker is still filling in (a newly geocoded destination, for example) keep

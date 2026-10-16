@@ -1,6 +1,6 @@
 // Test harness for the client-side scripts that live inside TypeScript template strings
 // (tzCalendarScript(), htmlEscapeScript(), flightEditsScript(), pilotDutyRenderScript(),
-// flightStoreScript()).
+// flightStoreScript(), editHistoryScript()).
 // tsc can't see into those strings, so the tests run the real script text instead:
 //
 //   1. esbuild bundles a tiny in-memory entry that re-exports the script-string functions
@@ -29,6 +29,7 @@ const bundle = await build({
       export { flightEditsScript } from './src/shared/flight-edits';
       export { pilotDutyRenderScript } from './src/shared/pilot-duty';
       export { flightStoreScript } from './src/shared/flight-store';
+      export { editHistoryScript } from './src/shared/edit-history';
     `,
     resolveDir: ROOT,
     loader: 'ts',
@@ -58,6 +59,8 @@ const EXPORTS = [
   'dutySaveConfirmText',
   // flight-store.ts
   'flightCorrectionKey', 'mergeFlightCorrections', 'flightStore',
+  // edit-history.ts
+  'editConflictText',
 ];
 
 export const TZ = 'America/Anchorage';
@@ -95,6 +98,7 @@ export function loadEngine({ settings = {}, now = '2026-10-15 12:00', fetch } = 
     scripts.flightEditsScript(),
     scripts.pilotDutyRenderScript(),
     scripts.flightStoreScript(),
+    scripts.editHistoryScript(),
   ].join('\n');
   vm.runInContext(source, context, { filename: 'engine.js' });
   const api = vm.runInContext(`({ ${EXPORTS.join(', ')} })`, context);

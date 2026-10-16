@@ -118,6 +118,8 @@ export function formModalStyles(): string {
     .form-modal-hint:empty { display: none; }
     .form-modal-error { font-size: var(--size-xs); color: var(--danger-fg); }
     .form-modal-error:empty { display: none; }
+    /* An action offered with the error (showEditConflict()'s Reload). */
+    .form-modal-error .btn-sm { margin-left: 0.4rem; vertical-align: middle; }
     .form-modal-footer {
       padding: 0.65rem 1rem;
       border-top: 1px solid var(--border);
@@ -161,7 +163,9 @@ export function formModalScript(): string {
 
     // Sends a JSON write (body, if any, as JSON) and returns the response's JSON; throws
     // with the server's message when it fails, for runFormAction() to show. Used by the
-    // flight form and editor and the duty log's forms.
+    // flight form and editor and the duty log's forms. A save refused because the record
+    // changed since the form loaded it (409, src/index.ts "Edit conflicts") throws with
+    // the server's conflict ({ id, at, user_id, user_name }) as the error's .conflict.
     async function apiWrite(method, url, body) {
       const resp = await fetch(url, {
         method,
@@ -170,23 +174,27 @@ export function formModalScript(): string {
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
-        throw new Error(err.error || ('HTTP ' + resp.status));
+        const e = new Error(err.error || ('HTTP ' + resp.status));
+        if (resp.status === 409 && err.conflict) e.conflict = err.conflict;
+        throw e;
       }
       return resp.json();
     }
 
     // Runs a form's write: fn() with controls (its buttons) disabled and errorEl cleared,
-    // then the controls enabled again. A failure's message goes in errorEl. Returns whether
-    // fn went through. Shared by the flight form, the flight editor's bulk actions and the
-    // duty log's forms.
-    async function runFormAction(controls, errorEl, fn) {
+    // then the controls enabled again. A failure's message goes in errorEl; an edit
+    // conflict goes to onConflict(conflict) instead, when given (showEditConflict(), in
+    // edit-history.ts). Returns whether fn went through. Shared by the flight form, the
+    // flight editor's bulk actions and the duty log's forms.
+    async function runFormAction(controls, errorEl, fn, onConflict = null) {
       controls.forEach(c => { c.disabled = true; });
       errorEl.textContent = '';
       try {
         await fn();
         return true;
       } catch (e) {
-        errorEl.textContent = e && e.message ? e.message : String(e);
+        if (e && e.conflict && onConflict) onConflict(e.conflict);
+        else errorEl.textContent = e && e.message ? e.message : String(e);
         return false;
       } finally {
         controls.forEach(c => { c.disabled = false; });
@@ -197,12 +205,12 @@ export function formModalScript(): string {
     // It returns the modal's opener, which a modal replacing it takes over.
     const _formModalDisposers = new WeakMap();
 
-    // Opens a form modal (formModalStyles()) and returns { modal, close }. bodyHtml and
+    // Opens a form modal (formModalStyles()) and returns { modal, close, isDirty }. bodyHtml and
     // footerHtml are trusted markup; the caller wires up its own buttons. Escape, the
     // close button and the backdrop close it; Escape and a backdrop click (easy to make by
     // accident on a phone) ask first once a field has been changed. Tab stays inside the
     // dialog. One already open with the same id is replaced, and focus goes back to its
-    // opener when the new one closes.
+    // opener when the new one closes. isDirty() says whether a field has been changed.
     // Extra classes go on the root (e.g. 'form-modal-wide').
     function openFormModal({ id, title, bodyHtml, footerHtml, className = '' }) {
       // Where focus goes back on close. Replacing an open one (a double click on what opens
@@ -280,7 +288,7 @@ export function formModalScript(): string {
       _formModalDisposers.set(modal, dispose);
       modal.querySelector('.form-modal-backdrop').addEventListener('click', closeUnlessKept);
       modal.querySelector('.form-modal-close').addEventListener('click', close);
-      return { modal, close };
+      return { modal, close, isDirty: () => dirty };
     }
   `;
 }

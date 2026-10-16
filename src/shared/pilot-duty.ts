@@ -1558,10 +1558,11 @@ export function pilotDutyScript(): string {
       _dutyOpenDayForm(tzAddDays(unixToTzDateStr(Math.floor(Date.now() / 1000)), 1)));
 
     // Runs a duty-day or pilot save, then reloads the log and re-renders; shows a failure
-    // in errorEl. Returns whether the save went through (a failed reload doesn't count:
-    // _dutyFetchLog says so itself).
-    async function _dutySave(buttons, errorEl, fn) {
-      if (!await runFormAction(buttons, errorEl, fn)) return false;
+    // in errorEl (an edit conflict through onConflict, as runFormAction() does). Returns
+    // whether the save went through (a failed reload doesn't count: _dutyFetchLog says so
+    // itself).
+    async function _dutySave(buttons, errorEl, fn, onConflict = null) {
+      if (!await runFormAction(buttons, errorEl, fn, onConflict)) return false;
       await _dutyFetchLog();
       _dutyLoad();
       return true;
@@ -1574,9 +1575,13 @@ export function pilotDutyScript(): string {
     // "Through" date, for every day from it to that date (e.g. a block of rest days planned
     // ahead). Opened from a date in the table, an Upcoming entry or the toolbar's Plan duty
     // or rest button.
-    function _dutyOpenDayForm(dateKey) {
+    //
+    // A save or clear sends the log's history id as base_history_id: the form and its
+    // confirm show the range's days as of it, so a change to any of them since (another
+    // admin's) is refused (src/index.ts, "Edit conflicts") and the form offers to reload.
+    function _dutyOpenDayForm(dateKey, { through = '' } = {}) {
       const recordOf = k => ((_dutyLog && _dutyLog.days) || []).find(r => r.date === k) || null;
-      const { modal, close } = openFormModal({
+      const { modal, close, isDirty } = openFormModal({
         id: 'duty-day-modal',
         title: 'Duty or rest',
         bodyHtml:
@@ -1584,7 +1589,7 @@ export function pilotDutyScript(): string {
             '<div class="form-field"><label for="duty-d-date">Date</label>' +
               '<input type="date" id="duty-d-date" value="' + escHtml(dateKey) + '"></div>' +
             '<div class="form-field"><label for="duty-d-through">Through (optional)</label>' +
-              '<input type="date" id="duty-d-through"></div>' +
+              '<input type="date" id="duty-d-through" value="' + escHtml(through) + '"></div>' +
           '</div>' +
           '<div class="form-field">' + segmentedHtml('kind', [['duty', 'Duty'], ['rest', 'Rest day']], 'duty', { label: 'Day type' }) + '</div>' +
           '<div class="form-field-row" data-duty-times>' +
@@ -1614,7 +1619,18 @@ export function pilotDutyScript(): string {
       const defaultHint = $('[data-duty-default-hint]');
       // def: the pilot's default duty for the first date, offered with "Use default"
       // rather than filled in, so a day saved with a note alone keeps using it.
-      let rec = null, def = null;
+      // baseHistoryId: what the log the form was filled from is as of (0 without one: the
+      // form shows no records).
+      let rec = null, def = null, baseHistoryId = 0;
+      // Reload (an edit conflict): the log fetched again, and the form reopened on the same
+      // dates.
+      async function reload() {
+        const from = $('#duty-d-date').value || dateKey, to = $('#duty-d-through').value;
+        await _dutyFetchLog();
+        _dutyLoad();
+        _dutyOpenDayForm(from, { through: to });
+      }
+      const onConflict = conflict => showEditConflict(errorEl, conflict, { reload, changed: isDirty });
       function showKind(kind) {
         $('[data-duty-times]').hidden = kind === 'rest';
         restHint.hidden = kind !== 'rest';
@@ -1639,6 +1655,7 @@ export function pilotDutyScript(): string {
       }
       // Fills the form from the first date's record, and offers Clear when the range has one.
       function load() {
+        baseHistoryId = _dutyLog ? _dutyLog.last_history_id : 0;
         rec = recordOf($('#duty-d-date').value);
         def = _dutyDefaultDuty();
         defaultHint.firstChild.textContent = def
@@ -1647,7 +1664,10 @@ export function pilotDutyScript(): string {
         $('#duty-d-start').value = (rec && rec.duty_start) || '';
         $('#duty-d-end').value = (rec && rec.duty_end) || '';
         $('#duty-d-note').value = (rec && rec.note) || '';
-        showLastEdit($('[data-duty-last-edit]'), 'duty_days', _dutyPilotId + '/' + $('#duty-d-date').value);
+        // A change newer than the log is shown as a conflict right away.
+        const base = baseHistoryId;
+        showLastEdit($('[data-duty-last-edit]'), 'duty_days', _dutyPilotId + '/' + $('#duty-d-date').value)
+          .then(h => { if (h && h.id > base && !errorEl.textContent) onConflict(h); });
         restHint.textContent = rec && rec.rest && rec.rest_designated_at != null
           ? 'Designated ' + tzDateLabel(unixToTzDateStr(rec.rest_designated_at)) + ', ' + unixToTzTime(rec.rest_designated_at) + '.'
           : 'Today is recorded as the date the rest was designated. Rest has to be designated before the day it falls on.';
@@ -1684,14 +1704,16 @@ export function pilotDutyScript(): string {
         const body = { dates: keys, duty_start: dutyStart, duty_end: dutyEnd, rest, note: $('#duty-d-note').value };
         const ask = dutySaveConfirmText((_dutyLog && _dutyLog.days) || [], keys, body);
         if (ask && !confirm(ask)) return;
-        const ok = await _dutySave(buttons, errorEl, () => apiWrite('PUT', pilotUrl, body));
+        const ok = await _dutySave(buttons, errorEl,
+          () => apiWrite('PUT', pilotUrl, { ...body, base_history_id: baseHistoryId }), onConflict);
         if (ok) close();
       });
       $('[data-act="clear"]').addEventListener('click', async () => {
         const keys = readDates();
         if (typeof keys === 'string') { errorEl.textContent = keys; return; }
         if (keys.length > 1 && !confirm('Clear duty, rest and notes for all ' + keys.length + ' days?')) return;
-        const ok = await _dutySave(buttons, errorEl, () => apiWrite('POST', pilotUrl + '/clear', { dates: keys }));
+        const ok = await _dutySave(buttons, errorEl,
+          () => apiWrite('POST', pilotUrl + '/clear', { dates: keys, base_history_id: baseHistoryId }), onConflict);
         if (ok) close();
       });
     }

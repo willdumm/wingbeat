@@ -403,12 +403,27 @@ export function flightEditorScript(): string {
 
     // ── Flight form ──
 
+    // f again from the store after a refresh: the same tracker flight (by its tracker's
+    // start time, which keys its corrections) or manual flight (by row), or null if it's gone.
+    function _feFindFlight(f) {
+      const ref = _feFlightRef(f);
+      return flightStore.getAll(undefined, { includeRemoved: true }).find(x =>
+        ref.entry_id != null
+          ? x.tracker_id == null && x.edit && x.edit.entry && x.edit.entry.id === ref.entry_id
+          : x.tracker_id === ref.tracker_id && _feFlightRef(x).flight_start_time === ref.flight_start_time) || null;
+    }
+
     // Edits flight f (an effective flight: tracked or manual), or adds a manual flight
     // when f is null (on dateKey, today by default, for pilotId). Saves through
     // /api/flight-corrections (corrections, Part 91, remark, removal) and
     // /api/flights/assignment (aircraft, pilot), then refreshes the flight store, which
     // re-renders every open view.
+    //
+    // A save, revert or delete sends the store's history id as base_history_id: f is the
+    // store's as of it, so a change since (another admin's, or this flight's in another
+    // tab) is refused (src/index.ts, "Edit conflicts") and the form offers to reload.
     async function openFlightForm(f, { dateKey = null, pilotId = null } = {}) {
+      const baseHistoryId = flightStore.historyId();
       const isNew = !f;
       const tracked = !!(f && f.tracker_id != null);
       const edit = f ? f.edit : null;
@@ -435,7 +450,7 @@ export function flightEditorScript(): string {
         ? '<div class="form-field-original">Tracker: ' + escHtml(flightOriginalText(field, orig[field])) + '</div>' : '';
       const date = f ? unixToTzDateStr(f.start_time) : (dateKey || unixToTzDateStr(Math.floor(Date.now() / 1000)));
 
-      const { modal, close } = openFormModal({
+      const { modal, close, isDirty } = openFormModal({
         id: 'flight-form-modal',
         className: 'form-modal-wide',
         title: isNew ? 'Add flight' : (tracked ? 'Edit flight' : 'Edit manual flight'),
@@ -497,17 +512,29 @@ export function flightEditorScript(): string {
       const getPart = wireSegmented(modal, 'part', part => { $('[data-fe-pay]').hidden = part !== '91'; });
       const getPay = wireSegmented(modal, 'pay');
       const errorEl = $('.form-modal-error');
+      // Reload (an edit conflict): the flight again from a refreshed store, in a new form.
+      async function reload() {
+        await flightStore.refresh().catch(() => {});
+        const fresh = _feFindFlight(f);
+        if (fresh) openFlightForm(fresh);
+        else errorEl.textContent = 'This flight is no longer in the log.';
+      }
+      const onConflict = conflict => showEditConflict(errorEl, conflict, { reload, changed: isDirty });
       // A tracked flight's corrections are keyed by its tracker's start time, so their
       // history survives a revert; a manual flight's by its row.
       // Its aircraft/pilot history (migration 0004) shares the corrections' key.
-      if (tracked) showLastEdit($('[data-fe-last-edit]'), ['flight_corrections', 'flight_assignment'], orig.tracker_id + '/' + orig.start_time);
-      else if (entry) showLastEdit($('[data-fe-last-edit]'), 'flight_corrections', 'manual/' + entry.id);
+      // A change newer than the store's copy is shown as a conflict right away, rather
+      // than after the user has made their edits.
+      const lastEdit = tracked ? showLastEdit($('[data-fe-last-edit]'), ['flight_corrections', 'flight_assignment'], orig.tracker_id + '/' + orig.start_time)
+        : entry ? showLastEdit($('[data-fe-last-edit]'), 'flight_corrections', 'manual/' + entry.id) : null;
+      if (lastEdit) lastEdit.then(h => { if (h && h.id > baseHistoryId && !errorEl.textContent) onConflict(h); });
       const buttons = [...modal.querySelectorAll('.form-modal-footer button')];
       const btn = act => modal.querySelector('[data-act="' + act + '"]');
       btn('cancel').addEventListener('click', close);
+      const deleteUrl = () => '/api/flight-corrections/' + entry.id + '?base_history_id=' + baseHistoryId;
 
       async function save(fn) {
-        if (!await runFormAction(buttons, errorEl, fn)) return;
+        if (!await runFormAction(buttons, errorEl, fn, onConflict)) return;
         // Saved: close whatever the refresh does, so a failed refresh can't invite a second
         // save (a duplicate manual flight). The next poll catches up.
         close();
@@ -585,7 +612,7 @@ export function flightEditorScript(): string {
             const [startLat, startLon] = coords(v.origin_label);
             const [endLat, endLon] = coords(v.destination_label);
             const body = { ...v, excluded: removed, start_lat: startLat, start_lon: startLon, end_lat: endLat, end_lon: endLon };
-            if (entry) await apiWrite('PUT', '/api/flight-corrections/' + entry.id, body);
+            if (entry) await apiWrite('PUT', '/api/flight-corrections/' + entry.id, { ...body, base_history_id: baseHistoryId });
             else await apiWrite('POST', '/api/flight-corrections', body);
             return;
           }
@@ -604,6 +631,7 @@ export function flightEditorScript(): string {
             destination_label: v.destination_label === (orig.destination_label || null) ? null : v.destination_label,
             part91: v.part91, unpaid: v.unpaid, remark: v.remark, excluded: removed,
             assign: Object.keys(assign).length ? assign : undefined,
+            base_history_id: baseHistoryId,
           });
         });
       });
@@ -616,11 +644,11 @@ export function flightEditorScript(): string {
       btn('restore')?.addEventListener('click', () => save(() => flightSetFlags([f], { excluded: false })));
       btn('revert')?.addEventListener('click', () => {
         if (!confirm('Drop this flight’s corrections, Part 91 and unpaid marks and remark, and show it as the tracker recorded it?')) return;
-        save(() => apiWrite('DELETE', '/api/flight-corrections/' + entry.id));
+        save(() => apiWrite('DELETE', deleteUrl()));
       });
       btn('delete')?.addEventListener('click', () => {
         if (!confirm('Delete this manual flight?')) return;
-        save(() => apiWrite('DELETE', '/api/flight-corrections/' + entry.id));
+        save(() => apiWrite('DELETE', deleteUrl()));
       });
     }
   `;

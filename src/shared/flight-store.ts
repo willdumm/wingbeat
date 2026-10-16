@@ -138,12 +138,16 @@ export function flightStoreScript(): string {
       }
       // Dropped if another tab's save moved the cursor meanwhile (the storage listener
       // reloaded _mem): the delta may predate that copy. The next refresh continues from it.
+      // The cursor is the newest history id of any entity, so it also moves on a change
+      // elsewhere (a duty day's); that's saved, but there's nothing to re-render.
+      let cursorMoved = false;
       if (entriesData && _mem.entries_last_history_id === entriesSince) {
         const entries = mergeFlightCorrections(_mem.entries, entriesData);
         if (entries !== _mem.entries) { _mem.entries = entries; changed = true; }
-        if (_fsAdvance(_mem, 'entries_last_history_id', entriesData.last_history_id, entriesData.full)) changed = true;
+        cursorMoved = _fsAdvance(_mem, 'entries_last_history_id', entriesData.last_history_id, entriesData.full);
       }
       if (changed) { _fsSave(); _cbs.forEach(cb => cb()); }
+      else if (cursorMoved) _fsSave();
       return { changed, lastPolled: latestLastPolled, liveLabelsByTracker, geocodePending: anyGeocodePending };
     }
 
@@ -237,6 +241,14 @@ export function flightStoreScript(): string {
       // Bumped whenever what getAll() returns may have changed.
       generation() {
         return _gen;
+      },
+
+      // The edit_history id the corrections are as of (GET /api/flight-corrections'
+      // last_history_id): every correction up to it is applied to getAll()'s flights, whose
+      // aircraft/pilot come from the same refresh. The flight form saves with it as
+      // base_history_id, so a change it didn't show is a conflict.
+      historyId() {
+        return _mem.entries_last_history_id;
       },
 
       onChange(cb) {
