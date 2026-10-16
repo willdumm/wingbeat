@@ -58,6 +58,7 @@ configuration:
 | Timezone | Used for all displayed times and the pilot duty log's day boundaries |
 | Map default lat/lng/zoom | Where the map opens when there's no other context. **Set from map** lets you pan and zoom to it instead of typing coordinates |
 | Gap alert (minutes) | Silence threshold before an in-flight signal-gap notification fires |
+| Stop gap alerts after (minutes) | Silence after which the flight is treated as ended and repeating gap alerts stop (default 60) |
 
 ### Notifications
 

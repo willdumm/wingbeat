@@ -221,6 +221,10 @@ export function settingsModalMarkup(): string {
                 <div class="settings-form-label">Gap alert (minutes)</div>
                 <input type="number" id="settings-tenant-gap-minutes" min="1" step="1" autocomplete="off" />
               </div>
+              <div class="settings-form-row">
+                <div class="settings-form-label">Stop gap alerts after (minutes)</div>
+                <input type="number" id="settings-tenant-gap-stop-minutes" min="1" step="1" placeholder="60" autocomplete="off" />
+              </div>
               <div class="settings-add-actions">
                 <button id="settings-tenant-save" class="btn-primary">Save</button>
               </div>
@@ -228,7 +232,7 @@ export function settingsModalMarkup(): string {
             </div>
             <div class="settings-section">
               <div class="settings-section-label">Notifications</div>
-              <p class="settings-section-desc">Notification targets receive takeoff, landing, and in-flight signal-gap events (see the gap alert threshold above), delivered either as a JSON webhook POST or natively via Pushover. Signal-gap alerts repeat about once a minute while the silence continues, followed by a final &ldquo;signal restored&rdquo; notification when updates resume.</p>
+              <p class="settings-section-desc">Notification targets receive takeoff, landing, and in-flight signal-gap events (see the gap alert threshold above), delivered either as a JSON webhook POST or natively via Pushover. Signal-gap alerts repeat about once a minute while the silence continues, followed by a final &ldquo;signal restored&rdquo; notification when updates resume. If the silence outlasts the stop threshold above, the flight is treated as ended and a final &ldquo;gap alerts stopped&rdquo; notification ends the repeats.</p>
               <p class="settings-section-desc">Pushover setup is two steps. <strong>First</strong>, register one free application at <code>pushover.net/apps/build</code> and paste its token below — this single token is shared by every Pushover target on this instance. <strong>Then</strong>, add a target below for each person who should get alerts, using <em>their own</em> Pushover user key (from their pushover.net dashboard) — not the token.</p>
               <div class="settings-form-row">
                 <div class="settings-form-label">Pushover application token (shared)</div>
@@ -2791,6 +2795,7 @@ export function settingsModalScript(): string {
         document.getElementById('settings-tenant-lng').value = d.map_default_lng ?? '';
         document.getElementById('settings-tenant-zoom').value = d.map_default_zoom ?? '';
         document.getElementById('settings-tenant-gap-minutes').value = d.gap_alert_minutes ?? '';
+        document.getElementById('settings-tenant-gap-stop-minutes').value = d.gap_alert_stop_minutes ?? '';
         document.getElementById('settings-tenant-pushover-token').value = d.pushover_api_token ?? '';
       } catch (_) {}
     }
@@ -2813,7 +2818,11 @@ export function settingsModalScript(): string {
         map_default_lng: parseFloat(document.getElementById('settings-tenant-lng').value),
         map_default_zoom: parseInt(document.getElementById('settings-tenant-zoom').value, 10),
         gap_alert_minutes: parseInt(document.getElementById('settings-tenant-gap-minutes').value, 10),
+        gap_alert_stop_minutes: parseInt(document.getElementById('settings-tenant-gap-stop-minutes').value, 10),
       };
+      // Not seeded by the initial migration, so it's blank until first saved — leave the
+      // server default (shown as the placeholder) in place rather than sending null.
+      if (Number.isNaN(body.gap_alert_stop_minutes)) delete body.gap_alert_stop_minutes;
       if (!body.app_name || !body.timezone) return;
       try {
         const resp = await fetch('/api/settings', {

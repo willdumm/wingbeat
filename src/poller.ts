@@ -1,5 +1,5 @@
 import { Tenant, ParsedPoint } from './types';
-import { runSegmentation, resegment, fetchRecentFlights } from './segmentation';
+import { runSegmentation, resegment, fetchRecentFlights, LONG_GAP_S } from './segmentation';
 import { geocodePendingPoints, geocodeLivePoint, computeLiveLabel, resolveRefPoint } from './geocoding';
 import { SPEED_THRESHOLD_KMH } from './geo';
 import { loadSettings } from './settings';
@@ -262,13 +262,21 @@ async function processNotifications(
   const trackerMapshareUrl = mapshareUrl(tracker.source_url);
   const instanceUrl = `https://${tenant.host}/`;
 
+  // A gap_timeout gave up on this flight, but if the resumed points pick up close enough
+  // to the last one that segmentation keeps them in the same flight (late-delivered
+  // points), it's a continuation: close it out with gap_resolved like an alerted gap,
+  // and carry on as in flight so a fast first point doesn't read as a fresh takeoff.
+  const resumedAfterTimeout = !isFirstEver && lastTime !== null && state?.flight_status === 'timed_out'
+    && newPoints[0].garmin_time - lastTime <= LONG_GAP_S;
+  if (resumedAfterTimeout) flying = true;
+
   // Gap detection lives entirely in the timeout path (maybeAlertSilentTracker), which
   // alerts while the silence is still ongoing and repeats each minute. Alerting here on
   // transmission-time gaps between resumed points would fire *after* the track is current
   // again — the "gap alert while the dashboard shows a minute-old point" false positive
   // (e.g. the MapShare feed delivering a late batch). All this path does is close out an
   // alerted silence: the first resumed point turns it into a one-shot gap_resolved.
-  if (!isFirstEver && lastTime !== null && (state?.gap_alerted ?? 0) === 1) {
+  if (!isFirstEver && lastTime !== null && ((state?.gap_alerted ?? 0) === 1 || resumedAfterTimeout)) {
     const first = newPoints[0];
     events.push({
       type: 'gap_resolved', tracker_id: tracker.id, tracker_name: name,
@@ -391,10 +399,11 @@ const GAP_REALERT_SECONDS = 55;
  * Fires a `gap` notification for a tracker that is in flight but has been silent longer
  * than the gap threshold, and keeps re-firing every cron tick (~1 min) until points
  * resume — at which point processNotifications sees gap_alerted = 1 and sends the
- * one-shot gap_resolved. This is the only gap-detection path: it alerts while the
- * silence is actually ongoing, so an alert always corresponds to a stale "last seen"
- * on the dashboard. Works entirely off the poll_state snapshot pollAllActive already
- * read, so a quiet tick costs no extra queries.
+ * one-shot gap_resolved — or the silence passes the stop threshold, which sends a
+ * one-shot gap_timeout and marks the tracker timed_out. This is the only gap-detection
+ * path: it alerts while the silence is actually ongoing, so an alert always corresponds
+ * to a stale "last seen" on the dashboard. Works entirely off the poll_state snapshot
+ * pollAllActive already read, so a quiet tick costs no extra queries.
  *
  * Note last_point_time is Garmin's transmission time, so sustained MapShare feed latency
  * above the threshold could false-positive; the default 5-minute threshold sits well
@@ -403,16 +412,30 @@ const GAP_REALERT_SECONDS = 55;
 async function maybeAlertSilentTracker(tenant: Tenant, row: TrackerPollRow, now: number): Promise<void> {
   if (row.flight_status !== 'in_flight' || row.last_point_time == null) return;
   if (now - (row.gap_last_alert_at ?? 0) < GAP_REALERT_SECONDS) return;
-  const gapThresholdSeconds = (await loadSettings(tenant)).gap_alert_minutes * 60;
-  if (now - row.last_point_time <= gapThresholdSeconds) return;
+  const settings = await loadSettings(tenant);
+  const gapThresholdSeconds = settings.gap_alert_minutes * 60;
+  const silentSeconds = now - row.last_point_time;
+  if (silentSeconds <= gapThresholdSeconds) return;
+
+  // A tracker that stops transmitting shortly before landing (switched off, battery,
+  // stowed under a seat) never sends the slow point that would mark it grounded, so past
+  // the stop threshold the flight is treated as ended: one final gap_timeout, then
+  // flight_status = 'timed_out' ends the repeats. Late-delivered points that continue the
+  // same flight resolve it with gap_resolved (see processNotifications); otherwise it
+  // behaves as grounded and the next fast point is a takeoff. Never below the alert
+  // threshold, so a misconfigured pair still alerts at least once before giving up.
+  const timedOut = silentSeconds > Math.max(settings.gap_alert_stop_minutes * 60, gapThresholdSeconds);
 
   // Atomic claim, same pattern as maybePoll's throttle: of all concurrent callers (cron
   // tick, page-load polls, 30s quick polls), only the one whose UPDATE matches gets to
   // send this minute's alert. The last_point_time guard drops the claim if a concurrent
   // poll received fresh points between our snapshot read and now.
   const result = await tenant.db.prepare(
-    `UPDATE poll_state SET gap_alerted = 1, gap_last_alert_at = ?
-     WHERE tracker_id = ? AND flight_status = 'in_flight' AND last_point_time = ? AND gap_last_alert_at <= ?`
+    timedOut
+      ? `UPDATE poll_state SET flight_status = 'timed_out', gap_alerted = 0, gap_last_alert_at = ?
+         WHERE tracker_id = ? AND flight_status = 'in_flight' AND last_point_time = ? AND gap_last_alert_at <= ?`
+      : `UPDATE poll_state SET gap_alerted = 1, gap_last_alert_at = ?
+         WHERE tracker_id = ? AND flight_status = 'in_flight' AND last_point_time = ? AND gap_last_alert_at <= ?`
   ).bind(now, row.id, row.last_point_time, now - GAP_REALERT_SECONDS).run();
   if ((result.meta.changes ?? 0) === 0) return;
 
@@ -424,7 +447,7 @@ async function maybeAlertSilentTracker(tenant: Tenant, row: TrackerPollRow, now:
   const { refPoint } = await resolveRefPoint(tenant, row.id, lastPoint.lat, lastPoint.lon);
 
   await dispatchNotifications(tenant, [{
-    type: 'gap', tracker_id: row.id, tracker_name: trackerLabel(row),
+    type: timedOut ? 'gap_timeout' : 'gap', tracker_id: row.id, tracker_name: trackerLabel(row),
     time: row.last_point_time, lat: lastPoint.lat, lon: lastPoint.lon,
     location_label: computeLiveLabel(lastPoint, refPoint),
     velocity_kmh: lastPoint.velocity_kmh, elevation_m: lastPoint.elevation_m,

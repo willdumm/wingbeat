@@ -26,15 +26,17 @@ export type NotificationEvent =
   | (BaseNotificationEvent & { type: 'takeoff' })
   | (BaseNotificationEvent & { type: 'landing' })
   | (BaseNotificationEvent & { type: 'gap'; gap_minutes: number })
-  | (BaseNotificationEvent & { type: 'gap_resolved'; gap_minutes: number });
+  | (BaseNotificationEvent & { type: 'gap_resolved'; gap_minutes: number })
+  | (BaseNotificationEvent & { type: 'gap_timeout'; gap_minutes: number });
 
 /**
- * The stored subscription key for an event. `gap_resolved` rides the `gap` subscription —
- * it only ever follows a gap alert, so anyone who got the alert should get the all-clear
- * without editing existing targets (whose stored events lists predate the type).
+ * The stored subscription key for an event. `gap_resolved` and `gap_timeout` ride the
+ * `gap` subscription — each closes out a run of gap alerts, so anyone who got the alerts
+ * should hear that they've ended without editing existing targets (whose stored events
+ * lists predate these types).
  */
 function subscriptionKey(eventType: NotificationEvent['type']): string {
-  return eventType === 'gap_resolved' ? 'gap' : eventType;
+  return eventType === 'gap_resolved' || eventType === 'gap_timeout' ? 'gap' : eventType;
 }
 
 interface NotificationTarget {
@@ -80,6 +82,7 @@ export function eventTitle(event: NotificationEvent): string {
     case 'landing': return `${event.tracker_name} landed`;
     case 'gap': return `${event.tracker_name}: signal gap`;
     case 'gap_resolved': return `${event.tracker_name}: signal restored`;
+    case 'gap_timeout': return `${event.tracker_name}: gap alerts stopped`;
   }
 }
 
@@ -106,6 +109,9 @@ export function eventMessage(event: NotificationEvent, timezone: string): string
 
   if (event.type === 'gap') {
     return `No location update for ${event.gap_minutes} min while in flight (last seen ${time} near ${loc}${speedAltSuffix}). ${links}`;
+  }
+  if (event.type === 'gap_timeout') {
+    return `No location update for ${event.gap_minutes} min (last seen ${time} near ${loc}${speedAltSuffix}). Treating the flight as ended and stopping signal-gap alerts. ${links}`;
   }
   if (event.type === 'gap_resolved') {
     return `Location updates resumed after a ${event.gap_minutes} min gap, near ${loc} at ${time}${speedAltSuffix}. ${links}`;

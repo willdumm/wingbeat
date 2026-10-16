@@ -7,6 +7,7 @@ export interface AppSettings {
   map_default_lng: number;
   map_default_zoom: number;
   gap_alert_minutes: number;
+  gap_alert_stop_minutes: number;
   pushover_api_token: string;
 }
 
@@ -17,6 +18,7 @@ const DEFAULTS: AppSettings = {
   map_default_lng:    0,
   map_default_zoom:   2,
   gap_alert_minutes:  5,
+  gap_alert_stop_minutes: 60,
   pushover_api_token: '',
 };
 
@@ -54,6 +56,7 @@ export async function loadSettings(tenant: Tenant): Promise<AppSettings> {
     map_default_lng:  parseFloat(c.map_default_lng  ?? String(DEFAULTS.map_default_lng)),
     map_default_zoom: parseFloat(c.map_default_zoom ?? String(DEFAULTS.map_default_zoom)),
     gap_alert_minutes: parseFloat(c.gap_alert_minutes ?? String(DEFAULTS.gap_alert_minutes)),
+    gap_alert_stop_minutes: parseFloat(c.gap_alert_stop_minutes ?? String(DEFAULTS.gap_alert_stop_minutes)),
     pushover_api_token: c.pushover_api_token ?? DEFAULTS.pushover_api_token,
   };
 }

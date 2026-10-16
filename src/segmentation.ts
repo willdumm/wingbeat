@@ -2,7 +2,7 @@ import { updateFlightLabelsFromCache } from './geocoding';
 import { SPEED_THRESHOLD_KMH, haversineMiles } from './geo';
 
 const SHORT_GAP_S = 6 * 60;     // 6 min
-const LONG_GAP_S = 15 * 60;     // 15 min
+export const LONG_GAP_S = 15 * 60;     // 15 min
 const NEARBY_MI = 5;             // miles
 
 interface RawPoint {

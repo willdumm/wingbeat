@@ -14,7 +14,12 @@ Admins can register notification targets (Settings → Admin → Global Settings
 - **loses signal in flight** — more than the configured gap-alert threshold
   (default 5 minutes) passes between two updates while airborne. Gap alerts
   repeat roughly once a minute while the silence continues, followed by a
-  final "signal restored" notification once updates resume.
+  final "signal restored" notification once updates resume. If the silence
+  outlasts the stop threshold (default 60 minutes) — e.g. the tracker was
+  switched off just before landing — the flight is treated as ended and a final
+  "gap alerts stopped" notification ends the repeats. If the missing updates
+  arrive later and continue the same flight, they send "signal restored" rather
+  than a new takeoff.
 
 Both target types below share the same detection pipeline and message
 formatting, and can be freely mixed.
@@ -38,7 +43,7 @@ body:
 }
 ```
 
-`gap` events additionally include `gap_minutes`.
+`gap`, `gap_resolved` and `gap_timeout` events additionally include `gap_minutes`.
 
 ## Pushover
 
