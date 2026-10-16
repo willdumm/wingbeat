@@ -142,11 +142,12 @@ wrong because tracking started partway through the flight, in which case the poi
 label is correct and only the flight's should change. (Correcting a raw point's label
 everywhere is a separate feature; see "Out of scope".)
 
-### 1. Schema — migrations `0002` to `0004`
+### 1. Schema — migrations `0002` to `0005`
 
 `0002_flight_corrections.sql` adds the two tables and the pilot's default duty; `0003`
 adds `unpaid` and the edit history; `0004` adds the flight assignment history and drops
-the old `flight_corrections_version` counter. The tables as they stand:
+the old `flight_corrections_version` counter; `0005` makes the default duty and the
+§135.267 method dated lists (see "Dated default duty and method"). The tables as they stand:
 
 ```sql
 -- Flight corrections. A row with tracker_id + flight_start_time corrects the tracked
@@ -193,10 +194,25 @@ CREATE TABLE duty_days (
   CHECK (rest = 0 OR (duty_start IS NULL AND duty_end IS NULL))
 );
 
--- A pilot's usual duty period: a flying day with no duty times recorded uses it, and
--- under (c) it's the regularly assigned duty period.
-ALTER TABLE pilots ADD COLUMN default_duty_start TEXT;   -- HH:MM local
-ALTER TABLE pilots ADD COLUMN default_duty_end   TEXT;   -- HH:MM local; may be < start
+-- A pilot's usual duty period from effective_date until the next entry (0005; it replaced
+-- 0002's pilots.default_duty_start/end): a flying day with no duty times recorded uses the
+-- one in force that day, and under (c) it's the regularly assigned duty period. Both
+-- times NULL: no default from that date.
+CREATE TABLE pilot_default_duty (
+  pilot_id       INTEGER NOT NULL REFERENCES pilots(id),
+  effective_date TEXT NOT NULL,      -- YYYY-MM-DD in the tenant timezone
+  duty_start     TEXT,               -- HH:MM local
+  duty_end       TEXT,               -- HH:MM local; may be < start
+  PRIMARY KEY (pilot_id, effective_date),
+  CHECK ((duty_start IS NULL) = (duty_end IS NULL))
+);
+
+-- The operator's §135.267 method from effective_date until the next entry (0005; it
+-- replaced the duty_method setting).
+CREATE TABLE duty_method_history (
+  effective_date TEXT PRIMARY KEY,   -- YYYY-MM-DD in the tenant timezone
+  method         TEXT NOT NULL CHECK (method IN ('b', 'c'))
+);
 ```
 
 `edit_history` and its triggers are described under "Edit history".
@@ -280,9 +296,11 @@ history"), so a request's writes land together or not at all.
 
 **Duty days:**
 
-- `GET /api/duty-days?pilot=<id>` returns `{ days, last_history_id }`: all the days (a
-  few rows per flown day) and the newest history id when they were read (the day form's
-  `base_history_id`; see "Edit conflicts").
+- `GET /api/duty-days?pilot=<id>` returns `{ days, default_duties, duty_methods,
+  last_history_id }`, read in one batch: all the days (a few rows per flown day), the
+  pilot's dated default duties and the operator's dated methods (oldest first; see "Dated
+  default duty and method"), and the newest history id when they were read (the day form's
+  and the default-duty form's `base_history_id`; see "Edit conflicts").
 - `PUT /api/duty-days/:pilot`: `{ dates: [YYYY-MM-DD, …], duty_start, duty_end, rest,
   note, base_history_id? }` sets every date in one statement (`json_each`), all or none. The day form uses it
   for one day as well as for a Through range. At most `MAX_DUTY_DAYS_PER_REQUEST` (366)
@@ -291,12 +309,23 @@ history"), so a request's writes land together or not at all.
   `rest` goes 0→1, kept on later edits, and cleared when rest is unset.
 - `POST /api/duty-days/:pilot/clear`: `{ dates, base_history_id? }`, the same cap,
   deleted in one statement.
-- `PUT /api/pilots/:id` also takes the pilot's default duty, `default_duty_start` /
-  `default_duty_end` (both HH:MM or both null, and not equal).
+- `PUT /api/pilots/:id/default-duty`: `{ effective_date, duty_start, duty_end, replaces?,
+  base_history_id? }` sets the pilot's default duty from a date (both HH:MM and not equal,
+  or both null for no default from that date). An entry already on that date is updated;
+  `replaces`, the date of the entry being edited, moves it (deleted in the same batch).
+  `DELETE /api/pilots/:id/default-duty/:date[?base_history_id=]` removes one. Both return
+  `{ default_duties }`. `PUT /api/pilots/:id` no longer takes `default_duty_start/end`
+  (400), and `GET /api/pilots` lists each pilot's `default_duties`.
+
+**Duty method:** `GET /api/duty-methods` returns `{ methods, last_history_id }`;
+`PUT /api/duty-methods` (`{ effective_date, method, replaces?, base_history_id? }`) and
+`DELETE /api/duty-methods/:date[?base_history_id=]` work like the default duty's, and
+return `{ methods }`. `PATCH /api/settings` refuses `duty_method`.
 
 **Edit history:** `GET /api/edit-history?entity=<entity>&key=<entity_key>[&limit=<n>]`
 (admins only; `limit` defaults to and is capped at 100) returns one record's history,
-newest first. `entity` is `flight_corrections`, `duty_days` or `flight_assignment`, or
+newest first. `entity` is `flight_corrections`, `duty_days`, `flight_assignment`,
+`pilot_default_duty` (key `<pilot_id>`) or `duty_method` (key `tenant`), or
 several comma-separated for entities that share a key (a tracked flight's corrections and
 its aircraft/pilot), interleaved newest first.
 
@@ -322,12 +351,14 @@ its aircraft/pilot), interleaved newest first.
 unmatched, method })` takes data as arguments and reads no page state, as the showcase
 requires. `allFlights` are the flight store's effective flights (corrections already
 applied); `days` are the pilot's `duty_days` rows, `defaultDuty` the pilot's default duty
-period, `unmatched` the store's unmatched rows and `method` the §135.267 method. It returns
+period, `unmatched` the store's unmatched rows and `method` the §135.267 method.
+`defaultDuty` and `method` are each a dated list (`default_duties`, `duty_methods`), every
+day using the entry in force on it, or one value for every day. It returns
 a **single row model** that the screen (`renderDutyLog`) and the PDF (`_buildTypstSource`)
 only format, so neither re-derives days, flights or warnings: `{ pilotName, year, month,
 isCurrentMonth, method, limitsLabel, days, prevDay, upcoming, monthSecs, totals }`, each
-day `{ dateKey, label, record, duty, defaultDuty, rest, restDesignatedAt, note, flights,
-unmatched, daySecs, warnings }`.
+day `{ dateKey, label, method, record, duty, defaultDuty, rest, restDesignatedAt, note,
+flights, unmatched, daySecs, warnings }`.
 
 1. **Flights:** the pilot's completed flights, less removed ones. Each carries `manual`,
    `part91`, `commercial` (Part 135, or Part 91 not marked unpaid), its `remarks` ("Part
@@ -337,7 +368,7 @@ unmatched, daySecs, warnings }`.
    planned through the Upcoming list), plus `prevDay`, the previous month's last day, built
    the same way.
    - A day's duty period comes from its record, or on a flying day with no duty times from
-     the pilot's default duty ("08:00–17:00 (default)").
+     the pilot's default duty in force that day ("08:00–17:00 (default)").
    - A day with no flights and no record shows a blank "—", not "Rest".
    - A day marked rest shows "Rest · designated <date>". If designated on or after that
      day, it's flagged as not prospective.
@@ -357,7 +388,12 @@ unmatched, daySecs, warnings }`.
    and 24-hour rest periods this calendar quarter (13 required): days marked rest with no
    rest warning, taken so far plus "planned" later in the quarter, flagged short once 13
    can no longer be reached. Totals are "as of now" for the current month and "as of month
-   end" for past months, so a past month's PDF is reproducible.
+   end" for past months, so a past month's PDF is reproducible. So are its days: each is
+   checked with the default duty and method in force on it (see "Dated default duty and
+   method"), so changing either from a date on leaves the months before it as they were.
+   What still changes a past month: a correction or day edit dated in it (recorded in the
+   edit history), editing or removing a dated entry that covered it (recorded too), and
+   the timezone setting (not dated: see "Follow-ups").
 
 Formatting and severity:
 
@@ -402,11 +438,22 @@ read-only.
   replace records that differ from what's saved ("3 of these 6 days already have records
   that will be replaced", naming rest days that lose their designation) or one day would
   unmark a designated rest day. Clear removes the days' records (`…/clear`).
-- **Toolbar:** the month navigation, the pilot's default duty ("Default duty 08:00–17:00
-  · Change", or "No default duty · Set"; the form sets it with `PUT /api/pilots/:id`), "Plan
+- **Toolbar:** the month navigation, the pilot's default duty in force on the shown
+  month's last day ("Default duty 08:00–17:00 · Change", "Default duty 07:00–16:00 from
+  Jun 15 · Change" when it started that month, or "No default duty · Set"), "Plan
   duty or rest" (the day form on tomorrow, any date allowed), "Edit flights" (the flight
   editor filtered to this pilot and month; its "Add flight" enters a manual flight) and
   "Export PDF" (the export form; see "Exporting a range of months").
+- **Default-duty form:** the pilot's entries, newest first ("From Jun 15, 2026 ·
+  07:00–16:00", the earliest as "Before Jun 15, 2026", or "Every day" when it's the only
+  one), each with Edit and Remove, then Effective from (today by default), Duty start and
+  Duty end. Saving adds an entry from that date (asking first if one is already on it);
+  Edit fills the form with an entry and saves it in place (`replaces`, if its date
+  changed), for a typo; empty times save "no default from that date". A hint says past
+  months keep the default in force then. It shows "Last changed by …" and uses the duty
+  log's `last_history_id` as `base_history_id` for every save and remove. Settings →
+  Pilots → Edit no longer has default duty fields; the pilot's row shows the default in
+  force today.
 - **Planning ahead:** the table lists days through today, and the month navigation stops
   at the current month. The current month's **Upcoming** list, shown before the totals,
   lists every record dated after today in date order (rest with its designation date, or
@@ -498,11 +545,15 @@ describes the checks that came out of it and why. The checks stay warnings: noth
 
 ### The §135.267 method: (b) or (c)
 
-A tenant-wide setting, `duty_method` (`b` or `c`, default `b`), in the `settings` table
-like the other global settings: edited under Settings → Global Settings, served to the
-page as `APP_SETTINGS.dutyMethod`, and passed into `computeDutyData` as an option (the
-render chunks don't read page state). The row model carries the method and a label
-("Limits: §135.267(b), one-pilot crew"), which the screen and PDF print.
+A tenant-wide choice (`b` or `c`, default `b`), dated since migration 0005
+(`duty_method_history`; see "Dated default duty and method"): edited under Settings →
+Global Settings, read by the duty log with its days (`GET /api/duty-days`'s
+`duty_methods`) and passed into `computeDutyData` as an option (the render chunks don't
+read page state). Each day is checked with the method in force on it. The row model
+carries a label ("Limits: §135.267(b), one-pilot crew"), which the screen and PDF print;
+a month that changed method names each with its dates ("Limits: §135.267(b) to Jun 14,
+§135.267(c) from Jun 15 · one-pilot crew"), and a multi-month PDF prints a month's label
+under its heading when it differs from the title's.
 
 Both methods keep the rest-day checks, the outside-duty and no-duty-times warnings, (e)
 and the totals: (a) and (f) apply either way.
@@ -540,7 +591,8 @@ and the totals: (a) and (f) apply either way.
   outside the recorded duty counts in full as well as getting its own "outside duty"
   warning: the conservative reading, since a flight outside duty is still duty.
 - Duty times that differ from the regularly assigned times, which are the pilot's default
-  duty. With no default set, flying days get a "No regularly assigned duty period" warning.
+  duty in force that day. With no default then, flying days get a "No regularly assigned
+  duty period" warning.
 - Duty plus rest equals 24 h: a duty period starting earlier on the clock than the
   previous day's started (so the previous duty plus the rest after it is under 24 h).
   Comparing clock times rather than epochs keeps DST days from warning.
@@ -599,6 +651,52 @@ last changed by …" or "Aircraft and pilot last changed by …". A save that ch
 corrections and the assignment (one batch, so the same time and user) reads "Last changed
 by …". A full history view is a follow-up.
 
+Migration `0005` adds the same triggers to the dated default duty and method
+(`pilot_default_duty`, keyed `<pilot_id>`, and `duty_method`, keyed `tenant`; see "Dated
+default duty and method"), whose forms show "Last changed by …" for the whole list.
+
+### Dated default duty and method
+
+A day with no duty times takes the pilot's default duty, and the §135.267 method picks the
+daily checks. Both used to be one current value (`pilots.default_duty_start/end`, the
+`duty_method` setting) that every month was re-checked with, so changing either rewrote
+past months' duty periods, warnings and the (c) "differs from regularly assigned" check,
+and nothing recorded the change. Migration `0005` makes each a dated list and records
+every change:
+
+- **Tables:** `pilot_default_duty (pilot_id, effective_date, duty_start, duty_end)` and
+  `duty_method_history (effective_date, method)` (see §1). A default entry with no times is
+  "no default from this date".
+- **The entry in force** on a day is the one with the latest `effective_date` on or
+  before it. The earliest entry also applies before its own date, since there's no earlier
+  one to apply: a pilot whose only default starts 2026-06-01 uses it for every day. With no
+  entries there's no default, and the method is (b). One lookup does this
+  (`dutyEntryOn`, with `dutyDefaultOn` and `dutyMethodOn` in `pilotDutyRenderScript()`),
+  used by the day rows, the (c) checks, the totals' rest check and the PDF (the same row
+  model), the toolbar, the day form's default hint and the pilot list. A month spanning a
+  change uses each day's own value. The dashboard's duty alert counts hours only, which
+  neither affects.
+- **Changing** is adding an entry from a date (today by default), so the days before it
+  keep their value; **correcting** a typo is editing the entry (which does change the
+  days it covered, as it should, and is recorded). Removing an entry hands its days to
+  the remaining ones.
+- **One source of truth:** the migration copies the old values into each list's first
+  entry and drops `pilots.default_duty_start/end` and the `duty_method` setting, rather
+  than keeping them as a copy to keep in sync. The copy's date is a fixed `2000-01-01`: the
+  earliest entry covers everything before it anyway, and a fixed date means a change "from
+  today" on the day 0005 is deployed adds an entry instead of overwriting the copy (which
+  would rewrite every past month again). The method always gets a first entry, (b) when it
+  was never set, so the first change to (c) doesn't reach back to every past month. The
+  copies aren't in the edit history (the triggers come after them).
+- **History:** AFTER INSERT/UPDATE/DELETE triggers on both tables, like 0003's, attributed
+  through `edit_actor`; the routes go through `recordedBatch`. Each list is one record to
+  the edit history and to its form (`pilot_default_duty` / `<pilot_id>`, `duty_method` /
+  `tenant`), since the form shows and saves against all of it.
+- **Conflicts:** the default-duty form sends the duty log's `last_history_id`, and the
+  method's section in Global Settings the one from `GET /api/duty-methods`, as
+  `base_history_id`, checked against the whole list ("Edit conflicts"): a change to any
+  entry since is refused with a Reload.
+
 ### Edit conflicts
 
 The flight form and the day form save a record's full state, so two admins with the same
@@ -618,7 +716,8 @@ its values came from, and the server refuses it when the record has changed sinc
   the moment the form opens, so there's no request to wait for and no window in which a
   save could go out without it.
 - **The request** sends it as `base_history_id` (body; a query parameter for `DELETE`):
-  the flight form's save, Revert to tracker and Delete, and the day form's Save and Clear.
+  the flight form's save, Revert to tracker and Delete, the day form's Save and Clear, and
+  the default-duty and duty-method forms' Save and Remove.
   Without it the server doesn't check, so other callers work as before. Remove/Restore
   and the editor's bulk actions set one flag on a selection rather than a whole record,
   and aren't checked.
@@ -723,8 +822,12 @@ months) through this month. `_buildTypstSource` takes one month's row model or s
 `npm test` (`node --test`, in the nix shell) runs `test/`: `test/harness.mjs` evaluates the
 real script strings of `pilot-duty.ts`, `flight-edits.ts`, `time.ts`, `html.ts` and
 `flight-store.ts` in a `node:vm` context with a settable clock. The suites cover the rules in this doc: the
-(b), (c), (d) and (e) checks, rest days, the quarter and year totals, DST days,
-`applyFlightEdits`, the corrections delta merge, and the flight form's times.
+(b), (c), (d) and (e) checks, rest days, the quarter and year totals, DST days, the dated
+default duty and method (`dated-defaults.test.mjs`), `applyFlightEdits`, the corrections
+delta merge, and the flight form's times. `test/worker.mjs` runs the real Worker in
+Miniflare with every migration applied, for the routes' SQL, the history triggers and
+edit conflicts (`worker-sql.test.mjs`, `worker-dated-defaults.test.mjs`, which also checks
+0005's copy of the old values).
 
 ### Follow-ups (not built)
 
@@ -736,10 +839,11 @@ real script strings of `pilot-duty.ts`, `flight-edits.ts`, `time.ts`, `html.ts` 
 - PDF: a timezone label, the pilot's full legal name (§135.63(a)(4)(i)), and a list of
   flights removed that month.
 - A full edit-history view (per flight, per day, per pilot and month).
-- A pilot's default duty (`pilots.default_duty_start/end`) isn't in the edit history,
-  though under (c) it's the regularly assigned duty period the days are checked against.
-  Adding the same triggers to `pilots` (and routing `PUT /api/pilots/:id` through
-  `recordedBatch`) would cover it.
+- The timezone setting isn't dated or recorded: changing it moves every past day's
+  boundaries. Unlike the default duty and method, it's not a duty-log rule, so it's left
+  as a setting.
+- A pilot's or the method's full dated history is in their forms; their edit history
+  (who changed an entry, from what) only shows as "Last changed by …", like the rest.
 - §135.263(d) / SevenBar: an overrun caused by unexpected en-route delays isn't a
   violation, but the log can't know the cause, so it keeps warning. The day's note and
   the flight's remark record the cause.

@@ -470,19 +470,20 @@ function showcaseDriverScript(): string {
     // ── Pilot duty log ────────────────────────────────────────────────────────
 
     // SAMPLE.dutyLog's duty/rest days and default duty in schedule time → GET
-    // /api/duty-days's { days } and the pilot's default_duty_start/end, shifted like the
-    // flights.
+    // /api/duty-days's { days, default_duties }, shifted like the flights. The default is
+    // one entry, from the first flight's date.
     function dutyLogSample() {
       const at = (daysAgo, minute) => localMidnight(daysAgo) + minute * 60 + SHIFT;
       const def = SAMPLE.dutyLog.defaultDuty;
-      const defaultDuty = def ? { duty_start: unixToTzTime(at(0, def.startMin)), duty_end: unixToTzTime(at(0, def.endMin)) } : null;
+      const defaultDuties = def ? [{ effective_date: unixToTzDateStr(COMPLETED_FLIGHTS[0].start_time),
+        duty_start: unixToTzTime(at(0, def.startMin)), duty_end: unixToTzTime(at(0, def.endMin)) }] : [];
       const days = SAMPLE.dutyLog.days.map(d => d.rest
         ? { pilot_id: SAMPLE.dutyPilotId, date: unixToTzDateStr(at(d.daysAgo, 12 * 60)), duty_start: null, duty_end: null,
             rest: 1, rest_designated_at: at(d.designatedDaysAgo, 17 * 60), note: null }
         : { pilot_id: SAMPLE.dutyPilotId, date: unixToTzDateStr(at(d.daysAgo, d.dutyStartMin)),
             duty_start: unixToTzTime(at(d.daysAgo, d.dutyStartMin)), duty_end: unixToTzTime(at(d.daysAgo, d.dutyEndMin)),
             rest: 0, rest_designated_at: null, note: null });
-      return { days, defaultDuty };
+      return { days, defaultDuties };
     }
 
     function mountDuty(host) {
@@ -498,7 +499,7 @@ function showcaseDriverScript(): string {
 
       function load() {
         data = computeDutyData(COMPLETED_FLIGHTS, pilot.id, pilot.name, year, month,
-          { days: dutyLog.days, defaultDuty: dutyLog.defaultDuty, unmatched: UNMATCHED_ENTRIES });
+          { days: dutyLog.days, defaultDuty: dutyLog.defaultDuties, unmatched: UNMATCHED_ENTRIES });
         root.getElementById('pilot-duty-period').textContent = dutyPeriodLabel(data);
         nextBtn.disabled = data.isCurrentMonth;
         prevBtn.disabled = (year + '-' + String(month).padStart(2, '0')) <= firstMonthKey;
@@ -509,10 +510,8 @@ function showcaseDriverScript(): string {
           bodyEl: root.querySelector('.pilot-duty-body'),
         });
       }
-      if (dutyLog.defaultDuty) {
-        root.getElementById('pilot-duty-default').textContent =
-          'Default duty ' + dutyLog.defaultDuty.duty_start + '–' + dutyLog.defaultDuty.duty_end;
-      }
+      const def = dutyDefaultOn(dutyLog.defaultDuties, unixToTzDateStr(NOW));
+      if (def) root.getElementById('pilot-duty-default').textContent = 'Default duty ' + def.duty_start + '–' + def.duty_end;
 
       prevBtn.addEventListener('click', () => {
         if (month === 1) { year--; month = 12; } else { month--; }

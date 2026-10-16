@@ -56,7 +56,7 @@ const EXPORTS = [
   'applyFlightEdits', 'flightRemarks', 'flightEntrySummary', 'flightFormTimes', 'flightTrackedTimes',
   // pilot-duty.ts
   'computeDutyData', 'dutyTotals', 'dutyDayText', 'currentDutyMonth', '_DUTY_LIMITS',
-  'dutySaveConfirmText',
+  'dutySaveConfirmText', 'dutyEntryOn', 'dutyDefaultOn', 'dutyMethodOn',
   // flight-store.ts
   'flightCorrectionKey', 'mergeFlightCorrections', 'flightStore',
   // edit-history.ts
@@ -78,7 +78,7 @@ export function loadEngine({ settings = {}, now = '2026-10-15 12:00', fetch } = 
   const listeners = new Map();
   const context = vm.createContext({
     window: {
-      APP_SETTINGS: { timezone: TZ, dutyMethod: 'b', appName: 'Test', ...settings },
+      APP_SETTINGS: { timezone: TZ, appName: 'Test', ...settings },
       addEventListener: (type, fn) => listeners.set(type, [...(listeners.get(type) ?? []), fn]),
     },
     localStorage: {
@@ -169,7 +169,8 @@ export function fixtures(engine) {
 
   /**
    * computeDutyData for pilot 1 and the month of dateKey (any 'YYYY-MM…'), with the
-   * opts computeDutyData takes (days, defaultDuty, method, unmatched).
+   * opts computeDutyData takes (days, defaultDuty, method, unmatched; defaultDuty and
+   * method either one value or a dated list).
    */
   function dutyMonth(flights, ym, opts = {}) {
     const [y, m] = ym.split('-').map(Number);

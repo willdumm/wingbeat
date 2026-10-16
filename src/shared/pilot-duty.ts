@@ -76,6 +76,18 @@ export function pilotDutyStyles(): string {
     .duty-upcoming-dow { color: var(--text-muted); font-weight: normal; }
     .duty-upcoming-what { flex: 1; color: var(--text-secondary); display: flex; flex-direction: column; }
 
+    /* A dated list's entries, newest first, each with Edit and Remove: the default-duty
+       form's (_dutyOpenDefaultForm) and Global Settings' duty method (settings.ts). */
+    .duty-dated-list { list-style: none; margin: 0; padding: 0; font-size: var(--size-sm); }
+    .duty-dated-list li {
+      display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.75rem;
+      padding: 0.3rem 0; border-bottom: 1px solid var(--border-subtle);
+    }
+    .duty-dated-list li:last-child { border-bottom: none; }
+    .duty-dated-when { font-weight: var(--weight-medium); min-width: 8.5rem; }
+    .duty-dated-what { flex: 1; color: var(--text-secondary); white-space: nowrap; }
+    .duty-dated-list .duty-link-btn[data-edit] { color: var(--accent-text); }
+
     .pilot-duty-body {
       padding: 1rem;
       max-width: 64rem;
@@ -284,7 +296,8 @@ export function pilotDutyRenderScript(): string {
       ],
     };
 
-    // The operator's choice of daily limits under §135.267 (Global Settings, duty_method).
+    // The operator's choice of daily limits under §135.267 (Global Settings; dated, see
+    // dutyMethodOn).
     const _DUTY_METHODS = {
       b: 'Limits: §135.267(b), flight time in any 24 hours · one-pilot crew',
       c: 'Limits: §135.267(c), regularly assigned duty period · one-pilot crew',
@@ -337,10 +350,69 @@ export function pilotDutyRenderScript(): string {
       return { start, end, secs: end - start, duty_start: times.duty_start, duty_end: times.duty_end };
     }
 
+    // ── Dated defaults ──
+
+    // The entry of a dated list ([{ effective_date, ... }], any order: a pilot's default
+    // duties or the operator's methods, GET /api/duty-days) in force on dateKey: the one with
+    // the latest effective_date on or before it, or the earliest when they're all later
+    // (there's no earlier one to apply). null for an empty list.
+    function dutyEntryOn(entries, dateKey) {
+      let on = null, earliest = null;
+      for (const e of entries || []) {
+        if (!earliest || e.effective_date < earliest.effective_date) earliest = e;
+        if (e.effective_date <= dateKey && (!on || e.effective_date > on.effective_date)) on = e;
+      }
+      return on || earliest;
+    }
+
+    // The pilot's default duty on dateKey ({ effective_date, duty_start, duty_end }), or
+    // null: no entries, or one in force that sets no default.
+    function dutyDefaultOn(defaults, dateKey) {
+      const e = dutyEntryOn(defaults, dateKey);
+      return e && e.duty_start ? e : null;
+    }
+
+    // The §135.267 method on dateKey, 'b' (also with no entries) or 'c'.
+    function dutyMethodOn(methods, dateKey) {
+      const e = dutyEntryOn(methods, dateKey);
+      return e && e.method === 'c' ? 'c' : 'b';
+    }
+
+    // computeDutyData's and dutyTotals' defaultDuty and method options as lookups by date:
+    // a dated list, or one value for every day.
+    function _dutyDefaultLookup(defaultDuty) {
+      if (Array.isArray(defaultDuty)) return dateKey => dutyDefaultOn(defaultDuty, dateKey);
+      const d = defaultDuty && defaultDuty.duty_start ? defaultDuty : null;
+      return () => d;
+    }
+    function _dutyMethodLookup(method) {
+      if (Array.isArray(method)) return dateKey => dutyMethodOn(method, dateKey);
+      const m = method === 'c' ? 'c' : 'b';
+      return () => m;
+    }
+
+    // The limits line for a month's day rows: the method's label or, for a month that
+    // changed method, each method with its dates ("Limits: §135.267(b) to Jun 14,
+    // §135.267(c) from Jun 15 · one-pilot crew").
+    function _dutyLimitsLabel(days, year) {
+      const runs = [];
+      for (const d of days) {
+        const last = runs[runs.length - 1];
+        if (last && last.method === d.method) last.to = d.dateKey;
+        else runs.push({ method: d.method, from: d.dateKey, to: d.dateKey });
+      }
+      if (runs.length <= 1) return _DUTY_METHODS[runs.length ? runs[0].method : 'b'];
+      const date = k => tzShortDate(k, year);
+      return 'Limits: ' + runs.map((r, i) => '§135.267(' + r.method + ') ' +
+        (i === 0 ? 'to ' + date(r.to) : i === runs.length - 1 ? 'from ' + date(r.from) : date(r.from) + '–' + date(r.to))
+      ).join(', ') + ' · one-pilot crew';
+    }
+
     // One pilot's days: their flights (any kind) by local date, their duty_days rows by
     // date, each day's duty period, and what's wrong with a rest day. Shared by the row
     // model and the totals, so a rest day that gets a warning doesn't count as rest.
-    function _dutyCalendar(flights, dayRecords, defaultDuty) {
+    // defaultOn(dateKey): the pilot's default duty that day, or null (_dutyDefaultLookup).
+    function _dutyCalendar(flights, dayRecords, defaultOn) {
       const flightsByDate = {};
       for (const f of flights) {
         const dk = unixToTzDateStr(f.start_time);
@@ -349,15 +421,16 @@ export function pilotDutyRenderScript(): string {
       const recordByDate = {};
       for (const r of dayRecords) recordByDate[r.date] = r;
 
-      // A day's duty period: its record's times, or the default on a flying day with no
-      // times recorded (no record, or one with only a note); a rest day has none.
-      // { ..., isDefault } or null.
+      // A day's duty period: its record's times, or the default in force that day on a
+      // flying day with no times recorded (no record, or one with only a note); a rest day
+      // has none. { ..., isDefault } or null.
       function dutyOf(dateKey) {
         const rec = recordByDate[dateKey];
         if (rec && rec.rest) return null;
         if (rec && rec.duty_start) return _dutyInterval(dateKey, rec);
-        if (!defaultDuty || !flightsByDate[dateKey]) return null;
-        const d = _dutyInterval(dateKey, defaultDuty);
+        const def = flightsByDate[dateKey] && defaultOn(dateKey);
+        if (!def) return null;
+        const d = _dutyInterval(dateKey, def);
         return d && { ...d, isDefault: true };
       }
 
@@ -404,23 +477,28 @@ export function pilotDutyRenderScript(): string {
     // (flightStore.getCompleted(), or applyFlightEdits() output: corrections applied,
     // manual flights added, removed flights left out) for every pilot; days are the
     // pilot's duty_days rows (GET /api/duty-days), defaultDuty the pilot's usual duty
-    // period ({ duty_start, duty_end } HH:MM, or null) and unmatched the corrections whose
-    // flight is gone (flightStore.getUnmatched()). method is the operator's §135.267 method,
-    // 'b' (the default) or 'c' (APP_SETTINGS.dutyMethod); it picks the daily checks.
+    // period and unmatched the corrections whose flight is gone (flightStore.getUnmatched()).
+    // method is the operator's §135.267 method, 'b' (the default) or 'c'; it picks the
+    // daily checks. defaultDuty and method are each a dated list (GET /api/duty-days's
+    // default_duties, [{ effective_date, duty_start, duty_end }], and duty_methods,
+    // [{ effective_date, method }]), every day using the entry in force on it
+    // (dutyEntryOn), or one value for every day ({ duty_start, duty_end } HH:MM or null;
+    // 'b' or 'c'). So a past month is checked with what was in force then.
     //
     // Returns { pilotName, year, month, isCurrentMonth, method, limitsLabel, days, prevDay,
-    // upcoming, monthSecs, totals }.
-    // days run through today in the current month. Each is { dateKey, label, record,
-    // duty, defaultDuty, rest, restDesignatedAt, note, flights, unmatched, daySecs,
+    // upcoming, monthSecs, totals }: method is the one in force on the last day shown,
+    // limitsLabel names each one the month used.
+    // days run through today in the current month. Each is { dateKey, label, method,
+    // record, duty, defaultDuty, rest, restDesignatedAt, note, flights, unmatched, daySecs,
     // warnings }: duty is the day's duty period from its record or, on a flying day with
-    // no record, from defaultDuty (then defaultDuty is true). A day's flight is the
+    // no record, from the default in force that day (then defaultDuty is true). A day's flight is the
     // effective flight plus { manual, part91, remarks, entry, secs, edited: { field:
     // tracker's value }, commercial }. upcoming (current month only) lists the records dated after
     // today, for planning. prevDay is the last day of the previous month, built the same
     // way (the PDF shows it, so the month's first rolling checks can be followed).
     function computeDutyData(allFlights, pilotId, pilotName, year, month,
                              { days: dayRecords = [], defaultDuty = null, unmatched: unmatchedEntries = [], method = 'b' } = {}) {
-      if (method !== 'c') method = 'b';
+      const defaultOn = _dutyDefaultLookup(defaultDuty), methodOn = _dutyMethodLookup(method);
       const nowEpoch = Math.floor(Date.now() / 1000);
       const todayKey = unixToTzDateStr(nowEpoch);
 
@@ -456,7 +534,7 @@ export function pilotDutyRenderScript(): string {
         (unmatchedByDate[dk] = unmatchedByDate[dk] || []).push(e);
       }
 
-      const { flightsByDate, recordByDate, dutyOf, spanOf, restProblems } = _dutyCalendar(flights, dayRecords, defaultDuty);
+      const { flightsByDate, recordByDate, dutyOf, spanOf, restProblems } = _dutyCalendar(flights, dayRecords, defaultOn);
 
       // Flight time in the 24 h ending at end, in all commercial flying (§135.267(b)): Part
       // 135 and paid Part 91 alike. Only evaluated at the end of a Part 135 flight, so Part 91
@@ -489,9 +567,10 @@ export function pilotDutyRenderScript(): string {
       // cover its flights (spanOf: a flight outside duty still counts, besides its own
       // warning, and none is clipped), before the end of its last Part 135 flight (the
       // same Converse ordering as flightTime24). { secs, text }, the text rounded up for
-      // the over-limit warning (secs 0 when there's nothing to check).
+      // the over-limit warning (secs 0 when there's nothing to check). The method is the
+      // day's own.
       function dailyFlightOf(dateKey) {
-        if (method === 'b') {
+        if (methodOn(dateKey) === 'b') {
           const w = worst24Of(dateKey);
           return { secs: w.secs, text: fmtDuration(w.secs, true) + ' flight time in the 24 h to ' + (w.end ? unixToTzTime(w.end) : '') };
         }
@@ -522,10 +601,10 @@ export function pilotDutyRenderScript(): string {
         return Math.max(best, to - free);
       }
 
-      const _ref = method === 'b' ? '§135.267(b)' : '§135.267(c)';
-
-      // 2. Days.
+      // 2. Days, each checked with the method and default duty in force on it.
       function buildDay(dateKey) {
+        const method = methodOn(dateKey), defaultDuty = defaultOn(dateKey);
+        const ref = '§135.267(' + method + ')';
         const rec = recordByDate[dateKey] || null;
         const dayFlights = flightsByDate[dateKey] || [];
         const duty = dutyOf(dateKey);
@@ -539,7 +618,7 @@ export function pilotDutyRenderScript(): string {
         warnings.push(...restProblems(dateKey, year));
         const daily = dailyFlightOf(dateKey);
         if (daily.secs > L.flightDaySecs) {
-          warnings.push(daily.text + ' (' + _ref + ' limit ' + fmtDuration(L.flightDaySecs) + ')');
+          warnings.push(daily.text + ' (' + ref + ' limit ' + fmtDuration(L.flightDaySecs) + ')');
         }
         // Without a duty period the duty and rest checks have nothing to go on.
         if (dayFlights.length && !duty && !rest) {
@@ -556,7 +635,7 @@ export function pilotDutyRenderScript(): string {
               ' over the flight time limit on ' + tzShortDate(prevKey, year) + ' (§135.267(e) minimum ' + fmtDuration(need) + ')');
           }
         }
-        // (c) needs a regularly assigned duty period: the pilot's default duty.
+        // (c) needs a regularly assigned duty period: the pilot's default duty that day.
         if (method === 'c' && !defaultDuty && (duty || dayFlights.length)) {
           warnings.push('No regularly assigned duty period: set the pilot’s default duty (§135.267(c))');
         }
@@ -609,6 +688,7 @@ export function pilotDutyRenderScript(): string {
         return {
           dateKey,
           label: tzDateLabel(dateKey),
+          method,
           record: rec,
           duty,
           defaultDuty: !!(duty && duty.isDefault),
@@ -655,8 +735,8 @@ export function pilotDutyRenderScript(): string {
         year,
         month,
         isCurrentMonth,
-        method,
-        limitsLabel: _DUTY_METHODS[method],
+        method: days[days.length - 1].method,
+        limitsLabel: _dutyLimitsLabel(days, year),
         days,
         prevDay,
         upcoming,
@@ -673,7 +753,8 @@ export function pilotDutyRenderScript(): string {
     // that get no rest warning: no flights, designated in advance, previous day's duty and
     // flights over by midnight). flights are effective flights, any pilot's (only pilotId's
     // count); days the pilot's duty_days rows (omitted: no rest counted) and defaultDuty
-    // their default duty period (for the previous-day check). Returns
+    // their default duty period, dated or not as for computeDutyData (for the previous-day
+    // check). Returns
     // { asOfLabel, hours: [{ label, secs, limit, over }], flight24: { secs, limit, over },
     // rest: { label, taken, scheduled, required, short } }. With hoursOnly (the dashboard
     // alert, which shows no rest) rest is null and the rest checks are skipped.
@@ -712,7 +793,7 @@ export function pilotDutyRenderScript(): string {
       if (hoursOnly) return totals;
 
       // Rest periods: days marked rest that the duty log doesn't warn about.
-      const { restProblems } = _dutyCalendar(own, dayRecords, defaultDuty);
+      const { restProblems } = _dutyCalendar(own, dayRecords, _dutyDefaultLookup(defaultDuty));
       let restTaken = 0, restScheduled = 0;
       for (const r of dayRecords) {
         if (!r.rest || r.date < qStartKey || r.date > qEndKey || restProblems(r.date, year).length) continue;
@@ -1219,7 +1300,12 @@ export function pilotDutyRenderScript(): string {
       months.forEach((data, i) => {
         if (range) {
           if (i > 0) body += '#pagebreak()\\n';
-          body += '#text(size: 13pt, weight: "bold")[' + _typStr(dutyPeriodLabel(data)) + ']\\n#v(0.6em)\\n';
+          body += '#text(size: 13pt, weight: "bold")[' + _typStr(dutyPeriodLabel(data)) + ']\\n';
+          // The title gives the latest month's limits; a month checked with others says so.
+          if (data.limitsLabel !== latest.limitsLabel) {
+            body += '#v(0.3em)\\n#text(size: 8pt, fill: muted)[' + _typStr(data.limitsLabel) + ']\\n';
+          }
+          body += '#v(0.6em)\\n';
         }
         body += monthTable(data) + '#v(1.6em)\\n' + totalsBlock(data.totals);
         // A quarter's summary follows its last month, or the export's last month.
@@ -1378,19 +1464,14 @@ export function pilotDutyScript(): string {
     }
 
     // The shown pilot's log for one month (computeDutyData).
+    // Each day uses the default duty and method in force on it, from the log's dated lists.
     function _dutyCompute(year, month) {
       return computeDutyData(flightStore.getCompleted(), _dutyPilotId, _dutyPilotName, year, month,
-        { days: _dutyLog.days, defaultDuty: _dutyDefaultDuty(), unmatched: flightStore.getUnmatched(),
-          method: window.APP_SETTINGS.dutyMethod });
+        { days: _dutyLog.days, defaultDuty: _dutyLog.default_duties, unmatched: flightStore.getUnmatched(),
+          method: _dutyLog.duty_methods });
     }
 
     function _dutyPilot() { return pilotList.find(p => p.id === _dutyPilotId) || null; }
-
-    // The pilot's usual duty period ({ duty_start, duty_end }), or null.
-    function _dutyDefaultDuty() {
-      const p = _dutyPilot();
-      return p && p.default_duty_start ? { duty_start: p.default_duty_start, duty_end: p.default_duty_end } : null;
-    }
 
     function _dutyRender() {
       if (!_dutyData) return;
@@ -1408,58 +1489,134 @@ export function pilotDutyScript(): string {
       _dutyRenderDefault();
     }
 
-    // "Default duty 08:00–17:00 · Change" in the toolbar (admins can change or set it).
+    // "Default duty 08:00–17:00 · Change" in the toolbar (admins can change or set it): the
+    // default in force on the shown month's last day, "from Jun 15" when it started during
+    // the month.
     function _dutyRenderDefault() {
       const el = document.getElementById('pilot-duty-default');
-      const d = _dutyDefaultDuty();
-      el.innerHTML = (d ? 'Default duty ' + d.duty_start + '–' + d.duty_end : (_dutyCanEdit ? 'No default duty' : '')) +
-        (_dutyCanEdit ? '<button class="duty-link-btn" data-duty-default>' + (d ? 'Change' : 'Set') + '</button>' : '');
+      const entries = (_dutyLog && _dutyLog.default_duties) || [];
+      const days = _dutyData ? _dutyData.days : [];
+      const e = days.length ? dutyEntryOn(entries, days[days.length - 1].dateKey) : null;
+      const from = e && e.effective_date > days[0].dateKey && e.effective_date <= days[days.length - 1].dateKey
+        ? ' from ' + tzShortDate(e.effective_date, _dutyYear) : '';
+      const text = e && e.duty_start ? 'Default duty ' + e.duty_start + '–' + e.duty_end + from
+        : (_dutyCanEdit || from ? 'No default duty' + from : '');
+      el.innerHTML = escHtml(text) +
+        (_dutyCanEdit ? '<button class="duty-link-btn" data-duty-default>' + (entries.length ? 'Change' : 'Set') + '</button>' : '');
     }
     document.getElementById('pilot-duty-default').addEventListener('click', e => {
       if (e.target.closest('[data-duty-default]')) _dutyOpenDefaultForm();
     });
 
-    // The pilot's default duty period: used for flying days with no duty times recorded.
-    function _dutyOpenDefaultForm() {
-      const d = _dutyDefaultDuty();
-      const { modal, close } = openFormModal({
+    // The pilot's default duty, by date (GET /api/duty-days's default_duties): used for
+    // flying days with no duty times recorded, and under (c) it's the regularly assigned
+    // duty period. A change is a new entry from its Effective from date, so earlier days,
+    // and past months' PDFs, keep the default in force then; Edit fixes an entry itself (a
+    // typo), Remove drops it. With edit (an entry), the form edits that one, and a new date
+    // moves it.
+    //
+    // A save or remove sends the log's history id as base_history_id: the form shows the
+    // whole list as of it, so a change to any entry since (another admin's) is refused and
+    // the form offers to reload (src/index.ts, "Dated default duty and duty method").
+    function _dutyOpenDefaultForm({ edit = null } = {}) {
+      if (!_dutyLog) return;
+      const pilotId = _dutyPilotId;
+      const entries = [..._dutyLog.default_duties].sort((a, b) => a.effective_date < b.effective_date ? 1 : -1);
+      const baseHistoryId = _dutyLog.last_history_id;
+      const today = unixToTzDateStr(Math.floor(Date.now() / 1000));
+      const timesOf = e => e.duty_start ? e.duty_start + '–' + e.duty_end : 'No default';
+      const { modal, close, isDirty } = openFormModal({
         id: 'duty-default-modal',
-        title: 'Default duty',
+        title: edit ? 'Edit default duty' : 'Default duty',
         bodyHtml:
-          '<p class="form-modal-hint">Used for a day with flights and no duty times or rest recorded. ' +
-            'It’s shown as “(default)”; record the actual times on a day it doesn’t fit.</p>' +
+          '<p class="form-modal-hint">Used for a day with flights and no duty times or rest recorded, shown as ' +
+            '“(default)”; under §135.267(c) it’s the regularly assigned duty period. A change applies from its ' +
+            'Effective from date: past months keep the default that was in force then. ' +
+            'The earliest entry also covers the days before it. To correct a mistake, edit the entry instead. ' +
+            'Leave both times empty for no default from that date.</p>' +
+          (entries.length ? _dutyDatedListHtml(entries, timesOf, edit) : '') +
+          '<div class="form-field"><label for="duty-def-from">Effective from</label>' +
+            '<input type="date" id="duty-def-from" value="' + escHtml(edit ? edit.effective_date : today) + '"></div>' +
           '<div class="form-field-row">' +
             '<div class="form-field"><label for="duty-def-start">Duty start</label>' +
-              '<input type="time" id="duty-def-start" value="' + (d ? d.duty_start : '') + '"></div>' +
+              '<input type="time" id="duty-def-start" value="' + escHtml((edit && edit.duty_start) || '') + '"></div>' +
             '<div class="form-field"><label for="duty-def-end">Duty end</label>' +
-              '<input type="time" id="duty-def-end" value="' + (d ? d.duty_end : '') + '"></div>' +
+              '<input type="time" id="duty-def-end" value="' + escHtml((edit && edit.duty_end) || '') + '"></div>' +
           '</div>' +
+          '<p class="form-modal-hint" data-duty-last-edit></p>' +
           '<div class="form-modal-error" role="alert"></div>',
         footerHtml:
-          (d ? '<button class="btn-danger btn-md" data-act="clear">Clear</button>' : '') +
           '<span class="form-modal-footer-spacer"></span>' +
           '<button class="btn-secondary btn-md" data-act="cancel">Cancel</button>' +
           '<button class="btn-primary btn-md" data-act="save">Save</button>',
       });
-      const errorEl = modal.querySelector('.form-modal-error');
-      const buttons = [...modal.querySelectorAll('.form-modal-footer button')];
-      async function save(start, end) {
-        const ok = await _dutySave(buttons, errorEl, async () => {
-          await apiWrite('PUT', '/api/pilots/' + _dutyPilotId, { default_duty_start: start, default_duty_end: end });
-          const p = _dutyPilot();
-          if (p) Object.assign(p, { default_duty_start: start, default_duty_end: end });
-          renderSettingsPilotList();
-        });
-        if (ok) close();
+      const $ = sel => modal.querySelector(sel);
+      const errorEl = $('.form-modal-error');
+      const buttons = [...modal.querySelectorAll('.form-modal-footer button, .duty-dated-list button')];
+      const url = '/api/pilots/' + encodeURIComponent(pilotId) + '/default-duty';
+      async function reload() {
+        await _dutyFetchLog();
+        _dutyLoad();
+        _dutyOpenDefaultForm();
       }
-      modal.querySelector('[data-act="cancel"]').addEventListener('click', close);
-      modal.querySelector('[data-act="clear"]')?.addEventListener('click', () => save(null, null));
-      modal.querySelector('[data-act="save"]').addEventListener('click', () => {
-        const start = modal.querySelector('#duty-def-start').value, end = modal.querySelector('#duty-def-end').value;
-        if (!start || !end) { errorEl.textContent = 'Enter both times, or Clear.'; return; }
-        if (start === end) { errorEl.textContent = 'The duty end must differ from its start.'; return; }
-        save(start, end);
+      const onConflict = conflict => showEditConflict(errorEl, conflict, { reload, changed: isDirty });
+      // A change newer than the log is shown as a conflict right away.
+      showLastEdit($('[data-duty-last-edit]'), 'pilot_default_duty', String(pilotId))
+        .then(h => { if (h && h.id > baseHistoryId && !errorEl.textContent) onConflict(h); });
+      // The pilot list's "Default duty" line follows.
+      function saved(resp) {
+        const p = pilotList.find(x => x.id === pilotId);
+        if (p) p.default_duties = resp.default_duties;
+        renderSettingsPilotList();
+      }
+
+      modal.querySelector('.duty-dated-list')?.addEventListener('click', async e => {
+        const btn = e.target.closest('[data-edit], [data-remove]');
+        if (!btn) return;
+        const entry = entries[Number(btn.dataset.edit ?? btn.dataset.remove)];
+        if (btn.dataset.edit != null) { _dutyOpenDefaultForm({ edit: entry }); return; }
+        if (!confirm('Remove the default duty entry “' + _dutyDatedWhen(entries, entry) + ': ' + timesOf(entry) +
+          '”? The days it covered then follow the other entries.')) return;
+        const ok = await _dutySave(buttons, errorEl, async () => saved(await apiWrite('DELETE',
+          url + '/' + entry.effective_date + '?base_history_id=' + baseHistoryId)), onConflict);
+        if (ok) _dutyOpenDefaultForm();
       });
+      $('[data-act="cancel"]').addEventListener('click', close);
+      $('[data-act="save"]').addEventListener('click', async () => {
+        const from = $('#duty-def-from').value;
+        const start = $('#duty-def-start').value || null, end = $('#duty-def-end').value || null;
+        if (!from) { errorEl.textContent = 'Enter the date it applies from.'; return; }
+        if ((start == null) !== (end == null)) { errorEl.textContent = 'Enter both times, or neither for no default.'; return; }
+        if (start != null && start === end) { errorEl.textContent = 'The duty end must differ from its start.'; return; }
+        // Another entry on that date is replaced: say so.
+        const other = entries.find(x => x.effective_date === from && x !== edit);
+        if (other && !confirm('There’s already an entry dated ' + tzShortDate(from, null) + ' (' + timesOf(other) + '). Replace it?')) return;
+        const body = { effective_date: from, duty_start: start, duty_end: end, base_history_id: baseHistoryId };
+        if (edit) body.replaces = edit.effective_date;
+        const ok = await _dutySave(buttons, errorEl, async () => saved(await apiWrite('PUT', url, body)), onConflict);
+        if (ok) close();
+      });
+    }
+
+    // "From Jun 15, 2026", or for the earliest entry, which also covers the days before
+    // it (dutyEntryOn), "Before Jul 1, 2026" or "Every day" when it's the only one.
+    // entries: newest first.
+    function _dutyDatedWhen(entries, entry) {
+      const i = entries.indexOf(entry);
+      if (i < entries.length - 1) return 'From ' + tzShortDate(entry.effective_date, null);
+      return i > 0 ? 'Before ' + tzShortDate(entries[i - 1].effective_date, null) : 'Every day';
+    }
+
+    // A dated list (newest first) with Edit and Remove on each entry (data-edit /
+    // data-remove: its index), what(entry) its value. The entry being edited is left out.
+    // Shared with Global Settings' duty method (settings.ts).
+    function _dutyDatedListHtml(entries, what, editing = null) {
+      return '<ul class="duty-dated-list">' + entries.map((e, i) => e === editing ? '' :
+        '<li><span class="duty-dated-when">' + escHtml(_dutyDatedWhen(entries, e)) + '</span>' +
+          '<span class="duty-dated-what">' + escHtml(what(e)) + '</span>' +
+          '<span><button type="button" class="duty-link-btn" data-edit="' + i + '">Edit</button>' +
+          '<button type="button" class="duty-link-btn" data-remove="' + i + '">Remove</button></span></li>'
+      ).join('') + '</ul>';
     }
 
     // An export covers at most this many months.
@@ -1617,7 +1774,7 @@ export function pilotDutyScript(): string {
       const buttons = [...modal.querySelectorAll('.form-modal-footer button')];
       const restHint = $('[data-duty-rest-hint]');
       const defaultHint = $('[data-duty-default-hint]');
-      // def: the pilot's default duty for the first date, offered with "Use default"
+      // def: the pilot's default duty in force on the first date, offered with "Use default"
       // rather than filled in, so a day saved with a note alone keeps using it.
       // baseHistoryId: what the log the form was filled from is as of (0 without one: the
       // form shows no records).
@@ -1657,7 +1814,7 @@ export function pilotDutyScript(): string {
       function load() {
         baseHistoryId = _dutyLog ? _dutyLog.last_history_id : 0;
         rec = recordOf($('#duty-d-date').value);
-        def = _dutyDefaultDuty();
+        def = dutyDefaultOn((_dutyLog && _dutyLog.default_duties) || [], $('#duty-d-date').value);
         defaultHint.firstChild.textContent = def
           ? 'Default duty ' + def.duty_start + '–' + def.duty_end + ' applies on a flying day with no times recorded.' : '';
         setKind(rec && rec.rest ? 'rest' : 'duty');

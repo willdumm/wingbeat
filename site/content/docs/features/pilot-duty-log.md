@@ -67,10 +67,12 @@ Admins can edit the log; other users see it read-only.
 - **Duty and rest days:** see the next section.
 
 Every change to a flight's corrections, to a tracked flight's aircraft or
-pilot, or to a day's duty, rest or note is kept in an edit history: who made
+pilot, to a day's duty, rest or note, to a pilot's [default duty](#default-duty)
+or to the [limits method](#limits-b-or-c) is kept in an edit history: who made
 it, when, and the values before and after. Moving a flight to another pilot
 changes two pilots' logs, so that's recorded too. The history can't be edited
-or deleted. The day form and the flight form show the last change, e.g. "Last
+or deleted. The day form, the flight form, the default duty form and the
+method's settings show the last change, e.g. "Last
 changed by Sam, Mon Oct 13 09:12.", or "Pilot last changed by Sam, …" when the
 latest change to a flight was its pilot.
 
@@ -208,10 +210,25 @@ a whole calendar day as rest.
 
 Most pilots keep the same hours, so each pilot can have a default duty period.
 Admins set it from the "Default duty 08:00–17:00 · Change" line in the duty
-log's header, or with **Edit** on the pilot in Settings.
+log's header.
 
-The default applies to a day with flights and no duty times or rest recorded
-(a day with only a note uses it too).
+A pilot's hours can change, so the default is kept by date: each entry applies
+from its **Effective from** date until the next one. To change the default,
+add an entry from the date the new hours start (today, by default). Past
+months keep the default that was in force then, so their warnings and PDFs
+don't change. The earliest entry also covers the days before it, so a pilot
+whose only default starts June 1 uses it for every day. Leaving both times
+empty saves "no default" from that date.
+
+The form lists the pilot's entries, newest first, each with **Edit** and
+**Remove**. To fix a mistake in an entry (a typo, or the wrong date), edit it
+rather than adding another: that changes every day it covered, as it should,
+and the change is recorded. The header shows the default for the month on
+screen, e.g. "Default duty 07:00–16:00 from Jun 15" in a month where it
+changed.
+
+The default in force on a day applies to it when it has flights and no duty
+times or rest recorded (a day with only a note uses it too).
 That day's Duty column shows the default marked "(default)", on screen and in
 the PDF, and the duty and rest checks use it. A day with a record
 always uses the record. If a flight departs before or lands after the day's
@@ -220,8 +237,8 @@ duty period, recorded or default, the day gets a warning, e.g. "Flight
 for that day.
 
 Under [method (c)](#limits-b-or-c) the default duty is the pilot's regularly
-assigned duty period, and a day whose recorded times differ from it gets a
-warning.
+assigned duty period, and a day whose recorded times differ from the default
+in force that day gets a warning.
 
 ## Corrections that no longer match
 
@@ -267,9 +284,14 @@ the one-pilot limits.
 
 §135.267 lets an operator apply its daily limits in one of two ways, and the
 operator picks one. Set yours under **Duty limits (§135.267)** in
-[Global Settings](../../settings/admin-settings#general); the default is (b).
+[Global Settings](../../settings/admin-settings#duty-limits-135267); the default is (b).
 The method is shown above the totals and on the PDF, e.g. "Limits:
 §135.267(b), flight time in any 24 hours · one-pilot crew".
+
+Like the default duty, the method is kept by date: a change applies from its
+**Effective from** date, and each day is checked with the method in force on
+it, so past months keep theirs. A month that changed method says so, e.g.
+"Limits: §135.267(b) to Jun 14, §135.267(c) from Jun 15 · one-pilot crew".
 
 **(b) Flight time in any 24 hours.** For pilots who can be called at varying
 times. The log warns about:
@@ -297,7 +319,7 @@ regularly assigned duty period. The log warns about:
 - more than 8 hours of flight time in the duty period, counting the whole of any
   of the day's flights outside the duty times too (Part 91 counted as under (b))
 - duty times that differ from the regularly assigned ones, or no default duty
-  set at all
+  in force that day
 - a duty period starting earlier on the clock than the previous day's, so the
   duty and the rest after it add up to less than 24 hours
 

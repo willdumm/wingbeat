@@ -36,9 +36,24 @@ export interface Pilot {
   id: number;
   name: string;
   active: boolean;
-  /** Usual duty period (HH:MM local), used for flying days with no duty times recorded. */
-  default_duty_start: string | null;
-  default_duty_end: string | null;
+  /** Usual duty period by date, oldest first (migration 0005): used for flying days with
+   *  no duty times recorded. */
+  default_duties: DefaultDuty[];
+}
+
+/** A pilot's default duty (HH:MM local) from effective_date until the next entry; the
+ *  earliest entry also applies before its date. Null times: no default from that date. */
+export interface DefaultDuty {
+  effective_date: string;
+  duty_start: string | null;
+  duty_end: string | null;
+}
+
+/** The operator's §135.267 method from effective_date until the next entry; the earliest
+ *  also applies before its date, and with none it's (b). */
+export interface DutyMethodEntry {
+  effective_date: string;
+  method: 'b' | 'c';
 }
 
 /** Correction of a tracked flight (tracker_id set) or a manual flight (tracker_id null). */

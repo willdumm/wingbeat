@@ -1,7 +1,7 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
-import { Env, Tenant, Point, Flight, FlightRecord, FlightPoint, Tracker, Aircraft, Pilot, InviteToken, Webhook, TileOverlay, FlightCorrection, DutyDay } from './types';
+import { Env, Tenant, Point, Flight, FlightRecord, FlightPoint, Tracker, Aircraft, Pilot, InviteToken, Webhook, TileOverlay, FlightCorrection, DutyDay, DefaultDuty, DutyMethodEntry } from './types';
 import { maybePoll, pollAllActive, pollAllActiveForce, testFeed } from './poller';
 import { resegment } from './segmentation';
 import { geocodePendingPoints, geocodeLivePoint, invalidateNamedPointsCache, computeLiveLabel, resolveRefPoint } from './geocoding';
@@ -49,12 +49,21 @@ async function queryAircraft(db: D1Database, activeOnly = false) {
   return results.map(r => ({ ...r, maintenance_schedule: r.maintenance_schedule ? JSON.parse(r.maintenance_schedule) : null }));
 }
 
-async function queryPilots(db: D1Database, activeOnly = false) {
+// Pilots with their dated default duties (default_duties, oldest first; migration 0005),
+// for the pilot list's "Default duty" line.
+async function queryPilots(db: D1Database, activeOnly = false): Promise<Pilot[]> {
   const query = activeOnly
-    ? 'SELECT id, name, active, default_duty_start, default_duty_end FROM pilots WHERE active = 1 ORDER BY name ASC'
-    : 'SELECT id, name, active, default_duty_start, default_duty_end FROM pilots ORDER BY name ASC';
-  const { results } = await db.prepare(query).all<Pilot>();
-  return results;
+    ? 'SELECT id, name, active FROM pilots WHERE active = 1 ORDER BY name ASC'
+    : 'SELECT id, name, active FROM pilots ORDER BY name ASC';
+  const [pilots, defaults] = await db.batch([
+    db.prepare(query),
+    db.prepare('SELECT pilot_id, effective_date, duty_start, duty_end FROM pilot_default_duty ORDER BY pilot_id, effective_date'),
+  ]);
+  const byPilot = new Map<number, DefaultDuty[]>();
+  for (const { pilot_id, ...entry } of defaults.results as (DefaultDuty & { pilot_id: number })[]) {
+    byPilot.set(pilot_id, [...byPilot.get(pilot_id) ?? [], entry]);
+  }
+  return (pilots.results as Omit<Pilot, 'default_duties'>[]).map(p => ({ ...p, default_duties: byPilot.get(p.id) ?? [] }));
 }
 
 async function queryTileOverlays(db: D1Database) {
@@ -971,8 +980,9 @@ app.delete('/api/overlays/:id', requireAdmin, async (c) => {
 // ── Edit history ──────────────────────────────────────────────────────────────
 
 // Runs a route's writes as one batch with the signed-in user recorded for the
-// edit_history triggers on flight_corrections and duty_days (migration 0003) and on
-// flights' aircraft/pilot (0004): edit_actor is set first and cleared last, and a D1 batch
+// edit_history triggers on flight_corrections and duty_days (migration 0003), on
+// flights' aircraft/pilot (0004) and on the dated default duties and duty method (0005):
+// edit_actor is set first and cleared last, and a D1 batch
 // is one transaction, so each change and its history rows land together or not at all.
 // Every route that writes those goes through it. Returns the results of stmts.
 //
@@ -1013,13 +1023,14 @@ async function recordedBatch(c: Context<{ Bindings: Env; Variables: Variables }>
 // editing the same flight or day would silently overwrite each other. Such a save sends
 // base_history_id: the edit_history id the form's values are as of (the last_history_id
 // of the GET its data came from: the flight store's corrections, the duty log's days).
+// The default-duty and duty-method forms do the same for their whole lists.
 // A history row for the record after it means someone changed it since, and the save is
 // refused with 409 { error, conflict: { id, at, user_id, user_name } }, the newest such
 // change. Without base_history_id the save isn't checked.
 //
 // Any record with history can use it: pass recordedBatch() its refs and the client's id.
 
-// A record's history: [entity, entity_key] (keys as in migrations 0003 and 0004).
+// A record's history: [entity, entity_key] (keys as in migrations 0003 to 0005).
 type HistoryRef = [entity: string, key: string];
 // A full-state save's base_history_id and the records it replaces.
 type SaveBase = { id: number; refs: HistoryRef[] };
@@ -1046,7 +1057,7 @@ function parseBaseHistoryId(v: unknown): number | undefined | string {
 }
 
 // The newest edit_history id, any entity: what a snapshot of records with history (GET
-// /api/flight-corrections, GET /api/duty-days) is as of, read in the same batch as it.
+// /api/flight-corrections, GET /api/duty-days, GET /api/duty-methods) is as of, read in the same batch as it.
 // Every change up to it is in the snapshot, so it's both the corrections sync's cursor
 // and the base_history_id of a form filled from the snapshot.
 const LAST_HISTORY_ID_SQL = 'SELECT COALESCE(MAX(id), 0) AS last_history_id FROM edit_history';
@@ -1055,11 +1066,12 @@ function lastHistoryIdOf(result: D1Result): number {
   return (result.results[0] as { last_history_id: number } | undefined)?.last_history_id ?? 0;
 }
 
-const EDIT_HISTORY_ENTITIES = new Set(['flight_corrections', 'duty_days', 'flight_assignment']);
+const EDIT_HISTORY_ENTITIES = new Set(['flight_corrections', 'duty_days', 'flight_assignment',
+  'pilot_default_duty', 'duty_method']);
 
 // One record's history, newest first:
-// ?entity=flight_corrections|duty_days|flight_assignment&key=<entity_key> (see migrations
-// 0003 and 0004) and optionally &limit=<n> (default and maximum 100). entity can list
+// ?entity=flight_corrections|duty_days|flight_assignment|pilot_default_duty|duty_method
+// &key=<entity_key> (see migrations 0003 to 0005) and optionally &limit=<n> (default and maximum 100). entity can list
 // several, comma-separated, for entities sharing a key (a tracked flight's corrections and
 // its aircraft/pilot): their rows come interleaved, newest first.
 app.get('/api/edit-history', requireAdmin, async (c) => {
@@ -1395,17 +1407,27 @@ app.get('/api/flight-corrections', async (c) => {
   return c.json({ entries: rows as FlightCorrection[], deleted: [], last_history_id: lastHistoryId, full: true });
 });
 
-// One pilot's duty/rest days: { days, last_history_id } (the day form's base_history_id),
-// read in one batch. Flights (with corrections) come from the flight store.
+// One pilot's duty log: { days, default_duties, duty_methods, last_history_id }, read in
+// one batch: their duty/rest days, their dated default duties and the operator's dated
+// §135.267 method (both oldest first; migration 0005), everything the log computes from
+// besides flights (which, with corrections, come from the flight store). last_history_id
+// is the day form's and the default-duty form's base_history_id.
 app.get('/api/duty-days', async (c) => {
   const pilotId = parseInt(c.req.query('pilot') ?? '', 10);
   if (Number.isNaN(pilotId)) return c.json({ error: 'pilot must be an integer' }, 400);
-  const [cursor, days] = await c.var.db.batch([
+  const [cursor, days, defaults, methods] = await c.var.db.batch([
     c.var.db.prepare(LAST_HISTORY_ID_SQL),
     c.var.db.prepare('SELECT * FROM duty_days WHERE pilot_id = ? ORDER BY date').bind(pilotId),
+    c.var.db.prepare(DEFAULT_DUTIES_SQL).bind(pilotId),
+    c.var.db.prepare(DUTY_METHODS_SQL),
   ]);
   c.header('Cache-Control', 'no-store');
-  return c.json({ days: days.results as DutyDay[], last_history_id: lastHistoryIdOf(cursor) });
+  return c.json({
+    days: days.results as DutyDay[],
+    default_duties: defaults.results as DefaultDuty[],
+    duty_methods: methods.results as DutyMethodEntry[],
+    last_history_id: lastHistoryIdOf(cursor),
+  });
 });
 
 app.post('/api/flight-corrections', requireAdmin, async (c) => {
@@ -1689,6 +1711,120 @@ app.post('/api/duty-days/:pilot/clear', requireAdmin, async (c) => {
   return c.json({ ok: true });
 });
 
+// ── Dated default duty and duty method ────────────────────────────────────────
+// Each is a list of entries by effective date (migration 0005): a day uses the entry with
+// the latest date on or before it, or the earliest entry when they're all later. A change
+// is a new entry from its date on, so past months keep the value they were checked with;
+// editing or removing an entry (a typo fix) changes the days it covered, and the edit
+// history records it. Each list's form shows and saves against all of it, so its base
+// (see "Edit conflicts") is the whole list: '<pilot_id>' or 'tenant'.
+
+const DEFAULT_DUTIES_SQL = 'SELECT effective_date, duty_start, duty_end FROM pilot_default_duty WHERE pilot_id = ? ORDER BY effective_date';
+const DUTY_METHODS_SQL = 'SELECT effective_date, method FROM duty_method_history ORDER BY effective_date';
+
+// A dated-entry save's effective_date and replaces (the date of the entry being edited,
+// when the edit moves it; omitted for a new entry or one keeping its date), or an error.
+function parseDatedEntry(body: { effective_date?: unknown; replaces?: unknown }): { date: string; replaces: string | null } | string {
+  if (typeof body.effective_date !== 'string' || !isDateKey(body.effective_date)) return 'effective_date must be YYYY-MM-DD';
+  if (body.replaces != null && (typeof body.replaces !== 'string' || !isDateKey(body.replaces))) return 'replaces must be YYYY-MM-DD';
+  return { date: body.effective_date, replaces: body.replaces != null && body.replaces !== body.effective_date ? body.replaces : null };
+}
+
+function savedBase(id: number | undefined, ref: HistoryRef): SaveBase | undefined {
+  return id === undefined ? undefined : { id, refs: [ref] };
+}
+
+// One pilot's default duty from a date: { effective_date, duty_start, duty_end,
+// replaces?, base_history_id? }. Times are both HH:MM (not equal) or both null (no default
+// from that date); an entry already on that date is replaced, and so is the one dated
+// replaces (moved to effective_date), in the same batch. Returns { default_duties }.
+app.put('/api/pilots/:id/default-duty', requireAdmin, async (c) => {
+  const pilotId = parseInt(c.req.param('id'), 10);
+  if (Number.isNaN(pilotId)) return c.json({ error: 'Invalid pilot id' }, 400);
+  let body: { effective_date?: unknown; duty_start?: unknown; duty_end?: unknown; replaces?: unknown; base_history_id?: unknown };
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const entry = parseDatedEntry(body);
+  if (typeof entry === 'string') return c.json({ error: entry }, 400);
+  const start = hhmm(body.duty_start), end = hhmm(body.duty_end);
+  if (start === undefined || end === undefined) return c.json({ error: 'Default duty times must be HH:MM' }, 400);
+  if ((start == null) !== (end == null)) return c.json({ error: 'Set both default duty start and end, or neither' }, 400);
+  if (start != null && start === end) return c.json({ error: 'The default duty end must differ from its start' }, 400);
+  const baseId = parseBaseHistoryId(body.base_history_id);
+  if (typeof baseId === 'string') return c.json({ error: baseId }, 400);
+  if (!await pilotExists(c.var.db, pilotId)) return c.json({ error: 'Pilot not found' }, 404);
+  const db = c.var.db;
+  const results = await recordedBatch(c, [
+    ...entry.replaces ? [db.prepare('DELETE FROM pilot_default_duty WHERE pilot_id = ? AND effective_date = ?').bind(pilotId, entry.replaces)] : [],
+    db.prepare(
+      `INSERT INTO pilot_default_duty (pilot_id, effective_date, duty_start, duty_end) VALUES (?, ?, ?, ?)
+       ON CONFLICT (pilot_id, effective_date) DO UPDATE SET duty_start = excluded.duty_start, duty_end = excluded.duty_end`
+    ).bind(pilotId, entry.date, start, end),
+    db.prepare(DEFAULT_DUTIES_SQL).bind(pilotId),
+  ], savedBase(baseId, ['pilot_default_duty', String(pilotId)]));
+  return c.json({ default_duties: results[results.length - 1].results as DefaultDuty[] });
+});
+
+// Removes the entry dated :date (?base_history_id=): its days fall back to the entry before
+// it (or, for the earliest, the next one). Returns { default_duties }.
+app.delete('/api/pilots/:id/default-duty/:date', requireAdmin, async (c) => {
+  const pilotId = parseInt(c.req.param('id'), 10);
+  if (Number.isNaN(pilotId)) return c.json({ error: 'Invalid pilot id' }, 400);
+  const date = c.req.param('date');
+  if (!isDateKey(date)) return c.json({ error: 'date must be YYYY-MM-DD' }, 400);
+  const baseId = parseBaseHistoryId(c.req.query('base_history_id'));
+  if (typeof baseId === 'string') return c.json({ error: baseId }, 400);
+  const db = c.var.db;
+  const [del, list] = await recordedBatch(c, [
+    db.prepare('DELETE FROM pilot_default_duty WHERE pilot_id = ? AND effective_date = ?').bind(pilotId, date),
+    db.prepare(DEFAULT_DUTIES_SQL).bind(pilotId),
+  ], savedBase(baseId, ['pilot_default_duty', String(pilotId)]));
+  if (del.meta.changes === 0) return c.json({ error: 'No default duty on that date' }, 404);
+  return c.json({ default_duties: list.results as DefaultDuty[] });
+});
+
+// The operator's §135.267 method by date: { methods, last_history_id } (the Global
+// Settings form's base_history_id), read in one batch.
+app.get('/api/duty-methods', async (c) => {
+  const [cursor, methods] = await c.var.db.batch([c.var.db.prepare(LAST_HISTORY_ID_SQL), c.var.db.prepare(DUTY_METHODS_SQL)]);
+  c.header('Cache-Control', 'no-store');
+  return c.json({ methods: methods.results as DutyMethodEntry[], last_history_id: lastHistoryIdOf(cursor) });
+});
+
+// The method from a date: { effective_date, method: 'b' | 'c', replaces?, base_history_id? },
+// like a default duty entry. Returns { methods }.
+app.put('/api/duty-methods', requireAdmin, async (c) => {
+  let body: { effective_date?: unknown; method?: unknown; replaces?: unknown; base_history_id?: unknown };
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const entry = parseDatedEntry(body);
+  if (typeof entry === 'string') return c.json({ error: entry }, 400);
+  if (body.method !== 'b' && body.method !== 'c') return c.json({ error: 'method must be b or c' }, 400);
+  const baseId = parseBaseHistoryId(body.base_history_id);
+  if (typeof baseId === 'string') return c.json({ error: baseId }, 400);
+  const db = c.var.db;
+  const results = await recordedBatch(c, [
+    ...entry.replaces ? [db.prepare('DELETE FROM duty_method_history WHERE effective_date = ?').bind(entry.replaces)] : [],
+    db.prepare(
+      `INSERT INTO duty_method_history (effective_date, method) VALUES (?, ?)
+       ON CONFLICT (effective_date) DO UPDATE SET method = excluded.method`
+    ).bind(entry.date, body.method),
+    db.prepare(DUTY_METHODS_SQL),
+  ], savedBase(baseId, ['duty_method', 'tenant']));
+  return c.json({ methods: results[results.length - 1].results as DutyMethodEntry[] });
+});
+
+app.delete('/api/duty-methods/:date', requireAdmin, async (c) => {
+  const date = c.req.param('date');
+  if (!isDateKey(date)) return c.json({ error: 'date must be YYYY-MM-DD' }, 400);
+  const baseId = parseBaseHistoryId(c.req.query('base_history_id'));
+  if (typeof baseId === 'string') return c.json({ error: baseId }, 400);
+  const [del, list] = await recordedBatch(c, [
+    c.var.db.prepare('DELETE FROM duty_method_history WHERE effective_date = ?').bind(date),
+    c.var.db.prepare(DUTY_METHODS_SQL),
+  ], savedBase(baseId, ['duty_method', 'tenant']));
+  if (del.meta.changes === 0) return c.json({ error: 'No method change on that date' }, 404);
+  return c.json({ methods: list.results as DutyMethodEntry[] });
+});
+
 // ── Aircraft management routes ────────────────────────────────────────────────
 
 app.get('/api/aircraft', async (c) => {
@@ -1770,18 +1906,14 @@ app.put('/api/pilots/:id', requireAdmin, async (c) => {
   if (!existing) return c.json({ error: 'Pilot not found' }, 404);
 
   const body = await c.req.json<{ name?: string; active?: boolean; default_duty_start?: unknown; default_duty_end?: unknown }>();
+  // The default duty is dated now, so it's no longer a field of the pilot.
+  if (body.default_duty_start !== undefined || body.default_duty_end !== undefined) {
+    return c.json({ error: 'Set the default duty with PUT /api/pilots/:id/default-duty' }, 400);
+  }
   const sets: string[] = [];
   const vals: (string | number | null)[] = [];
   if (body.name !== undefined) { sets.push('name = ?'); vals.push(body.name); }
   if (body.active !== undefined) { sets.push('active = ?'); vals.push(body.active ? 1 : 0); }
-  // The usual duty period: both HH:MM, or both null to clear it.
-  if (body.default_duty_start !== undefined || body.default_duty_end !== undefined) {
-    const start = hhmm(body.default_duty_start), end = hhmm(body.default_duty_end);
-    if (start === undefined || end === undefined) return c.json({ error: 'Default duty times must be HH:MM' }, 400);
-    if ((start == null) !== (end == null)) return c.json({ error: 'Set both default duty start and end, or neither' }, 400);
-    if (start != null && start === end) return c.json({ error: 'The default duty end must differ from its start' }, 400);
-    sets.push('default_duty_start = ?', 'default_duty_end = ?'); vals.push(start, end);
-  }
   if (sets.length === 0) return c.json({ error: 'Nothing to update' }, 400);
   vals.push(id);
   await c.var.db.prepare(`UPDATE pilots SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
@@ -2121,13 +2253,14 @@ app.get('/api/settings', requireAdmin, async (c) => {
 });
 
 app.patch('/api/settings', requireAdmin, async (c) => {
-  const ALLOWED_KEYS = new Set(['app_name', 'timezone', 'map_default_lat', 'map_default_lng', 'map_default_zoom', 'gap_alert_minutes', 'gap_alert_stop_minutes', 'pushover_api_token', 'setup_dismissed', 'duty_method']);
+  const ALLOWED_KEYS = new Set(['app_name', 'timezone', 'map_default_lat', 'map_default_lng', 'map_default_zoom', 'gap_alert_minutes', 'gap_alert_stop_minutes', 'pushover_api_token', 'setup_dismissed']);
   const body = await c.req.json<Record<string, string | number>>();
   const stmts: D1PreparedStatement[] = [];
   for (const [key, value] of Object.entries(body)) {
+    // Dated now (migration 0005), so not a plain setting.
+    if (key === 'duty_method') return c.json({ error: 'Set the duty method with PUT /api/duty-methods' }, 400);
     if (!ALLOWED_KEYS.has(key)) return c.json({ error: `Unknown setting key: ${key}` }, 400);
     if (typeof value !== 'string' && typeof value !== 'number') return c.json({ error: `Value for ${key} must be a string or number` }, 400);
-    if (key === 'duty_method' && value !== 'b' && value !== 'c') return c.json({ error: 'duty_method must be b or c' }, 400);
     stmts.push(c.var.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').bind(key, String(value)));
   }
   if (stmts.length > 0) {

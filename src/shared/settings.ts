@@ -218,18 +218,34 @@ export function settingsModalMarkup(): string {
                 <div class="settings-form-label">Stop gap alerts after (minutes)</div>
                 <input type="number" id="settings-tenant-gap-stop-minutes" min="1" step="1" placeholder="60" autocomplete="off" />
               </div>
-              <div class="settings-form-row">
-                <div class="settings-form-label">Duty limits (§135.267)</div>
-                <select id="settings-tenant-duty-method">
-                  <option value="b">(b) Flight time in any 24 hours</option>
-                  <option value="c">(c) Regularly assigned duty period</option>
-                </select>
-                <p class="settings-section-desc">${docsLinkMarkup('features/pilot-duty-log/#limits-b-or-c', 'How the two methods differ')}</p>
-              </div>
               <div class="settings-add-actions">
                 <button id="settings-tenant-save" class="btn-primary">Save</button>
               </div>
               <p id="settings-tenant-status" class="settings-msg" style="display:none"></p>
+            </div>
+            <div class="settings-section">
+              <div class="settings-section-label">Duty limits (§135.267)</div>
+              <p class="settings-section-desc">Which method the pilot duty log checks. A change applies from its date
+                on: past months keep the method that was in force then. To correct a mistake, edit the entry.
+                ${docsLinkMarkup('features/pilot-duty-log/#limits-b-or-c', 'How the two methods differ')}</p>
+              <div id="settings-duty-methods"></div>
+              <div class="settings-form-row">
+                <div class="settings-form-label">Method</div>
+                <select id="settings-tenant-duty-method">
+                  <option value="b">(b) Flight time in any 24 hours</option>
+                  <option value="c">(c) Regularly assigned duty period</option>
+                </select>
+              </div>
+              <div class="settings-form-row">
+                <div class="settings-form-label">Effective from</div>
+                <input type="date" id="settings-duty-method-from" />
+              </div>
+              <div class="settings-add-actions">
+                <button id="settings-duty-method-save" class="btn-secondary">Save method</button>
+                <button id="settings-duty-method-cancel" class="btn-secondary" hidden>Cancel edit</button>
+              </div>
+              <p id="settings-duty-method-error" class="settings-msg" role="alert"></p>
+              <p id="settings-duty-method-last-edit" class="settings-section-desc"></p>
             </div>
             <div class="settings-section">
               <div class="settings-section-label">Notifications</div>
@@ -575,7 +591,6 @@ export function settingsModalStyles(): string {
 
     .settings-edit-form-actions { display: flex; gap: 0.3rem; }
     .settings-edit-form-label { font-size: var(--size-2xs); color: var(--text-muted); }
-    .settings-edit-form-times { display: flex; gap: 0.3rem; }
 
     .settings-import-warning {
       background: var(--warning-surface);
@@ -679,6 +694,7 @@ export function settingsModalStyles(): string {
       display: flex;
       gap: 0.4rem;
     }
+    .settings-add-actions [hidden] { display: none; }
 
     /* Buttons inside .settings-add-actions get .btn-md sizing (buttons.ts) without the
        class. Appearance comes from .btn-primary / .btn-secondary / .btn-danger. */
@@ -2261,10 +2277,13 @@ export function settingsModalScript(): string {
         nameEl.className = 'settings-aircraft-name';
         nameEl.textContent = p.name;
         info.appendChild(nameEl);
-        if (p.default_duty_start) {
+        // The default in force today (dutyDefaultOn, pilot-duty.ts); its dated list is
+        // edited from the duty log.
+        const def = dutyDefaultOn(p.default_duties, unixToTzDateStr(Math.floor(Date.now() / 1000)));
+        if (def) {
           const sub = document.createElement('span');
           sub.className = 'settings-aircraft-sub';
-          sub.textContent = 'Default duty ' + p.default_duty_start + '–' + p.default_duty_end;
+          sub.textContent = 'Default duty ' + def.duty_start + '–' + def.duty_end;
           info.appendChild(sub);
         }
         const actions = document.createElement('div');
@@ -2317,12 +2336,8 @@ export function settingsModalScript(): string {
       form.className = 'settings-edit-form';
       form.innerHTML =
         '<input type="text" class="edit-pilot-name" placeholder="Pilot name" value="' + escHtml(pilot.name) + '" />' +
-        // The usual duty period, used by the duty log for flying days with no duty times.
-        '<label class="settings-edit-form-label">Default duty (start – end)</label>' +
-        '<div class="settings-edit-form-times">' +
-          '<input type="time" class="edit-pilot-duty-start" aria-label="Default duty start" value="' + (pilot.default_duty_start || '') + '" />' +
-          '<input type="time" class="edit-pilot-duty-end" aria-label="Default duty end" value="' + (pilot.default_duty_end || '') + '" />' +
-        '</div>' +
+        // The default duty is dated, so it has its own form, in the duty log.
+        '<span class="settings-edit-form-label">The default duty is set in the pilot’s duty log.</span>' +
         '<div class="settings-msg edit-pilot-error"></div>' +
         '<div class="settings-edit-form-actions">' +
           '<button class="settings-action-btn save-edit-btn">Save</button>' +
@@ -2331,18 +2346,15 @@ export function settingsModalScript(): string {
       form.querySelector('.save-edit-btn').addEventListener('click', async () => {
         const name = form.querySelector('.edit-pilot-name').value.trim();
         if (!name) return;
-        const start = form.querySelector('.edit-pilot-duty-start').value || null;
-        const end = form.querySelector('.edit-pilot-duty-end').value || null;
         const errorEl = form.querySelector('.edit-pilot-error');
-        if ((start == null) !== (end == null)) { errorEl.textContent = 'Enter both default duty times, or neither.'; return; }
         try {
           const resp = await fetch('/api/pilots/' + pilot.id, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, default_duty_start: start, default_duty_end: end }),
+            body: JSON.stringify({ name }),
           });
           if (resp.ok) {
-            Object.assign(pilot, { name, default_duty_start: start, default_duty_end: end });
+            pilot.name = name;
             // Manual flights show the pilot by name.
             flightStore.setPilots(pilotList);
             renderSettingsPilotList();
@@ -2370,7 +2382,7 @@ export function settingsModalScript(): string {
         });
         if (resp.ok) {
           const d = await resp.json();
-          pilotList.push({ id: d.id, name, active: true, default_duty_start: null, default_duty_end: null });
+          pilotList.push({ id: d.id, name, active: true, default_duties: [] });
           flightStore.setPilots(pilotList);
           document.getElementById('settings-add-pilot-name').value = '';
           document.getElementById('settings-add-pilot').open = false;
@@ -2804,7 +2816,6 @@ export function settingsModalScript(): string {
         document.getElementById('settings-tenant-zoom').value = d.map_default_zoom ?? '';
         document.getElementById('settings-tenant-gap-minutes').value = d.gap_alert_minutes ?? '';
         document.getElementById('settings-tenant-gap-stop-minutes').value = d.gap_alert_stop_minutes ?? '';
-        document.getElementById('settings-tenant-duty-method').value = d.duty_method === 'c' ? 'c' : 'b';
         document.getElementById('settings-tenant-pushover-token').value = d.pushover_api_token ?? '';
       } catch (_) {}
     }
@@ -2813,6 +2824,7 @@ export function settingsModalScript(): string {
       _settingsNavigateTo('settings-view-tenant', 'Global Settings');
       _populateTenantTimezoneSelect();
       await _loadTenantSettingsForm();
+      await _loadDutyMethods();
       await renderSettingsWebhooksList();
     }
 
@@ -2828,7 +2840,6 @@ export function settingsModalScript(): string {
         map_default_zoom: parseInt(document.getElementById('settings-tenant-zoom').value, 10),
         gap_alert_minutes: parseInt(document.getElementById('settings-tenant-gap-minutes').value, 10),
         gap_alert_stop_minutes: parseInt(document.getElementById('settings-tenant-gap-stop-minutes').value, 10),
-        duty_method: document.getElementById('settings-tenant-duty-method').value,
       };
       // Not seeded by the initial migration, so it's blank until first saved — leave the
       // server default (shown as the placeholder) in place rather than sending null.
@@ -2840,8 +2851,6 @@ export function settingsModalScript(): string {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-        // The duty log reads the method when it computes, so it applies without a reload.
-        if (resp.ok) window.APP_SETTINGS.dutyMethod = body.duty_method;
         statusEl.style.display = '';
         statusEl.textContent = resp.ok ? 'Saved.' : 'Failed to save.';
         setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
@@ -2850,6 +2859,94 @@ export function settingsModalScript(): string {
         statusEl.textContent = 'Failed to save.';
         setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
       }
+    });
+
+    // ── Duty method, by date ──
+    // The operator's §135.267 method as dated entries (GET /api/duty-methods; migration
+    // 0005), each day of the duty log using the one in force on it (dutyMethodOn,
+    // pilot-duty.ts). Save adds an entry from its Effective from date, or with Edit fixes
+    // one (moved to a new date, if changed); Remove drops one. Writes send the list's
+    // history id as base_history_id, so a change another admin made since it loaded is
+    // refused and the section offers to reload (src/index.ts, "Edit conflicts"). The list
+    // markup and its styles are the default-duty form's (_dutyDatedListHtml).
+    let _dutyMethods = { methods: [], last_history_id: 0 };
+    let _dutyMethodEditing = null;
+
+    const _DUTY_METHOD_NAMES = { b: '(b) Flight time in any 24 hours', c: '(c) Regularly assigned duty period' };
+
+    async function _loadDutyMethods() {
+      const errorEl = document.getElementById('settings-duty-method-error');
+      try {
+        const resp = await fetch('/api/duty-methods');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        _dutyMethods = await resp.json();
+        errorEl.textContent = '';
+      } catch (_) {
+        errorEl.textContent = 'Couldn’t load the duty method. Reopen Global Settings to try again.';
+      }
+      _editDutyMethod(null);
+    }
+
+    // Shows the list and fills the form: for entry (Edit) or for a new entry from today.
+    function _editDutyMethod(entry) {
+      _dutyMethodEditing = entry;
+      const entries = [..._dutyMethods.methods].sort((a, b) => a.effective_date < b.effective_date ? 1 : -1);
+      const today = unixToTzDateStr(Math.floor(Date.now() / 1000));
+      const listEl = document.getElementById('settings-duty-methods');
+      listEl.innerHTML = entries.length ? _dutyDatedListHtml(entries, e => _DUTY_METHOD_NAMES[e.method] || e.method, entry) : '';
+      listEl.onclick = e => {
+        const btn = e.target.closest('[data-edit], [data-remove]');
+        if (!btn) return;
+        const picked = entries[Number(btn.dataset.edit ?? btn.dataset.remove)];
+        if (btn.dataset.edit != null) _editDutyMethod(picked);
+        else _removeDutyMethod(entries, picked);
+      };
+      const current = dutyMethodOn(_dutyMethods.methods, today);
+      document.getElementById('settings-tenant-duty-method').value = entry ? entry.method : current;
+      document.getElementById('settings-duty-method-from').value = entry ? entry.effective_date : today;
+      document.getElementById('settings-duty-method-save').textContent = entry ? 'Save entry' : 'Save method';
+      document.getElementById('settings-duty-method-cancel').hidden = !entry;
+      const errorEl = document.getElementById('settings-duty-method-error');
+      const base = _dutyMethods.last_history_id;
+      showLastEdit(document.getElementById('settings-duty-method-last-edit'), 'duty_method', 'tenant')
+        .then(h => { if (h && h.id > base && !errorEl.textContent) _dutyMethodConflict(h); });
+    }
+
+    function _dutyMethodConflict(conflict) {
+      showEditConflict(document.getElementById('settings-duty-method-error'), conflict, { reload: _loadDutyMethods });
+    }
+
+    // Runs a write of the method list (apiWrite), then shows the list it returns.
+    async function _writeDutyMethods(fn) {
+      const controls = [...document.querySelectorAll('#settings-duty-method-save, #settings-duty-method-cancel, #settings-duty-methods button')];
+      const errorEl = document.getElementById('settings-duty-method-error');
+      const ok = await runFormAction(controls, errorEl, async () => {
+        await fn();
+        await _loadDutyMethods();
+      }, _dutyMethodConflict);
+      return ok;
+    }
+
+    function _removeDutyMethod(entries, entry) {
+      if (!confirm('Remove the duty method entry “' + _dutyDatedWhen(entries, entry) + ': ' + _DUTY_METHOD_NAMES[entry.method] +
+        '”? The days it covered then follow the other entries.')) return;
+      _writeDutyMethods(() => apiWrite('DELETE', '/api/duty-methods/' + entry.effective_date +
+        '?base_history_id=' + _dutyMethods.last_history_id));
+    }
+
+    document.getElementById('settings-duty-method-cancel').addEventListener('click', () => _editDutyMethod(null));
+    document.getElementById('settings-duty-method-save').addEventListener('click', () => {
+      const errorEl = document.getElementById('settings-duty-method-error');
+      const from = document.getElementById('settings-duty-method-from').value;
+      const method = document.getElementById('settings-tenant-duty-method').value;
+      if (!from) { errorEl.textContent = 'Enter the date it applies from.'; return; }
+      const edit = _dutyMethodEditing;
+      const other = _dutyMethods.methods.find(x => x.effective_date === from && x !== edit);
+      if (other && !confirm('There’s already an entry dated ' + tzShortDate(from, null) + ' (' +
+        _DUTY_METHOD_NAMES[other.method] + '). Replace it?')) return;
+      const body = { effective_date: from, method, base_history_id: _dutyMethods.last_history_id };
+      if (edit) body.replaces = edit.effective_date;
+      _writeDutyMethods(() => apiWrite('PUT', '/api/duty-methods', body));
     });
 
     document.getElementById('settings-pushover-token-save').addEventListener('click', async () => {
