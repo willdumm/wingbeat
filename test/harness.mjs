@@ -57,7 +57,7 @@ const EXPORTS = [
   'computeDutyData', 'dutyTotals', 'dutyDayText', 'currentDutyMonth', '_DUTY_LIMITS',
   'dutySaveConfirmText',
   // flight-store.ts
-  'flightCorrectionKey', 'mergeFlightCorrections',
+  'flightCorrectionKey', 'mergeFlightCorrections', 'flightStore',
 ];
 
 export const TZ = 'America/Anchorage';
@@ -65,20 +65,29 @@ export const TZ = 'America/Anchorage';
 /**
  * A fresh vm context with the scripts loaded. settings are merged into APP_SETTINGS;
  * now is the clock's start (a Date, epoch ms, or 'YYYY-MM-DD HH:MM' local to the
- * timezone). Returns the exported functions plus setNow().
+ * timezone); fetch, if given, is the context's fetch (the flight store's requests).
+ * Returns the exported functions plus setNow(), storage (the Map behind localStorage) and
+ * dispatch(type, event), which calls the listeners added with window.addEventListener.
  */
-export function loadEngine({ settings = {}, now = '2026-10-15 12:00' } = {}) {
+export function loadEngine({ settings = {}, now = '2026-10-15 12:00', fetch } = {}) {
   const clock = { ms: 0 };
-  const noop = () => {};
+  const storage = new Map();
+  const listeners = new Map();
   const context = vm.createContext({
     window: {
       APP_SETTINGS: { timezone: TZ, dutyMethod: 'b', appName: 'Test', ...settings },
-      addEventListener: noop,
+      addEventListener: (type, fn) => listeners.set(type, [...(listeners.get(type) ?? []), fn]),
     },
-    localStorage: { getItem: () => null, setItem: noop, removeItem: noop },
+    localStorage: {
+      getItem: (k) => storage.has(k) ? storage.get(k) : null,
+      setItem: (k, v) => { storage.set(k, String(v)); },
+      removeItem: (k) => { storage.delete(k); },
+    },
+    fetch: fetch ?? (() => Promise.reject(new Error('no fetch in this engine'))),
     console,
     __clock: clock,
   });
+  const dispatch = (type, event) => { for (const fn of listeners.get(type) ?? []) fn(event); };
   vm.runInContext('Date.now = () => __clock.ms;', context);
   const source = [
     scripts.tzCalendarScript(),
@@ -95,7 +104,7 @@ export function loadEngine({ settings = {}, now = '2026-10-15 12:00' } = {}) {
       : when instanceof Date ? when.getTime() : when;
   }
   setNow(now);
-  return { ...api, setNow, context };
+  return { ...api, setNow, context, storage, dispatch };
 }
 
 /** A deep copy in this realm (JSON round trip), for deepStrictEqual. */

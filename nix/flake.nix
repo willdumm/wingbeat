@@ -19,11 +19,12 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        wrangler = emrldnix-wrangler.packages.${system}.wrangler;
       in {
         devShells.default = pkgs.mkShell {
           packages = [
             pkgs.nodejs_20                                      # node + npm
-            emrldnix-wrangler.packages.${system}.wrangler      # prebuilt workerd, NixOS-patched
+            wrangler                                            # prebuilt workerd, NixOS-patched
             pkgs.zsh
             pkgs.gh
             pkgs.hugo                                           # docs site (site/)
@@ -37,6 +38,10 @@
           '';
           PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
+          # The route/SQL tests (test/worker.mjs) run the Worker in Miniflare. The npm
+          # workerd binary doesn't run on NixOS, and Miniflare only works with the workerd
+          # it was released with, so they use the Miniflare bundled with this wrangler.
+          WINGBEAT_MINIFLARE = "${wrangler}/lib/packages/miniflare";
         };
       });
 }
