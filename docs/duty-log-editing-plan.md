@@ -866,5 +866,3 @@ edit conflicts (`worker-sql.test.mjs`, `worker-dated-defaults.test.mjs`, which a
   - a pilot's name, and the Global Settings tenant form (`PATCH /api/settings` sends every
     field);
   - trackers, overlays, named points, regions and webhooks (rarely edited at once).
-- `docs/flight-editor-plan.md` still describes `pilots.default_duty_start/end`, which
-  migration 0005 replaced with `pilot_default_duty`; it's left as the plan was written.

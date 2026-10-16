@@ -75,6 +75,9 @@ Additions to 0002:
 -- and a CHECK that the four coordinates are NULL when tracker_id IS NOT NULL.
 
 -- A pilot's usual duty period, used for flying days with no duty times recorded.
+-- (Since replaced: migration 0005 drops these two columns for the dated
+-- pilot_default_duty table; see docs/duty-log-editing-plan.md, "Dated default duty and
+-- method".)
 ALTER TABLE pilots ADD COLUMN default_duty_start TEXT;   -- HH:MM local
 ALTER TABLE pilots ADD COLUMN default_duty_end   TEXT;   -- HH:MM local; may be < start
 
@@ -140,6 +143,10 @@ to avoid churn.
   is given. A bulk "set pilot/aircraft" then covers both kinds of flight in one request.
 - `PUT /api/pilots/:id` accepts `default_duty_start` / `default_duty_end`: both HH:MM or
   both null. `queryPilots` returns them, which covers `/api/pilots` and `/api/bootstrap`.
+  (Since replaced: the default is a dated list set through
+  `PUT`/`DELETE /api/pilots/:id/default-duty`, which `queryPilots` returns as
+  `default_duties`; `PUT /api/pilots/:id` now refuses the old fields. See
+  docs/duty-log-editing-plan.md, "Dated default duty and method".)
 - `POST/PUT /api/flight-log-entries` accept `remark` (both kinds of flight) and the
   manual-flight coordinates (rejected on tracked rows). `PUT` gets the same empty-row
   cleanup as bulk.
@@ -295,11 +302,15 @@ the same way.
 
 - Set on the pilot (`default_duty_start/end`). Admins edit it from a "Default duty
   08:00–17:00 · Change" line in the duty log header; it's also editable on the pilot row
-  in Settings.
+  in Settings. (Since replaced: it's a dated list, `pilot_default_duty`, each day using
+  the entry in force on it, edited only from the duty log; see
+  docs/duty-log-editing-plan.md, "Dated default duty and method".)
 - It applies to a day with flights and no duty record or rest designation. That day's
   Duty column shows the default times marked "(default)" on screen and in the PDF, and
   the 14-hour and 10-hour-rest checks use it.
-- The day form pre-fills the default for a day with no record.
+- The day form pre-fills the default for a day with no record. (Since replaced: it
+  leaves the times empty and shows the default as a hint with a "Use default" button, so
+  saving a note alone doesn't turn a non-flying day into a duty day.)
 - A day with a record always uses the record.
 - New warning on any day: a flight that departs before or arrives after that day's duty
   period (recorded or default), e.g. "Flight 18:05–18:50 outside duty 08:00–17:00". A
@@ -308,7 +319,8 @@ the same way.
 
 **`computeDutyData(flights, pilotId, pilotName, year, month, { days, defaultDuty, unmatched })`.**
 It takes effective flights from the store (step 1 of the old function moves to
-`applyFlightEdits`) and keeps its row model.
+`applyFlightEdits`) and keeps its row model. (`defaultDuty` and the method can since be
+dated lists, each day using the entry in force on it.)
 
 ### 6. Docs and showcase
 
