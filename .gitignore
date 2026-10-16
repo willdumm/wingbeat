@@ -3,3 +3,4 @@
 /wrangler.toml
 node_modules/
 .wrangler/
+.claude/*.lock
