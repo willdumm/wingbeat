@@ -17,7 +17,7 @@ export function dashboardScriptsAircraft(): string {
         ]);
         if (trackerResp.ok) { const d = await trackerResp.json(); trackerList = d.trackers; }
         if (aircraftResp.ok) { const d = await aircraftResp.json(); aircraftList = d.aircraft; }
-        if (pilotResp.ok) { const d = await pilotResp.json(); pilotList = d.pilots; }
+        if (pilotResp.ok) { const d = await pilotResp.json(); pilotList = d.pilots; flightStore.setPilots(pilotList); }
       } catch (_) {}
       if (wasEmpty && trackerList.filter(t => t.active && !t.deleted).length > 0) {
         location.reload();

@@ -6,8 +6,14 @@ weight: 2
 
 # Admin Settings
 
-Only visible to users with the Admin role. Split across the main Settings
-panel and a separate **Global Settings** screen.
+{{% compliance %}}
+Which §135.267 method the duty log checks is for the operator to choose.
+{{% /compliance %}}
+
+Only visible to users with the Admin role. In the main Settings panel the
+admin-only sections (Admin and Users) come last, and the add/edit controls
+appear on the fleet lists; everything tenant-wide is on the separate **Global
+Settings** screen.
 
 ## Setup checklist
 
@@ -23,27 +29,18 @@ In the main Settings panel, Admins get add/edit controls (Viewers see the
 lists read-only):
 
 - **Aircraft** — add, edit, or deactivate. See
-  [Fleet Management](../features/fleet-management) and
-  [Maintenance Tracking](../features/maintenance-tracking) for what an
+  [Fleet Management](../../features/fleet-management) and
+  [Maintenance Tracking](../../features/maintenance-tracking) for what an
   aircraft entry carries.
 - **Pilots** — add, edit, or deactivate. Never hard-deleted.
 - **Trackers** — add, edit, pause, soft-delete, or import history. See
-  [Fleet Management](../features/fleet-management#trackers) for how to get a
+  [Fleet Management](../../features/fleet-management#trackers) for how to get a
   MapShare URL.
-
-## Overlays
-
-In the main Settings panel, Admins get add/edit/delete controls for tenant
-tile overlays (Viewers see the list read-only, same as Aircraft/Pilots
-above). Each overlay needs a `{z}/{x}/{y}` tile URL, an on/off default, and
-optionally a per-basemap override of that default. See
-[Map Tools](../features/map-tools#overlays) for how overlays behave for
-viewers.
 
 ## Users
 
 Invite new users (name + role) and manage existing accounts. See
-[Users & Devices](../features/users-and-devices).
+[Users & Devices](../../features/users-and-devices).
 
 ## Global Settings
 
@@ -60,18 +57,39 @@ configuration:
 | Gap alert (minutes) | Silence threshold before an in-flight signal-gap notification fires |
 | Stop gap alerts after (minutes) | Silence after which the flight is treated as ended and repeating gap alerts stop (default 60) |
 
+### Duty limits (§135.267)
+
+Which of §135.267's two methods the
+[pilot duty log](../../features/pilot-duty-log#limits-b-or-c) checks: **(b)**
+flight time in any 24 hours (the default) or **(c)** a regularly assigned duty
+period. The method is kept by date: pick it and its **Effective from** date
+(today, by default) and **Save method**. Each day of the duty log is checked
+with the method in force on it, so past months keep the method that was in
+force then. The list above the form shows each change, newest first; the
+earliest also covers the days before it. To fix a mistake, **Edit** the entry
+(or **Remove** it) rather than adding another. Every change is recorded, and
+the last one is shown ("Last changed by …").
+
 ### Notifications
 
 The shared Pushover application token, plus the list of webhook/Pushover
-notification targets. See [Notifications](../features/notifications).
+notification targets. See [Notifications](../../features/notifications).
+
+### Overlays
+
+Add, edit or delete tenant tile overlays. Each overlay needs a `{z}/{x}/{y}`
+tile URL, an on/off default, and optionally a per-basemap override of that
+default. Everyone sees them in the map's overlay legend; see
+[Map Tools](../../features/map-tools#overlays) for how overlays behave for
+viewers.
 
 ### Regions
 
 Import/export or map-edit the regions GeoJSON used by
-[Analytics](../features/analytics)'s per-region breakdown.
+[Analytics](../../features/analytics)'s per-region breakdown.
 
 ### Named Points
 
 Import/export or map-edit the named-points GeoJSON used for live-position
 labeling and local geocoding. See
-[Map Tools](../features/map-tools#regions--named-points).
+[Map Tools](../../features/map-tools#regions--named-points).

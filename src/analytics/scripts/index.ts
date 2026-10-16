@@ -3,13 +3,19 @@ import { themeRuntimeScript } from '../../shared/theme';
 import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, overlayLegendRuntimeScript } from '../../shared/map-controls';
 import { toggleScript } from '../../shared/toggle';
 import { flightStoreScript } from '../../shared/flight-store';
+import { flightEditsScript } from '../../shared/flight-edits';
 import { filterScript } from '../../shared/filters';
 import { settingsModalScript } from '../../shared/settings';
+import { formModalScript } from '../../shared/form-modal';
+import { segmentedControlScript } from '../../shared/segmented-control';
 import { pilotDutyScript } from '../../shared/pilot-duty';
+import { flightEditorScript } from '../../shared/flight-editor';
 import { aircraftInfoScript } from '../../shared/aircraft-info';
 import { analyticsScriptsRegion } from './region';
 import { analyticsScriptsAccounting } from './accounting';
-import { analyticsScriptsTime } from './time';
+import { tzCalendarScript } from '../../shared/time';
+import { htmlEscapeScript } from '../../shared/html';
+import { editHistoryScript } from '../../shared/edit-history';
 import { analyticsScriptsStreamgraphRender, analyticsScriptsStreamgraph } from './streamgraph';
 import { analyticsScriptsLayers } from './layers';
 import { analyticsScriptsMap } from './map';
@@ -22,13 +28,19 @@ export function analyticsScripts(env: Env): string {
     mapLayersRuntimeScript(env),
     overlayLegendRuntimeScript(),
     toggleScript(),
+    tzCalendarScript(),
+    htmlEscapeScript(),
+    flightEditsScript(),
     flightStoreScript(),
     filterScript(),
+    formModalScript(),
+    editHistoryScript(),
+    segmentedControlScript(),
     settingsModalScript(),
     pilotDutyScript(),
+    flightEditorScript(),
     aircraftInfoScript(),
     analyticsScriptsRegion(),
-    analyticsScriptsTime(),
     analyticsScriptsAccounting(),
     analyticsScriptsStreamgraphRender(),
     analyticsScriptsStreamgraph(),

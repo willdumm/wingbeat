@@ -175,6 +175,21 @@ so events are detected even when no one has the dashboard open — see the Archi
 
 ---
 
+## Development checks
+
+```bash
+nix develop path:./nix --command npm test               # unit tests (test/, node:test)
+nix develop path:./nix --command npm run type-check     # tsc --noEmit
+```
+
+`npm test` covers the client-side logic that lives in script strings, which `tsc` can't
+check: the pilot duty log's §135.267 checks and totals, flight corrections, and the
+timezone helpers. `test/harness.mjs` bundles the script-string functions with esbuild (in
+memory) and evaluates them in a `node:vm` context with a stub `window` and a controllable
+clock.
+
+---
+
 ## Database migrations
 
 `migrations/0001_initial.sql` creates the full schema. Schema changes go in new, sequentially
@@ -258,8 +273,10 @@ wingbeat/
 │   │   └── scripts/
 │   └── shared/                         # Shared components (settings modal, flight store, …)
 ├── migrations/
-│   └── 0001_initial.sql                # full schema; new migrations start at 0002_
+│   ├── 0001_initial.sql                # full schema; new migrations start at 0002_
+│   └── 0002_duty_records.sql           # flight corrections, duty/rest days, dated defaults, edit_history
 ├── site/                               # docs site (Hugo) + showcase; own Worker, see site/README.md
+├── test/                               # node:test unit tests (npm test); harness.mjs runs the script strings in node:vm
 ├── wrangler.example.toml               # template — copy to wrangler.toml (gitignored) and fill in
 ├── .dev.vars.example                   # copy to .dev.vars for local dev
 ├── package.json

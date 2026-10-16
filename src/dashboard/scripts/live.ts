@@ -11,7 +11,8 @@ export function dashboardScriptsLive(): string {
       const result = {};
       const activeTrackers = trackerList.filter(t => t.active && !t.deleted);
       for (const tracker of activeTrackers) {
-        const sorted = flightStore.getAll([tracker.id]);
+        // The tracker's own records: positions don't depend on corrections.
+        const sorted = flightStore.getRaw([tracker.id]);
         if (!sorted.length) continue;
         const latest = sorted[sorted.length - 1];
         const lp = latest.points[latest.points.length - 1];
@@ -29,13 +30,20 @@ export function dashboardScriptsLive(): string {
     }
 
     // Applies a store refresh result to shared state and re-renders the flight list and status cards.
-    function applyStoreResult(result) {
-      liveDataByTracker = buildLiveDataByTracker(result);
+    // The store's flights into allFlights, the list and the alerts; remembers the store
+    // generation it rendered, so the onChange handler (init.ts) doesn't render it again.
+    function renderStoreFlights() {
       const allTrackerIds = trackerList.filter(t => t.active && !t.deleted).map(t => t.id);
+      dashboardRenderedGen = flightStore.generation();
       allFlights = flightStore.getAll(allTrackerIds).reverse();
       applyFilter();
-      updateAircraftStatusCards();
       refreshAlerts();
+    }
+
+    function applyStoreResult(result) {
+      liveDataByTracker = buildLiveDataByTracker(result);
+      renderStoreFlights();
+      updateAircraftStatusCards();
     }
 
     // Full adaptive poll cycle: refresh the store, update status and map.

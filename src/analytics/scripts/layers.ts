@@ -24,9 +24,11 @@ export function analyticsScriptsLayers(): string {
           for (const ep of computeWeightedEndpoints(f)) pts.push([ep.lat, ep.lon, ep.weight]);
         }
       }
-      if (pts.length === 0) return null;
+      // Manual flights' endpoints without coordinates count in the totals, not on the map.
+      const placed = pts.filter(p => p[0] != null && p[1] != null);
+      if (placed.length === 0) return null;
       const max = Math.max(0.01, Math.pow(0.5, 14 - zoom) * 0.05);
-      return L.heatLayer(pts, {
+      return L.heatLayer(placed, {
         radius: 30, blur: 35, max,
         gradient: { 0.4: '#6b21a8', 0.65: '#9333ea', 1.0: '#e9d5ff' },
       });
@@ -65,6 +67,7 @@ export function analyticsScriptsLayers(): string {
     function buildFlightLinesLayer(flights) {
       const group = L.layerGroup();
       for (const f of flights) {
+        if (!(f.points ?? []).length) continue;   // manual flights: no track
         L.polyline((f.points ?? []).map(p => [p.lat, p.lon]), {
           color: getAccentColor(), opacity: 0.35, weight: 1.5,
         }).addTo(group);

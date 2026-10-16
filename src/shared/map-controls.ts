@@ -643,7 +643,7 @@ export function mapLayersSettingsScript(): string {
       actions.appendChild(colorsBtn);
 
       var deleteBtn = document.createElement('button');
-      deleteBtn.className = 'settings-danger-btn';
+      deleteBtn.className = 'btn-danger';
       deleteBtn.textContent = 'Delete';
       deleteBtn.addEventListener('click', function() {
         var msg = isCustom ? 'Delete this map layer?' : 'Remove "' + label + '" from the map style switcher? You can add it back later.';

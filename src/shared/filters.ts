@@ -176,6 +176,7 @@ export function filterMarkup(): string {
   `;
 }
 
+/** Needs tzCalendarScript() (shared/time.ts) in the same script. */
 export function filterScript(): string {
   const markupJson = JSON.stringify(filterMarkup());
   return `
@@ -206,13 +207,16 @@ export function filterScript(): string {
 
       matchesFlight(flight, state) {
         if (state.dateFrom) {
-          if (flight.start_time < _filterDayStart(state.dateFrom)) return false;
+          if (flight.start_time < tzDayStartUnix(...state.dateFrom.split('-').map(Number))) return false;
         }
         if (state.dateTo) {
-          if (flight.start_time > _filterDayEnd(state.dateTo)) return false;
+          if (flight.start_time > tzDayEndUnix(...state.dateTo.split('-').map(Number))) return false;
         }
+        // Manual flights (no tracker) show unless a tracker filter is set; '__manual__'
+        // in trackerIds ("Manual entries") selects them.
         if (state.trackerIds.length > 0) {
-          if (!state.trackerIds.includes(flight.tracker_id)) return false;
+          const tid = flight.tracker_id == null ? '__manual__' : flight.tracker_id;
+          if (!state.trackerIds.includes(tid)) return false;
         }
         if (state.pilotIds.length > 0) {
           const pid = flight.pilot_id === null ? '__null__' : flight.pilot_id;
@@ -225,30 +229,6 @@ export function filterScript(): string {
         return true;
       },
     };
-
-    function _filterGetTzOffset(refUTC) {
-      const fmt = new Intl.DateTimeFormat('en-US', {
-        timeZone: window.APP_SETTINGS.timezone,
-        year: 'numeric', month: 'numeric', day: 'numeric',
-        hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: false,
-      });
-      const parts = Object.fromEntries(
-        fmt.formatToParts(refUTC).filter(p => p.type !== 'literal').map(p => [p.type, +p.value])
-      );
-      return (Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour % 24, parts.minute, parts.second) - refUTC.getTime()) / 1000;
-    }
-
-    function _filterDayStart(dateStr) {
-      const [y, m, d] = dateStr.split('-').map(Number);
-      const ref = new Date(Date.UTC(y, m - 1, d, 9, 0, 0));
-      return Math.floor(Date.UTC(y, m - 1, d) / 1000) - _filterGetTzOffset(ref);
-    }
-
-    function _filterDayEnd(dateStr) {
-      const [y, m, d] = dateStr.split('-').map(Number);
-      const ref = new Date(Date.UTC(y, m - 1, d, 20, 0, 0));
-      return Math.floor(Date.UTC(y, m - 1, d, 23, 59, 59) / 1000) - _filterGetTzOffset(ref);
-    }
 
     // ── Filter UI ─────────────────────────────────────────────────────────────
     // Set by initFilters(); external code can call refreshFilterDropdowns() after list changes.
@@ -306,7 +286,7 @@ export function filterScript(): string {
 
         for (const id of s.trackerIds) {
           const t = trackerList.find(x => x.id === id);
-          chips.push({ label: 'Tracker: ' + (t ? t.name : id), remove: () => {
+          chips.push({ label: id === '__manual__' ? 'Manual entries' : 'Tracker: ' + (t ? t.name : id), remove: () => {
             _filterState = { ..._filterState, trackerIds: _filterState.trackerIds.filter(x => x !== id) };
             _commit();
           }});
@@ -371,6 +351,12 @@ export function filterScript(): string {
           opt.textContent = t.name + ' (deleted)';
           trackerSel.appendChild(opt);
         }
+        if (!curTrackerIds.has('__manual__')) {
+          const opt = document.createElement('option');
+          opt.value = '__manual__';
+          opt.textContent = 'Manual entries';
+          trackerSel.appendChild(opt);
+        }
 
         // Aircraft options
         const curTails = new Set(_filterState.aircraftTails);
@@ -432,7 +418,7 @@ export function filterScript(): string {
       trackerSel.addEventListener('change', () => {
         const val = trackerSel.value;
         if (!val) return;
-        const id = parseInt(val, 10);
+        const id = val === '__manual__' ? val : parseInt(val, 10);
         if (!_filterState.trackerIds.includes(id)) {
           _filterState = { ..._filterState, trackerIds: [..._filterState.trackerIds, id] };
           _commit();

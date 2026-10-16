@@ -11,8 +11,20 @@ export function dashboardScriptsRefresh(): string {
       });
     }
 
+    // The flight's identity across re-segmentation: its tracker's own start time (a
+    // corrected departure doesn't change it). Manual flights have no tracker.
+    function _trackedStart(f) {
+      return f.edit && 'start_time' in f.edit.original ? f.edit.original.start_time : f.start_time;
+    }
+    function _sameTrackedFlight(a, b) {
+      return a.tracker_id != null && a.tracker_id === b.tracker_id && _trackedStart(a) === _trackedStart(b);
+    }
+
+    // Redraws the map after allFlights changed (a poll, or a correction saved anywhere).
+    // The "latest flight" it follows is the newest tracked one: manual flights have no
+    // track.
     async function refreshMapIfNeeded(oldFlights) {
-      // A flight changed if its modified_at advanced (new points, labels, etc.)
+      // A flight changed if its modified_at advanced (new points, labels, an edit, etc.)
       function flightChanged(f) {
         const old = oldFlights.find(o => o.id === f.id);
         if (!old) return false;
@@ -20,13 +32,27 @@ export function dashboardScriptsRefresh(): string {
       }
 
       const recentInteraction = Date.now() - lastUserInteractionTime < 120_000;
+      const latestTracked = allFlights.find(f => f.tracker_id != null);
+      const oldLatestTracked = oldFlights.find(f => f.tracker_id != null);
+
+      // The selected flight was removed (or deleted): fall back to the default view.
+      if (activeFlightId !== null) {
+        const oldActive = oldFlights.find(f => f.id === activeFlightId);
+        const stillThere = allFlights.some(f => f.id === activeFlightId) ||
+          (oldActive && allFlights.some(f => _sameTrackedFlight(f, oldActive)));
+        if (!stillThere) {
+          activeFlightId = null;
+          showDefaultMapView({ fit: mapInputSettled() });
+          return;
+        }
+      }
 
       if (!recentInteraction) {
         // Idle mode: auto-follow the most recent flight when nothing is selected,
         // or when the most recent flight has new data.
-        if (allFlights.length > 0) {
-          const latest = allFlights[0];
-          const oldLatest = oldFlights.find(f => f.start_time === latest.start_time);
+        if (latestTracked) {
+          const latest = latestTracked;
+          const oldLatest = oldFlights.find(f => _sameTrackedFlight(f, latest));
           const latestChanged = !oldLatest || oldLatest.modified_at !== latest.modified_at;
           if (activeFlightId === null || latestChanged) {
             activeFlightId = null;
@@ -46,7 +72,7 @@ export function dashboardScriptsRefresh(): string {
           // point's timestamp), so use it to find the replacement.
           const oldActive = oldFlights.find(f => f.id === activeFlightId);
           if (oldActive) {
-            newFlight = allFlights.find(f => f.start_time === oldActive.start_time);
+            newFlight = allFlights.find(f => _sameTrackedFlight(f, oldActive));
           }
         }
         if (newFlight && (flightChanged(newFlight) || newFlight.id !== activeFlightId)) {
@@ -60,14 +86,14 @@ export function dashboardScriptsRefresh(): string {
       // Auto-follow a genuinely new flight when the user was already watching the
       // previously-newest one. "Genuinely new" = a start_time not present in oldFlights
       // at all (as opposed to a resegmentation which reuses the same start_time).
-      if (activeFlightId !== null && allFlights[0] && oldFlights[0]) {
-        const isGenuinelyNew = !oldFlights.some(f => f.start_time === allFlights[0].start_time);
-        const userWasOnOldLatest = activeFlightId === oldFlights[0].id;
+      if (activeFlightId !== null && latestTracked && oldLatestTracked) {
+        const isGenuinelyNew = !oldFlights.some(f => _sameTrackedFlight(f, latestTracked));
+        const userWasOnOldLatest = activeFlightId === oldLatestTracked.id;
         if (isGenuinelyNew && userWasOnOldLatest) {
           activeFlightId = null;
-          const el = document.querySelector('.flight-item[data-id="' + allFlights[0].id + '"]')
+          const el = document.querySelector('.flight-item[data-id="' + latestTracked.id + '"]')
             ?? document.querySelector('.flight-item');
-          await selectFlight(allFlights[0], el, false);
+          await selectFlight(latestTracked, el, false);
         }
       }
 

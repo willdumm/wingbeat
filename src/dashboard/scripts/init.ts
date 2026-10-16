@@ -12,6 +12,7 @@ export function dashboardScriptsInit(): string {
           trackerList = d.trackers;
           aircraftList = d.aircraft;
           pilotList = d.pilots;
+          flightStore.setPilots(pilotList);
           overlayList = d.overlays;
           currentUser = d.me;
         }
@@ -19,8 +20,8 @@ export function dashboardScriptsInit(): string {
       _ftRenderOverlayLegend();
 
       if (currentUser?.role !== 'admin') {
-        const bulkBtn = document.getElementById('bulk-edit-btn');
-        if (bulkBtn) bulkBtn.style.display = 'none';
+        const editBtn = document.getElementById('edit-flights-btn');
+        if (editBtn) editBtn.style.display = 'none';
       }
 
       const activeTrackers = trackerList.filter(t => t.active && !t.deleted);
@@ -46,6 +47,16 @@ export function dashboardScriptsInit(): string {
       // fitted to the current flights. With nothing cached, the map waits for phase 2.
       flightStore.init();
       allFlights = flightStore.getAll(allTrackerIds).reverse();
+      // A store change the dashboard didn't render itself (a correction saved in the flight
+      // editor or duty log, another tab's sync, a pilot rename): re-render the list, alerts
+      // and map. Deferred a task, so a refresh the dashboard started (a poll, the refresh
+      // button) renders through applyStoreResult first and this sees nothing left to do.
+      flightStore.onChange(() => setTimeout(() => {
+        if (flightStore.generation() === dashboardRenderedGen) return;
+        const oldFlights = allFlights;
+        renderStoreFlights();
+        refreshMapIfNeeded(oldFlights).catch(() => {});
+      }, 0));
       liveDataByTracker = buildLiveDataByTracker(null);
       applyFilter();
       if (allFlights.length > 0) showDefaultMapView();
@@ -264,7 +275,7 @@ export function dashboardScriptsInit(): string {
     // Prevent iOS Safari from scrolling the page when touching non-scrollable areas.
     // header/mobile-topnav touches are fully managed by the pull-to-refresh handler above.
     document.addEventListener('touchmove', (e) => {
-      if (!e.target.closest('#flight-list, .settings-view, .be-panel, #alerts-strip, header, #mobile-topnav, .map-controls-bar, .overlay-legend-panel')) {
+      if (!e.target.closest('#flight-list, .settings-view, .form-modal, #alerts-strip, header, #mobile-topnav, .map-controls-bar, .overlay-legend-panel')) {
         e.preventDefault();
       }
     }, { passive: false });

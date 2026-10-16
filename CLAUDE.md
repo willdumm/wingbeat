@@ -44,6 +44,9 @@ specs all come from there. Before writing new UI:
 3. **New scrollable overlay?** Also see `docs/frontend-patterns.md` (iOS
    touchmove allowlist) — unrelated to the design system but a common miss when
    adding new modals/panels.
+4. **Form layout on phones?** `site/scripts/preview-form.mjs` measures a dialog's fields at
+   phone width with the real stylesheet and can simulate iOS's date/time input sizing — see
+   `docs/frontend-patterns.md` ("Checking form layout at phone width").
 
 When a change can't reuse an existing token or component and genuinely needs
 something new, add it to `src/shared/` (following the existing `*Styles()` /
@@ -73,8 +76,23 @@ dashboard/analytics page state (take data and elements as arguments). After chan
 of them, or their styles, re-run `nix develop path:./nix --command npm run docs:showcase`
 and commit the regenerated output. `--check` fails if it's stale. See `site/README.md`.
 
+## Tests — `npm test`
+
+Run `nix develop path:./nix --command npm test` after changing `pilot-duty.ts`, `flight-edits.ts`,
+`time.ts` or `flight-store.ts`: `test/` runs their script strings in a `node:vm` context (see
+`test/harness.mjs`) against the duty-log compliance spec in `docs/duty-log-editing-plan.md`.
+Run it too after changing the flight-correction or duty-day routes in `src/index.ts`, or adding a
+migration: `test/worker-sql.test.mjs` runs the real Worker in Miniflare against a fresh D1 with
+every migration applied (see `test/worker.mjs`).
+
 ## Migrations
 
 `migrations/0001_initial.sql` is the full schema. Number new migrations sequentially from
 `0002_` up, never edit one that has shipped, and keep tenant data (trackers, named points,
 regions) out of them (see README.md, "Database migrations").
+
+The `edit_history` triggers (0002, on `flight_corrections`, `duty_days`, `pilot_default_duty`,
+`duty_method_history` and the `pilot_id`/`aircraft_tail` of `flights`) list their columns
+explicitly. A migration that adds a column to one of those tables (or another assignment field
+to `flights`) must drop and recreate the affected triggers, or the new column isn't recorded in
+the history.

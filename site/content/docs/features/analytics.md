@@ -7,7 +7,11 @@ weight: 5
 # Analytics
 
 A separate page (`/analytics`) for fleet-wide trends, sharing the same
-filters (date range, tracker, aircraft, pilot) as the dashboard.
+filters (date range, tracker, aircraft, pilot) as the dashboard. It uses
+flights with their [corrections](../editing-flights) applied: corrected times,
+manual flights included, removed flights left out. A manual flight has no track
+to draw; its hours count in the region of its named-point endpoints, or under
+"Unknown location" without them.
 
 ## Map view
 

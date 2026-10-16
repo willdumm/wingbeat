@@ -5,25 +5,15 @@ export function dashboardScriptsAlerts(): string {
     ${sharedMaintenanceHelperScripts()}
     // ── Alerts feed ──────────────────────────────────────────────────────────
 
-    function _alEsc(s) {
-      return String(s === null || s === undefined ? '' : s)
-        .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-
     function computeAlerts() {
       var now = Math.floor(Date.now() / 1000);
       var flights = flightStore.getAll();
       var flightsByTail = new Map();
-      var flightsByPilot = new Map();
       for (var _fi = 0; _fi < flights.length; _fi++) {
         var _f = flights[_fi];
         if (_f.aircraft_tail) {
           if (!flightsByTail.has(_f.aircraft_tail)) flightsByTail.set(_f.aircraft_tail, []);
           flightsByTail.get(_f.aircraft_tail).push(_f);
-        }
-        if (_f.pilot_id !== null && _f.pilot_id !== undefined) {
-          if (!flightsByPilot.has(_f.pilot_id)) flightsByPilot.set(_f.pilot_id, []);
-          flightsByPilot.get(_f.pilot_id).push(_f);
         }
       }
       var alerts = [];
@@ -126,44 +116,35 @@ export function dashboardScriptsAlerts(): string {
         }
       }
 
-      // 3. Pilot duty alerts (FAR 135.267-style limits)
-      var DUTY_LIMITS = [
-        { window_label: '24-hour',  window_seconds: 86400,    limit_hours: 8    },
-        { window_label: '7-day',    window_seconds: 604800,   limit_hours: 36   },
-        { window_label: '30-day',   window_seconds: 2592000,  limit_hours: 100  },
-        { window_label: '90-day',   window_seconds: 7776000,  limit_hours: 250  },
-        { window_label: '12-month', window_seconds: 31536000, limit_hours: 1000 },
-      ];
-
+      // 3. Pilot duty alerts: the duty log's §135.267 totals (dutyTotals, pilot-duty.ts),
+      // flagged at 90% of a limit; the worst one per pilot. Flights are grouped by pilot
+      // once (dutyTotals keeps only the pilot's own anyway).
+      var flightsByPilot = new Map();
+      for (var _pi = 0; _pi < flights.length; _pi++) {
+        var _pf = flights[_pi];
+        if (!flightsByPilot.has(_pf.pilot_id)) flightsByPilot.set(_pf.pilot_id, []);
+        flightsByPilot.get(_pf.pilot_id).push(_pf);
+      }
       var activePilots = pilotList.filter(function(p) { return p.active; });
       for (var m = 0; m < activePilots.length; m++) {
         var pilot = activePilots[m];
-        var worstPct = 0;
+        var totals = dutyTotals(flightsByPilot.get(pilot.id) || [], pilot.id, now, { hoursOnly: true });
         var worstAlert = null;
-
-        for (var n = 0; n < DUTY_LIMITS.length; n++) {
-          var dl = DUTY_LIMITS[n];
-          var windowStart = now - dl.window_seconds;
-          var pid = pilot.id;
-          var hoursFlown = (flightsByPilot.get(pid) || [])
-            .filter(function(f) { return f.start_time >= windowStart; })
-            .reduce(function(s, f) { return s + _flightHours(f); }, 0);
-          var pct = hoursFlown / dl.limit_hours;
-          if (pct >= 0.90 && pct > worstPct) {
-            worstPct = pct;
+        totals.hours.concat([totals.flight24]).forEach(function(row) {
+          var pct = row.secs / row.limit;
+          if (pct >= 0.90 && (!worstAlert || pct > worstAlert.pct)) {
             worstAlert = {
               kind: 'pilot_duty',
               pilot_id: pilot.id,
               pilot_name: pilot.name,
-              window_label: dl.window_label,
-              hours_flown: hoursFlown,
-              limit_hours: dl.limit_hours,
+              window_label: row.label,
+              hours_flown: row.secs / 3600,
+              limit_hours: row.limit / 3600,
               pct: pct,
               urgency: 'due_soon',
             };
           }
-        }
-
+        });
         if (worstAlert) alerts.push(worstAlert);
       }
 
@@ -211,40 +192,40 @@ export function dashboardScriptsAlerts(): string {
           descParts.push(alert.flight_origin + (alert.flight_destination ? ' → ' + alert.flight_destination : ''));
         }
         bodyHtml = '<div class="alert-body">' +
-          '<span class="alert-text">' + _alEsc(alert.flight_label) + '</span>' +
-          (descParts.length > 0 ? '<span class="alert-desc">' + _alEsc(descParts.join(' · ')) + '</span>' : '') +
+          '<span class="alert-text">' + escHtml(alert.flight_label) + '</span>' +
+          (descParts.length > 0 ? '<span class="alert-desc">' + escHtml(descParts.join(' · ')) + '</span>' : '') +
           '</div>';
         actionLabel = 'Assign';
-        actionDataAttrs = 'data-flight-id="' + _alEsc(String(alert.flight_id)) + '"';
+        actionDataAttrs = 'data-flight-id="' + escHtml(String(alert.flight_id)) + '"';
       } else if (alert.kind === 'maintenance') {
         icon = '⚠';
         var acParts = alert.aircraft_name ? [alert.aircraft_tail, alert.aircraft_name] : [alert.aircraft_tail];
-        bodyHtml = '<div class="alert-body"><span class="alert-text">' + _alEsc(acParts.join(' · ') + ' · ' + alert.item.name + ' · ' + alert.status.due_label) + '</span></div>';
+        bodyHtml = '<div class="alert-body"><span class="alert-text">' + escHtml(acParts.join(' · ') + ' · ' + alert.item.name + ' · ' + alert.status.due_label) + '</span></div>';
         actionLabel = 'View';
-        actionDataAttrs = 'data-aircraft-tail="' + _alEsc(alert.aircraft_tail) + '"';
+        actionDataAttrs = 'data-aircraft-tail="' + escHtml(alert.aircraft_tail) + '"';
       } else if (alert.kind === 'timer_not_recorded') {
         icon = '⚑';
         var acParts2 = alert.aircraft_name ? [alert.aircraft_tail, alert.aircraft_name] : [alert.aircraft_tail];
         var timerDesc = alert.timer_type === 'calendar'
           ? 'Last service date not set (' + alert.needed_for + ')'
           : (alert.timer_type === 'hobbs' ? 'Hobbs' : 'Tach') + ' not recorded (' + alert.needed_for + ')';
-        bodyHtml = '<div class="alert-body"><span class="alert-text">' + _alEsc(acParts2.join(' · ') + ' · ' + timerDesc) + '</span></div>';
+        bodyHtml = '<div class="alert-body"><span class="alert-text">' + escHtml(acParts2.join(' · ') + ' · ' + timerDesc) + '</span></div>';
         actionLabel = 'Set';
-        actionDataAttrs = 'data-aircraft-tail="' + _alEsc(alert.aircraft_tail) + '"';
+        actionDataAttrs = 'data-aircraft-tail="' + escHtml(alert.aircraft_tail) + '"';
       } else {
         icon = '⚑';
-        bodyHtml = '<div class="alert-body"><span class="alert-text">' + _alEsc(alert.pilot_name + ' · ' + alert.hours_flown.toFixed(1) + '/' + alert.limit_hours + ' hr (' + alert.window_label + ')') + '</span></div>';
+        bodyHtml = '<div class="alert-body"><span class="alert-text">' + escHtml(alert.pilot_name + ' · ' + alert.hours_flown.toFixed(1) + '/' + alert.limit_hours + ' hr (' + alert.window_label + ')') + '</span></div>';
         actionLabel = 'Log';
-        actionDataAttrs = 'data-pilot-id="' + _alEsc(String(alert.pilot_id)) + '" data-pilot-name="' + _alEsc(alert.pilot_name) + '"';
+        actionDataAttrs = 'data-pilot-id="' + escHtml(String(alert.pilot_id)) + '" data-pilot-name="' + escHtml(alert.pilot_name) + '"';
       }
 
       var isAdmin = currentUser?.role === 'admin';
       var hideAction = alert.kind === 'unassigned_flight' && !isAdmin;
       var clickClass = alert.kind === 'unassigned_flight' ? ' alert-row-clickable' : '';
-      return '<div class="alert-row ' + borderClass + clickClass + '" data-alert-kind="' + _alEsc(alert.kind) + '" ' + actionDataAttrs + '>' +
+      return '<div class="alert-row ' + borderClass + clickClass + '" data-alert-kind="' + escHtml(alert.kind) + '" ' + actionDataAttrs + '>' +
         '<span class="alert-icon">' + icon + '</span>' +
         bodyHtml +
-        (hideAction ? '' : '<button class="alert-action-btn btn-secondary" ' + actionDataAttrs + ' data-alert-kind="' + _alEsc(alert.kind) + '">' + actionLabel + '</button>') +
+        (hideAction ? '' : '<button class="alert-action-btn btn-secondary" ' + actionDataAttrs + ' data-alert-kind="' + escHtml(alert.kind) + '">' + actionLabel + '</button>') +
       '</div>';
     }
 
@@ -301,7 +282,7 @@ export function dashboardScriptsAlerts(): string {
         if (flight) {
           var el = document.querySelector('.flight-item[data-id="' + flightId + '"]');
           if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          openAssignmentModal(flight);
+          openFlightForm(flight);
         }
       } else if (kind === 'maintenance' || kind === 'timer_not_recorded') {
         var tail = btn.getAttribute('data-aircraft-tail');

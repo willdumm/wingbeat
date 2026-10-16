@@ -36,6 +36,59 @@ export interface Pilot {
   id: number;
   name: string;
   active: boolean;
+  /** Usual duty period by date, oldest first (migration 0002): used for flying days with
+   *  no duty times recorded. */
+  default_duties: DefaultDuty[];
+}
+
+/** A pilot's default duty (HH:MM local) from effective_date until the next entry; the
+ *  earliest entry also applies before its date. Null times: no default from that date. */
+export interface DefaultDuty {
+  effective_date: string;
+  duty_start: string | null;
+  duty_end: string | null;
+}
+
+/** The operator's §135.267 method from effective_date until the next entry; the earliest
+ *  also applies before its date, and with none it's (b). */
+export interface DutyMethodEntry {
+  effective_date: string;
+  method: 'b' | 'c';
+}
+
+/** Correction of a tracked flight (tracker_id set) or a manual flight (tracker_id null). */
+export interface FlightCorrection {
+  id: number;
+  tracker_id: number | null;
+  flight_start_time: number | null;
+  start_time: number | null;
+  end_time: number | null;
+  origin_label: string | null;
+  destination_label: string | null;
+  remark: string | null;
+  /** Manual flights only: endpoints picked from named points. */
+  start_lat: number | null;
+  start_lon: number | null;
+  end_lat: number | null;
+  end_lon: number | null;
+  part91: number;
+  /** Part 91 flying the pilot wasn't paid for: not commercial, so outside the §135.267 limits. */
+  unpaid: number;
+  excluded: number;
+  pilot_id: number | null;
+  aircraft_tail: string | null;
+  updated_at: number;
+}
+
+/** One pilot's duty times or rest designation for a local date. */
+export interface DutyDay {
+  pilot_id: number;
+  date: string;
+  duty_start: string | null;
+  duty_end: string | null;
+  rest: number;
+  rest_designated_at: number | null;
+  note: string | null;
 }
 
 export interface Point {

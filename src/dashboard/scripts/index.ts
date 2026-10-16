@@ -4,6 +4,7 @@ import { themeRuntimeScript } from '../../shared/theme';
 import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, overlayLegendRuntimeScript } from '../../shared/map-controls';
 import { toggleScript } from '../../shared/toggle';
 import { flightStoreScript } from '../../shared/flight-store';
+import { flightEditsScript } from '../../shared/flight-edits';
 import { filterScript } from '../../shared/filters';
 import { dashboardScriptsState } from './state';
 import { dashboardScriptsHelpers } from './helpers';
@@ -19,11 +20,15 @@ import { dashboardScriptsFlightListRender, dashboardScriptsFlightList } from './
 import { dashboardScriptsTrackRender } from './track-render';
 import { dashboardScriptsRefresh } from './refresh';
 import { settingsModalScript } from '../../shared/settings';
+import { formModalScript } from '../../shared/form-modal';
+import { segmentedControlScript } from '../../shared/segmented-control';
+import { tzCalendarScript } from '../../shared/time';
+import { htmlEscapeScript } from '../../shared/html';
+import { editHistoryScript } from '../../shared/edit-history';
 import { pilotDutyScript } from '../../shared/pilot-duty';
+import { flightEditorScript } from '../../shared/flight-editor';
 import { aircraftInfoScript } from '../../shared/aircraft-info';
 import { dashboardScriptsAircraft } from './aircraft';
-import { dashboardScriptsAssignmentModal } from './assignment-modal';
-import { dashboardScriptsBulkEdit } from './bulk-edit';
 import { dashboardScriptsAlerts } from './alerts';
 import { dashboardScriptsInit } from './init';
 
@@ -41,8 +46,11 @@ export function dashboardScripts(env: Env): string {
     mapLayerColorRuntimeScript(),
     mapLayersRuntimeScript(env),
     toggleScript(),
+    tzCalendarScript(),
+    htmlEscapeScript(),
     dashboardScriptsState(SPEED_THRESHOLD_KMH),
     overlayLegendRuntimeScript(),
+    flightEditsScript(),
     flightStoreScript(),
     filterScript(),
     dashboardScriptsHelpers(),
@@ -58,12 +66,14 @@ export function dashboardScripts(env: Env): string {
     dashboardScriptsFlightListRender(),
     dashboardScriptsFlightList(),
     dashboardScriptsRefresh(),
+    formModalScript(),
+    editHistoryScript(),
+    segmentedControlScript(),
     settingsModalScript(),
     pilotDutyScript(),
+    flightEditorScript(),
     aircraftInfoScript(),
     dashboardScriptsAircraft(),
-    dashboardScriptsAssignmentModal(),
-    dashboardScriptsBulkEdit(),
     dashboardScriptsAlerts(),
     dashboardScriptsInit(),
   ].join('\n');

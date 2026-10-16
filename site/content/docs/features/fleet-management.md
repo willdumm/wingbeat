@@ -14,7 +14,7 @@ bolted to one plane.
 
 Everyone can see the Aircraft, Pilots, and Trackers lists in Settings; only
 admins can add, edit, pause, or remove entries. See
-[Settings](../settings/) for the full admin/user split.
+[Settings](../../settings/) for the full admin/user split.
 
 ## Aircraft
 
@@ -31,9 +31,12 @@ carries:
 
 ## Pilots
 
-Just a name and an active flag — pilots are never hard-deleted, so historical
-flights keep a valid reference even after someone stops flying. See
-[Pilot Duty Log](../pilot-duty-log) for what's tracked per pilot.
+A name (**Edit** on the pilot), an active flag, and an optional default duty
+period, set by date in the pilot's
+[duty log](../pilot-duty-log#default-duty) — pilots are never hard-deleted, so historical flights keep a valid
+reference even after someone stops flying. See
+[Pilot Duty Log](../pilot-duty-log) for what's tracked per pilot, and
+[Editing Flights](../editing-flights) for changing a flight's aircraft or pilot.
 
 ## Trackers
 

@@ -39,6 +39,7 @@ export function dashboardScriptsState(speedThreshold: number): string {
     let trackerList = [];        // all tracker rows from /api/trackers
     let aircraftList = [];       // all aircraft rows from /api/aircraft
     let pilotList = [];          // all pilot rows from /api/pilots
+    let dashboardRenderedGen = -1; // flightStore.generation() last rendered (live.ts)
     let overlayList = [];        // all tile overlay rows from /api/overlays
 
     // ── Filter state ──────────────────────────────────────────────────────────

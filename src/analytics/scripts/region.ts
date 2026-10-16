@@ -53,7 +53,7 @@ export function analyticsScriptsRegion(): string {
 
     // The display name of the home base region containing the point, or null.
     function findHomeBase(lat, lon) {
-      if (!REGIONS) return null;
+      if (!REGIONS || lat == null || lon == null) return null;
       for (const feature of REGIONS.features) {
         if (isHomeBaseRegion(feature) && pointInPolygon(lat, lon, feature.geometry.coordinates[0])) {
           return regionDisplayName(feature.properties.Name);
@@ -62,9 +62,13 @@ export function analyticsScriptsRegion(): string {
       return null;
     }
 
+    // A manual flight's endpoint with no named point picked has no coordinates.
+    const UNKNOWN_LOCATION = 'Unknown location';
+
     // The display name of the region containing the point. Home bases win over any
     // region they overlap.
     function findRegion(lat, lon) {
+      if (lat == null || lon == null) return UNKNOWN_LOCATION;
       if (!REGIONS) return 'Other';
       const base = findHomeBase(lat, lon);
       if (base) return base;

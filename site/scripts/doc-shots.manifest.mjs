@@ -15,4 +15,19 @@ export const manifest = [
     theme: 'light',
     output: 'settings/add-tracker-dialog',
   },
+  {
+    slug: 'flight-editor.view',
+    route: '/',
+    setup: ['flight-editor.open-button'],
+    theme: 'light',
+    output: 'flight-editor/editor',
+  },
+  {
+    slug: 'flight-editor.flight-form',
+    route: '/',
+    // Part 91 picked, so the form shows its Pay control too.
+    setup: ['flight-editor.open-button', 'flight-editor.add-flight', 'flight-editor.part91'],
+    theme: 'light',
+    output: 'flight-editor/flight-form',
+  },
 ];

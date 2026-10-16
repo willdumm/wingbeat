@@ -4,12 +4,14 @@ import { icon } from '../../shared/icons';
  * Flight list rows: groups flights into days and builds the day headings and flight rows.
  * Takes its data as arguments rather than reading dashboard state, so the docs-site
  * showcase (src/showcase/) renders the same list from sample data. Needs dayKey/fmtDay/
- * fmtTime from helpers.ts.
+ * fmtTime from helpers.ts, escHtml (shared/html.ts) and the flight-edits.ts helpers
+ * (flights are effective flights: corrections marked †, manual flights chipped).
  */
 export function dashboardScriptsFlightListRender(): string {
   const chevronIconHtml = icon('chevron-right', { size: 14 });
   return `
     const FLIGHT_LIST_CHEVRON_HTML = ${JSON.stringify(chevronIconHtml)};
+    const FLIGHT_LIST_EDIT_HTML = ${JSON.stringify(icon('pencil', { size: 14 }))};
 
     // Groups flights (already sorted) into [{ label, dayKey, flights }] by local day.
     function groupFlightsByDay(flights) {
@@ -72,10 +74,11 @@ export function dashboardScriptsFlightListRender(): string {
       return { heading, chevron };
     }
 
-    // One flight row: start time, duration, route, and aircraft/pilot assignment.
+    // One flight row: start time, duration, route, aircraft/pilot assignment and remarks.
     // hasAircraft/hasPilots: whether any are configured, which decides whether a missing
-    // assignment reads "Unknown Aircraft"/"Unknown Pilot" or is left out.
-    function buildFlightItem(f, { active, hasAircraft, hasPilots }) {
+    // assignment reads "Unknown Aircraft"/"Unknown Pilot" or is left out. With onEdit, the
+    // row gets an edit (pencil) button, shown while it's selected, that calls onEdit(f).
+    function buildFlightItem(f, { active, hasAircraft, hasPilots, onEdit = null }) {
       const el = document.createElement('div');
       el.className = 'flight-item' + (active ? ' active' : '');
       el.dataset.id = f.id;
@@ -89,11 +92,14 @@ export function dashboardScriptsFlightListRender(): string {
       const start = new Date(f.start_time * 1000);
       const dur = f.end_time ? ((f.end_time - f.start_time) / 3600).toFixed(1) : null;
 
+      const manual = !!(f.edit && f.edit.manual);
       let routeHtml = '';
-      if (f.origin_label || f.destination_label) {
-        const origin = f.origin_label || '?';
+      if (f.origin_label || f.destination_label || manual) {
+        const origin = escHtml(f.origin_label || '?') + flightEditedMark(f, ['origin_label']);
         const dest = f.destination_label || (f.end_time ? '?' : '');
-        routeHtml = '<div class="flight-route">' + origin + ' →' + (dest ? ' ' + dest : '') + '</div>';
+        routeHtml = '<div class="flight-route">' + origin + ' →' +
+          (dest ? ' ' + escHtml(dest) + flightEditedMark(f, ['destination_label']) : '') +
+          (manual ? FLIGHT_CHIP_MANUAL : '') + '</div>';
       }
 
       const assignParts = [];
@@ -108,9 +114,16 @@ export function dashboardScriptsFlightListRender(): string {
 
       el.innerHTML =
         '<div class="flight-item-header">' +
-          '<div class="flight-date">' + fmtTime(start) + (dur != null ? ' <span class="flight-dur">(' + dur + ' hr)</span>' : '') + '</div>' +
+          '<div class="flight-date">' + fmtTime(start) + flightEditedMark(f, ['start_time', 'end_time']) +
+            (dur != null ? ' <span class="flight-dur">(' + dur + ' hr)</span>' : '') + '</div>' +
+          (onEdit ? '<button type="button" class="flight-edit-btn btn-icon" aria-label="Edit flight" title="Edit flight">' + FLIGHT_LIST_EDIT_HTML + '</button>' : '') +
         '</div>' +
-        routeHtml + assignHtml;
+        routeHtml + assignHtml + flightRemarksHtml(f) +
+        // Shown while selected: a manual flight has nothing to draw.
+        (manual ? '<div class="flight-no-track">No track recorded</div>' : '');
+      if (onEdit) {
+        el.querySelector('.flight-edit-btn').addEventListener('click', e => { e.stopPropagation(); onEdit(f); });
+      }
       return el;
     }
   `;
@@ -123,6 +136,8 @@ export function dashboardScriptsFlightListRender(): string {
 export function dashboardScriptsFlightList(): string {
   return `
     // ── Flights list ──────────────────────────────────────────────────────────
+    document.getElementById('edit-flights-btn').addEventListener('click', () => openFlightEditor());
+
     function renderFlightList(flights, isFiltered) {
       const list = document.getElementById('flight-list');
       const empty = document.getElementById('empty-msg');
@@ -169,6 +184,7 @@ export function dashboardScriptsFlightList(): string {
             active: f.id === activeFlightId,
             hasAircraft: aircraftList.length > 0,
             hasPilots: pilotList.length > 0,
+            onEdit: currentUser?.role === 'admin' ? openFlightForm : null,
           });
 
           el.addEventListener('click', () => {

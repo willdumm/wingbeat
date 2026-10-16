@@ -414,16 +414,12 @@ export function sharedMaintenanceHelperScripts(): string {
  * maintenance schedule, as HTML strings built from an aircraft record and its estimated
  * meter readings. Pure (no settings/store state), so the docs-site showcase
  * (src/showcase/) renders the same sections from sample data; aircraftInfoScript() below
- * adds the admin bindings on top.
+ * adds the admin bindings on top. Needs htmlEscapeScript() (shared/html.ts) in the same
+ * script.
  */
 export function aircraftInfoRenderScript(): string {
   return `
     ${sharedMaintenanceHelperScripts()}
-
-    function _acEsc(s) {
-      return String(s === null || s === undefined ? '' : s)
-        .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
 
     function _acFormatDate(ts) {
       if (!ts) return 'unknown';
@@ -534,17 +530,17 @@ export function aircraftInfoRenderScript(): string {
           var item = items[i];
           var st = _maintenanceStatus(item, estHobbs, estTach);
           rows +=
-            '<div class="ac-sched-row" data-item-id="' + _acEsc(item.id) + '">' +
+            '<div class="ac-sched-row" data-item-id="' + escHtml(item.id) + '">' +
               '<div class="ac-sched-info">' +
                 _acStatusDotHtml(st.status) +
-                '<span class="ac-sched-name">' + _acEsc(item.name) + '</span>' +
+                '<span class="ac-sched-name">' + escHtml(item.name) + '</span>' +
                 _acBadgeHtml(item.schedule_type) +
-                '<span class="ac-sched-due ' + st.status + '">' + _acEsc(st.due_label) + '</span>' +
+                '<span class="ac-sched-due ' + st.status + '">' + escHtml(st.due_label) + '</span>' +
               '</div>' +
               (isAdmin
                 ? '<div class="ac-sched-actions">' +
-                    '<button class="ac-link-btn ac-sched-edit-btn" data-item-id="' + _acEsc(item.id) + '">Edit</button>' +
-                    '<button class="ac-link-btn ac-sched-delete-btn" data-item-id="' + _acEsc(item.id) + '">Delete</button>' +
+                    '<button class="ac-link-btn ac-sched-edit-btn" data-item-id="' + escHtml(item.id) + '">Edit</button>' +
+                    '<button class="ac-link-btn ac-sched-delete-btn" data-item-id="' + escHtml(item.id) + '">Delete</button>' +
                   '</div>'
                 : '') +
             '</div>';
@@ -727,11 +723,11 @@ export function aircraftInfoScript(): string {
       var isAdmin = _settingsUser?.role === 'admin';
       var nameField = isAdmin
         ? '<div class="ac-field-row">' +
-            '<input type="text" id="ac-name-input" class="ac-input" value="' + _acEsc(a.name || '') + '" placeholder="Display name (optional)" />' +
+            '<input type="text" id="ac-name-input" class="ac-input" value="' + escHtml(a.name || '') + '" placeholder="Display name (optional)" />' +
             '<button id="ac-name-save" class="ac-save-btn">Save</button>' +
           '</div>' +
           '<div id="ac-name-msg" class="ac-field-msg"></div>'
-        : '<span class="ac-field-value">' + _acEsc(a.name || '—') + '</span>';
+        : '<span class="ac-field-value">' + escHtml(a.name || '—') + '</span>';
       var visField = isAdmin
         ? '<div class="ac-toggle-row">' +
             '<button id="ac-active-toggle" class="ac-toggle-btn' + (a.active ? ' ac-toggle-on' : '') + '">' + (a.active ? 'Active' : 'Hidden') + '</button>' +
@@ -746,7 +742,7 @@ export function aircraftInfoScript(): string {
         '</div>' +
         '<div class="ac-info-field">' +
           '<span class="ac-field-label">Tail number</span>' +
-          '<span class="ac-field-value">' + _acEsc(a.tail_number) + '</span>' +
+          '<span class="ac-field-value">' + escHtml(a.tail_number) + '</span>' +
         '</div>' +
         '<div class="ac-info-field">' +
           '<span class="ac-field-label">Visibility</span>' +
@@ -873,10 +869,10 @@ export function aircraftInfoScript(): string {
 
     function _acScheduleEditHtml(item) {
       var isMeter = item.schedule_type === 'hobbs' || item.schedule_type === 'tach';
-      return '<div class="ac-sched-edit-form" data-item-id="' + _acEsc(item.id) + '">' +
+      return '<div class="ac-sched-edit-form" data-item-id="' + escHtml(item.id) + '">' +
         '<div class="ac-form-field">' +
           '<label class="ac-field-label">Name</label>' +
-          '<input type="text" class="ac-input ac-sched-edit-name" value="' + _acEsc(item.name) + '" />' +
+          '<input type="text" class="ac-input ac-sched-edit-name" value="' + escHtml(item.name) + '" />' +
         '</div>' +
         (isMeter
           ? '<div class="ac-form-field">' +

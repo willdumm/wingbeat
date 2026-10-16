@@ -19,7 +19,8 @@ expire after 24 hours.
   Can see (but not edit) Aircraft/Pilots/Trackers lists and their own
   devices.
 - **Admin** — everything a Viewer can do, plus: edit
-  Aircraft/Pilots/Trackers, bulk-edit flight assignments, manage users, and
+  Aircraft/Pilots/Trackers, edit flights (corrections, manual flights,
+  assignments), manage users, and
   everything under Global Settings (app name, timezone, map defaults,
   notifications, regions, named points).
 

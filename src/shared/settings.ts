@@ -2,7 +2,10 @@ import { namedPointsEditorMarkup, namedPointsEditorScript } from './named-points
 import { regionsEditorMarkup, regionsEditorScript } from './regions-editor';
 import { mapLayersSettingsRowsMarkup, mapLayersSettingsScript } from './map-controls';
 import { icon } from './icons';
+import { docsLinkMarkup } from './help';
 import { pilotDutyMarkup, typstLoadOverlayMarkup } from './pilot-duty';
+import { flightEditorMarkup } from './flight-editor';
+import { formControlStyles } from './form-modal';
 import { aircraftInfoMarkup } from './aircraft-info';
 import { mapViewPickerMarkup, mapViewPickerStyles, mapViewPickerScript } from './map-view-picker';
 import { setupGuideMarkup, setupGuideAdminRowMarkup, setupGuideStyles, setupGuideScript } from './setup-guide';
@@ -30,11 +33,21 @@ export function settingsModalMarkup(): string {
       <div class="settings-nav">
         <button id="settings-nav-back" class="settings-nav-back hidden" aria-label="Back">${icon('chevron-left', { size: 14 })} Back</button>
         <span id="settings-nav-title" class="settings-modal-title">Settings</span>
-        <button id="settings-modal-close" class="settings-modal-close" aria-label="Close">${icon('x', { size: 18 })}</button>
+        <button id="settings-modal-close" class="settings-modal-close btn-icon" aria-label="Close">${icon('x', { size: 18 })}</button>
       </div>
       <div class="settings-views">
         <div class="settings-view" id="settings-view-main">
           <div class="settings-modal-body">
+            <div class="settings-section">
+              <div class="settings-section-label">Help</div>
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-row-title">Documentation</span>
+                  <span class="settings-row-desc">How tracking, flight editing, the duty log and settings work</span>
+                </div>
+                ${docsLinkMarkup('', 'Open docs')}
+              </div>
+            </div>
             ${setupGuideMarkup()}
             <div class="settings-section">
               <div class="settings-section-label">Aircraft</div>
@@ -116,28 +129,9 @@ export function settingsModalMarkup(): string {
               <div class="settings-section-label">Map layers</div>
               ${mapLayersSettingsRowsMarkup()}
             </div>
-            <div class="settings-section">
-              <div class="settings-section-label">Overlays</div>
-              <p class="settings-section-desc">Extra tile layers (e.g. a sectional chart or custom imagery) shown on top of the basemap. Listed for everyone in the map's overlay legend; each has a default on/off state a viewer can override there.</p>
-              <div id="settings-overlay-list"></div>
-              <details id="settings-add-overlay" class="settings-add-tracker">
-                <summary>Add overlay</summary>
-                <div class="settings-add-inner">
-                  <input type="text" id="settings-add-overlay-label" placeholder="Label (e.g. Sectional chart)" autocomplete="off" />
-                  <input type="text" id="settings-add-overlay-url" placeholder="Tile URL, e.g. https://example.com/{z}/{x}/{y}.png" autocomplete="off" />
-                  <input type="text" id="settings-add-overlay-attribution" placeholder="Attribution (optional)" autocomplete="off" />
-                  <input type="number" id="settings-add-overlay-maxzoom" placeholder="Max native zoom (optional)" min="1" max="22" step="1" autocomplete="off" />
-                  <label><input type="checkbox" id="settings-add-overlay-default" /> On by default (fallback for basemaps not set below)</label>
-                  <div class="settings-form-label">Default per basemap (optional)</div>
-                  <div id="settings-add-overlay-basemap-defaults" class="settings-basemap-defaults"></div>
-                  <p id="settings-add-overlay-lookup-status" class="settings-msg" aria-live="polite"></p>
-                  <div class="settings-add-actions">
-                    <button id="settings-add-overlay-submit" class="btn-primary">Add</button>
-                    <button id="settings-add-overlay-lookup" class="btn-secondary">Look up details</button>
-                    <button id="settings-add-overlay-cancel" class="btn-secondary">Cancel</button>
-                  </div>
-                </div>
-              </details>
+            <div class="settings-section" id="settings-section-devices">
+              <div class="settings-section-label">My Devices</div>
+              <div id="settings-devices-list"></div>
             </div>
             <div class="settings-section">
               <div class="settings-section-label">Data</div>
@@ -146,19 +140,15 @@ export function settingsModalMarkup(): string {
                   <div class="settings-row-title">Clear local cache</div>
                   <div class="settings-row-desc">Re-downloads all flight data from the server.</div>
                 </div>
-                <button id="settings-clear-cache" class="settings-danger-btn">Clear</button>
+                <button id="settings-clear-cache" class="btn-danger">Clear</button>
               </div>
-            </div>
-            <div class="settings-section" id="settings-section-devices">
-              <div class="settings-section-label">My Devices</div>
-              <div id="settings-devices-list"></div>
             </div>
             <div class="settings-section" id="settings-section-app" style="display:none">
               <div class="settings-section-label">Admin</div>
               <div class="settings-row">
                 <div class="settings-row-info">
                   <span class="settings-row-title">Global Settings</span>
-                  <span class="settings-row-desc">Timezone, regions, and named points</span>
+                  <span class="settings-row-desc">Timezone, duty limits, notifications, overlays, regions and named points</span>
                 </div>
                 <button class="settings-action-btn" id="settings-tenant-open-btn" aria-label="Open global settings">${icon('chevron-right', { size: 14 })}</button>
               </div>
@@ -184,8 +174,11 @@ export function settingsModalMarkup(): string {
             </div>
           </div>
         </div>
-        <div class="settings-view settings-view-detail" id="settings-view-pilot-duty">
+        <div class="settings-view settings-view-detail" id="settings-view-pilot-duty" data-fullscreen>
           ${pilotDutyMarkup()}
+        </div>
+        <div class="settings-view settings-view-detail" id="settings-view-flight-editor" data-fullscreen data-doc-shot="flight-editor.view">
+          ${flightEditorMarkup()}
         </div>
         <div class="settings-view settings-view-detail" id="settings-view-aircraft-info">
           ${aircraftInfoMarkup()}
@@ -231,6 +224,30 @@ export function settingsModalMarkup(): string {
               <p id="settings-tenant-status" class="settings-msg" style="display:none"></p>
             </div>
             <div class="settings-section">
+              <div class="settings-section-label">Duty limits (§135.267)</div>
+              <p class="settings-section-desc">Which method the pilot duty log checks. A change applies from its date
+                on: past months keep the method that was in force then. To correct a mistake, edit the entry.
+                ${docsLinkMarkup('features/pilot-duty-log/#limits-b-or-c', 'How the two methods differ')}</p>
+              <div id="settings-duty-methods"></div>
+              <div class="settings-form-row">
+                <div class="settings-form-label">Method</div>
+                <select id="settings-tenant-duty-method">
+                  <option value="b">(b) Flight time in any 24 hours</option>
+                  <option value="c">(c) Regularly assigned duty period</option>
+                </select>
+              </div>
+              <div class="settings-form-row">
+                <div class="settings-form-label">Effective from</div>
+                <input type="date" id="settings-duty-method-from" />
+              </div>
+              <div class="settings-add-actions">
+                <button id="settings-duty-method-save" class="btn-secondary">Save method</button>
+                <button id="settings-duty-method-cancel" class="btn-secondary" hidden>Cancel edit</button>
+              </div>
+              <p id="settings-duty-method-error" class="settings-msg" role="alert"></p>
+              <p id="settings-duty-method-last-edit" class="settings-section-desc"></p>
+            </div>
+            <div class="settings-section">
               <div class="settings-section-label">Notifications</div>
               <p class="settings-section-desc">Notification targets receive takeoff, landing, and in-flight signal-gap events (see the gap alert threshold above), delivered either as a JSON webhook POST or natively via Pushover. Signal-gap alerts repeat about once a minute while the silence continues, followed by a final &ldquo;signal restored&rdquo; notification when updates resume. If the silence outlasts the stop threshold above, the flight is treated as ended and a final &ldquo;gap alerts stopped&rdquo; notification ends the repeats.</p>
               <p class="settings-section-desc">Pushover setup is two steps. <strong>First</strong>, register one free application at <code>pushover.net/apps/build</code> and paste its token below — this single token is shared by every Pushover target on this instance. <strong>Then</strong>, add a target below for each person who should get alerts, using <em>their own</em> Pushover user key (from their pushover.net dashboard) — not the token.</p>
@@ -265,6 +282,29 @@ export function settingsModalMarkup(): string {
                 </div>
               </details>
               <p id="settings-webhooks-status" class="settings-msg" style="display:none"></p>
+            </div>
+            <div class="settings-section">
+              <div class="settings-section-label">Overlays</div>
+              <p class="settings-section-desc">Extra tile layers (e.g. a sectional chart or custom imagery) shown on top of the basemap. Listed for everyone in the map's overlay legend; each has a default on/off state a viewer can override there.</p>
+              <div id="settings-overlay-list"></div>
+              <details id="settings-add-overlay" class="settings-add-tracker">
+                <summary>Add overlay</summary>
+                <div class="settings-add-inner">
+                  <input type="text" id="settings-add-overlay-label" placeholder="Label (e.g. Sectional chart)" autocomplete="off" />
+                  <input type="text" id="settings-add-overlay-url" placeholder="Tile URL, e.g. https://example.com/{z}/{x}/{y}.png" autocomplete="off" />
+                  <input type="text" id="settings-add-overlay-attribution" placeholder="Attribution (optional)" autocomplete="off" />
+                  <input type="number" id="settings-add-overlay-maxzoom" placeholder="Max native zoom (optional)" min="1" max="22" step="1" autocomplete="off" />
+                  <label><input type="checkbox" id="settings-add-overlay-default" /> On by default (fallback for basemaps not set below)</label>
+                  <div class="settings-form-label">Default per basemap (optional)</div>
+                  <div id="settings-add-overlay-basemap-defaults" class="settings-basemap-defaults"></div>
+                  <p id="settings-add-overlay-lookup-status" class="settings-msg" aria-live="polite"></p>
+                  <div class="settings-add-actions">
+                    <button id="settings-add-overlay-submit" class="btn-primary">Add</button>
+                    <button id="settings-add-overlay-lookup" class="btn-secondary">Look up details</button>
+                    <button id="settings-add-overlay-cancel" class="btn-secondary">Cancel</button>
+                  </div>
+                </div>
+              </details>
             </div>
             <div class="settings-section">
               <div class="settings-section-label">Regions</div>
@@ -381,20 +421,6 @@ export function settingsModalStyles(): string {
       font-weight: 600;
       color: var(--text-primary);
     }
-
-    .settings-modal-close {
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      cursor: pointer;
-      padding: 0.35rem;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: var(--radius-md);
-    }
-
-    .settings-modal-close:hover { color: var(--text-secondary); }
 
     .settings-views {
       display: grid;
@@ -564,6 +590,7 @@ export function settingsModalStyles(): string {
     }
 
     .settings-edit-form-actions { display: flex; gap: 0.3rem; }
+    .settings-edit-form-label { font-size: var(--size-2xs); color: var(--text-muted); }
 
     .settings-import-warning {
       background: var(--warning-surface);
@@ -605,21 +632,11 @@ export function settingsModalStyles(): string {
       padding-top: 0.5rem;
     }
 
-    .settings-add-inner input:not([type="radio"]):not([type="checkbox"]),
-    .settings-add-inner select,
-    .settings-edit-form input:not([type="radio"]):not([type="checkbox"]),
-    .settings-edit-form select,
-    .settings-form-row input:not([type="radio"]):not([type="checkbox"]),
-    .settings-form-row select {
-      padding: 0.35rem 0.5rem;
-      background: var(--input-bg);
-      border: 1.5px solid var(--border);
-      border-radius: var(--radius-md);
-      color: var(--text-primary);
-      font-size: 0.8rem;
-      font-family: inherit;
-      width: 100%;
-    }
+    ${formControlStyles(
+      '.settings-add-inner input:not([type="radio"]):not([type="checkbox"]), .settings-add-inner select, ' +
+      '.settings-edit-form input:not([type="radio"]):not([type="checkbox"]), .settings-edit-form select, ' +
+      '.settings-form-row input:not([type="radio"]):not([type="checkbox"]), .settings-form-row select'
+    )}
 
     .settings-webhook-events {
       display: flex;
@@ -677,22 +694,14 @@ export function settingsModalStyles(): string {
       display: flex;
       gap: 0.4rem;
     }
+    .settings-add-actions [hidden] { display: none; }
 
-    /* Buttons inside .settings-add-actions get compact modal sizing automatically.
-       Visual appearance (color, border, radius) comes from .btn-primary / .btn-secondary /
-       .settings-danger-btn. No per-ID overrides needed — just put the button in the right
-       container and use the right class. */
-    .settings-add-actions .btn-primary {
-      padding: 0.45rem 1rem;
-      font-size: 0.85rem;
-      min-height: 2.25rem;
-    }
-
-    .settings-add-actions .btn-secondary,
-    .settings-add-actions .settings-danger-btn {
-      padding: 0.45rem 0.85rem;
-      font-size: 0.85rem;
-      min-height: 2.25rem;
+    /* Buttons inside .settings-add-actions get .btn-md sizing (buttons.ts) without the
+       class. Appearance comes from .btn-primary / .btn-secondary / .btn-danger. */
+    .settings-add-actions :is(.btn-primary, .btn-secondary, .btn-danger) {
+      min-height: var(--control-h-md);
+      padding: 0 var(--space-4);
+      font-size: var(--size-md);
     }
 
     #settings-regions-import-label,
@@ -738,18 +747,6 @@ export function settingsModalStyles(): string {
       color: var(--text-muted);
     }
 
-    .settings-danger-btn {
-      padding: 0.25rem 0.55rem;
-      background: transparent;
-      border: 1.5px solid var(--danger);
-      border-radius: var(--radius-md);
-      color: var(--danger-fg);
-      font-size: 0.75rem;
-      cursor: pointer;
-      transition: background-color var(--duration-fast) var(--ease-standard);
-    }
-
-    .settings-danger-btn:hover { background: var(--danger-surface); }
 
     .sidebar-footer {
       flex-shrink: 0;
@@ -1147,9 +1144,17 @@ export function settingsModalScript(): string {
       document.getElementById('settings-nav-title').textContent = title;
       document.getElementById('settings-nav-back').classList.remove('hidden');
       _settingsViewStack.push({ id: viewId, title });
-      if (view.dataset.fullscreenEditor !== undefined) {
-        document.getElementById('settings-modal').classList.add('settings-modal-fullscreen');
-      }
+      _settingsSyncFullscreen();
+    }
+
+    // The modal fills the screen while the top view asks for it: data-fullscreen (the duty
+    // log's wide table) or data-fullscreen-editor (the map editors, which also get a
+    // non-scrolling flex layout).
+    function _settingsSyncFullscreen() {
+      const top = _settingsViewStack[_settingsViewStack.length - 1];
+      const view = top && document.getElementById(top.id);
+      const full = !!view && (view.dataset.fullscreen !== undefined || view.dataset.fullscreenEditor !== undefined);
+      document.getElementById('settings-modal').classList.toggle('settings-modal-fullscreen', full);
     }
 
     function _settingsNavigateBack() {
@@ -1157,9 +1162,7 @@ export function settingsModalScript(): string {
       const entry = _settingsViewStack.pop();
       const exitView = document.getElementById(entry.id);
       exitView.classList.remove('settings-view-active', 'settings-view-pushed');
-      if (exitView.dataset.fullscreenEditor !== undefined) {
-        document.getElementById('settings-modal').classList.remove('settings-modal-fullscreen');
-      }
+      _settingsSyncFullscreen();
       if (_settingsViewStack.length === 0) {
         document.getElementById('settings-view-main').classList.remove('settings-view-pushed');
         document.getElementById('settings-nav-title').textContent = 'Settings';
@@ -1235,7 +1238,7 @@ export function settingsModalScript(): string {
       try {
         const [ar, pr] = await Promise.all([fetch('/api/aircraft'), fetch('/api/pilots')]);
         if (ar.ok) { const d = await ar.json(); aircraftList = d.aircraft; renderSettingsAircraftList(); }
-        if (pr.ok) { const d = await pr.json(); pilotList = d.pilots; renderSettingsPilotList(); }
+        if (pr.ok) { const d = await pr.json(); pilotList = d.pilots; flightStore.setPilots(pilotList); renderSettingsPilotList(); }
         settingsResetAddForm();
       } catch (_) {}
       if (isAdmin) renderSetupGuide(false);
@@ -2274,17 +2277,26 @@ export function settingsModalScript(): string {
         nameEl.className = 'settings-aircraft-name';
         nameEl.textContent = p.name;
         info.appendChild(nameEl);
+        // The default in force today (dutyDefaultOn, pilot-duty.ts); its dated list is
+        // edited from the duty log.
+        const def = dutyDefaultOn(p.default_duties, unixToTzDateStr(Math.floor(Date.now() / 1000)));
+        if (def) {
+          const sub = document.createElement('span');
+          sub.className = 'settings-aircraft-sub';
+          sub.textContent = 'Default duty ' + def.duty_start + '–' + def.duty_end;
+          info.appendChild(sub);
+        }
         const actions = document.createElement('div');
         actions.className = 'settings-aircraft-actions';
-        const infoBtn = document.createElement('button');
-        infoBtn.className = 'settings-action-btn';
-        infoBtn.textContent = 'Info';
-        infoBtn.addEventListener('click', () => openPilotDuty(p.id, p.name));
-        actions.appendChild(infoBtn);
+        const dutyBtn = document.createElement('button');
+        dutyBtn.className = 'settings-action-btn';
+        dutyBtn.textContent = 'Duty log';
+        dutyBtn.addEventListener('click', () => openPilotDuty(p.id, p.name));
+        actions.appendChild(dutyBtn);
         if (_settingsUser?.role === 'admin') {
           const editBtn = document.createElement('button');
           editBtn.className = 'settings-action-btn';
-          editBtn.textContent = 'Rename';
+          editBtn.textContent = 'Edit';
           editBtn.addEventListener('click', () => settingsTogglePilotEdit(row, p));
           const toggleBtn = document.createElement('button');
           toggleBtn.className = 'settings-action-btn';
@@ -2323,7 +2335,10 @@ export function settingsModalScript(): string {
       const form = document.createElement('div');
       form.className = 'settings-edit-form';
       form.innerHTML =
-        '<input type="text" class="edit-pilot-name" placeholder="Pilot name" value="' + settingsEscAttr(pilot.name) + '" />' +
+        '<input type="text" class="edit-pilot-name" placeholder="Pilot name" value="' + escHtml(pilot.name) + '" />' +
+        // The default duty is dated, so it has its own form, in the duty log.
+        '<span class="settings-edit-form-label">The default duty is set in the pilot’s duty log.</span>' +
+        '<div class="settings-msg edit-pilot-error"></div>' +
         '<div class="settings-edit-form-actions">' +
           '<button class="settings-action-btn save-edit-btn">Save</button>' +
           '<button class="settings-action-btn settings-cancel-btn">Cancel</button>' +
@@ -2331,13 +2346,21 @@ export function settingsModalScript(): string {
       form.querySelector('.save-edit-btn').addEventListener('click', async () => {
         const name = form.querySelector('.edit-pilot-name').value.trim();
         if (!name) return;
+        const errorEl = form.querySelector('.edit-pilot-error');
         try {
           const resp = await fetch('/api/pilots/' + pilot.id, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name }),
           });
-          if (resp.ok) { pilot.name = name; renderSettingsPilotList(); }
+          if (resp.ok) {
+            pilot.name = name;
+            // Manual flights show the pilot by name.
+            flightStore.setPilots(pilotList);
+            renderSettingsPilotList();
+          } else {
+            errorEl.textContent = (await resp.json().catch(() => ({}))).error || 'Save failed.';
+          }
         } catch (_) {}
       });
       form.querySelector('.settings-cancel-btn').addEventListener('click', () => {
@@ -2359,7 +2382,8 @@ export function settingsModalScript(): string {
         });
         if (resp.ok) {
           const d = await resp.json();
-          pilotList.push({ id: d.id, name, active: true });
+          pilotList.push({ id: d.id, name, active: true, default_duties: [] });
+          flightStore.setPilots(pilotList);
           document.getElementById('settings-add-pilot-name').value = '';
           document.getElementById('settings-add-pilot').open = false;
           renderSettingsPilotList();
@@ -2375,20 +2399,16 @@ export function settingsModalScript(): string {
       document.getElementById('settings-add-pilot').open = false;
     });
 
-    function settingsEscAttr(s) {
-      return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-
     function settingsAircraftOptionHtml(a, selectedTail) {
-      return '<option value="' + settingsEscAttr(a.tail_number) + '"' +
+      return '<option value="' + escHtml(a.tail_number) + '"' +
         (a.tail_number === selectedTail ? ' selected' : '') + '>' +
-        settingsEscAttr(a.tail_number + (a.name ? ' – ' + a.name : '')) + '</option>';
+        escHtml(a.tail_number + (a.name ? ' – ' + a.name : '')) + '</option>';
     }
 
     function settingsPilotOptionHtml(p, selectedId) {
       return '<option value="' + p.id + '"' +
         (p.id === selectedId ? ' selected' : '') + '>' +
-        settingsEscAttr(p.name) + '</option>';
+        escHtml(p.name) + '</option>';
     }
 
     // ── Link display card ─────────────────────────────────────────────────────
@@ -2491,7 +2511,7 @@ export function settingsModalScript(): string {
           actions.appendChild(renameBtn);
           if (session.id === _settingsUser?.session_id) {
             const signOutBtn = document.createElement('button');
-            signOutBtn.className = 'settings-danger-btn';
+            signOutBtn.className = 'btn-danger';
             signOutBtn.textContent = 'Sign out';
             signOutBtn.addEventListener('click', async () => {
               try { await fetch('/logout', { method: 'POST' }); } finally {
@@ -2551,7 +2571,7 @@ export function settingsModalScript(): string {
       const form = document.createElement('div');
       form.className = 'settings-edit-form';
       form.innerHTML =
-        '<input type="text" class="edit-device-name" placeholder="Device name" value="' + settingsEscAttr(session.device_name ?? '') + '" />' +
+        '<input type="text" class="edit-device-name" placeholder="Device name" value="' + escHtml(session.device_name ?? '') + '" />' +
         '<div class="settings-edit-form-actions">' +
           '<button class="settings-action-btn save-edit-btn">Save</button>' +
           '<button class="settings-action-btn settings-cancel-btn">Cancel</button>' +
@@ -2648,7 +2668,7 @@ export function settingsModalScript(): string {
             actions.className = 'settings-aircraft-actions';
             if (!user.is_env_admin && user.id !== _settingsUser?.id) {
               const deleteBtn = document.createElement('button');
-              deleteBtn.className = 'settings-danger-btn';
+              deleteBtn.className = 'btn-danger';
               deleteBtn.textContent = 'Delete';
               deleteBtn.addEventListener('click', () => settingsRevokeUser(user, deleteBtn));
               actions.appendChild(deleteBtn);
@@ -2804,6 +2824,7 @@ export function settingsModalScript(): string {
       _settingsNavigateTo('settings-view-tenant', 'Global Settings');
       _populateTenantTimezoneSelect();
       await _loadTenantSettingsForm();
+      await _loadDutyMethods();
       await renderSettingsWebhooksList();
     }
 
@@ -2838,6 +2859,94 @@ export function settingsModalScript(): string {
         statusEl.textContent = 'Failed to save.';
         setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
       }
+    });
+
+    // ── Duty method, by date ──
+    // The operator's §135.267 method as dated entries (GET /api/duty-methods; migration
+    // 0002), each day of the duty log using the one in force on it (dutyMethodOn,
+    // pilot-duty.ts). Save adds an entry from its Effective from date, or with Edit fixes
+    // one (moved to a new date, if changed); Remove drops one. Writes send the list's
+    // history id as base_history_id, so a change another admin made since it loaded is
+    // refused and the section offers to reload (src/index.ts, "Edit conflicts"). The list
+    // markup and its styles are the default-duty form's (_dutyDatedListHtml).
+    let _dutyMethods = { methods: [], last_history_id: 0 };
+    let _dutyMethodEditing = null;
+
+    const _DUTY_METHOD_NAMES = { b: '(b) Flight time in any 24 hours', c: '(c) Regularly assigned duty period' };
+
+    async function _loadDutyMethods() {
+      const errorEl = document.getElementById('settings-duty-method-error');
+      try {
+        const resp = await fetch('/api/duty-methods');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        _dutyMethods = await resp.json();
+        errorEl.textContent = '';
+      } catch (_) {
+        errorEl.textContent = 'Couldn’t load the duty method. Reopen Global Settings to try again.';
+      }
+      _editDutyMethod(null);
+    }
+
+    // Shows the list and fills the form: for entry (Edit) or for a new entry from today.
+    function _editDutyMethod(entry) {
+      _dutyMethodEditing = entry;
+      const entries = [..._dutyMethods.methods].sort((a, b) => a.effective_date < b.effective_date ? 1 : -1);
+      const today = unixToTzDateStr(Math.floor(Date.now() / 1000));
+      const listEl = document.getElementById('settings-duty-methods');
+      listEl.innerHTML = entries.length ? _dutyDatedListHtml(entries, e => _DUTY_METHOD_NAMES[e.method] || e.method, entry) : '';
+      listEl.onclick = e => {
+        const btn = e.target.closest('[data-edit], [data-remove]');
+        if (!btn) return;
+        const picked = entries[Number(btn.dataset.edit ?? btn.dataset.remove)];
+        if (btn.dataset.edit != null) _editDutyMethod(picked);
+        else _removeDutyMethod(entries, picked);
+      };
+      const current = dutyMethodOn(_dutyMethods.methods, today);
+      document.getElementById('settings-tenant-duty-method').value = entry ? entry.method : current;
+      document.getElementById('settings-duty-method-from').value = entry ? entry.effective_date : today;
+      document.getElementById('settings-duty-method-save').textContent = entry ? 'Save entry' : 'Save method';
+      document.getElementById('settings-duty-method-cancel').hidden = !entry;
+      const errorEl = document.getElementById('settings-duty-method-error');
+      const base = _dutyMethods.last_history_id;
+      showLastEdit(document.getElementById('settings-duty-method-last-edit'), 'duty_method', 'tenant')
+        .then(h => { if (h && h.id > base && !errorEl.textContent) _dutyMethodConflict(h); });
+    }
+
+    function _dutyMethodConflict(conflict) {
+      showEditConflict(document.getElementById('settings-duty-method-error'), conflict, { reload: _loadDutyMethods });
+    }
+
+    // Runs a write of the method list (apiWrite), then shows the list it returns.
+    async function _writeDutyMethods(fn) {
+      const controls = [...document.querySelectorAll('#settings-duty-method-save, #settings-duty-method-cancel, #settings-duty-methods button')];
+      const errorEl = document.getElementById('settings-duty-method-error');
+      const ok = await runFormAction(controls, errorEl, async () => {
+        await fn();
+        await _loadDutyMethods();
+      }, _dutyMethodConflict);
+      return ok;
+    }
+
+    function _removeDutyMethod(entries, entry) {
+      if (!confirm('Remove the duty method entry “' + _dutyDatedWhen(entries, entry) + ': ' + _DUTY_METHOD_NAMES[entry.method] +
+        '”? The days it covered then follow the other entries.')) return;
+      _writeDutyMethods(() => apiWrite('DELETE', '/api/duty-methods/' + entry.effective_date +
+        '?base_history_id=' + _dutyMethods.last_history_id));
+    }
+
+    document.getElementById('settings-duty-method-cancel').addEventListener('click', () => _editDutyMethod(null));
+    document.getElementById('settings-duty-method-save').addEventListener('click', () => {
+      const errorEl = document.getElementById('settings-duty-method-error');
+      const from = document.getElementById('settings-duty-method-from').value;
+      const method = document.getElementById('settings-tenant-duty-method').value;
+      if (!from) { errorEl.textContent = 'Enter the date it applies from.'; return; }
+      const edit = _dutyMethodEditing;
+      const other = _dutyMethods.methods.find(x => x.effective_date === from && x !== edit);
+      if (other && !confirm('There’s already an entry dated ' + tzShortDate(from, null) + ' (' +
+        _DUTY_METHOD_NAMES[other.method] + '). Replace it?')) return;
+      const body = { effective_date: from, method, base_history_id: _dutyMethods.last_history_id };
+      if (edit) body.replaces = edit.effective_date;
+      _writeDutyMethods(() => apiWrite('PUT', '/api/duty-methods', body));
     });
 
     document.getElementById('settings-pushover-token-save').addEventListener('click', async () => {
@@ -2912,7 +3021,7 @@ export function settingsModalScript(): string {
           toggleBtn.textContent = hook.active ? 'Disable' : 'Enable';
           toggleBtn.addEventListener('click', () => settingsToggleWebhook(hook, toggleBtn));
           const deleteBtn = document.createElement('button');
-          deleteBtn.className = 'settings-danger-btn';
+          deleteBtn.className = 'btn-danger';
           deleteBtn.textContent = 'Delete';
           deleteBtn.addEventListener('click', () => settingsDeleteWebhook(hook, deleteBtn));
           actions.appendChild(toggleBtn);

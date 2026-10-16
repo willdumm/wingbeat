@@ -79,6 +79,24 @@ export interface SampleMaintenanceItem {
   last_done_days_ago?: number;
 }
 
+/**
+ * The sample flight corrections and the duty log demo's days, in schedule time ("N days
+ * ago at M minutes after local midnight"), turned into GET /api/flight-corrections rows
+ * (applied to every demo's flights) and GET /api/duty-days's { days } in the browser once
+ * the schedule is shifted onto the visitor's clock.
+ */
+export interface SampleDutyLog {
+  /** Corrections of tracked flights: departure moved by startDeltaMin, or marked Part 91 with a remark. */
+  edits: { flightId: number; startDeltaMin?: number; part91?: boolean; remark?: string }[];
+  /** Flights the tracker missed. */
+  manual: { daysAgo: number; startMin: number; endMin: number; from: string; to: string; aircraftTail: string }[];
+  /** Duty times, or rest days with the day they were designated (negative daysAgo is ahead). */
+  days: ({ daysAgo: number; dutyStartMin: number; dutyEndMin: number } |
+         { daysAgo: number; rest: true; designatedDaysAgo: number })[];
+  /** The pilot's default duty period, used on flying days with no duty times recorded. */
+  defaultDuty: { startMin: number; endMin: number } | null;
+}
+
 export interface SampleData {
   appName: string;
   timezone: string;
@@ -110,6 +128,8 @@ export interface SampleData {
   };
   /** Pilot shown in the duty log demo. */
   dutyPilotId: number;
+  /** That pilot's duty-log corrections, manual flights and duty/rest days, in schedule time. */
+  dutyLog: SampleDutyLog;
 }
 
 const DAYS = 150;
@@ -134,6 +154,8 @@ const FLEET = [
   { tail: 'N300DM', name: 'Cessna 206', tracker: 'inReach · 206', kmh: 215, altM: 650 },
 ];
 const PILOTS = ['Alex Rivera', 'Jordan Lee', 'Sam Okafor'];
+const DUTY_PILOT_ID = 1;
+const DUTY_LOG_DAYS = 40;
 
 // Destination groups with a seasonal bump in demand, keyed by days ago so the pattern is
 // stable whenever the page is viewed: weight = base + peak·exp(−((daysAgo − peakAgo)/spread)²).
@@ -258,6 +280,7 @@ export function buildSampleData(namedPoints: GeoCollection, regions: GeoCollecti
   const legSeconds = (track: TrackFix[]): number => track[track.length - 1][0];
 
   const flights: SampleFlight[] = [];
+  const legMinutes = new Map<SampleFlight, number>(); // for the duty log's duty times
   let nextId = 1;
   for (let daysAgo = DAYS; daysAgo >= 1; daysAgo--) {
     if (rand() < 0.12) continue; // weather day, fleet stays tied up
@@ -276,6 +299,7 @@ export function buildSampleData(namedPoints: GeoCollection, regions: GeoCollecti
           if (route[leg] === route[leg + 1]) continue;
           const { seed, altM, track } = planLeg(route[leg], route[leg + 1], ac);
           flights.push([nextId++, i + 1, pilot + 1, daysAgo, t, route[leg], route[leg + 1], seed, ac.kmh, altM]);
+          legMinutes.set(flights[flights.length - 1], Math.ceil(legSeconds(track) / 60));
           t += Math.ceil(legSeconds(track) / 60) + 15 + Math.floor(rand() * 35);
         }
         t += 30 + Math.floor(rand() * 60);
@@ -347,6 +371,7 @@ export function buildSampleData(namedPoints: GeoCollection, regions: GeoCollecti
       const { seed, altM, track } = planLeg(from, to, ac);
       const startMin = Math.floor((legEnd - legSeconds(track)) / 60);
       legs.unshift([0, trackerId, trackerId, 0, startMin, from, to, seed, ac.kmh, altM]);
+      legMinutes.set(legs[0], Math.ceil(legSeconds(track) / 60));
       pushTakeoff(trackerId, startMin * 60, track, from);
       const landing = track[track.length - 1];
       events.push({ type: 'landing', ...eventBase(trackerId, startMin * 60 + landing[0], landing), location_label: labelAt(landing, to) });
@@ -402,6 +427,64 @@ export function buildSampleData(namedPoints: GeoCollection, regions: GeoCollecti
         { id: 'elt', name: 'ELT battery', schedule_type: 'calendar', interval_months: 24, last_done_days_ago: 745 },
       ],
     },
-    dutyPilotId: 1,
+    dutyPilotId: DUTY_PILOT_ID,
+    dutyLog: sampleDutyLog(flights, legMinutes, places),
   };
+}
+
+/**
+ * The duty log demo's pilot over the last DUTY_LOG_DAYS days: duty from 45 min before the
+ * first flight to 30 min after the last (on the quarter hour), rest on their scheduled days
+ * off (designated a week ahead, plus one coming up), and the plan's example edits: a
+ * departure the tracker caught late, a ferry home flown Part 91, and a flight it missed.
+ */
+function sampleDutyLog(flights: SampleFlight[], legMinutes: Map<SampleFlight, number>, places: SamplePlace[]): SampleDutyLog {
+  const byDay = new Map<number, SampleFlight[]>();
+  for (const f of flights) {
+    const daysAgo = f[3];
+    if (f[2] !== DUTY_PILOT_ID || daysAgo < 1 || daysAgo > DUTY_LOG_DAYS) continue;
+    if (!byDay.has(daysAgo)) byDay.set(daysAgo, []);
+    byDay.get(daysAgo)!.push(f);
+  }
+  const flownDays = [...byDay.keys()].sort((a, b) => a - b);
+  const end = (f: SampleFlight): number => f[4] + legMinutes.get(f)!;
+  const lastOf = (d: number): SampleFlight => byDay.get(d)!.reduce((a, b) => (end(b) > end(a) ? b : a));
+
+  const edits: SampleDutyLog['edits'] = [];
+  const manual: SampleDutyLog['manual'] = [];
+  // The most recent flying day: the first flight's departure was caught 6 min late.
+  const [recent, earlier, earliest] = flownDays;
+  if (recent) edits.push({ flightId: byDay.get(recent)!.reduce((a, b) => (b[4] < a[4] ? b : a))[0], startDeltaMin: -6 });
+  // The day before: the last leg was a ferry home, flown Part 91.
+  if (earlier) edits.push({ flightId: lastOf(earlier)[0], part91: true, remark: 'Ferry home' });
+  // The one before that: a late short hop the tracker missed.
+  const manualEnd = new Map<number, number>();
+  if (earliest) {
+    const last = lastOf(earliest);
+    const startMin = end(last) + 40;
+    manual.push({ daysAgo: earliest, startMin, endMin: startMin + 35, from: places[last[6]][0], to: 'Ouzinkie', aircraftTail: FLEET[last[1] - 1].tail });
+    manualEnd.set(earliest, startMin + 35);
+  }
+
+  const q = (m: number, dir: 1 | -1): number => (dir < 0 ? Math.floor(m / 15) : Math.ceil(m / 15)) * 15;
+  const days: SampleDutyLog['days'] = [];
+  // The most recent flying day has no duty times recorded, so it shows the pilot's
+  // default duty (wide enough for that day's flying).
+  let defaultDuty: SampleDutyLog['defaultDuty'] = null;
+  for (const d of flownDays) {
+    const fl = byDay.get(d)!;
+    const first = Math.min(...fl.map((f) => f[4]));
+    const last = Math.max(...fl.map(end), manualEnd.get(d) ?? 0);
+    if (d === recent) {
+      defaultDuty = { startMin: Math.min(8 * 60, q(first - 45, -1)), endMin: Math.max(17 * 60, q(last + 30, 1)) };
+      continue;
+    }
+    days.push({ daysAgo: d, dutyStartMin: q(first - 45, -1), dutyEndMin: q(last + 30, 1) });
+  }
+  for (let d = -7; d <= DUTY_LOG_DAYS; d++) {
+    // Same days off as the schedule above (pilot index DUTY_PILOT_ID - 1).
+    if (d === 0 || (d + (DUTY_PILOT_ID - 1) * 2) % 7 !== 0 || byDay.has(d)) continue;
+    days.push({ daysAgo: d, rest: true, designatedDaysAgo: Math.max(d + 7, 1) });
+  }
+  return { edits, manual, days, defaultDuty };
 }
