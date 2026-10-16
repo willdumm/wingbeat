@@ -15,7 +15,7 @@ can record duty times and plan rest days before it's exported as a record.
 {{% compliance %}}
 The duty log is only a tool to make checking compliance easier: its checks are
 an aid, they can be incomplete or wrong, and they depend entirely on the
-flights, duty times and rest days entered. The log and its PDF say this too.
+flights, duty times and rest days entered. The log says this too.
 {{% /compliance %}}
 
 ## Table
@@ -285,7 +285,7 @@ the one-pilot limits.
 §135.267 lets an operator apply its daily limits in one of two ways, and the
 operator picks one. Set yours under **Duty limits (§135.267)** in
 [Global Settings](../../settings/admin-settings#duty-limits-135267); the default is (b).
-The method is shown above the totals and on the PDF, e.g. "Limits:
+The method is shown above the totals, e.g. "Limits:
 §135.267(b), flight time in any 24 hours · one-pilot crew".
 
 Like the default duty, the method is kept by date: a change applies from its
@@ -374,8 +374,5 @@ of the quarter's last exported month, and a list of every warning in it.
 
 Corrected values are marked † with numbered footnotes giving the tracker's
 values, manual flights are marked ‡,
-default duty times are marked "(default)", and the footer says when the PDF was
-generated. Under the title it names the limits applied (e.g. "Limits:
-§135.267(b), flight time in any 24 hours · one-pilot crew"), and the notes at
-the end repeat that the certificate holder and pilot remain responsible for
-compliance and for the accuracy of the record.
+default duty times are marked "(default)", and the footer gives the pilot, the
+period and when the PDF was generated.

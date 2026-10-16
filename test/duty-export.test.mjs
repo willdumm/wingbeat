@@ -67,3 +67,30 @@ describe('PDF day grouping', () => {
     assert.match(src, /#let warning\(body\) = table\.cell\(colspan: 7,/);
   });
 });
+
+describe('what the PDF leaves out', () => {
+  const months = ['2026-08', '2026-09'].map(m => dutyMonth([flight(m + '-03 07:00', '12:00')], m));
+  const srcs = [engine._buildTypstSource(months[1]), engine._buildTypstSource(months)];
+
+  test('no totals footnote, disclaimer or "Limits:" line; the screen keeps the limits label', () => {
+    assert.match(months[1].limitsLabel, /^Limits: /);
+    for (const src of srcs) {
+      assert.doesNotMatch(src, /Hour totals count commercial flying|Converse/);
+      assert.doesNotMatch(src, /aid only|remain responsible for compliance/);
+      assert.doesNotMatch(src, /Limits:/);
+    }
+  });
+
+  test('the page footer leaves out the app name; the document metadata keeps it', () => {
+    for (const src of srcs) {
+      const footer = src.slice(src.indexOf('footer: context'), src.indexOf('Generated '));
+      assert.doesNotMatch(footer, /Test/);
+      assert.match(footer, /"Pilot · /);
+      assert.match(src, /#set document\(.*author: "Test"\)/);
+    }
+  });
+
+  test('with no notes, the PDF ends after the body', () => {
+    for (const src of srcs) assert.doesNotMatch(src, /#set text\(size: 7pt, fill: muted\)/);
+  });
+});

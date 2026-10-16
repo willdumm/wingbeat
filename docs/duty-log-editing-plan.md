@@ -478,9 +478,8 @@ day; re-run it after changing the render chunks.
 
 Built from the same row model as the screen:
 
-- **Title and layout:** "<Pilot> Duty Log", the period, and the method's label; one
-  section per exported month, each starting on a new page (see "Exporting a range of
-  months").
+- **Title and layout:** "<Pilot> Duty Log" and the period; one section per exported
+  month, each starting on a new page (see "Exporting a range of months").
 - **Rows:** the screen's columns, remarks rows and warnings (tinted rows), opening with the
   previous day so the month's first rolling checks can be followed. The only rules between
   rows are the one under the header and one above each day, and a day's warnings are
@@ -492,7 +491,10 @@ Built from the same row model as the screen:
 - **Rest days:** "Rest · designated <date>".
 - **Unmatched rows:** listed with their flag, as on screen.
 - **Totals:** as on screen, as of the month's end (or now, for the current month).
-- **Footer:** "Generated <timestamp>" and the page number.
+- **Footer:** the pilot and period, "Generated <timestamp>" and the page number.
+- **Not on the PDF:** the method's label ("Limits: …"), the totals footnote and a
+  compliance disclaimer, which the screen shows (its compliance notice at the top). The
+  warnings still cite their limits ("§135.267(b) limit 8:00").
 
 ## Out of scope / later
 
@@ -552,10 +554,9 @@ A tenant-wide choice (`b` or `c`, default `b`), dated
 Global Settings, read by the duty log with its days (`GET /api/duty-days`'s
 `duty_methods`) and passed into `computeDutyData` as an option (the render chunks don't
 read page state). Each day is checked with the method in force on it. The row model
-carries a label ("Limits: §135.267(b), one-pilot crew"), which the screen and PDF print;
-a month that changed method names each with its dates ("Limits: §135.267(b) to Jun 14,
-§135.267(c) from Jun 15 · one-pilot crew"), and a multi-month PDF prints a month's label
-under its heading when it differs from the title's.
+carries a label ("Limits: §135.267(b), one-pilot crew"), which the screen prints (the PDF
+doesn't); a month that changed method names each with its dates ("Limits: §135.267(b) to
+Jun 14, §135.267(c) from Jun 15 · one-pilot crew").
 
 Both methods keep the rest-day checks, the outside-duty and no-duty-times warnings, (e)
 and the totals: (a) and (f) apply either way.

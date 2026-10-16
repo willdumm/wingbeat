@@ -1010,11 +1010,6 @@ export function pilotDutyRenderScript(): string {
       'time limit counts paid Part 91 flying before a Part 135 flight and leaves out Part 91 flying ' +
       'after the last one (FAA interpretation to Converse, 2011).';
 
-    // At the end of the PDF. The screen has complianceNoticeMarkup (help.ts) at the top instead.
-    const DUTY_DISCLAIMER =
-      'These checks are an aid only and depend on the records entered. The certificate holder ' +
-      'and the pilot remain responsible for compliance and for the accuracy of this record.';
-
     // Fetches url, from the Cache API when it has it, and caches the response.
     // onLoaded(bytes so far, total) reports progress (total 0 when unknown).
     async function _typstFetchCached(cache, url, onLoaded) {
@@ -1176,7 +1171,6 @@ export function pilotDutyRenderScript(): string {
       const months = Array.isArray(input) ? input : [input];
       const range = months.length > 1;
       const { pilotName } = months[0];
-      const latest = months[months.length - 1];
       const periodLabel = dutyRangeLabel(months);
       const appName = window.APP_SETTINGS.appName;
       const COLS = 8;
@@ -1320,12 +1314,7 @@ export function pilotDutyRenderScript(): string {
       months.forEach((data, i) => {
         if (range) {
           if (i > 0) body += '#pagebreak()\\n';
-          body += '#text(size: 13pt, weight: "bold")[' + _typStr(dutyPeriodLabel(data)) + ']\\n';
-          // The title gives the latest month's limits; a month checked with others says so.
-          if (data.limitsLabel !== latest.limitsLabel) {
-            body += '#v(0.3em)\\n#text(size: 8pt, fill: muted)[' + _typStr(data.limitsLabel) + ']\\n';
-          }
-          body += '#v(0.6em)\\n';
+          body += '#text(size: 13pt, weight: "bold")[' + _typStr(dutyPeriodLabel(data)) + ']\\n#v(0.6em)\\n';
         }
         body += monthTable(data) + '#v(1.6em)\\n' + totalsBlock(data.totals);
         // A quarter's summary follows its last month, or the export's last month.
@@ -1346,8 +1335,6 @@ export function pilotDutyRenderScript(): string {
         footnotes.forEach((n, i) => notes.push('#super[†' + (i + 1) + '] ' + _typStr(n)));
       }
       if (anyManual) notes.push('#super[‡] ' + _typStr('Entered manually (not tracked).'));
-      notes.push(_typStr(DUTY_TOTALS_FOOTNOTE));
-      notes.push(_typStr(DUTY_DISCLAIMER));
 
       const color = name => 'rgb("' + _DUTY_PDF_THEME[name] + '")';
       return (
@@ -1365,7 +1352,7 @@ export function pilotDutyRenderScript(): string {
         '  margin: (x: 0.6in, y: 0.6in),\\n' +
         '  footer: context [\\n' +
         '    #set text(size: 7pt, fill: ' + color('faint') + ')\\n' +
-        '    ' + _typStr(appName + ' · ' + pilotName + ' · ' + periodLabel) +
+        '    ' + _typStr(pilotName + ' · ' + periodLabel) +
               ' #h(1fr) ' + _typStr('Generated ' + generated) + ' #h(1fr) Page #counter(page).display("1 of 1", both: true)\\n' +
         '  ]\\n' +
         ')\\n' +
@@ -1376,13 +1363,12 @@ export function pilotDutyRenderScript(): string {
         '#stack(spacing: 7pt,\\n' +
         '  text(size: 17pt, weight: "bold", tracking: ' + _DUTY_PDF_THEME.trackingHeading + ', ' + _typStr(pilotName + ' Duty Log').slice(1) + '),\\n' +
         '  text(size: 10pt, fill: muted, ' + _typStr(periodLabel).slice(1) + '),\\n' +
-        '  text(size: 8pt, fill: muted, ' + _typStr(latest.limitsLabel).slice(1) + '),\\n' +
         ')\\n\\n' +
         '#v(1.2em)\\n\\n' +
         body +
-        '#v(1em)\\n' +
-        '#set text(size: 7pt, fill: muted)\\n' +
-        notes.join('\\n\\n') + '\\n'
+        (notes.length
+          ? '#v(1em)\\n#set text(size: 7pt, fill: muted)\\n' + notes.join('\\n\\n') + '\\n'
+          : '')
       );
     }
   `;
