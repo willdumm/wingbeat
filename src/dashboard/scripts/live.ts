@@ -6,7 +6,10 @@ export function dashboardScriptsLive(): string {
   return `
     // ── Live point ────────────────────────────────────────────────────────────
 
-    // Builds per-tracker live data from store's latest flight points.
+    // Builds per-tracker live data from store's latest flight points. Two fields come from
+    // the tracker's ground points as well: last_point_time (its newest point of any kind,
+    // the card's GPS time) and ground_trail (its points since that flight, drawn by
+    // renderGroundTrails). Both are missing until the first refresh.
     function buildLiveDataByTracker(refreshResult) {
       const result = {};
       const activeTrackers = trackerList.filter(t => t.active && !t.deleted);
@@ -21,6 +24,8 @@ export function dashboardScriptsLive(): string {
           lat: lp.lat, lon: lp.lon,
           velocity_kmh: lp.v, elevation_m: lp.e, course_deg: lp.c,
           garmin_time: lp.t,
+          last_point_time: refreshResult?.lastPointTimeByTracker?.[tracker.id] ?? null,
+          ground_trail: refreshResult?.groundTrailsByTracker?.[tracker.id] ?? [],
           // Use refreshResult label/polled if this is the only tracker, or search by tracker
           location_label: refreshResult?.liveLabelsByTracker?.[tracker.id] ?? null,
           last_polled: refreshResult?.lastPolled ?? null,
@@ -188,6 +193,38 @@ export function dashboardScriptsLive(): string {
 
 
     function updateLivePlaneMarkers() {
+      _updateLivePlaneMarkers();
+      renderGroundTrails();
+    }
+
+    // Redraws the ground trail of each tracker showing a plane marker (at its latest
+    // flight's end): in the default view, or on that tracker's latest flight. Any other
+    // view of the past has no plane, so no trail. A plane on an in-progress flight has
+    // none either: the server's trail is empty while airborne.
+    function renderGroundTrails() {
+      for (const layer of groundTrailLayers) layer.remove();
+      groundTrailLayers = [];
+      trailLatlngs = [];
+      trailPointData = [];
+      trailLabels = [];
+      for (const tid of Object.keys(planeMarkers)) {
+        const d = liveDataByTracker[tid];
+        if (!d) continue;
+        const drawn = drawGroundTrail(map, {
+          from: [d.lat, d.lon],
+          points: d.ground_trail ?? [],
+          color: _trackerColor(Number(tid)),
+          trackerId: Number(tid),
+        });
+        if (!drawn) continue;
+        groundTrailLayers.push(...drawn.layers);
+        trailLatlngs.push(...drawn.latlngs);
+        trailPointData.push(...drawn.pointData);
+        trailLabels.push(...drawn.labels);
+      }
+    }
+
+    function _updateLivePlaneMarkers() {
       const activeTrackers = trackerList.filter(t => t.active && !t.deleted);
 
       // Day-view selected — selectDayView placed plane markers on its in-progress flights; don't interfere.

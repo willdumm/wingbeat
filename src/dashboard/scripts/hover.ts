@@ -2,7 +2,7 @@
  * Map-level hover / touch interaction.
  * Declares `hoverTip` (const — must be before use in snapToNearestPoint) and
  * wires the mousemove, mouseout, and touchend listeners.
- * Reads: activeLatlngs, activePointData, activePointLabels, hoverDot, pinnedTip
+ * Reads: activeLatlngs, activePointData, activePointLabels, the trail* arrays, hoverDot, pinnedTip
  * Writes: hoverDot, pinnedTip (via assignment to the vars declared in state.ts)
  */
 export function dashboardScriptsHover(): string {
@@ -11,12 +11,22 @@ export function dashboardScriptsHover(): string {
 
     // ── Map-level hover (wider engagement than the 3 px polyline stroke) ──────
 
-    // Returns the index of the nearest route point within 30 px, or -1.
-    function nearestRouteIdx(containerPt) {
-      if (!activeLatlngs.length) return -1;
+    // The points the hover snaps to: the drawn track's, then the ground trails'.
+    function hoverPoints() {
+      return {
+        latlngs: activeLatlngs.concat(trailLatlngs),
+        pointData: activePointData.concat(trailPointData),
+        labels: activePointLabels.concat(trailLabels),
+      };
+    }
+
+    // Returns the index into latlngs (default: the drawn track's) of the nearest point
+    // within 30 px, or -1.
+    function nearestRouteIdx(containerPt, latlngs = activeLatlngs) {
+      if (!latlngs.length) return -1;
       let minPx = Infinity, nearestIdx = 0;
-      for (let i = 0; i < activeLatlngs.length; i++) {
-        const pt = map.latLngToContainerPoint(activeLatlngs[i]);
+      for (let i = 0; i < latlngs.length; i++) {
+        const pt = map.latLngToContainerPoint(latlngs[i]);
         const d = Math.hypot(containerPt.x - pt.x, containerPt.y - pt.y);
         if (d < minPx) { minPx = d; nearestIdx = i; }
       }
@@ -26,14 +36,15 @@ export function dashboardScriptsHover(): string {
     // Snaps to the nearest track point within 30 px of screenPt.
     // Updates hoverDot and hoverTip in place. Returns true if snapped.
     function snapToNearestPoint(screenPt) {
-      const nearestIdx = nearestRouteIdx(screenPt);
+      const { latlngs, pointData, labels } = hoverPoints();
+      const nearestIdx = nearestRouteIdx(screenPt, latlngs);
       if (nearestIdx === -1) return false;
 
-      const nearest = activePointData[nearestIdx];
-      const snapLatLng = activeLatlngs[nearestIdx];
+      const nearest = pointData[nearestIdx];
+      const snapLatLng = latlngs[nearestIdx];
 
-      const nextLl = activeLatlngs[Math.min(nearestIdx + 1, activeLatlngs.length - 1)];
-      const prevLl = activeLatlngs[Math.max(nearestIdx - 1, 0)];
+      const nextLl = latlngs[Math.min(nearestIdx + 1, latlngs.length - 1)];
+      const prevLl = latlngs[Math.max(nearestIdx - 1, 0)];
       const refLl = nextLl !== snapLatLng ? nextLl : prevLl;
       const bearing = nearest.course_deg ?? bearingBetween(snapLatLng, refLl);
       if (hoverDot) {
@@ -48,7 +59,7 @@ export function dashboardScriptsHover(): string {
         : '\u2014';
       const speed = nearest.velocity_kmh != null ? toKnots(nearest.velocity_kmh) : '\u2014';
       const alt = nearest.elevation_m != null ? toFeet(nearest.elevation_m) : '\u2014';
-      const tipLabel = activePointLabels[nearestIdx] ?? '';
+      const tipLabel = labels[nearestIdx] ?? '';
       const nearestTracker = nearest.tracker_id != null
         ? trackerList.find(t => t.id === nearest.tracker_id)
         : null;
@@ -71,7 +82,7 @@ export function dashboardScriptsHover(): string {
     map.on('mousemove', (e) => {
       if (pinnedTip) return;
       if (pointPickerActive) return;
-      if (!activeLatlngs.length || !activePointData.length) return;
+      if (!activeLatlngs.length && !trailLatlngs.length) return;
       const snapped = snapToNearestPoint(e.containerPoint);
       if (!snapped) {
         hoverTip.remove();
@@ -89,7 +100,7 @@ export function dashboardScriptsHover(): string {
     // ── Touch: pin tooltip on tap, dismiss on tap away ─────────────────────────
     map.getContainer().addEventListener('touchend', (e) => {
       if (pointPickerActive) return;
-      if (!activeLatlngs.length || !activePointData.length) return;
+      if (!activeLatlngs.length && !trailLatlngs.length) return;
       if (e.changedTouches.length === 0) return;
 
       const rect = map.getContainer().getBoundingClientRect();

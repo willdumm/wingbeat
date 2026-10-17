@@ -243,7 +243,7 @@ export function dashboardScriptsFlightList(): string {
         delete planeMarkers[tid];
       }
 
-      if ((flight.points ?? []).length === 0) { ensureMapView(); return; }
+      if ((flight.points ?? []).length === 0) { renderGroundTrails(); ensureMapView(); return; }
 
       // This flight is in-progress if it is the most-recent for its tracker and the tracker is airborne.
       const latestForTracker = allFlights.find(f => f.tracker_id === flight.tracker_id);
@@ -271,8 +271,10 @@ export function dashboardScriptsFlightList(): string {
       activePointData = drawn.pointData;
       activePointLabels = drawn.labels;
       activeFlightInProgress = inProgress;
+      // The latest flight's plane marker gets its tracker's ground trail; any other drops it.
+      renderGroundTrails();
 
-      if (fitView) map.fitBounds(activeTrack.getBounds(), mapFitOptions());
+      if (fitView) map.fitBounds(L.latLngBounds([...drawn.latlngs, ...trailLatlngs]), mapFitOptions());
       ensureMapView();
     }
 

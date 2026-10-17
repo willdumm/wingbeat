@@ -124,6 +124,9 @@ export function flightStoreScript(): string {
       let changed = false;
       let latestLastPolled = null;
       const liveLabelsByTracker = {};
+      // Not kept in _mem: both are replaced whole on every refresh.
+      const lastPointTimeByTracker = {};
+      const groundTrailsByTracker = {};
       let anyGeocodePending = false;
       for (const { tid, data } of results) {
         if (!_refreshedTrackers.has(tid)) { _refreshedTrackers.add(tid); _gen++; }
@@ -134,6 +137,8 @@ export function flightStoreScript(): string {
         if (_fsAdvance(_mem.last_modified_at_by_tracker, tid, data.last_modified_at)) changed = true;
         if ((data.last_polled ?? 0) > (latestLastPolled ?? 0)) latestLastPolled = data.last_polled;
         liveLabelsByTracker[tid] = data.live_label ?? null;
+        lastPointTimeByTracker[tid] = data.last_point_time ?? null;
+        groundTrailsByTracker[tid] = data.ground_trail ?? [];
         if (data.geocode_pending) anyGeocodePending = true;
       }
       // Dropped if another tab's save moved the cursor meanwhile (the storage listener
@@ -148,7 +153,7 @@ export function flightStoreScript(): string {
       }
       if (changed) { _fsSave(); _cbs.forEach(cb => cb()); }
       else if (cursorMoved) _fsSave();
-      return { changed, lastPolled: latestLastPolled, liveLabelsByTracker, geocodePending: anyGeocodePending };
+      return { changed, lastPolled: latestLastPolled, liveLabelsByTracker, lastPointTimeByTracker, groundTrailsByTracker, geocodePending: anyGeocodePending };
     }
 
     // Manual flights have no tracker, so they're always included; trackerIds narrows the

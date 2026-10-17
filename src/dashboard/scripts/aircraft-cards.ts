@@ -27,9 +27,10 @@ export function dashboardScriptsAircraftCards(): string {
       return idx >= 0 ? TRACKER_COLORS[idx % TRACKER_COLORS.length] : getCssVar('--text-faint', '#7C8A98');
     }
 
-    // One status card. live is the tracker's latest point ({ garmin_time, location_label,
-    // elevation_m, velocity_kmh }) or null; showMetrics adds altitude/speed while in flight
-    // (the dashboard only has room for it with a single card).
+    // One status card. live is the tracker's latest flight point ({ garmin_time,
+    // location_label, elevation_m, velocity_kmh }, plus last_point_time: its newest point
+    // of any kind, which the GPS time shows when present) or null; showMetrics adds
+    // altitude/speed while in flight (the dashboard only has room for it with a single card).
     function buildAircraftCard({ trackerId, label, live, inFlight, color, showMetrics }) {
       const d = live;
       const card = document.createElement('div');
@@ -58,13 +59,14 @@ export function dashboardScriptsAircraftCards(): string {
       const row2 = document.createElement('div');
       row2.className = 'ac-row2';
 
-      if (d && d.garmin_time) {
+      const gpsTime = d ? (d.last_point_time ?? d.garmin_time) : null;
+      if (gpsTime) {
         const now = Math.floor(Date.now() / 1000);
-        const gpsRecent = (now - d.garmin_time) < 240;
+        const gpsRecent = (now - gpsTime) < 240;
         const gpsEl = document.createElement('div');
         gpsEl.className = 'ac-card-gps';
         gpsEl.innerHTML = (gpsRecent ? AC_GPS_FRESH_DOT_HTML : AC_GPS_STALE_DOT_HTML);
-        gpsEl.appendChild(document.createTextNode('GPS ' + relTime(d.garmin_time)));
+        gpsEl.appendChild(document.createTextNode('GPS ' + relTime(gpsTime)));
         row2.appendChild(gpsEl);
       }
 

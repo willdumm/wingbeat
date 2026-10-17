@@ -815,9 +815,10 @@ const trackerList = SAMPLE.trackers;
       return idx >= 0 ? TRACKER_COLORS[idx % TRACKER_COLORS.length] : getCssVar('--text-faint', '#7C8A98');
     }
 
-    // One status card. live is the tracker's latest point ({ garmin_time, location_label,
-    // elevation_m, velocity_kmh }) or null; showMetrics adds altitude/speed while in flight
-    // (the dashboard only has room for it with a single card).
+    // One status card. live is the tracker's latest flight point ({ garmin_time,
+    // location_label, elevation_m, velocity_kmh }, plus last_point_time: its newest point
+    // of any kind, which the GPS time shows when present) or null; showMetrics adds
+    // altitude/speed while in flight (the dashboard only has room for it with a single card).
     function buildAircraftCard({ trackerId, label, live, inFlight, color, showMetrics }) {
       const d = live;
       const card = document.createElement('div');
@@ -846,13 +847,14 @@ const trackerList = SAMPLE.trackers;
       const row2 = document.createElement('div');
       row2.className = 'ac-row2';
 
-      if (d && d.garmin_time) {
+      const gpsTime = d ? (d.last_point_time ?? d.garmin_time) : null;
+      if (gpsTime) {
         const now = Math.floor(Date.now() / 1000);
-        const gpsRecent = (now - d.garmin_time) < 240;
+        const gpsRecent = (now - gpsTime) < 240;
         const gpsEl = document.createElement('div');
         gpsEl.className = 'ac-card-gps';
         gpsEl.innerHTML = (gpsRecent ? AC_GPS_FRESH_DOT_HTML : AC_GPS_STALE_DOT_HTML);
-        gpsEl.appendChild(document.createTextNode('GPS ' + relTime(d.garmin_time)));
+        gpsEl.appendChild(document.createTextNode('GPS ' + relTime(gpsTime)));
         row2.appendChild(gpsEl);
       }
 
@@ -1195,6 +1197,31 @@ const trackerList = SAMPLE.trackers;
       }
 
       return { layers, planes, endInfos, allPoints, trackerIds, latlngs: latlngsOut, pointData: pointDataOut, labels: labelsOut };
+    }
+
+    // Draws a tracker's ground trail (its points since its last flight, compact like a
+    // flight's: { t, lat, lon, v, e, c }) as a dotted line in its color from the landing
+    // spot (from: [lat, lon]) to a hollow dot at the tracker's current position: the
+    // pilot, where the plane marker stays with the aircraft. Returns { layers, latlngs,
+    // pointData, labels } (the last three for the hover handler), or null with no points.
+    function drawGroundTrail(mapObj, { from, points, color, trackerId }) {
+      if (!points.length) return null;
+      const latlngs = points.map(p => [p.lat, p.lon]);
+      const line = L.polyline(from ? [from, ...latlngs] : latlngs, {
+        color, weight: 3, opacity: 0.9, dashArray: '1 7', lineCap: 'round', lineJoin: 'round',
+        interactive: false,
+      }).addTo(mapObj);
+      const pilotDot = L.circleMarker(latlngs[latlngs.length - 1], {
+        radius: 6, color, weight: 3, fillColor: '#fff', fillOpacity: 1, interactive: false,
+      }).addTo(mapObj);
+      return {
+        layers: [line, pilotDot],
+        latlngs,
+        pointData: points.map(p => ({
+          garmin_time: p.t, velocity_kmh: p.v, elevation_m: p.e, course_deg: p.c, tracker_id: trackerId,
+        })),
+        labels: latlngs.map((_, j) => j === latlngs.length - 1 ? 'Current position' : 'On the ground'),
+      };
     }
 
     // Draws one flight in the accent color with a green start dot, and optionally a red
@@ -3934,12 +3961,22 @@ REGIONS = SAMPLE.regions;
 
     // ── Map-level hover (wider engagement than the 3 px polyline stroke) ──────
 
-    // Returns the index of the nearest route point within 30 px, or -1.
-    function nearestRouteIdx(containerPt) {
-      if (!activeLatlngs.length) return -1;
+    // The points the hover snaps to: the drawn track's, then the ground trails'.
+    function hoverPoints() {
+      return {
+        latlngs: activeLatlngs.concat(trailLatlngs),
+        pointData: activePointData.concat(trailPointData),
+        labels: activePointLabels.concat(trailLabels),
+      };
+    }
+
+    // Returns the index into latlngs (default: the drawn track's) of the nearest point
+    // within 30 px, or -1.
+    function nearestRouteIdx(containerPt, latlngs = activeLatlngs) {
+      if (!latlngs.length) return -1;
       let minPx = Infinity, nearestIdx = 0;
-      for (let i = 0; i < activeLatlngs.length; i++) {
-        const pt = map.latLngToContainerPoint(activeLatlngs[i]);
+      for (let i = 0; i < latlngs.length; i++) {
+        const pt = map.latLngToContainerPoint(latlngs[i]);
         const d = Math.hypot(containerPt.x - pt.x, containerPt.y - pt.y);
         if (d < minPx) { minPx = d; nearestIdx = i; }
       }
@@ -3949,14 +3986,15 @@ REGIONS = SAMPLE.regions;
     // Snaps to the nearest track point within 30 px of screenPt.
     // Updates hoverDot and hoverTip in place. Returns true if snapped.
     function snapToNearestPoint(screenPt) {
-      const nearestIdx = nearestRouteIdx(screenPt);
+      const { latlngs, pointData, labels } = hoverPoints();
+      const nearestIdx = nearestRouteIdx(screenPt, latlngs);
       if (nearestIdx === -1) return false;
 
-      const nearest = activePointData[nearestIdx];
-      const snapLatLng = activeLatlngs[nearestIdx];
+      const nearest = pointData[nearestIdx];
+      const snapLatLng = latlngs[nearestIdx];
 
-      const nextLl = activeLatlngs[Math.min(nearestIdx + 1, activeLatlngs.length - 1)];
-      const prevLl = activeLatlngs[Math.max(nearestIdx - 1, 0)];
+      const nextLl = latlngs[Math.min(nearestIdx + 1, latlngs.length - 1)];
+      const prevLl = latlngs[Math.max(nearestIdx - 1, 0)];
       const refLl = nextLl !== snapLatLng ? nextLl : prevLl;
       const bearing = nearest.course_deg ?? bearingBetween(snapLatLng, refLl);
       if (hoverDot) {
@@ -3971,7 +4009,7 @@ REGIONS = SAMPLE.regions;
         : '—';
       const speed = nearest.velocity_kmh != null ? toKnots(nearest.velocity_kmh) : '—';
       const alt = nearest.elevation_m != null ? toFeet(nearest.elevation_m) : '—';
-      const tipLabel = activePointLabels[nearestIdx] ?? '';
+      const tipLabel = labels[nearestIdx] ?? '';
       const nearestTracker = nearest.tracker_id != null
         ? trackerList.find(t => t.id === nearest.tracker_id)
         : null;
@@ -3994,7 +4032,7 @@ REGIONS = SAMPLE.regions;
     map.on('mousemove', (e) => {
       if (pinnedTip) return;
       if (pointPickerActive) return;
-      if (!activeLatlngs.length || !activePointData.length) return;
+      if (!activeLatlngs.length && !trailLatlngs.length) return;
       const snapped = snapToNearestPoint(e.containerPoint);
       if (!snapped) {
         hoverTip.remove();
@@ -4012,7 +4050,7 @@ REGIONS = SAMPLE.regions;
     // ── Touch: pin tooltip on tap, dismiss on tap away ─────────────────────────
     map.getContainer().addEventListener('touchend', (e) => {
       if (pointPickerActive) return;
-      if (!activeLatlngs.length || !activePointData.length) return;
+      if (!activeLatlngs.length && !trailLatlngs.length) return;
       if (e.changedTouches.length === 0) return;
 
       const rect = map.getContainer().getBoundingClientRect();

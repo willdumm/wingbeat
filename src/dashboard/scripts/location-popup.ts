@@ -56,7 +56,8 @@ export function dashboardScriptsLocationPopup(): string {
       if (d.velocity_kmh != null) rows.push(['Speed', toKnots(d.velocity_kmh)]);
       if (d.course_deg != null) rows.push(['Heading', Math.round(d.course_deg) + '\\xb0 ' + cardinalDir(d.course_deg)]);
       if (d.location_label) rows.push(['Location', d.location_label]);
-      if (d.garmin_time) rows.push(['GPS fix', relTime(d.garmin_time)]);
+      const gpsTime = d.last_point_time ?? d.garmin_time;
+      if (gpsTime) rows.push(['GPS fix', relTime(gpsTime)]);
 
       locationPopupDetails.innerHTML = rows.map(([label, value]) =>
         '<span class="popup-detail-label">' + label + '</span>' +

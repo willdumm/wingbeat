@@ -1,7 +1,8 @@
 // The Worker's SQL, through its real routes: the bulk flight-corrections upsert, the
 // duty-day statement, the edit_history triggers (migration 0002), the
 // incremental corrections sync (ENTRIES_SINCE_SQL) and the edit conflict check
-// (base_history_id), plus route validation around them.
+// (base_history_id), plus route validation around them, and GET /api/flights/complete's
+// ground trail.
 // test/worker.mjs runs src/index.ts in Miniflare on a fresh D1 database with every
 // migration applied (Miniflare's SQLite may differ slightly from production D1's).
 //
@@ -513,5 +514,59 @@ describe('edit conflicts (base_history_id)', () => {
     assert.equal(r.status, 400);
     assert.match(r.body.error, /base_history_id/);
     assert.equal((await w.request('DELETE', '/api/flight-corrections/1?base_history_id=abc')).status, 400);
+  });
+});
+
+describe('GET /api/flights/complete ground trail', () => {
+  const now = () => Math.floor(Date.now() / 1000);
+
+  /** Seeds tracker id with a flight over [start, end] and ground points at groundTimes. */
+  async function seed(id, start, end, groundTimes) {
+    await w.run("INSERT INTO trackers (id, name, type, source_url) VALUES (?, 'T', 'spot', ?)",
+      id, 'https://example.com/' + id);
+    const fid = (await w.run('INSERT INTO flights (tracker_id, start_time, end_time, modified_at) VALUES (?, ?, ?, 1) RETURNING id',
+      id, start, end)).results[0].id;
+    for (const [t, v] of [[start, 50], [end, 20]]) {
+      const pid = (await w.run('INSERT INTO points (garmin_time, lat, lon, velocity_kmh, tracker_id) VALUES (?, 58, -154, ?, ?) RETURNING id',
+        t, v, id)).results[0].id;
+      await w.run('INSERT INTO point_flights (point_id, flight_id) VALUES (?, ?)', pid, fid);
+    }
+    for (const t of groundTimes) {
+      await w.run('INSERT INTO points (garmin_time, lat, lon, velocity_kmh, tracker_id) VALUES (?, 58.01, -154.01, 4, ?)', t, id);
+    }
+  }
+  const complete = async (id) => (await w.request('GET', '/api/flights/complete?tracker=' + id)).body;
+
+  test("is the points after the last flight's end, oldest first; last_point_time is the newest point", async () => {
+    const t = now();
+    await seed(10, t - 3 * 3600, t - 2 * 3600, [t - 4 * 3600, t - 5400, t - 600]);
+    const body = await complete(10);
+    assert.deepEqual(body.ground_trail.map(p => p.t), [t - 5400, t - 600]);
+    assert.deepEqual(Object.keys(body.ground_trail[0]).sort(), ['c', 'e', 'lat', 'lon', 't', 'v']);
+    assert.equal(body.last_point_time, t - 600);
+    // The status card's other fields still come from the flight's points.
+    assert.equal(body.flights[0].points.at(-1).t, t - 2 * 3600);
+  });
+
+  test('reaches back 12 hours only; last_point_time still counts older points', async () => {
+    const t = now();
+    await seed(11, t - 20 * 3600, t - 19 * 3600, [t - 13 * 3600]);
+    let body = await complete(11);
+    assert.deepEqual(body.ground_trail, []);
+    assert.equal(body.last_point_time, t - 13 * 3600);
+    await w.run('INSERT INTO points (garmin_time, lat, lon, velocity_kmh, tracker_id) VALUES (?, 58, -154, 3, 11)', t - 3600);
+    body = await complete(11);
+    assert.deepEqual(body.ground_trail.map(p => p.t), [t - 3600]);
+  });
+
+  test('is empty while the latest flight is in progress, and for a tracker with no flights', async () => {
+    const t = now();
+    await seed(12, t - 1800, t - 60, []);
+    assert.deepEqual((await complete(12)).ground_trail, []);
+    await w.run("INSERT INTO trackers (id, name, type, source_url) VALUES (13, 'T', 'spot', 'https://example.com/13')");
+    await w.run('INSERT INTO points (garmin_time, lat, lon, velocity_kmh, tracker_id) VALUES (?, 58, -154, 3, 13)', t - 60);
+    const body = await complete(13);
+    assert.deepEqual(body.ground_trail, []);
+    assert.equal(body.last_point_time, t - 60);
   });
 });

@@ -585,6 +585,9 @@ app.post('/api/refresh', async (c) => {
   return c.json({ ok: true });
 });
 
+// How far back GET /api/flights/complete's ground_trail reaches.
+const GROUND_TRAIL_S = 12 * 60 * 60;
+
 app.get('/api/flights/complete', async (c) => {
   const trackerId = await resolveTrackerId(c.var.tenant, c.req.query('tracker'));
   if (trackerId === null) return c.json({ last_polled: null, live_label: null, geocode_pending: false, flights: [], warning: 'no_active_trackers' });
@@ -594,7 +597,7 @@ app.get('/api/flights/complete', async (c) => {
   // this on their 30/60s loop must not each pay a maybePoll claim attempt.
   const since = parseInt(c.req.query('since') ?? '0', 10) || 0;
 
-  const [livePoint, pollState] = await Promise.all([
+  const [livePoint, pollState, groundTrail] = await Promise.all([
     c.var.db.prepare(
       `SELECT lat, lon, elevation_m, velocity_kmh, course_deg, garmin_time, location_label
        FROM points WHERE tracker_id = ? ORDER BY garmin_time DESC LIMIT 1`
@@ -602,6 +605,18 @@ app.get('/api/flights/complete', async (c) => {
     c.var.db.prepare(
       'SELECT last_polled FROM poll_state WHERE tracker_id = ?'
     ).bind(trackerId).first<{ last_polled: number }>(),
+    // The ground trail: the points since the tracker's last flight ended (a walk from the
+    // landing spot, say), from the last GROUND_TRAIL_S only. Empty while airborne, since
+    // the in-progress flight ends at the latest point. Not since-gated like the flights:
+    // it's small and replaced whole on every poll.
+    c.var.db.prepare(
+      `SELECT garmin_time AS t, lat, lon, velocity_kmh AS v, elevation_m AS e, course_deg AS c
+       FROM points
+       WHERE tracker_id = ?1
+         AND garmin_time > (SELECT MAX(end_time) FROM flights WHERE tracker_id = ?1)
+         AND garmin_time > unixepoch() - ?2
+       ORDER BY garmin_time ASC`
+    ).bind(trackerId, GROUND_TRAIL_S).all<FlightPoint>(),
   ]);
 
   const { refPoint, fromNamedPoint } = await resolveRefPoint(c.var.tenant, trackerId, livePoint?.lat, livePoint?.lon);
@@ -679,6 +694,9 @@ app.get('/api/flights/complete', async (c) => {
     last_polled: pollState?.last_polled ?? null,
     live_label: liveLabel,
     geocode_pending: geocodePending,
+    // The newest point of any kind (the status card's GPS time), and the ground trail.
+    last_point_time: livePoint?.garmin_time ?? null,
+    ground_trail: groundTrail.results,
     flights: allFlights,
     last_modified_at: lastModifiedAt,
   });

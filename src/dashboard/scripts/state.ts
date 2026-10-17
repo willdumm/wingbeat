@@ -84,6 +84,14 @@ export function dashboardScriptsState(speedThreshold: number): string {
     let hoverDot = null;
     let pinnedTip = false;
 
+    // ── Ground trails (renderGroundTrails in live.ts) ─────────────────────────
+    // Their layers, and their points for the hover handler, kept apart from the active*
+    // arrays above (which selectFlight/selectDayView replace) and searched after them.
+    let groundTrailLayers = [];
+    let trailLatlngs = [];
+    let trailPointData = [];
+    let trailLabels = [];
+
     // ── Point picker state ────────────────────────────────────────────────────
     let pointPickerActive = false;
     let pickerDot = null;
