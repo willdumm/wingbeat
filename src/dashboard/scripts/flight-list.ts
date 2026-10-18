@@ -243,6 +243,7 @@ export function dashboardScriptsFlightList(): string {
         delete planeMarkers[tid];
       }
 
+      renderedMapSig = mapDataSig();
       if ((flight.points ?? []).length === 0) { renderGroundTrails(); ensureMapView(); return; }
 
       // This flight is in-progress if it is the most-recent for its tracker and the tracker is airborne.

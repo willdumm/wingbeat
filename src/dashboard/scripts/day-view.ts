@@ -107,6 +107,7 @@ export function dashboardScriptsDayView(): string {
 
       // In the default view this also adds plane markers for aircraft on the ground.
       updateLivePlaneMarkers();
+      renderedMapSig = mapDataSig();
     }
 
     // Default map view: every in-progress flight, across all trackers. With nothing
@@ -127,6 +128,10 @@ export function dashboardScriptsDayView(): string {
         const el = document.querySelector('.flight-item[data-id="' + f.id + '"]');
         activeFlightId = null;
         selectFlight(f, el, fit);
+        // Still the default view, so a refresh redraws it as one (refreshMapIfNeeded) and
+        // every other aircraft keeps its plane marker, as in the day-view case above.
+        activeDayDate = '__overview__';
+        updateLivePlaneMarkers();
         return;
       }
 

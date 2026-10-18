@@ -68,7 +68,10 @@ export function dashboardScriptsState(speedThreshold: number): string {
     // update never pulls the view away from where the user is looking.
     const MAP_INPUT_SETTLE_MS = 20_000;
     function mapInputSettled() { return Date.now() - lastMapInputTime >= MAP_INPUT_SETTLE_MS; }
-    let activeDayDate = null; // dayKey or '__overview__' of the currently displayed day view
+    // dayKey of the displayed day view, or '__overview__' for the default view (whether
+    // that is drawn as a day view or as the latest flight); null for a selected flight.
+    let activeDayDate = null;
+    let renderedMapSig = null; // mapDataSig() as of the last full map draw (refresh.ts)
 
     // Speed threshold (km/h) injected from the server-side constant.
     const FLIGHT_THRESHOLD_KMH = ${speedThreshold};

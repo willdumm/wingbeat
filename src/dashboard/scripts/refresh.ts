@@ -20,20 +20,31 @@ export function dashboardScriptsRefresh(): string {
       return a.tracker_id != null && a.tracker_id === b.tracker_id && _trackedStart(a) === _trackedStart(b);
     }
 
-    // Redraws the map after allFlights changed (a poll, or a correction saved anywhere).
-    // The "latest flight" it follows is the newest tracked one: manual flights have no
-    // track.
-    async function refreshMapIfNeeded(oldFlights) {
-      // A flight changed if its modified_at advanced (new points, labels, an edit, etc.)
-      function flightChanged(f) {
-        const old = oldFlights.find(o => o.id === f.id);
-        if (!old) return false;
-        return old.modified_at !== f.modified_at;
-      }
+    // Everything the map is drawn from: the flights and each tracker's live position and
+    // ground trail. A full draw (selectFlight, selectDayView) records it in renderedMapSig.
+    function mapDataSig() {
+      return JSON.stringify([
+        allFlights.map(f => [f.id, f.modified_at]),
+        Object.entries(liveDataByTracker).map(([tid, d]) =>
+          [tid, d.garmin_time, d.last_point_time, (d.ground_trail ?? []).length]),
+      ]);
+    }
 
+    // Redraws the map after allFlights or the live data changed (a poll, the refresh
+    // button, or a correction saved anywhere), through the same function that drew the
+    // current view, so the result matches what a page load would show. Only the viewport
+    // differs: it is refit only once the map has been left alone. The "latest flight" it
+    // follows is the newest tracked one: manual flights have no track.
+    async function refreshMapIfNeeded(oldFlights) {
       const recentInteraction = Date.now() - lastUserInteractionTime < 120_000;
       const latestTracked = allFlights.find(f => f.tracker_id != null);
       const oldLatestTracked = oldFlights.find(f => f.tracker_id != null);
+      const dataChanged = mapDataSig() !== renderedMapSig;
+
+      if (activeDayDate === '__overview__') {
+        if (dataChanged) showDefaultMapView({ fit: !recentInteraction && mapInputSettled() });
+        return;
+      }
 
       // The selected flight was removed (or deleted): fall back to the default view.
       if (activeFlightId !== null) {
@@ -47,67 +58,44 @@ export function dashboardScriptsRefresh(): string {
         }
       }
 
-      if (!recentInteraction) {
-        // Idle mode: auto-follow the most recent flight when nothing is selected,
-        // or when the most recent flight has new data.
-        if (latestTracked) {
-          const latest = latestTracked;
-          const oldLatest = oldFlights.find(f => _sameTrackedFlight(f, latest));
-          const latestChanged = !oldLatest || oldLatest.modified_at !== latest.modified_at;
-          if (activeFlightId === null || latestChanged) {
-            activeFlightId = null;
-            // Redraw with the new data, but only re-fit once the map has been left alone.
-            showDefaultMapView({ fit: mapInputSettled() });
-          }
+      // Idle: go back to following the most recent flight once it has new data.
+      if (!recentInteraction && latestTracked) {
+        const oldLatest = oldFlights.find(f => _sameTrackedFlight(f, latestTracked));
+        if (!oldLatest || oldLatest.modified_at !== latestTracked.modified_at) {
+          activeFlightId = null;
+          showDefaultMapView({ fit: mapInputSettled() });
+          return;
         }
+      }
+
+      if (!dataChanged) return;
+
+      // A selected flight: redraw it in place, without disturbing the viewport.
+      if (activeFlightId !== null) {
+        let flight = allFlights.find(f => f.id === activeFlightId);
+        if (!flight) {
+          // runSegmentation deleted the active flight and re-created it with a new
+          // auto-incremented ID. Its tracked start is stable, so use it to find the
+          // replacement.
+          const oldActive = oldFlights.find(f => f.id === activeFlightId);
+          if (oldActive) flight = allFlights.find(f => _sameTrackedFlight(f, oldActive));
+        }
+        // Auto-follow a genuinely new flight when the user was watching the previously
+        // newest one. "Genuinely new" = a tracked start not present in oldFlights at all
+        // (as opposed to a resegmentation, which keeps it).
+        if (latestTracked && oldLatestTracked && activeFlightId === oldLatestTracked.id &&
+            !oldFlights.some(f => _sameTrackedFlight(f, latestTracked))) {
+          flight = latestTracked;
+        }
+        if (!flight) return;
+        activeFlightId = null;
+        const el = document.querySelector('.flight-item[data-id="' + flight.id + '"]');
+        await selectFlight(flight, el, false);
         return;
       }
 
-      // Recent interaction: update the route rendering without disturbing the viewport.
-      if (activeFlightId !== null) {
-        let newFlight = allFlights.find(f => f.id === activeFlightId);
-        if (!newFlight) {
-          // runSegmentation deleted the active flight and re-created it with a new
-          // auto-incremented ID. start_time is stable (derived from the first GPS
-          // point's timestamp), so use it to find the replacement.
-          const oldActive = oldFlights.find(f => f.id === activeFlightId);
-          if (oldActive) {
-            newFlight = allFlights.find(f => _sameTrackedFlight(f, oldActive));
-          }
-        }
-        if (newFlight && (flightChanged(newFlight) || newFlight.id !== activeFlightId)) {
-          activeFlightId = null;
-          const el = document.querySelector('.flight-item[data-id="' + newFlight.id + '"]')
-            ?? document.querySelector('.flight-item.active');
-          await selectFlight(newFlight, el, false);
-        }
-      }
-
-      // Auto-follow a genuinely new flight when the user was already watching the
-      // previously-newest one. "Genuinely new" = a start_time not present in oldFlights
-      // at all (as opposed to a resegmentation which reuses the same start_time).
-      if (activeFlightId !== null && latestTracked && oldLatestTracked) {
-        const isGenuinelyNew = !oldFlights.some(f => _sameTrackedFlight(f, latestTracked));
-        const userWasOnOldLatest = activeFlightId === oldLatestTracked.id;
-        if (isGenuinelyNew && userWasOnOldLatest) {
-          activeFlightId = null;
-          const el = document.querySelector('.flight-item[data-id="' + latestTracked.id + '"]')
-            ?? document.querySelector('.flight-item');
-          await selectFlight(latestTracked, el, false);
-        }
-      }
-
-      if (activeDayDate !== null && activeDayDate !== '__overview__') {
-        const dayFlights = getDayFlights(activeDayDate);
-        // Compare against the filtered old snapshot: apply the same activeFilters
-        // predicate to oldFlights so both sides are filtered consistently.
-        const oldDayCount = oldFlights.filter(f => {
-          const start = new Date(f.start_time * 1000);
-          return dayKey(start) === activeDayDate && filterStore.matchesFlight(f, activeFilters);
-        }).length;
-        if (dayFlights.length !== oldDayCount || dayFlights.some(flightChanged)) {
-          selectDayView([...dayFlights].reverse(), { fit: mapInputSettled() });
-        }
+      if (activeDayDate !== null) {
+        selectDayView([...getDayFlights(activeDayDate)].reverse(), { fit: mapInputSettled() });
       }
     }
 

@@ -369,6 +369,8 @@ export function elevationToolScript(rootExpr = 'document'): string {
       map.getContainer().style.cursor = 'crosshair';
       elevationPanel.classList.remove('hidden');
       elevationTintLayer.addTo(map);
+      // The reference survives a toggle off/on, so its marker comes back with the tint.
+      if (elevationReferenceMarker) elevationReferenceMarker.addTo(map);
       if (pointPickerActive) deactivatePointPicker();
     }
 
@@ -378,6 +380,7 @@ export function elevationToolScript(rootExpr = 'document'): string {
       map.getContainer().style.cursor = '';
       elevationPanel.classList.add('hidden');
       map.removeLayer(elevationTintLayer);
+      if (elevationReferenceMarker) map.removeLayer(elevationReferenceMarker);
     }
 
     elevationBtn.addEventListener('click', () => {

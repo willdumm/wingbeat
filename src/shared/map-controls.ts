@@ -198,10 +198,26 @@ export function mapLayersRuntimeScript(env: Env, presets: BasemapPreset[] = clie
       return url.replace(/\{[sxyzr]\}/gi, function(m) { return m.toLowerCase(); });
     }
 
+    // How far any map can zoom in. Every tile layer (basemap or overlay) gets this as its
+    // maxZoom: Leaflet takes the map's zoom limit from its layers' maxZoom, and stops
+    // drawing a layer past it (the gray background some phones showed when pinch-zooming
+    // past a basemap's limit). A layer's own tile limit goes in maxNativeZoom instead,
+    // past which Leaflet keeps upscaling the deepest tiles.
+    var _FT_MAP_MAX_ZOOM = 22;
+
     function _ftMakeTileLayer(def) {
-      var opts = { attribution: def.attribution || '', _ftLabel: def.label || def.id };
-      if (def.maxZoom) opts.maxZoom = def.maxZoom;
-      if (def.detectRetina) opts.detectRetina = true;
+      var opts = { attribution: def.attribution || '', _ftLabel: def.label || def.id, maxZoom: _FT_MAP_MAX_ZOOM };
+      if (def.maxZoom) opts.maxNativeZoom = def.maxZoom;
+      if (def.detectRetina) {
+        opts.detectRetina = true;
+        // On a retina screen Leaflet fetches tiles one zoom level deeper than the map's
+        // (zoomOffset +1) and lowers maxZoom by one to match; undo the latter, and stop
+        // at the source's deepest real tiles one map zoom sooner.
+        if (L.Browser.retina) {
+          opts.maxZoom += 1;
+          if (opts.maxNativeZoom) opts.maxNativeZoom -= 1;
+        }
+      }
       return L.tileLayer(_ftNormalizeTileTemplate(def.url), opts);
     }
 
@@ -1136,14 +1152,12 @@ export function tileOverlayLegendMountScript(mapVar: string, idPrefix = ''): str
         var want = _ftOverlayEnabled(ov);
         var have = !!_ftOverlayLayers[ov.id];
         if (want && !have) {
-          var opts = { attribution: ov.attribution || '' };
-          // maxNativeZoom, not maxZoom: maxZoom would also register as a map-wide zoom
-          // limit (Leaflet clamps the whole map to the smallest maxZoom among its
-          // layers), and would stop rendering this layer entirely past that zoom.
-          // maxNativeZoom instead just caps which zoom level tiles are fetched at,
-          // scaling up the last-loaded tile (pixelated) as the map keeps zooming past
-          // the tileset's native coverage, so the overlay never drops out to reveal
-          // the basemap underneath.
+          var opts = { attribution: ov.attribution || '', maxZoom: _FT_MAP_MAX_ZOOM };
+          // The tileset's own limit goes in maxNativeZoom, not maxZoom (see
+          // _FT_MAP_MAX_ZOOM): it caps which zoom level tiles are fetched at, scaling up
+          // the last-loaded tile (pixelated) as the map keeps zooming past the tileset's
+          // native coverage, so the overlay never drops out to reveal the basemap
+          // underneath.
           if (ov.max_zoom) opts.maxNativeZoom = ov.max_zoom;
           var layer = L.tileLayer(_ftNormalizeTileTemplate(ov.url), opts);
           _ftOverlayLayers[ov.id] = layer;

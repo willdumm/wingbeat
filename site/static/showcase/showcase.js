@@ -372,10 +372,26 @@ const trackerList = SAMPLE.trackers;
       return url.replace(/{[sxyzr]}/gi, function(m) { return m.toLowerCase(); });
     }
 
+    // How far any map can zoom in. Every tile layer (basemap or overlay) gets this as its
+    // maxZoom: Leaflet takes the map's zoom limit from its layers' maxZoom, and stops
+    // drawing a layer past it (the gray background some phones showed when pinch-zooming
+    // past a basemap's limit). A layer's own tile limit goes in maxNativeZoom instead,
+    // past which Leaflet keeps upscaling the deepest tiles.
+    var _FT_MAP_MAX_ZOOM = 22;
+
     function _ftMakeTileLayer(def) {
-      var opts = { attribution: def.attribution || '', _ftLabel: def.label || def.id };
-      if (def.maxZoom) opts.maxZoom = def.maxZoom;
-      if (def.detectRetina) opts.detectRetina = true;
+      var opts = { attribution: def.attribution || '', _ftLabel: def.label || def.id, maxZoom: _FT_MAP_MAX_ZOOM };
+      if (def.maxZoom) opts.maxNativeZoom = def.maxZoom;
+      if (def.detectRetina) {
+        opts.detectRetina = true;
+        // On a retina screen Leaflet fetches tiles one zoom level deeper than the map's
+        // (zoomOffset +1) and lowers maxZoom by one to match; undo the latter, and stop
+        // at the source's deepest real tiles one map zoom sooner.
+        if (L.Browser.retina) {
+          opts.maxZoom += 1;
+          if (opts.maxNativeZoom) opts.maxNativeZoom -= 1;
+        }
+      }
       return L.tileLayer(_ftNormalizeTileTemplate(def.url), opts);
     }
 
@@ -4470,6 +4486,8 @@ REGIONS = SAMPLE.regions;
       map.getContainer().style.cursor = 'crosshair';
       elevationPanel.classList.remove('hidden');
       elevationTintLayer.addTo(map);
+      // The reference survives a toggle off/on, so its marker comes back with the tint.
+      if (elevationReferenceMarker) elevationReferenceMarker.addTo(map);
       if (pointPickerActive) deactivatePointPicker();
     }
 
@@ -4479,6 +4497,7 @@ REGIONS = SAMPLE.regions;
       map.getContainer().style.cursor = '';
       elevationPanel.classList.add('hidden');
       map.removeLayer(elevationTintLayer);
+      if (elevationReferenceMarker) map.removeLayer(elevationReferenceMarker);
     }
 
     elevationBtn.addEventListener('click', () => {
