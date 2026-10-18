@@ -26,6 +26,11 @@ const { Miniflare } = await import(process.env.WINGBEAT_MINIFLARE
 const ADMIN_TOKEN = 'test-admin-session';
 const VIEWER_TOKEN = 'test-viewer-session';
 
+export async function sha256Hex(s) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(d)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 /**
  * Splits a migration file into statements: `--` comments dropped, split on `;` outside
  * string literals, except inside a CREATE TRIGGER, which runs to its `END;`.
@@ -96,7 +101,8 @@ export async function startWorker({ bindings: overrides = {} } = {}) {
     }
     await db.batch([
       db.prepare("INSERT INTO users (id, name, role) VALUES (1, 'Ada Admin', 'admin'), (2, 'Vic Viewer', 'viewer')"),
-      db.prepare('INSERT INTO sessions (user_id, token) VALUES (1, ?), (2, ?)').bind(ADMIN_TOKEN, VIEWER_TOKEN),
+      db.prepare('INSERT INTO sessions (user_id, token, token_hashed) VALUES (1, ?, 1), (2, ?, 1)')
+        .bind(await sha256Hex(ADMIN_TOKEN), await sha256Hex(VIEWER_TOKEN)),
     ]);
 
     async function request(method, urlPath, body, { as = 'admin', headers = {} } = {}) {

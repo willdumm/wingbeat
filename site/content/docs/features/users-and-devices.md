@@ -11,7 +11,8 @@ weight: 8
 There's no public sign-up. Admins generate an invite link (Settings → Admin →
 Users → Invite someone) for a name and a role (**Admin** or **Viewer**);
 opening the link in a browser sets up that device's session. Invite links
-expire after 24 hours.
+expire after 7 days and can be used once. A sign-in link for adding another device
+(Settings → Devices) is single-use and expires after 15 minutes.
 
 ## Roles
 

@@ -8,7 +8,7 @@ import { geocodePendingPoints, geocodeLivePoint, invalidateNamedPointsCache, com
 import { haversineMiles, SPEED_THRESHOLD_KMH } from './geo';
 import { dashboardHTML } from './dashboard';
 import { analyticsHTML } from './analytics';
-import { generateToken, deviceNameFromUA, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
+import { generateToken, sha256Hex, deviceNameFromUA, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
 import { loadSettings, invalidateSettingsCache } from './settings';
 import { keyedBasemapPreset, readEnvSecret, substituteTileUrl } from './shared/map-controls';
 import { lookupTileMetadata, sanitizeAttribution } from './tile-metadata';
@@ -16,11 +16,47 @@ import { MAX_DUTY_DAYS_PER_REQUEST, MAX_FLIGHT_TEXT_LENGTH, MAX_DUTY_NOTE_LENGTH
 
 const SESSION_COOKIE = 'session';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 365;
+// The server enforces expiry: a session unused for this long is rejected and deleted.
+const SESSION_IDLE_SECS = 90 * 24 * 3600;
+// last_seen_at is refreshed on authenticated requests at most this often.
+const SESSION_TOUCH_SECS = 3600;
+const DEVICE_LINK_TTL_SECS = 15 * 60;
 
 type AuthUser = { id: number; name: string; role: string; sessionId: number; device_name: string | null };
 type Variables = { user: AuthUser; db: D1Database; tenant: Tenant; cspNonce: string };
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+type SessionLookup = { id: number; user_id: number; name: string; role: string; device_name: string | null; last_seen_at: number; token_hashed: number };
+
+// Finds the live session for a cookie value. New rows store sha256(cookie) with
+// token_hashed = 1; legacy rows hold the raw cookie with token_hashed = 0. The token_hashed
+// condition keeps a hash read from the DB from working as a cookie. Idle-expired sessions
+// are deleted and reported as absent; legacy rows are upgraded in place.
+async function lookupSession(c: Context<{ Bindings: Env; Variables: Variables }>, raw: string): Promise<SessionLookup | null> {
+  const hash = await sha256Hex(raw);
+  const db = c.var.db;
+  const row = await db.prepare(
+    `SELECT s.id, s.user_id, u.name, u.role, s.device_name, s.last_seen_at, s.token_hashed
+     FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE (s.token = ?1 AND s.token_hashed = 1) OR (s.token = ?2 AND s.token_hashed = 0)`
+  ).bind(hash, raw).first<SessionLookup>();
+  if (!row) return null;
+  const now = Math.floor(Date.now() / 1000);
+  if (now - row.last_seen_at > SESSION_IDLE_SECS) {
+    await db.prepare('DELETE FROM sessions WHERE id = ?').bind(row.id).run();
+    return null;
+  }
+  const writes: Promise<unknown>[] = [];
+  if (row.token_hashed === 0) {
+    writes.push(db.prepare('UPDATE sessions SET token = ?, token_hashed = 1 WHERE id = ? AND token_hashed = 0').bind(hash, row.id).run());
+  }
+  if (now - row.last_seen_at > SESSION_TOUCH_SECS) {
+    writes.push(db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?').bind(now, row.id).run());
+  }
+  if (writes.length) c.executionCtx.waitUntil(Promise.all(writes));
+  return row;
+}
 
 const requireAdmin: MiddlewareHandler<{ Bindings: Env; Variables: Variables }> = async (c, next) => {
   if (c.get('user').role !== 'admin') return c.json({ error: 'Forbidden' }, 403);
@@ -240,11 +276,7 @@ app.use('*', async (c, next) => {
 
   const token = getCookie(c, SESSION_COOKIE);
   if (token) {
-    const row = await c.var.db.prepare(
-      `SELECT s.id, s.user_id, u.name, u.role, s.device_name
-       FROM sessions s JOIN users u ON u.id = s.user_id
-       WHERE s.token = ?`
-    ).bind(token).first<{ id: number; user_id: number; name: string; role: string; device_name: string | null }>();
+    const row = await lookupSession(c, token);
     if (row) {
       c.set('user', { id: row.user_id, name: row.name, role: row.role, sessionId: row.id, device_name: row.device_name });
       return next();
@@ -281,7 +313,10 @@ app.get('/login', async (c) => {
 app.post('/logout', async (c) => {
   const token = getCookie(c, SESSION_COOKIE);
   if (token) {
-    await c.var.db.prepare('DELETE FROM sessions WHERE token = ?').bind(token).run();
+    const hash = await sha256Hex(token);
+    await c.var.db.prepare(
+      'DELETE FROM sessions WHERE (token = ? AND token_hashed = 1) OR (token = ? AND token_hashed = 0)'
+    ).bind(hash, token).run();
   }
   c.header('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/`);
   return c.redirect('/login');
@@ -294,7 +329,7 @@ app.post('/logout', async (c) => {
 async function hasSession(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<boolean> {
   const token = getCookie(c, SESSION_COOKIE);
   if (!token) return false;
-  return (await c.var.db.prepare('SELECT 1 FROM sessions WHERE token = ?').bind(token).first()) !== null;
+  return (await lookupSession(c, token)) !== null;
 }
 
 app.get('/join/:token', async (c) => {
@@ -310,8 +345,8 @@ app.get('/join/:token', async (c) => {
   if (row.expires_at < Math.floor(Date.now() / 1000)) {
     return c.html(joinErrorHTML('This link has expired. Ask an admin for a new one.', appName), 410);
   }
-  if (row.type === 'invite' && row.used) {
-    return c.html(joinErrorHTML('This invite link has already been used.', appName), 410);
+  if (row.used) {
+    return c.html(joinErrorHTML(row.type === 'invite' ? 'This invite link has already been used.' : 'This sign-in link has already been used.', appName), 410);
   }
 
   if (row.type === 'invite') {
@@ -337,34 +372,36 @@ app.post('/join/:token', async (c) => {
   if (row.expires_at < Math.floor(Date.now() / 1000)) {
     return c.html(joinErrorHTML('This link has expired.', appName), 410);
   }
-  if (row.type === 'invite' && row.used) {
-    return c.html(joinErrorHTML('This invite link has already been used.', appName), 410);
+  if (row.used) {
+    return c.html(joinErrorHTML(row.type === 'invite' ? 'This invite link has already been used.' : 'This sign-in link has already been used.', appName), 410);
   }
 
   const ua = c.req.header('User-Agent') ?? '';
   const deviceName = deviceNameFromUA(ua);
   const sessionToken = generateToken();
+  const sessionHash = await sha256Hex(sessionToken);
+  const now = Math.floor(Date.now() / 1000);
 
+  // One D1 batch (a single transaction): the conditional consume goes first and every
+  // later statement is guarded by changes() = 1, so a lost race inserts nothing and a
+  // failure can't burn the link without creating the session (or the account).
+  let batch;
   if (row.type === 'invite') {
-    const markResult = await c.var.db.prepare(
-      'UPDATE invite_tokens SET used = 1 WHERE id = ? AND used = 0'
-    ).bind(row.id).run();
-
-    if (markResult.meta.changes === 0) {
-      return c.html(joinErrorHTML('This invite link has already been used.', appName), 410);
-    }
-
-    const userResult = await c.var.db.prepare(
-      'INSERT INTO users (name, role) VALUES (?, ?)'
-    ).bind(row.invited_name!, row.invited_role!).run();
-    const newUserId = userResult.meta.last_row_id;
-    await c.var.db.prepare(
-      'INSERT INTO sessions (user_id, token, device_name) VALUES (?, ?, ?)'
-    ).bind(newUserId, sessionToken, deviceName).run();
+    batch = await c.var.db.batch([
+      c.var.db.prepare('UPDATE invite_tokens SET used = 1 WHERE id = ? AND used = 0 AND expires_at >= ?').bind(row.id, now),
+      c.var.db.prepare('INSERT INTO users (name, role) SELECT ?, ? WHERE changes() = 1').bind(row.invited_name!, row.invited_role!),
+      c.var.db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT last_insert_rowid(), ?, 1, ? WHERE changes() = 1')
+        .bind(sessionHash, deviceName),
+    ]);
   } else {
-    await c.var.db.prepare(
-      'INSERT INTO sessions (user_id, token, device_name) VALUES (?, ?, ?)'
-    ).bind(row.user_id!, sessionToken, deviceName).run();
+    batch = await c.var.db.batch([
+      c.var.db.prepare('UPDATE invite_tokens SET used = 1 WHERE id = ? AND used = 0 AND expires_at >= ?').bind(row.id, now),
+      c.var.db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT ?, ?, 1, ? WHERE changes() = 1')
+        .bind(row.user_id!, sessionHash, deviceName),
+    ]);
+  }
+  if (batch[0].meta.changes !== 1) {
+    return c.html(joinErrorHTML(row.type === 'invite' ? 'This invite link has already been used.' : 'This sign-in link has already been used.', appName), 410);
   }
 
   c.header('Set-Cookie', `${SESSION_COOKIE}=${sessionToken}; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_MAX_AGE}; Path=/`);
@@ -485,15 +522,22 @@ app.patch('/api/me/sessions/:id', async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid session id' }, 400);
 
-  const body = await c.req.json<{ device_name?: string }>();
-  if (body.device_name === undefined) return c.json({ error: 'device_name is required' }, 400);
+  const body = await c.req.json<{ device_name?: unknown }>().catch(() => null);
+  if (!body || typeof body !== 'object') return c.json({ error: 'Invalid JSON body' }, 400);
+  // null or an empty name clears it (the settings UI sends '' to clear).
+  let deviceName: string | null;
+  if (body.device_name === null) deviceName = null;
+  else if (typeof body.device_name === 'string') {
+    deviceName = body.device_name.trim() || null;
+    if (deviceName && deviceName.length > 60) return c.json({ error: 'device_name must be 1-60 characters' }, 400);
+  } else return c.json({ error: 'device_name must be a string or null' }, 400);
 
   const existing = await c.var.db.prepare('SELECT id FROM sessions WHERE id = ? AND user_id = ?')
     .bind(id, u.id).first();
   if (!existing) return c.json({ error: 'Session not found' }, 404);
 
   await c.var.db.prepare('UPDATE sessions SET device_name = ? WHERE id = ?')
-    .bind(body.device_name || null, id).run();
+    .bind(deviceName, id).run();
   return c.json({ ok: true });
 });
 
@@ -512,7 +556,7 @@ app.delete('/api/me/sessions/:id', async (c) => {
 
 app.post('/api/me/device-link', async (c) => {
   const u = c.get('user');
-  const expiresAt = Math.floor(Date.now() / 1000) + 24 * 3600;
+  const expiresAt = Math.floor(Date.now() / 1000) + DEVICE_LINK_TTL_SECS;
   const token = generateToken();
   await c.var.db.prepare(
     `INSERT INTO invite_tokens (token, type, user_id, expires_at) VALUES (?, 'device_link', ?, ?)`
@@ -546,9 +590,15 @@ app.delete('/api/users/:id', requireAdmin, async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid user id' }, 400);
 
-  const target = await c.var.db.prepare('SELECT id FROM users WHERE id = ?')
-    .bind(id).first();
+  const target = await c.var.db.prepare('SELECT id, role, is_env_admin FROM users WHERE id = ?')
+    .bind(id).first<{ id: number; role: string; is_env_admin: number }>();
   if (!target) return c.json({ error: 'User not found' }, 404);
+  if (id === c.get('user').id) return c.json({ error: 'You cannot delete your own account' }, 400);
+  if (target.is_env_admin) return c.json({ error: 'The shared account cannot be deleted' }, 400);
+  if (target.role === 'admin') {
+    const admins = await c.var.db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").first<{ n: number }>();
+    if ((admins?.n ?? 0) <= 1) return c.json({ error: 'Cannot delete the last admin' }, 409);
+  }
 
   await c.var.db.prepare('DELETE FROM users WHERE id = ?').bind(id).run();
   return c.json({ ok: true });
@@ -568,17 +618,22 @@ app.get('/api/invites', requireAdmin, async (c) => {
 });
 
 app.post('/api/invites', requireAdmin, async (c) => {
-  const body = await c.req.json<{ name?: string; role?: string; expires_in_hours?: number }>();
-  if (!body.name) return c.json({ error: 'name is required' }, 400);
-  if (!body.role || !['admin', 'viewer'].includes(body.role)) {
+  const body = await c.req.json<{ name?: unknown; role?: unknown; expires_in_hours?: unknown }>().catch(() => null);
+  if (!body || typeof body !== 'object') return c.json({ error: 'Invalid JSON body' }, 400);
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (name.length < 1 || name.length > 100) return c.json({ error: 'name must be 1-100 characters' }, 400);
+  if (typeof body.role !== 'string' || !['admin', 'viewer'].includes(body.role)) {
     return c.json({ error: 'role must be admin or viewer' }, 400);
   }
-  const expiresInHours = body.expires_in_hours ?? 7 * 24;
-  const expiresAt = Math.floor(Date.now() / 1000) + expiresInHours * 3600;
+  const expiresInHours = body.expires_in_hours === undefined ? 7 * 24 : body.expires_in_hours;
+  if (typeof expiresInHours !== 'number' || !Number.isFinite(expiresInHours) || expiresInHours < 1 || expiresInHours > 720) {
+    return c.json({ error: 'expires_in_hours must be a number from 1 to 720' }, 400);
+  }
+  const expiresAt = Math.floor(Date.now() / 1000) + Math.floor(expiresInHours * 3600);
   const token = generateToken();
   await c.var.db.prepare(
     `INSERT INTO invite_tokens (token, type, invited_name, invited_role, expires_at) VALUES (?, 'invite', ?, ?, ?)`
-  ).bind(token, body.name, body.role, expiresAt).run();
+  ).bind(token, name, body.role, expiresAt).run();
   return c.json({ url: `/join/${token}`, token });
 });
 

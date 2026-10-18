@@ -2540,7 +2540,7 @@ export function settingsModalScript(): string {
         linkTitle.textContent = 'Add another device';
         const linkDesc = document.createElement('span');
         linkDesc.className = 'settings-aircraft-sub';
-        linkDesc.textContent = 'Get a sign-in link valid for 24 hours to add another device.';
+        linkDesc.textContent = 'Get a sign-in link valid for 15 minutes to add another device.';
         linkInfo.appendChild(linkTitle);
         linkInfo.appendChild(linkDesc);
         const linkActions = document.createElement('div');
@@ -2617,7 +2617,7 @@ export function settingsModalScript(): string {
           const actions = row.querySelector('.settings-aircraft-actions');
           actions.style.display = 'none';
           row.classList.add('editing');
-          const card = settingsCreateLinkPanel(url, 'Sign-in link — valid for 24 hours', () => {
+          const card = settingsCreateLinkPanel(url, 'Sign-in link — valid for 15 minutes', () => {
             card.remove();
             actions.style.display = '';
             row.classList.remove('editing');
