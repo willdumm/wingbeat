@@ -148,19 +148,44 @@ app.use('*', async (c, next) => {
 
 // ── Auth middleware ───────────────────────────────────────────────────────────
 
+/** Minimum length of POLLER_SECRET; a shorter (or missing) secret disables the admin API. */
+const MIN_POLLER_SECRET_LENGTH = 16;
+
+/** SHA-256 digest of a string, so two values of any length compare in constant time. */
+function sha256(text: string): Promise<ArrayBuffer> {
+  return crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+}
+
+/**
+ * Bearer-token gate for the operator-only /api/admin/* routes. Fails closed when
+ * POLLER_SECRET is unset or too short, and compares SHA-256 digests in constant time.
+ */
+const requireBearer: MiddlewareHandler<{ Bindings: Env; Variables: Variables }> = async (c, next) => {
+  const secret: unknown = c.env.POLLER_SECRET;
+  if (typeof secret !== 'string' || secret.length < MIN_POLLER_SECRET_LENGTH) {
+    console.error(`POLLER_SECRET is unset or shorter than ${MIN_POLLER_SECRET_LENGTH} characters; admin API disabled`);
+    return c.text('Admin API unavailable', 503);
+  }
+  const auth = c.req.header('Authorization');
+  if (!auth) return c.text('Unauthorized', 401);
+  const [given, expected] = await Promise.all([sha256(auth), sha256(`Bearer ${secret}`)]);
+  if (!crypto.subtle.timingSafeEqual(given, expected)) return c.text('Unauthorized', 401);
+  return next();
+};
+
+// c.req.path is Hono's decoded path (the one its router matches on), so `/api/%61dmin/...`
+// is seen here as the admin route it will be dispatched to. Don't use
+// new URL(c.req.url).pathname for routing decisions: it keeps percent-encoding.
+const isAdminPath = (path: string) => path === '/api/admin' || path.startsWith('/api/admin/');
+
 app.use('*', async (c, next) => {
-  const path = new URL(c.req.url).pathname;
+  const path = c.req.path;
 
   if (path === '/login' || path === '/location') return next();
   if (path.startsWith('/join/')) return next();
 
-  if (path.startsWith('/api/admin')) {
-    const auth = c.req.header('Authorization');
-    if (!auth || auth !== `Bearer ${c.env.POLLER_SECRET}`) {
-      return c.text('Unauthorized', 401);
-    }
-    return next();
-  }
+  // Admin routes take the bearer token, never a session cookie.
+  if (isAdminPath(path)) return requireBearer(c, next);
 
   const token = getCookie(c, SESSION_COOKIE);
   if (token) {
@@ -1948,12 +1973,30 @@ app.put('/api/pilots/:id', requireAdmin, async (c) => {
 
 // ── Admin routes ──────────────────────────────────────────────────────────────
 
+// Registered with the router itself (defense in depth): whatever the global middleware
+// above decides, a route under /api/admin/ never runs without the bearer token.
+app.use('/api/admin/*', requireBearer);
+
+/** The optional ?tracker= param: null when absent, undefined when present but not an integer. */
+function trackerQuery(raw: string | undefined): number | null | undefined {
+  if (raw === undefined) return null;
+  return /^\d{1,15}$/.test(raw) ? parseInt(raw, 10) : undefined;
+}
+
+const BAD_TRACKER = { error: 'tracker must be an integer' };
+
 app.post('/api/admin/bootstrap', async (c) => {
-  let body: { name?: string; expires_in_hours?: number } = {};
+  let body: { name?: unknown; expires_in_hours?: unknown } = {};
   try { body = await c.req.json(); } catch { /* no body */ }
-  const name = body.name ?? 'Admin';
-  const expiresInHours = body.expires_in_hours ?? 24;
-  const expiresAt = Math.floor(Date.now() / 1000) + expiresInHours * 3600;
+  if (body === null || typeof body !== 'object') return c.json({ error: 'Invalid body' }, 400);
+  const nameRaw = body.name === undefined ? 'Admin' : body.name;
+  const name = typeof nameRaw === 'string' ? nameRaw.trim() : '';
+  if (name.length < 1 || name.length > 100) return c.json({ error: 'name must be 1-100 characters' }, 400);
+  const expiresInHours = body.expires_in_hours === undefined ? 24 : body.expires_in_hours;
+  if (typeof expiresInHours !== 'number' || !Number.isFinite(expiresInHours) || expiresInHours < 1 || expiresInHours > 168) {
+    return c.json({ error: 'expires_in_hours must be a number from 1 to 168' }, 400);
+  }
+  const expiresAt = Math.floor(Date.now() / 1000) + Math.floor(expiresInHours * 3600);
   const token = generateToken();
   await c.var.db.prepare(
     `INSERT INTO invite_tokens (token, type, invited_name, invited_role, expires_at) VALUES (?, 'invite', ?, 'admin', ?)`
@@ -1962,9 +2005,9 @@ app.post('/api/admin/bootstrap', async (c) => {
 });
 
 app.post('/api/admin/wipe-points', async (c) => {
-  const trackerParam = c.req.query('tracker');
-  const trackerId = trackerParam ? parseInt(trackerParam, 10) : null;
-  if (trackerId !== null && !isNaN(trackerId)) {
+  const trackerId = trackerQuery(c.req.query('tracker'));
+  if (trackerId === undefined) return c.json(BAD_TRACKER, 400);
+  if (trackerId !== null) {
     await c.var.db.batch([
       c.var.db.prepare('DELETE FROM point_flights WHERE flight_id IN (SELECT id FROM flights WHERE tracker_id = ?)').bind(trackerId),
       c.var.db.prepare('DELETE FROM flights WHERE tracker_id = ?').bind(trackerId),
@@ -1981,9 +2024,9 @@ app.post('/api/admin/wipe-points', async (c) => {
 });
 
 app.post('/api/admin/resegment', async (c) => {
-  const trackerParam = c.req.query('tracker');
-  const trackerId = trackerParam ? parseInt(trackerParam, 10) : null;
-  if (trackerId !== null && !isNaN(trackerId)) {
+  const trackerId = trackerQuery(c.req.query('tracker'));
+  if (trackerId === undefined) return c.json(BAD_TRACKER, 400);
+  if (trackerId !== null) {
     await resegment(c.var.db, trackerId);
   } else {
     const { results } = await c.var.db.prepare(
@@ -1999,17 +2042,16 @@ app.post('/api/admin/resegment', async (c) => {
 
 app.post('/api/admin/poll', async (c) => {
   const geocode = c.req.query('geocode') === '1';
-  const trackerParam = c.req.query('tracker');
-  const trackerId = trackerParam ? parseInt(trackerParam, 10) : null;
-  if (trackerId !== null && isNaN(trackerId)) return c.json({ error: 'tracker must be an integer' }, 400);
+  const trackerId = trackerQuery(c.req.query('tracker'));
+  if (trackerId === undefined) return c.json(BAD_TRACKER, 400);
   const inserted = await pollAllActiveForce(c.var.tenant, trackerId, undefined, { geocode });
   return c.json({ ok: true, inserted });
 });
 
 app.post('/api/admin/geocode-pending', async (c) => {
-  const trackerParam = c.req.query('tracker');
-  const trackerId = trackerParam ? parseInt(trackerParam, 10) : null;
-  if (trackerId !== null && !isNaN(trackerId)) {
+  const trackerId = trackerQuery(c.req.query('tracker'));
+  if (trackerId === undefined) return c.json(BAD_TRACKER, 400);
+  if (trackerId !== null) {
     c.executionCtx.waitUntil(geocodePendingPoints(c.var.tenant, trackerId, 12));
   } else {
     const { results } = await c.var.db.prepare(
@@ -2023,9 +2065,9 @@ app.post('/api/admin/geocode-pending', async (c) => {
 });
 
 app.post('/api/admin/geocode-live', async (c) => {
-  const trackerParam = c.req.query('tracker');
-  const trackerId = trackerParam ? parseInt(trackerParam, 10) : null;
-  if (trackerId !== null && !isNaN(trackerId)) {
+  const trackerId = trackerQuery(c.req.query('tracker'));
+  if (trackerId === undefined) return c.json(BAD_TRACKER, 400);
+  if (trackerId !== null) {
     c.executionCtx.waitUntil(geocodeLivePoint(c.var.tenant, trackerId));
   } else {
     const { results } = await c.var.db.prepare(
@@ -2049,9 +2091,9 @@ app.post('/api/admin/backfill', async (c) => {
   const toDate = d2Str ? parseDateParam(d2Str) : undefined;
   if (toDate === null) return c.json({ error: 'd2 must be a date (YYYY-MM-DD)' }, 400);
 
-  const trackerParam = c.req.query('tracker');
-  const trackerId = trackerParam ? parseInt(trackerParam, 10) : null;
-  const inserted = await pollAllActiveForce(c.var.tenant, trackerId ?? null, fromDate, { toDate });
+  const trackerId = trackerQuery(c.req.query('tracker'));
+  if (trackerId === undefined) return c.json(BAD_TRACKER, 400);
+  const inserted = await pollAllActiveForce(c.var.tenant, trackerId, fromDate, { toDate });
   return c.json({ ok: true, inserted, from: d1Str, to: d2Str ?? null });
 });
 

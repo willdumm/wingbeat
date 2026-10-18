@@ -60,11 +60,13 @@ export function splitSql(sql) {
  * Admin") and a viewer (user 2) signed in. Call dispose() when done (it stops workerd).
  *
  * Returns { db, request, sql, all, first, dispose, migrations }:
- *   request(method, path, body?, { as: 'admin' | 'viewer' })  → { status, body }
+ *   request(method, path, body?, { as: 'admin' | 'viewer' | null, headers })  → { status, body }
+ *                                         (as: null sends no session cookie; headers are added to the request)
+ * startWorker({ bindings }) overrides Worker bindings (a value of undefined leaves one unset).
  *   db                                    the D1 binding, for seeding and checking rows
  *   all(sql, ...params) / first(sql, ...params) / run(sql, ...params)  shorthands on it
  */
-export async function startWorker() {
+export async function startWorker({ bindings: overrides = {} } = {}) {
   const bundle = await build({
     entryPoints: [path.join(ROOT, 'src/index.ts')],
     bundle: true,
@@ -75,12 +77,15 @@ export async function startWorker() {
     loader: { '.svg': 'text' },
     logLevel: 'warning',
   });
+  // A binding overridden to undefined is left unset.
+  const bindings = { CUSTOMER_ROUTING: JSON.stringify({ localhost: 'DB' }), POLLER_SECRET: 'test-secret', ...overrides };
+  for (const k of Object.keys(bindings)) if (bindings[k] === undefined) delete bindings[k];
   const mf = new Miniflare({
     modules: true,
     script: bundle.outputFiles[0].text,
     compatibilityDate: '2024-11-01',
     d1Databases: ['DB'],
-    bindings: { CUSTOMER_ROUTING: JSON.stringify({ localhost: 'DB' }), POLLER_SECRET: 'test-secret' },
+    bindings,
   });
   try {
     const db = await mf.getD1Database('DB');
@@ -94,12 +99,13 @@ export async function startWorker() {
       db.prepare('INSERT INTO sessions (user_id, token) VALUES (1, ?), (2, ?)').bind(ADMIN_TOKEN, VIEWER_TOKEN),
     ]);
 
-    async function request(method, urlPath, body, { as = 'admin' } = {}) {
+    async function request(method, urlPath, body, { as = 'admin', headers = {} } = {}) {
       const resp = await mf.dispatchFetch('http://localhost' + urlPath, {
         method,
         headers: {
-          cookie: 'session=' + (as === 'admin' ? ADMIN_TOKEN : VIEWER_TOKEN),
+          ...(as === null ? {} : { cookie: 'session=' + (as === 'admin' ? ADMIN_TOKEN : VIEWER_TOKEN) }),
           ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+          ...headers,
         },
         body: body === undefined ? undefined : JSON.stringify(body),
         redirect: 'manual',
