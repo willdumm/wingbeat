@@ -244,6 +244,16 @@ export function showcasePageStyles(): string {
       text-wrap: balance;
       text-align: center;
     }
+    .sc-hero h1:has(+ .sc-hero-subtitle) { margin-bottom: var(--space-3); }
+    .sc-hero-subtitle {
+      font-size: var(--size-3xl);
+      line-height: var(--leading-snug);
+      font-weight: var(--weight-semibold);
+      color: var(--text-secondary);
+      margin: 0 0 var(--space-6);
+      text-wrap: balance;
+      text-align: center;
+    }
     .sc-hero-lede {
       font-size: var(--size-lg);
       line-height: var(--leading-relaxed);
@@ -258,6 +268,7 @@ export function showcasePageStyles(): string {
     @media (max-width: 640px) {
       .sc-hero-inner { padding-bottom: var(--space-10); }
       .sc-hero h1 { font-size: var(--size-3xl); }
+      .sc-hero-subtitle { font-size: var(--size-xl); margin-bottom: var(--space-5); }
       .sc-hero-lede { font-size: var(--size-base); }
       .sc-hero-demo { margin: 0 0 var(--space-5); }
     }

@@ -261,10 +261,14 @@ function showcaseDriverScript(): string {
 
     // Leaflet only re-measures on window resize; a frame can change size on its own
     // (layout breakpoints, the sidebar drawer), so re-measure whenever the container does.
-    function watchMapSize(mapObj) {
+    function watchMapSize(mapObj, onResize) {
       const el = mapObj.getContainer();
       // Skip while hidden (the stream graph view): a zero-size map breaks the heat layers.
-      new ResizeObserver(debounce(() => { if (el.offsetWidth && el.offsetHeight) mapObj.invalidateSize(); }, 50)).observe(el);
+      new ResizeObserver(debounce(() => {
+        if (!el.offsetWidth || !el.offsetHeight) return;
+        mapObj.invalidateSize();
+        if (onResize) onResize();
+      }, 50)).observe(el);
     }
 
     function debounce(fn, ms) {
@@ -540,9 +544,20 @@ function showcaseDriverScript(): string {
       const root = attachDemo(host, 'analytics', DEMO_MARKUP.analytics);
       await leafletCssReady(root);
 
-      const analyticsMap = L.map(root.getElementById('analytics-map'), { zoomControl: false, attributionControl: false, scrollWheelZoom: false })
+      // zoomSnap 0: fit the data tightly, between whole zoom levels; +/- still step by 1.
+      const analyticsMap = L.map(root.getElementById('analytics-map'), { zoomControl: false, attributionControl: false, scrollWheelZoom: false, zoomSnap: 0 })
         .setView([window.APP_SETTINGS.mapDefaultLat, window.APP_SETTINGS.mapDefaultLng], window.APP_SETTINGS.mapDefaultZoom);
-      watchMapSize(analyticsMap);
+      // Frame where the flights end. Re-framed on resize until the visitor pans or zooms.
+      const DATA_BOUNDS = L.latLngBounds(COMPLETED_FLIGHTS.filter(f => f.end_lat != null).map(f => [f.end_lat, f.end_lon]));
+      let framing = false, userMoved = false;
+      function frameData() {
+        if (userMoved) return;
+        framing = true;
+        analyticsMap.fitBounds(DATA_BOUNDS, { padding: [12, 12], animate: false });
+        framing = false;
+      }
+      analyticsMap.on('dragstart zoomstart', () => { if (!framing) userMoved = true; });
+      watchMapSize(analyticsMap, frameData);
 
       ${sharedTileLayerDefs('analyticsMap')}
       ${sharedMapControlsScripts('analyticsMap', '', 'tileLayers', 'currentTileLayer', 'root')}
@@ -644,8 +659,8 @@ function showcaseDriverScript(): string {
       });
       analyticsMap.on('zoomend', updateEndpointHeatmap);
 
-      // Frame where the flights go (before the first draw, so fitting doesn't redraw the heat).
-      analyticsMap.fitBounds(L.latLngBounds(COMPLETED_FLIGHTS.filter(f => f.end_lat != null).map(f => [f.end_lat, f.end_lon])), { padding: [30, 30], animate: false });
+      // Frame before the first draw, so fitting doesn't redraw the heat.
+      frameData();
       rerender();
     }
 

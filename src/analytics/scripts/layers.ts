@@ -119,6 +119,7 @@ export function analyticsScriptsLayers(): string {
       legendToggle.addEventListener('click', e => {
         e.stopPropagation();
         const collapsed = root.classList.toggle('collapsed');
+        legendToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
         const chev = legendToggle.querySelector('.chevron');
         if (chev) chev.setAttribute('data-open', collapsed ? 'false' : 'true');
       });

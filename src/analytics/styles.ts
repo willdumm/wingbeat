@@ -288,19 +288,18 @@ export function analyticsStyles(): string {
     /* Card and label visuals: .map-legend-card / .map-legend-label (tileOverlayLegendStyles). */
     .layer-controls-label { margin-bottom: 0.5rem; gap: var(--space-2); }
 
+    /* The whole "Legend ›" heading is the collapse button. */
     .legend-toggle {
-      margin-left: auto;
+      width: 100%;
       background: none;
       border: none;
-      color: var(--text-muted);
       cursor: pointer;
       padding: 0;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
+      text-align: left;
     }
 
-    .legend-toggle:hover .chevron { color: var(--text-secondary); }
+    .legend-toggle .chevron { margin-left: auto; }
+    .legend-toggle:hover, .legend-toggle:hover .chevron { color: var(--text-secondary); }
 
     #layer-controls.collapsed .layer-item,
     #layer-controls.collapsed #heat-weight-toggle { display: none; }

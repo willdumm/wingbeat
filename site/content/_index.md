@@ -37,7 +37,7 @@ footerNote: |-
   Demos on this page use sample data. For custom software solutions like this one, contact Dumm Software LLC at [apps@dummthings.dev](mailto:apps@dummthings.dev).<br />© Dumm Software LLC · Code AGPL-3.0 · Docs CC BY 4.0
 ---
 
-{{< hero title="Simple, customizable aircraft tracking." photo="A yellow and white floatplane taxiing on calm water along a forested shoreline" >}}
+{{< hero title="Wingbeat Flight Tracker" subtitle="Simple, customizable aircraft tracking" photo="A yellow and white floatplane taxiing on calm water along a forested shoreline" >}}
 {{< demo name="status" label="Dashboard status bar showing three aircraft, two in flight" >}}
 
 Wingbeat flight tracker works with the tracking hardware you already use, such as a Garmin inReach. Easily monitor flights on one map, automatically log flight time, and keep track of maintenance schedules and pilot duty time.
@@ -126,16 +126,11 @@ it for any purpose you like.
 Dumm Software LLC sets up Wingbeat for your operation and runs it for you. You get a web address
 for everyone on your team to use on any computer or phone.
 
-{{< plan title="One tracker" price="$25" period="/ month" perks="hosted" >}}
-For a single tracker.
+{{< plan title="Hosted" price="$50" period="/ month" featured="true" perks="hosted"
+    includes="One tracker included | $10 / month for each additional tracker, up to five" >}}
+For one to five trackers.
 
-{{< action href="mailto:wingbeat@dummthings.dev?subject=Wingbeat%20One%20tracker%20plan" style="secondary" icon="mail" name="Contact us about the One tracker plan (email)" >}}Contact us{{< /action >}}
-{{< /plan >}}
-
-{{< plan title="Fleet" price="$100" period="/ month" perks="hosted" featured="true" >}}
-For up to five trackers.
-
-{{< action href="mailto:wingbeat@dummthings.dev?subject=Wingbeat%20Fleet%20plan" icon="mail" name="Contact us about the Fleet plan (email)" >}}Contact us{{< /action >}}
+{{< action href="mailto:wingbeat@dummthings.dev?subject=Wingbeat%20Hosted%20plan" icon="mail" name="Contact us about the Hosted plan (email)" >}}Contact us{{< /action >}}
 {{< /plan >}}
 
 {{< plan title="Larger fleets" price="Contact us" perks="hosted" extra="Pricing and setup for your fleet" >}}

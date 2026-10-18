@@ -1,5 +1,6 @@
 {{- /* A pricing card in a {{< feature >}}. Params: title, price, period (optional),
-       perks="hosted" (list the front matter's hostedPerks), extra (one more perk),
+       includes (perks listed first, separated by " | "), perks="hosted" (then the front
+       matter's hostedPerks), extra (one more perk, listed last),
        featured="true" (highlighted), wide="true" (full-width card below the others, with
        its {{< action >}}s beside the text), id (optional anchor). Inner: the description,
        plus any {{< action >}}s (pinned to the bottom of a regular card). */ -}}
@@ -10,7 +11,8 @@
 {{- $price = print $price "</p>" -}}
 {{- $copy := printf `<h3>%s</h3>%s<div class="sc-plan-desc">%s</div>` (.Get "title") $price $desc -}}
 {{- $perks := slice -}}
-{{- if eq (.Get "perks") "hosted" }}{{ $perks = .Page.Params.hostedPerks }}{{ end -}}
+{{- with .Get "includes" }}{{ range split . " | " }}{{ $perks = $perks | append . }}{{ end }}{{ end -}}
+{{- if eq (.Get "perks") "hosted" }}{{ $perks = $perks | append .Page.Params.hostedPerks }}{{ end -}}
 {{- with .Get "extra" }}{{ $perks = $perks | append . }}{{ end -}}
 {{- $list := "" -}}
 {{- range $perks }}{{ $list = printf `%s<li>%s%s</li>` $list (partial "showcase/icon.html" (dict "name" "check" "size" 16)) ($.Page.RenderString .) }}{{ end -}}

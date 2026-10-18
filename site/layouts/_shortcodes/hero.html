@@ -1,5 +1,6 @@
-{{- /* Home page hero. Params: title, photo (the hero photo's alt text). Inner: the lede,
-       plus an optional {{< demo >}} (shown above the title) and {{< action >}} buttons. */ -}}
+{{- /* Home page hero. Params: title, subtitle (optional, under the
+       title), photo (the hero photo's alt text). Inner: the lede, plus an optional
+       {{< demo >}} (shown above the title) and {{< action >}} buttons. */ -}}
 {{- $lede := .Page.RenderString (dict "display" "block") (trim .InnerDeindent "\n") -}}
 <section class="sc-hero" aria-labelledby="hero-title">
       <div class="sc-hero-photo" role="img" aria-label="{{ .Get "photo" }}"></div>
@@ -9,6 +10,9 @@
           <div class="sc-hero-demo">{{ . }}</div>
           {{- end }}
           <h1 id="hero-title">{{ .Get "title" }}</h1>
+          {{- with .Get "subtitle" }}
+          <p class="sc-hero-subtitle">{{ . }}</p>
+          {{- end }}
           <div class="sc-hero-lede">{{ $lede }}</div>
           {{- with .Store.Get "actions" }}
           <div class="sc-actions">{{ delimit . "" | safeHTML }}</div>

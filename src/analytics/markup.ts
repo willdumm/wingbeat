@@ -104,7 +104,7 @@ export function analyticsViewTabsMarkup(): string {
 export function analyticsLayerControlsMarkup(): string {
   return /* html */ `
   <div id="layer-controls" class="map-legend-card collapsed">
-    <div class="layer-controls-label map-legend-label">Legend<button id="legend-toggle" class="legend-toggle" aria-label="Toggle legend"><span class="chevron" data-open="false">${icon('chevron-right', { size: 14 })}</span></button></div>
+    <button id="legend-toggle" class="layer-controls-label map-legend-label legend-toggle" aria-expanded="false">Legend<span class="chevron" data-open="false">${icon('chevron-right', { size: 14 })}</span></button>
     <div class="layer-item active" data-layer="endpoint-heat">
       <span class="layer-swatch swatch-heat"></span>
       <span>Endpoint heatmap</span>
