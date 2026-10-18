@@ -18,7 +18,7 @@ const SESSION_COOKIE = 'session';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 365;
 
 type AuthUser = { id: number; name: string; role: string; sessionId: number; device_name: string | null };
-type Variables = { user: AuthUser; db: D1Database; tenant: Tenant };
+type Variables = { user: AuthUser; db: D1Database; tenant: Tenant; cspNonce: string };
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -126,6 +126,57 @@ function parseRouting(env: Env): Record<string, string> | null {
 function tenantDb(env: Env, bindingName: string): D1Database | undefined {
   return (env as unknown as Record<string, D1Database | undefined>)[bindingName];
 }
+
+// ── Security headers ──────────────────────────────────────────────────────────
+//
+// Registered first so it wraps every response (including the routing/auth middleware's own
+// 4xx/redirects). HTML responses also get a Content-Security-Policy whose script-src is a
+// per-request nonce: page renderers put `nonce="..."` on every <script> they emit, and the
+// markup/client code uses no inline event-handler attributes, `javascript:` URLs or eval, so
+// nothing else needs to execute inline. 'strict-dynamic' lets those nonced scripts load the
+// SRI-pinned libraries and typst.ts (a dynamic import() in shared/pilot-duty.ts) without
+// allowlisting hosts; the host sources are only a fallback for browsers without it.
+//   - style-src 'unsafe-inline': Leaflet and the app set inline style attributes at runtime.
+//   - img-src https: data: blob:: map tiles/overlays come from arbitrary user-configured hosts.
+//   - connect-src https:: pmtiles range requests, typst wasm/font fetches, tile-metadata hosts.
+//   - 'wasm-unsafe-eval' + 'unsafe-eval': the typst.ts compiler is WebAssembly, and its wasm-bindgen
+//     glue calls `new Function` (js_sys::Function). Nothing else in the app uses eval; remove
+//     'unsafe-eval' if the PDF export ever moves to a build without it.
+//   - Referrer-Policy strict-origin-when-cross-origin: browsers fetch the keyless basemap tiles
+//     (OpenTopoMap, USGS, Esri) directly and some providers want a Referer, so the origin is
+//     still sent cross-origin; path and query (e.g. /join/<token>) never leave the site.
+function buildCsp(nonce: string): string {
+  return [
+    "default-src 'self'",
+    `script-src 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval' 'unsafe-eval' https://unpkg.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net`,
+    "style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com",
+    "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net",
+    "img-src 'self' https: data: blob:",
+    "connect-src 'self' https:",
+    "worker-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+  ].join('; ');
+}
+
+app.use('*', async (c, next) => {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  const nonce = btoa(String.fromCharCode(...bytes));
+  c.set('cspNonce', nonce);
+  await next();
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('X-Frame-Options', 'DENY');
+  c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+  c.header('Permissions-Policy', 'accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()');
+  if (new URL(c.req.url).protocol === 'https:') {
+    c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  if ((c.res.headers.get('Content-Type') ?? '').startsWith('text/html')) {
+    c.header('Content-Security-Policy', buildCsp(nonce));
+  }
+});
 
 app.use('*', async (c, next) => {
   const routing = parseRouting(c.env);
@@ -325,12 +376,12 @@ app.post('/join/:token', async (c) => {
 app.get('/', async (c) => {
   const settings = await loadSettings(c.var.tenant);
   c.executionCtx.waitUntil(pollAllActive(c.var.tenant));
-  return c.html(dashboardHTML(settings, c.env));
+  return c.html(dashboardHTML(settings, c.env, c.get('cspNonce')));
 });
 
 app.get('/analytics', async (c) => {
   const settings = await loadSettings(c.var.tenant);
-  return c.html(analyticsHTML(settings, c.env));
+  return c.html(analyticsHTML(settings, c.env, c.get('cspNonce')));
 });
 
 app.get('/location', async (c) => {
@@ -389,10 +440,17 @@ app.get('/api/tiles/:providerId/:z/:x/:yFile', async (c) => {
 
   // Only the upstream's image bytes and content-type cross back to the client — never
   // the key, and never any Carto-specific response header.
+  // Never relay a non-image type (with nosniff, a mislabelled body is a dead tile anyway).
+  const contentType = upstream.headers.get('Content-Type') || 'image/png';
+  if (!/^image\/(png|jpe?g|webp|gif)\b/i.test(contentType)) {
+    console.error(`[tiles] ${preset.id} upstream content-type ${contentType}`);
+    return c.text('Bad Gateway', 502);
+  }
   return new Response(upstream.body, {
     status: 200,
     headers: {
-      'Content-Type': upstream.headers.get('Content-Type') || 'image/png',
+      'Content-Type': contentType,
+      'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'public, max-age=604800, immutable',
     },
   });
@@ -554,7 +612,7 @@ app.get('/api/flights', async (c) => {
     c.var.db.prepare('SELECT COUNT(*) as count FROM flights WHERE tracker_id = ?').bind(trackerId).first<{ count: number }>(),
   ]);
 
-  c.header('Cache-Control', 'public, max-age=60');
+  c.header('Cache-Control', 'private, max-age=60');
   return c.json({
     flights: flightsResult.results,
     total: totalResult?.count ?? 0,
@@ -2109,7 +2167,11 @@ interface AnalyticPointRow { lat: number; lon: number; flight_id: number; }
 app.get('/api/analytics/flights', async (c) => {
   const cacheKey = new Request(c.req.url);
   const cached = await caches.default.match(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    const hit = new Response(cached.body, cached);
+    hit.headers.set('Cache-Control', 'private, max-age=172800');
+    return hit;
+  }
 
   const result = await c.var.db.prepare(`
     SELECT f.id, f.start_time, f.end_time,
@@ -2122,10 +2184,14 @@ app.get('/api/analytics/flights', async (c) => {
     ORDER BY f.start_time ASC
   `).all<AnalyticFlightRow>();
 
-  c.header('Cache-Control', 'public, max-age=172800');
-  const response = c.json({ flights: result.results });
-  c.executionCtx.waitUntil(caches.default.put(cacheKey, response.clone()));
-  return response;
+  // Browsers get `private`; the Workers Cache API skips `private` responses, so the
+  // copy stored under cacheKey (a server-side cache, keyed per tenant) says `public`.
+  const body = { flights: result.results };
+  const cacheCopy = c.json(body);
+  cacheCopy.headers.set('Cache-Control', 'public, max-age=172800');
+  c.executionCtx.waitUntil(caches.default.put(cacheKey, cacheCopy));
+  c.header('Cache-Control', 'private, max-age=172800');
+  return c.json(body);
 });
 
 app.get('/api/analytics/points', async (c) => {
@@ -2140,7 +2206,11 @@ app.get('/api/analytics/points', async (c) => {
 
   const cacheKey = new Request(c.req.url);
   const cached = await caches.default.match(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    const hit = new Response(cached.body, cached);
+    hit.headers.set('Cache-Control', 'private, max-age=172800');
+    return hit;
+  }
 
   const result = await c.var.db.prepare(`
     SELECT p.lat, p.lon, pf.flight_id
@@ -2152,10 +2222,14 @@ app.get('/api/analytics/points', async (c) => {
     ORDER BY pf.flight_id, p.garmin_time ASC
   `).bind(rawStart, rawEnd).all<AnalyticPointRow>();
 
-  c.header('Cache-Control', 'public, max-age=172800');
-  const response = c.json({ points: result.results });
-  c.executionCtx.waitUntil(caches.default.put(cacheKey, response.clone()));
-  return response;
+  // Browsers get `private`; the Workers Cache API skips `private` responses, so the
+  // copy stored under cacheKey (a server-side cache, keyed per tenant) says `public`.
+  const body = { points: result.results };
+  const cacheCopy = c.json(body);
+  cacheCopy.headers.set('Cache-Control', 'public, max-age=172800');
+  c.executionCtx.waitUntil(caches.default.put(cacheKey, cacheCopy));
+  c.header('Cache-Control', 'private, max-age=172800');
+  return c.json(body);
 });
 
 // ── Named points endpoint ─────────────────────────────────────────────────────

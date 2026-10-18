@@ -21,7 +21,7 @@ export function dashboardPageStyles(): string {
   return brandStyles() + iconStyles() + statusStyles() + segmentedControlStyles() + formModalStyles() + flightEditsStyles() + flightEditorStyles() + dashboardStyles();
 }
 
-export function dashboardHTML(settings: AppSettings, env: Env): string {
+export function dashboardHTML(settings: AppSettings, env: Env, nonce: string): string {
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -29,21 +29,21 @@ export function dashboardHTML(settings: AppSettings, env: Env): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>${escapeHtml(settings.app_name)}</title>
   <link rel="icon" href="${logoFaviconHref()}" />
-  <script>${themeInitScript()}</script>
-  <script>${viewportHeightInitScript()}</script>
-  <script>${logoFaviconScript()}</script>
-  <script>${mapLayerColorInitScript()}</script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script src="https://unpkg.com/pmtiles@3/dist/pmtiles.js"></script>
-  <script src="https://unpkg.com/lucide@0.454.0/dist/umd/lucide.js"></script>
+  <script nonce="${nonce}">${themeInitScript()}</script>
+  <script nonce="${nonce}">${viewportHeightInitScript()}</script>
+  <script nonce="${nonce}">${logoFaviconScript()}</script>
+  <script nonce="${nonce}">${mapLayerColorInitScript()}</script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous" />
+  <script nonce="${nonce}" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+  <script nonce="${nonce}" src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU" crossorigin="anonymous"></script>
+  <script nonce="${nonce}" src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js" integrity="sha384-QfbOCebHNw8pQiPAOd2IFee2v2A5VYZxBk0+JGZ5H+3mfzVIp6zsQNkTsfGJot93" crossorigin="anonymous"></script>
+  <script nonce="${nonce}" src="https://unpkg.com/lucide@0.454.0/dist/umd/lucide.js" integrity="sha384-xlHvwOp6tVxLcI04ruwDHJIpPVNUP8eGUUmGzM8wPdz1spvksYyV3MFdMEC6dejr" crossorigin="anonymous"></script>
   <style>${themeFontImport()}${themeVars()}${dashboardPageStyles()}</style>
 </head>
 <body>
-<script>window.APP_SETTINGS=${settingsAsClientObject(settings)};</script>
+<script nonce="${nonce}">window.APP_SETTINGS=${settingsAsClientObject(settings)};</script>
 ${dashboardMarkup(settings.app_name)}
-  <script>${iconRuntimeScript()}${dashboardScripts(env)}</script>
+  <script nonce="${nonce}">${iconRuntimeScript()}${dashboardScripts(env)}</script>
 </body>
 </html>`;
 }

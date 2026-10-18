@@ -555,10 +555,10 @@ export function showcasePageData(appName: string, scriptSrc: string, notificatio
   <script>${logoFaviconScript()}</script>
   <script>${mapLayerColorInitScript()}</script>
   <style>${themeFontImport()}${themeVars()}${brandStyles()}${iconStyles()}${statusStyles()}${segmentedControlStyles()}${showcasePageStyles()}</style>`,
-    scripts: /* html */ `<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
-  <script src="https://unpkg.com/pmtiles@3/dist/pmtiles.js"></script>
-  <script src="https://unpkg.com/lucide@0.454.0/dist/umd/lucide.js"></script>
+    scripts: /* html */ `<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js" integrity="sha384-mFKkGiGvT5vo1fEyGCD3hshDdKmW3wzXW/x+fWriYJArD0R3gawT6lMvLboM22c0" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js" integrity="sha384-QfbOCebHNw8pQiPAOd2IFee2v2A5VYZxBk0+JGZ5H+3mfzVIp6zsQNkTsfGJot93" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/lucide@0.454.0/dist/umd/lucide.js" integrity="sha384-xlHvwOp6tVxLcI04ruwDHJIpPVNUP8eGUUmGzM8wPdz1spvksYyV3MFdMEC6dejr" crossorigin="anonymous"></script>
   <script>${iconRuntimeScript()}</script>
   <script>${showcaseMenuScript()}</script>
   <script src="${scriptSrc}"></script>`,

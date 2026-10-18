@@ -61,7 +61,7 @@ export function splitSql(sql) {
  *
  * Returns { db, request, sql, all, first, dispose, migrations }:
  *   request(method, path, body?, { as: 'admin' | 'viewer' | null, headers })  → { status, body }
- *                                         (as: null sends no session cookie; headers are added to the request)
+ *                                         (as: null sends no session cookie; headers are added to the request; the result also has the response `headers`)
  * startWorker({ bindings }) overrides Worker bindings (a value of undefined leaves one unset).
  *   db                                    the D1 binding, for seeding and checking rows
  *   all(sql, ...params) / first(sql, ...params) / run(sql, ...params)  shorthands on it
@@ -113,7 +113,7 @@ export async function startWorker({ bindings: overrides = {} } = {}) {
       const text = await resp.text();
       let parsed = text;
       try { parsed = JSON.parse(text); } catch { /* not JSON */ }
-      return { status: resp.status, body: parsed };
+      return { status: resp.status, body: parsed, headers: resp.headers };
     }
 
     const stmt = (sql, params) => db.prepare(sql).bind(...params);
