@@ -14,7 +14,7 @@
     "docs:showcase": "node site/scripts/build-showcase.mjs"
   },
   "dependencies": {
-    "hono": "^4.6.0"
+    "hono": "^4.13.13"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260722.1",
