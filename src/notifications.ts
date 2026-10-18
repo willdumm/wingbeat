@@ -1,4 +1,5 @@
 import { Tenant } from './types';
+import { checkPublicHttpsUrl } from './safe-fetch';
 import { loadSettings } from './settings';
 import { toKnots, toFeet, formatLocalDateTime } from './shared/format';
 
@@ -157,15 +158,22 @@ async function sendTarget(tenant: Tenant, target: NotificationTarget, event: Not
 
 async function sendGenericWebhook(tenant: Tenant, target: NotificationTarget, event: NotificationEvent, timezone: string): Promise<void> {
   try {
-    const res = await fetch(target.url, {
+    // Re-checked at send time too: rows saved before the https-only rule may be http://.
+    const check = checkPublicHttpsUrl(target.url, { ownHost: tenant.host });
+    if (!check.ok) throw new Error(check.error);
+    const res = await fetch(check.url.toString(), {
       method: 'POST',
+      redirect: 'manual',
       headers: { 'Content-Type': 'application/json' },
       // title/message are plain-text convenience fields for receivers (Slack/Discord-style
       // incoming webhooks, simple relays, ...) that don't want to parse the structured event.
       body: JSON.stringify({ ...event, title: eventTitle(event), message: eventMessage(event, timezone) }),
       signal: AbortSignal.timeout(10_000),
     });
-    await recordDelivery(tenant, target.id, res.status, null);
+    await res.body?.cancel().catch(() => {});
+    // Redirects aren't followed (the target could bounce us anywhere); a 3xx is a failure.
+    const redirected = res.status >= 300 && res.status < 400;
+    await recordDelivery(tenant, target.id, res.status, redirected ? 'Webhook URL redirected; redirects are not followed' : null);
   } catch (err) {
     await recordDelivery(tenant, target.id, null, String(err).slice(0, 500));
   }

@@ -104,7 +104,7 @@ export interface SampleData {
   /** Minutes after local midnight today that "now" falls at in the schedule. */
   nowMinute: number;
   places: SamplePlace[];
-  trackers: { id: number; name: string; type: string; active: boolean; deleted: boolean; assigned_aircraft: string; assigned_pilot: number }[];
+  trackers: { id: number; name: string; type: string; mapshare_url: string | null; active: boolean; deleted: boolean; assigned_aircraft: string; assigned_pilot: number }[];
   aircraft: { tail_number: string; name: string; active: boolean }[];
   pilots: { id: number; name: string; active: boolean }[];
   flights: SampleFlight[];
@@ -400,7 +400,7 @@ export function buildSampleData(namedPoints: GeoCollection, regions: GeoCollecti
     nowMinute: NOW_MINUTE,
     places,
     trackers: FLEET.map((ac, i) => ({
-      id: i + 1, name: ac.tracker, type: 'inreach', active: true, deleted: false,
+      id: i + 1, name: ac.tracker, type: 'inreach', mapshare_url: `https://share.garmin.com/demo${i + 1}`, active: true, deleted: false,
       assigned_aircraft: ac.tail, assigned_pilot: i + 1,
     })),
     aircraft: FLEET.map((ac) => ({ tail_number: ac.tail, name: ac.name, active: true })),

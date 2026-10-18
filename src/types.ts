@@ -2,7 +2,10 @@ export interface Tracker {
   id: number;
   name: string;
   type: string;
-  source_url: string;
+  /** Admin-only: the feed URL can embed a share id/key, so non-admins never get it. */
+  source_url?: string;
+  /** Human-viewable MapShare page derived from the feed URL (inreach trackers only). */
+  mapshare_url: string | null;
   active: boolean;
   deleted: boolean;
   assigned_aircraft: string | null;

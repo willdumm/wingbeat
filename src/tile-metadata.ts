@@ -6,7 +6,9 @@
 //
 // Runs server-side (GET /api/tile-metadata) because many tileservers allow
 // cross-origin tile images but not cross-origin JSON. That makes this a fetch of a
-// user-supplied URL, so every hop goes through safeFetchUrl().
+// user-supplied URL, so it goes through safeFetch() (src/safe-fetch.ts).
+
+import { checkPublicHttpsUrl, safeFetch } from './safe-fetch';
 
 export interface TileMetadata {
   /** Where the metadata came from, for the form's status line. */
@@ -29,68 +31,26 @@ const ARCGIS_SERVICE = /^(.*\/(?:MapServer|ImageServer))(?:\/tile\/.*)?$/i;
 const TEMPLATE_TOKEN = /\{[a-z]+\}/i;
 const VECTOR_TILE_EXT = /\.(pbf|mvt)(\?|$)/i;
 
-/** Rejects anything but a plain https URL on a public-looking hostname: no IP
- * literals, localhost, single-label names, or private-use TLDs. Workers can't reach a
- * private network anyway, but a hostname check is cheap and keeps the endpoint from
- * being a general-purpose fetch proxy. */
 function safeFetchUrl(raw: string): URL | null {
-  let u: URL;
-  try { u = new URL(raw); } catch { return null; }
-  if (u.protocol !== 'https:' || u.username || u.password) return null;
-  if (u.port && u.port !== '443') return null;
-  const host = u.hostname.toLowerCase();
-  if (host.startsWith('[') || /^[\d.]+$/.test(host)) return null;
-  if (!host.includes('.')) return null;
-  if (/(^|\.)(localhost|local|internal|intranet|home|lan|corp|test|invalid|example)$/.test(host)) return null;
-  return u;
+  const check = checkPublicHttpsUrl(raw);
+  return check.ok ? check.url : null;
 }
 
-/** GETs `raw` and parses it as JSON, following redirects by hand so each hop is
- * re-checked by safeFetchUrl(). Returns null on any failure. */
+/** GETs `raw` and parses it as JSON (redirects re-checked per hop by safeFetch).
+ * Returns null on any failure. */
 async function fetchJson(raw: string): Promise<unknown> {
-  let current = raw;
-  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    const u = safeFetchUrl(current);
-    if (!u) return null;
-    let resp: Response;
-    try {
-      resp = await fetch(u.toString(), {
-        redirect: 'manual',
-        headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
-    } catch {
-      return null;
-    }
-    if (resp.status >= 300 && resp.status < 400) {
-      const loc = resp.headers.get('Location');
-      if (!loc) return null;
-      current = new URL(loc, u).toString();
-      continue;
-    }
-    if (!resp.ok || !resp.body) return null;
-    const text = await readCapped(resp.body);
-    if (text === null) return null;
-    try { return JSON.parse(text); } catch { return null; }
+  try {
+    const resp = await safeFetch(raw, {
+      timeoutMs: FETCH_TIMEOUT_MS,
+      maxBytes: MAX_BODY_BYTES,
+      maxRedirects: MAX_REDIRECTS,
+      headers: { Accept: 'application/json' },
+    });
+    if (!resp.ok) return null;
+    return JSON.parse(resp.text);
+  } catch {
+    return null;
   }
-  return null;
-}
-
-async function readCapped(body: ReadableStream<Uint8Array>): Promise<string | null> {
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > MAX_BODY_BYTES) { await reader.cancel(); return null; }
-    chunks.push(value);
-  }
-  const buf = new Uint8Array(total);
-  let off = 0;
-  for (const c of chunks) { buf.set(c, off); off += c.byteLength; }
-  return new TextDecoder().decode(buf);
 }
 
 /** Fills in the template tokens with fixed values so the URL can be fetched as-is

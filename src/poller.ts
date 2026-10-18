@@ -1,4 +1,5 @@
 import { Tenant, ParsedPoint } from './types';
+import { safeFetch } from './safe-fetch';
 import { runSegmentation, resegment, fetchRecentFlights, LONG_GAP_S } from './segmentation';
 import { geocodePendingPoints, geocodeLivePoint, computeLiveLabel, resolveRefPoint } from './geocoding';
 import { SPEED_THRESHOLD_KMH } from './geo';
@@ -57,6 +58,14 @@ export async function maybePoll(
 
 const INSERT_BATCH_SIZE = 500;
 
+// Feed fetch limits (see safeFetch). Trackers are polled one after another within a cron
+// tick, so the timeout is what bounds how long one slow or hung feed can hold up the rest.
+// The size cap has to fit a backfill window (the UI imports a month at a time and the
+// feed returns everything from d1 onward, ~1 KB per fix): 25 MB is ~20k fixes, more than a
+// month at 2-minute tracking, while still bounding the Worker's memory.
+const FEED_TIMEOUT_MS = 15_000;
+const FEED_MAX_BYTES = 25 * 1024 * 1024;
+
 async function fetchFeedPoints(
   host: string,
   sourceUrl: string,
@@ -75,13 +84,18 @@ async function fetchFeedPoints(
       headers['Authorization'] = 'Basic ' + btoa(':' + creds.password);
     }
   }
-  const response = await fetch(url.toString(), { headers });
+  const response = await safeFetch(url.toString(), {
+    headers,
+    ownHost: host,
+    timeoutMs: FEED_TIMEOUT_MS,
+    maxBytes: FEED_MAX_BYTES,
+  });
 
   if (!response.ok) {
     throw new Error(`Garmin feed returned ${response.status}: ${response.statusText}`);
   }
 
-  return parseKML(await response.text());
+  return parseKML(response.text);
 }
 
 /**

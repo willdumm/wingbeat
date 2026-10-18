@@ -3,6 +3,8 @@ import { getCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
 import { Env, Tenant, Point, Flight, FlightRecord, FlightPoint, Tracker, Aircraft, Pilot, InviteToken, Webhook, TileOverlay, FlightCorrection, DutyDay, DefaultDuty, DutyMethodEntry } from './types';
 import { maybePoll, pollAllActive, pollAllActiveForce, testFeed } from './poller';
+import { checkPublicHttpsUrl } from './safe-fetch';
+import { mapshareUrl } from './notifications';
 import { resegment } from './segmentation';
 import { geocodePendingPoints, geocodeLivePoint, invalidateNamedPointsCache, computeLiveLabel, resolveRefPoint } from './geocoding';
 import { haversineMiles, SPEED_THRESHOLD_KMH } from './geo';
@@ -70,11 +72,18 @@ function meJson(u: AuthUser) {
   return { id: u.id, name: u.name, role: u.role, device_name: u.device_name, session_id: u.sessionId };
 }
 
-async function queryTrackers(db: D1Database) {
+// The feed URL (source_url) can embed a share id/key that lets whoever holds it poll the
+// live feed directly, so only admins (who edit it in Settings) get it. Everyone gets the
+// derived MapShare page URL, which is what the UI links to.
+async function queryTrackers(db: D1Database, isAdmin: boolean): Promise<Tracker[]> {
   const { results } = await db.prepare(
     'SELECT id, name, type, source_url, active, deleted, assigned_aircraft, assigned_pilot FROM trackers ORDER BY id ASC'
-  ).all<Tracker>();
-  return results;
+  ).all<Omit<Tracker, 'mapshare_url'> & { source_url: string }>();
+  return results.map(({ source_url, ...t }) => ({
+    ...t,
+    ...(isAdmin ? { source_url } : {}),
+    mapshare_url: t.type === 'inreach' ? mapshareUrl(source_url) : null,
+  }));
 }
 
 async function queryAircraft(db: D1Database, activeOnly = false) {
@@ -501,7 +510,7 @@ app.get('/api/me', (c) => {
 
 app.get('/api/bootstrap', async (c) => {
   const [trackers, aircraft, pilots, overlays] = await Promise.all([
-    queryTrackers(c.var.db),
+    queryTrackers(c.var.db, c.get('user').role === 'admin'),
     queryAircraft(c.var.db),
     queryPilots(c.var.db),
     queryTileOverlays(c.var.db),
@@ -851,7 +860,7 @@ app.get('/api/flights/complete', async (c) => {
 // ── Tracker management routes ─────────────────────────────────────────────────
 
 app.get('/api/trackers', async (c) => {
-  return c.json({ trackers: await queryTrackers(c.var.db) });
+  return c.json({ trackers: await queryTrackers(c.var.db, c.get('user').role === 'admin') });
 });
 
 app.post('/api/trackers', requireAdmin, async (c) => {
@@ -866,6 +875,8 @@ app.post('/api/trackers', requireAdmin, async (c) => {
   if (!name || !type || !source_url) {
     return c.json({ error: 'name, type, and source_url are required' }, 400);
   }
+  const urlCheck = checkPublicHttpsUrl(source_url, { ownHost: c.var.tenant.host });
+  if (!urlCheck.ok) return c.json({ error: `source_url: ${urlCheck.error}` }, 400);
 
   let credJson: string | null = null;
   if (body.credentials) {
@@ -880,7 +891,7 @@ app.post('/api/trackers', requireAdmin, async (c) => {
 
   const result = await c.var.db.prepare(
     'INSERT INTO trackers (name, type, source_url, credentials, assigned_aircraft, assigned_pilot) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(name, type, source_url, credJson, assigned_aircraft, assigned_pilot).run();
+  ).bind(name, type, source_url.trim(), credJson, assigned_aircraft, assigned_pilot).run();
 
   const id = result.meta.last_row_id as number;
   await c.var.db.prepare(
@@ -888,15 +899,15 @@ app.post('/api/trackers', requireAdmin, async (c) => {
   ).bind(id).run();
 
   invalidateTrackerCache(c.var.tenant.key);
-  return c.json({ ok: true, id });
+  return c.json({ ok: true, id, mapshare_url: type === 'inreach' ? mapshareUrl(source_url.trim()) : null });
 });
 
 app.put('/api/trackers/:id', requireAdmin, async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid tracker id' }, 400);
 
-  const existing = await c.var.db.prepare('SELECT id FROM trackers WHERE id = ? AND deleted = 0')
-    .bind(id).first();
+  const existing = await c.var.db.prepare('SELECT id, type, source_url FROM trackers WHERE id = ? AND deleted = 0')
+    .bind(id).first<{ id: number; type: string; source_url: string }>();
   if (!existing) return c.json({ error: 'Tracker not found' }, 404);
 
   const body = await c.req.json<{
@@ -909,7 +920,23 @@ app.put('/api/trackers/:id', requireAdmin, async (c) => {
   const vals: (string | number | null)[] = [];
 
   if (body.name !== undefined) { sets.push('name = ?'); vals.push(body.name); }
-  if (body.source_url !== undefined) { sets.push('source_url = ?'); vals.push(body.source_url); }
+  let credentialsCleared = false;
+  let newSourceUrl = existing.source_url;
+  if (body.source_url !== undefined) {
+    const urlCheck = checkPublicHttpsUrl(body.source_url, { ownHost: c.var.tenant.host });
+    if (!urlCheck.ok) return c.json({ error: `source_url: ${urlCheck.error}` }, 400);
+    sets.push('source_url = ?'); vals.push(body.source_url.trim());
+    newSourceUrl = body.source_url.trim();
+    // The stored access code is sent as Basic auth to source_url, so it's bound to the
+    // origin it was entered for: moving the feed to another origin without supplying a
+    // password drops it rather than handing it to the new host.
+    let oldOrigin: string | null = null;
+    try { oldOrigin = new URL(existing.source_url).origin; } catch { /* unparseable: treat as changed */ }
+    if (oldOrigin !== urlCheck.url.origin && !Object.prototype.hasOwnProperty.call(body, 'credentials')) {
+      sets.push('credentials = NULL');
+      credentialsCleared = true;
+    }
+  }
   if (body.active !== undefined) { sets.push('active = ?'); vals.push(body.active ? 1 : 0); }
   if (Object.prototype.hasOwnProperty.call(body, 'assigned_aircraft')) { sets.push('assigned_aircraft = ?'); vals.push(body.assigned_aircraft ?? null); }
   if (Object.prototype.hasOwnProperty.call(body, 'assigned_pilot')) { sets.push('assigned_pilot = ?'); vals.push(body.assigned_pilot ?? null); }
@@ -922,7 +949,11 @@ app.put('/api/trackers/:id', requireAdmin, async (c) => {
     .bind(...vals).run();
 
   invalidateTrackerCache(c.var.tenant.key);
-  return c.json({ ok: true });
+  return c.json({
+    ok: true,
+    mapshare_url: existing.type === 'inreach' ? mapshareUrl(newSourceUrl) : null,
+    ...(credentialsCleared ? { credentials_cleared: true } : {}),
+  });
 });
 
 app.delete('/api/trackers/:id', requireAdmin, async (c) => {
@@ -945,7 +976,10 @@ app.post('/api/trackers/test-feed', requireAdmin, async (c) => {
   type Body = { source_url?: string; credentials?: Record<string, string> | null };
   const body = await c.req.json<Body>().catch(() => ({} as Body));
   if (!body.source_url) return c.json({ error: 'source_url is required' }, 400);
-  try { new URL(body.source_url); } catch { return c.json({ error: 'source_url must be a URL' }, 400); }
+  const urlCheck = checkPublicHttpsUrl(body.source_url, { ownHost: c.var.tenant.host });
+  if (!urlCheck.ok) return c.json({ error: `source_url: ${urlCheck.error}` }, 400);
+  // Only the access code typed into the form is used; the stored one is never sent to a
+  // URL the admin is merely trying out.
   const credentials = body.credentials ? JSON.stringify(body.credentials) : null;
   try {
     return c.json({ ok: true, ...await testFeed(c.var.tenant.host, body.source_url, credentials) });
@@ -2542,7 +2576,8 @@ app.post('/api/webhooks', requireAdmin, async (c) => {
   const type = body.type === 'pushover' ? 'pushover' : 'webhook';
   if (type === 'webhook') {
     if (typeof body.url !== 'string' || !body.url) return c.json({ error: 'url is required' }, 400);
-    try { new URL(body.url); } catch { return c.json({ error: 'url must be a valid URL' }, 400); }
+    const urlCheck = checkPublicHttpsUrl(body.url, { ownHost: c.var.tenant.host });
+    if (!urlCheck.ok) return c.json({ error: `url: ${urlCheck.error}` }, 400);
   } else {
     if (typeof body.pushover_user_key !== 'string' || !body.pushover_user_key) {
       return c.json({ error: 'pushover_user_key is required' }, 400);
@@ -2586,7 +2621,11 @@ app.put('/api/webhooks/:id', requireAdmin, async (c) => {
 
   if (type === 'webhook') {
     if (typeof url !== 'string' || !url) return c.json({ error: 'url is required for webhook type' }, 400);
-    try { new URL(url); } catch { return c.json({ error: 'url must be a valid URL' }, 400); }
+    // Only re-validated when it changes, so a pre-existing http:// hook can still be paused or relabeled.
+    if (body.url !== undefined || existing.type !== 'webhook') {
+      const urlCheck = checkPublicHttpsUrl(url, { ownHost: c.var.tenant.host });
+      if (!urlCheck.ok) return c.json({ error: `url: ${urlCheck.error}` }, 400);
+    }
   } else {
     if (typeof pushoverKey !== 'string' || !pushoverKey) return c.json({ error: 'pushover_user_key is required for pushover type' }, 400);
   }

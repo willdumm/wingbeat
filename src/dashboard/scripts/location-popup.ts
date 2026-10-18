@@ -34,19 +34,11 @@ export function dashboardScriptsLocationPopup(): string {
         if (_tracker.assigned_aircraft) rows.push(['Aircraft', _tracker.assigned_aircraft]);
       }
 
-      // Same transform as the server's mapshareUrl() in notifications.ts: the stored feed
-      // URL (".../Feed/Share/NAME") is the machine feed; the human-viewable MapShare page
-      // drops that path segment ("share.garmin.com/NAME").
-      if (_tracker && _tracker.source_url) {
-        try {
-          const u = new URL(_tracker.source_url);
-          u.pathname = u.pathname.replace(/^\\/Feed\\/Share\\//i, '/');
-          u.search = '';
-          locationPopupGarmin.href = u.toString();
-          locationPopupGarminRow.style.display = '';
-        } catch (_) {
-          locationPopupGarminRow.style.display = 'none';
-        }
+      // mapshare_url is derived server-side (mapshareUrl() in notifications.ts); the raw
+      // feed URL is admin-only.
+      if (_tracker && _tracker.mapshare_url) {
+        locationPopupGarmin.href = _tracker.mapshare_url;
+        locationPopupGarminRow.style.display = '';
       } else {
         locationPopupGarminRow.style.display = 'none';
       }

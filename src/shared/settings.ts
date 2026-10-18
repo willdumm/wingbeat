@@ -1823,11 +1823,17 @@ export function settingsModalScript(): string {
             const pilotAdded = pilotSel && body.assigned_pilot != null && body.assigned_pilot !== tracker.assigned_pilot;
             tracker.name = name;
             tracker.source_url = source_url;
+            const saved = await resp.json().catch(() => ({}));
+            tracker.mapshare_url = saved.mapshare_url ?? null;
+            if (saved.credentials_cleared) alert('The feed moved to a different site, so its saved access code was removed. Edit the tracker again and re-enter the access code if it needs one.');
             if (aircraftSel) tracker.assigned_aircraft = body.assigned_aircraft;
             if (pilotSel) tracker.assigned_pilot = body.assigned_pilot;
             renderSettingsTrackerList();
             settingsAfterTrackerChange();
             if (aircraftAdded || pilotAdded) await settingsOfferApplyAssignment(tracker, !!aircraftAdded, !!pilotAdded);
+          } else {
+            const err = await resp.json().catch(() => ({}));
+            alert(err.error ?? 'Failed to save tracker.');
           }
         } catch (_) {}
       });
@@ -2082,7 +2088,7 @@ export function settingsModalScript(): string {
         if (resp.ok) {
           const data = await resp.json();
           trackerList.push({
-            id: data.id, name, type, source_url: sourceUrl, active: true, deleted: false,
+            id: data.id, name, type, source_url: sourceUrl, mapshare_url: data.mapshare_url ?? null, active: true, deleted: false,
             assigned_aircraft: body.assigned_aircraft ?? null,
             assigned_pilot: body.assigned_pilot ?? null,
           });
