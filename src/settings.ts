@@ -1,4 +1,5 @@
 import { Tenant } from './types';
+import { jsonForScript } from './shared/html';
 
 export interface AppSettings {
   app_name: string;
@@ -64,7 +65,7 @@ export async function loadSettings(tenant: Tenant): Promise<AppSettings> {
 }
 
 export function settingsAsClientObject(s: AppSettings): string {
-  return JSON.stringify({
+  return jsonForScript({
     appName:        s.app_name,
     timezone:       s.timezone,
     mapDefaultLat:  s.map_default_lat,

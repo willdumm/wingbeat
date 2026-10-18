@@ -5,11 +5,9 @@
  * `live` is reserved for a state that is genuinely happening right now (an aircraft
  * actually airborne) and gets the pulsing dot; every other tone is static.
  */
-export type StatusTone = 'live' | 'ok' | 'neutral' | 'warn' | 'danger';
+import { escapeHtml } from './html';
 
-function escapeHtml(s: string): string {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+export type StatusTone = 'live' | 'ok' | 'neutral' | 'warn' | 'danger';
 
 /** A small standalone status dot (no label), e.g. for a table cell or inline marker. */
 export function statusDot(tone: StatusTone, className = ''): string {

@@ -86,8 +86,8 @@ export function dashboardScriptsPointPicker(rootExpr = 'document'): string {
         if (routePoint.elevation_m != null) rows.push(['Altitude', toFeet(routePoint.elevation_m)]);
       }
       pointPickerDetails.innerHTML = rows.map(([label, value]) =>
-        '<span class="popup-detail-label">' + label + '</span>' +
-        '<span class="popup-detail-value">' + value + '</span>'
+        '<span class="popup-detail-label">' + escHtml(label) + '</span>' +
+        '<span class="popup-detail-value">' + escHtml(value) + '</span>'
       ).join('');
 
       pointPickerPopup.classList.remove('hidden');

@@ -277,7 +277,7 @@ export function analyticsScriptsStreamgraphRender(): string {
         const lx2 = ML + (ri % IPR) * itemW;
         const ly = legendTop + Math.floor(ri / IPR) * 20;
         sv.push('<rect x="' + lx2 + '" y="' + (ly - 9) + '" width="11" height="11" rx="2" fill="' + (sgColors[regions[ri]] || '#94a3b8') + '" fill-opacity="0.85"/>');
-        sv.push('<text x="' + (lx2 + 14) + '" y="' + ly + '" fill="' + sgLegendText + '" font-size="11" font-family="var(--font-body)">' + regions[ri] + '</text>');
+        sv.push('<text x="' + (lx2 + 14) + '" y="' + ly + '" fill="' + sgLegendText + '" font-size="11" font-family="var(--font-body)">' + escHtml(regions[ri]) + '</text>');
       }
 
       sv.push('</svg>');
@@ -306,7 +306,7 @@ export function analyticsScriptsStreamgraphRender(): string {
           } else {
             valStr = Math.round(v).toString();
           }
-          html += '<div class="sg-tt-row"><span class="sg-tt-dot" style="background:' + (sgColors[r] || '#94a3b8') + '"></span><span class="sg-tt-name">' + r + '</span><span class="sg-tt-val">' + valStr + '</span></div>';
+          html += '<div class="sg-tt-row"><span class="sg-tt-dot" style="background:' + (sgColors[r] || '#94a3b8') + '"></span><span class="sg-tt-name">' + escHtml(r) + '</span><span class="sg-tt-val">' + valStr + '</span></div>';
         }
         tooltip.innerHTML = html;
         tooltip.style.display = 'block';

@@ -2320,16 +2320,59 @@ app.get('/api/settings', requireAdmin, async (c) => {
   return c.json(Object.fromEntries(results.map(r => [r.key, r.value])));
 });
 
+// Per-key checks for PATCH /api/settings; returns the value to store, or an error message.
+const SETTING_NUMBER_RANGES: Record<string, [number, number]> = {
+  map_default_lat: [-90, 90],
+  map_default_lng: [-180, 180],
+  map_default_zoom: [0, 22],
+  gap_alert_minutes: [0, 1_000_000],
+  gap_alert_stop_minutes: [0, 1_000_000],
+};
+
+function validateSetting(key: string, value: string | number): { value: string } | { error: string } {
+  if (key === 'app_name') {
+    const name = String(value).trim();
+    if (name.length < 1 || name.length > 60) return { error: 'app_name must be 1 to 60 characters' };
+    return { value: name };
+  }
+  if (key === 'timezone') {
+    const tz = String(value).trim();
+    try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); } catch { return { error: 'timezone must be a valid IANA time zone' }; }
+    return { value: tz };
+  }
+  const range = SETTING_NUMBER_RANGES[key];
+  if (range) {
+    const n = typeof value === 'number' ? value : (String(value).trim() === '' ? NaN : Number(value));
+    if (!Number.isFinite(n) || n < range[0] || n > range[1]) return { error: `${key} must be a number from ${range[0]} to ${range[1]}` };
+    return { value: String(n) };
+  }
+  if (key === 'pushover_api_token') {
+    const t = String(value).trim();
+    if (t.length > 200) return { error: 'pushover_api_token is too long' };
+    return { value: t };
+  }
+  if (key === 'setup_dismissed') {
+    const v = String(value);
+    if (v !== '0' && v !== '1' && v !== '') return { error: 'setup_dismissed must be 0 or 1' };
+    return { value: v };
+  }
+  return { value: String(value) };
+}
+
 app.patch('/api/settings', requireAdmin, async (c) => {
   const ALLOWED_KEYS = new Set(['app_name', 'timezone', 'map_default_lat', 'map_default_lng', 'map_default_zoom', 'gap_alert_minutes', 'gap_alert_stop_minutes', 'pushover_api_token', 'setup_dismissed']);
-  const body = await c.req.json<Record<string, string | number>>();
+  let body: Record<string, string | number>;
+  try { body = await c.req.json<Record<string, string | number>>(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return c.json({ error: 'Expected a JSON object' }, 400);
   const stmts: D1PreparedStatement[] = [];
   for (const [key, value] of Object.entries(body)) {
     // Dated now (migration 0002), so not a plain setting.
     if (key === 'duty_method') return c.json({ error: 'Set the duty method with PUT /api/duty-methods' }, 400);
     if (!ALLOWED_KEYS.has(key)) return c.json({ error: `Unknown setting key: ${key}` }, 400);
     if (typeof value !== 'string' && typeof value !== 'number') return c.json({ error: `Value for ${key} must be a string or number` }, 400);
-    stmts.push(c.var.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').bind(key, String(value)));
+    const checked = validateSetting(key, value);
+    if ('error' in checked) return c.json({ error: checked.error }, 400);
+    stmts.push(c.var.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').bind(key, checked.value));
   }
   if (stmts.length > 0) {
     await c.var.db.batch(stmts);

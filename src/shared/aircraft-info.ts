@@ -436,7 +436,7 @@ export function aircraftInfoRenderScript(): string {
 
     function _acBadgeHtml(schedType) {
       var labels = { hobbs: 'HOBBS', tach: 'TACH', calendar: 'CAL' };
-      return '<span class="ac-badge ac-badge-' + schedType + '">' + (labels[schedType] || schedType) + '</span>';
+      return '<span class="ac-badge ac-badge-' + escHtml(schedType) + '">' + escHtml(labels[schedType] || schedType) + '</span>';
     }
 
     // ── Timer section (hobbs or tach) ──
@@ -877,13 +877,13 @@ export function aircraftInfoScript(): string {
         (isMeter
           ? '<div class="ac-form-field">' +
               '<label class="ac-field-label">Interval (hours)</label>' +
-              '<input type="number" class="ac-input ac-sched-edit-interval-hours" style="width:10rem;" value="' + (item.interval_hours || '') + '" step="0.1" min="0.1" />' +
+              '<input type="number" class="ac-input ac-sched-edit-interval-hours" style="width:10rem;" value="' + escHtml(item.interval_hours || '') + '" step="0.1" min="0.1" />' +
               '<label class="ac-field-label" style="margin-top:0.25rem;">Last done at (meter reading)</label>' +
-              '<input type="number" class="ac-input ac-sched-edit-last-meter" style="width:10rem;" value="' + (item.last_done_value !== undefined ? item.last_done_value : '') + '" step="0.1" min="0" />' +
+              '<input type="number" class="ac-input ac-sched-edit-last-meter" style="width:10rem;" value="' + escHtml(item.last_done_value !== undefined ? item.last_done_value : '') + '" step="0.1" min="0" />' +
             '</div>'
           : '<div class="ac-form-field">' +
               '<label class="ac-field-label">Interval (months)</label>' +
-              '<input type="number" class="ac-input ac-sched-edit-interval-months" style="width:10rem;" value="' + (item.interval_months || '') + '" step="1" min="1" />' +
+              '<input type="number" class="ac-input ac-sched-edit-interval-months" style="width:10rem;" value="' + escHtml(item.interval_months || '') + '" step="1" min="1" />' +
               '<label class="ac-field-label" style="margin-top:0.25rem;">Last done</label>' +
               '<input type="date" class="ac-input ac-input-date ac-sched-edit-last-date" value="' + _acTsToDateInput(item.last_done_at) + '" />' +
             '</div>') +

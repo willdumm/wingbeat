@@ -801,6 +801,36 @@ export function sharedMapControlsScripts(
       // Leaflet's own attribution control is off on every map (it would render in
       // Leaflet's styling, in a corner), so this line stands in for it: the active
       // basemap's credit first, then each tile overlay currently on the map, deduped.
+      // Attribution is HTML (links, &copy;), but custom layers' come from this device's
+      // localStorage and overlays' from the admin: keep text and plain http(s) links only,
+      // built as DOM nodes (no innerHTML), so no tag or attribute of the source survives.
+      function _appendAttribNodes(src, dest) {
+        for (var n = src.firstChild; n; n = n.nextSibling) {
+          if (n.nodeType === 3) {
+            dest.appendChild(document.createTextNode(n.nodeValue));
+          } else if (n.nodeType === 1) {
+            var href = n.nodeName === 'A' ? (n.getAttribute('href') || '').trim() : '';
+            if (/^https?:\\/\\//i.test(href)) {
+              var a = document.createElement('a');
+              a.href = href;
+              a.target = '_blank';
+              a.rel = 'noopener noreferrer';
+              _appendAttribNodes(n, a);
+              dest.appendChild(a);
+            } else if (!/^(SCRIPT|STYLE)$/.test(n.nodeName)) {
+              _appendAttribNodes(n, dest);
+            }
+          }
+        }
+      }
+      function _attribNodes(html) {
+        var tpl = document.createElement('template');
+        tpl.innerHTML = html;
+        var frag = document.createDocumentFragment();
+        _appendAttribNodes(tpl.content, frag);
+        return frag;
+      }
+
       function _updateAttrib() {
         var el = ${rootExpr}.getElementById('${idPrefix}map-attribution');
         if (!el || !${mapVar}) return;
@@ -811,7 +841,11 @@ export function sharedMapControlsScripts(
         }
         add(${currentLayerVar});
         ${mapVar}.eachLayer(function(l) { if (l instanceof L.TileLayer) add(l); });
-        el.innerHTML = parts.join(' · ');
+        el.textContent = '';
+        parts.forEach(function(p, i) {
+          if (i > 0) el.appendChild(document.createTextNode(' · '));
+          el.appendChild(_attribNodes(p));
+        });
       }
       _updateAttrib();
       // Overlays are added/removed by the overlay legend, not here; tile-layer events

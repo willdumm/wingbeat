@@ -176,9 +176,9 @@ const trackerList = SAMPLE.trackers;
   
 
     // HTML-escapes text (null/undefined → '') for markup and attribute values in double
-    // quotes (& < > "; not ').
+    // or single quotes (& < > " ').
     function escHtml(s) {
-      return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
   
 
@@ -1363,9 +1363,9 @@ const trackerList = SAMPLE.trackers;
       }
 
       const assignParts = [];
-      if (f.aircraft_tail) assignParts.push(f.aircraft_tail);
+      if (f.aircraft_tail) assignParts.push(escHtml(f.aircraft_tail));
       else if (hasAircraft) assignParts.push('Unknown Aircraft');
-      if (f.pilot_name) assignParts.push(f.pilot_name);
+      if (f.pilot_name) assignParts.push(escHtml(f.pilot_name));
       else if (f.pilot_id != null) assignParts.push('Unknown Pilot');
       else if (hasPilots) assignParts.push('Unknown Pilot');
       const assignHtml = assignParts.length > 0
@@ -1460,7 +1460,7 @@ const trackerList = SAMPLE.trackers;
 
     function _acBadgeHtml(schedType) {
       var labels = { hobbs: 'HOBBS', tach: 'TACH', calendar: 'CAL' };
-      return '<span class="ac-badge ac-badge-' + schedType + '">' + (labels[schedType] || schedType) + '</span>';
+      return '<span class="ac-badge ac-badge-' + escHtml(schedType) + '">' + escHtml(labels[schedType] || schedType) + '</span>';
     }
 
     // ── Timer section (hobbs or tach) ──
@@ -3045,7 +3045,7 @@ REGIONS = SAMPLE.regions;
         if (stops === 0) continue;
         homeStops += stops;
         html += '<div class="region-row">';
-        html += '<span class="region-name">' + base + '</span>';
+        html += '<span class="region-name">' + escHtml(base) + '</span>';
         html += '<span class="region-hours">–<span class="region-pct"></span></span>';
         html += '<span class="region-stops">' + stops + '<span class="region-pct"></span></span>';
         html += '</div>';
@@ -3061,7 +3061,7 @@ REGIONS = SAMPLE.regions;
         const stops = regionStops[region] || 0;
         const stopsPct = awayStops > 0 && stops > 0 ? Math.round((stops / awayStops) * 100) : 0;
         html += '<div class="region-row">';
-        html += '<span class="region-name">' + region + '</span>';
+        html += '<span class="region-name">' + escHtml(region) + '</span>';
         html += '<span class="region-hours">' + fmtHours(hours) + '<span class="region-pct">' + pct + '%</span></span>';
         html += '<span class="region-stops">' + stops + '<span class="region-pct">' + (stops > 0 ? stopsPct + '%' : '') + '</span></span>';
         html += '</div>';
@@ -3408,7 +3408,7 @@ REGIONS = SAMPLE.regions;
         const lx2 = ML + (ri % IPR) * itemW;
         const ly = legendTop + Math.floor(ri / IPR) * 20;
         sv.push('<rect x="' + lx2 + '" y="' + (ly - 9) + '" width="11" height="11" rx="2" fill="' + (sgColors[regions[ri]] || '#94a3b8') + '" fill-opacity="0.85"/>');
-        sv.push('<text x="' + (lx2 + 14) + '" y="' + ly + '" fill="' + sgLegendText + '" font-size="11" font-family="var(--font-body)">' + regions[ri] + '</text>');
+        sv.push('<text x="' + (lx2 + 14) + '" y="' + ly + '" fill="' + sgLegendText + '" font-size="11" font-family="var(--font-body)">' + escHtml(regions[ri]) + '</text>');
       }
 
       sv.push('</svg>');
@@ -3437,7 +3437,7 @@ REGIONS = SAMPLE.regions;
           } else {
             valStr = Math.round(v).toString();
           }
-          html += '<div class="sg-tt-row"><span class="sg-tt-dot" style="background:' + (sgColors[r] || '#94a3b8') + '"></span><span class="sg-tt-name">' + r + '</span><span class="sg-tt-val">' + valStr + '</span></div>';
+          html += '<div class="sg-tt-row"><span class="sg-tt-dot" style="background:' + (sgColors[r] || '#94a3b8') + '"></span><span class="sg-tt-name">' + escHtml(r) + '</span><span class="sg-tt-val">' + valStr + '</span></div>';
         }
         tooltip.innerHTML = html;
         tooltip.style.display = 'block';
@@ -3558,7 +3558,7 @@ REGIONS = SAMPLE.regions;
       return L.geoJSON(regions, {
         style: { color: getAccentColor(), weight: 1.5, fillOpacity: 0.06 },
         onEachFeature(feature, layer) {
-          layer.bindTooltip(regionDisplayName(feature.properties.Name), { permanent: false, direction: 'center' });
+          layer.bindTooltip(escHtml(regionDisplayName(feature.properties.Name)), { permanent: false, direction: 'center' });
         },
       });
     }
@@ -3868,6 +3868,36 @@ REGIONS = SAMPLE.regions;
       // Leaflet's own attribution control is off on every map (it would render in
       // Leaflet's styling, in a corner), so this line stands in for it: the active
       // basemap's credit first, then each tile overlay currently on the map, deduped.
+      // Attribution is HTML (links, &copy;), but custom layers' come from this device's
+      // localStorage and overlays' from the admin: keep text and plain http(s) links only,
+      // built as DOM nodes (no innerHTML), so no tag or attribute of the source survives.
+      function _appendAttribNodes(src, dest) {
+        for (var n = src.firstChild; n; n = n.nextSibling) {
+          if (n.nodeType === 3) {
+            dest.appendChild(document.createTextNode(n.nodeValue));
+          } else if (n.nodeType === 1) {
+            var href = n.nodeName === 'A' ? (n.getAttribute('href') || '').trim() : '';
+            if (/^https?:\/\//i.test(href)) {
+              var a = document.createElement('a');
+              a.href = href;
+              a.target = '_blank';
+              a.rel = 'noopener noreferrer';
+              _appendAttribNodes(n, a);
+              dest.appendChild(a);
+            } else if (!/^(SCRIPT|STYLE)$/.test(n.nodeName)) {
+              _appendAttribNodes(n, dest);
+            }
+          }
+        }
+      }
+      function _attribNodes(html) {
+        var tpl = document.createElement('template');
+        tpl.innerHTML = html;
+        var frag = document.createDocumentFragment();
+        _appendAttribNodes(tpl.content, frag);
+        return frag;
+      }
+
       function _updateAttrib() {
         var el = root.getElementById('map-attribution');
         if (!el || !map) return;
@@ -3878,7 +3908,11 @@ REGIONS = SAMPLE.regions;
         }
         add(currentTileLayer);
         map.eachLayer(function(l) { if (l instanceof L.TileLayer) add(l); });
-        el.innerHTML = parts.join(' · ');
+        el.textContent = '';
+        parts.forEach(function(p, i) {
+          if (i > 0) el.appendChild(document.createTextNode(' · '));
+          el.appendChild(_attribNodes(p));
+        });
       }
       _updateAttrib();
       // Overlays are added/removed by the overlay legend, not here; tile-layer events
@@ -4024,8 +4058,8 @@ REGIONS = SAMPLE.regions;
 
       hoverTip.setContent(
         '<div style="line-height:1.6;white-space:nowrap">' +
-        (tipLabel ? '<b>' + tipLabel + '</b><br>' : '') +
-        (displayName ? displayName + '<br>' : '') +
+        (tipLabel ? '<b>' + escHtml(tipLabel) + '</b><br>' : '') +
+        (displayName ? escHtml(displayName) + '<br>' : '') +
         time + '<br>' +
         speed + '&nbsp;&nbsp;' + alt +
         '</div>'
@@ -4148,8 +4182,8 @@ REGIONS = SAMPLE.regions;
         if (routePoint.elevation_m != null) rows.push(['Altitude', toFeet(routePoint.elevation_m)]);
       }
       pointPickerDetails.innerHTML = rows.map(([label, value]) =>
-        '<span class="popup-detail-label">' + label + '</span>' +
-        '<span class="popup-detail-value">' + value + '</span>'
+        '<span class="popup-detail-label">' + escHtml(label) + '</span>' +
+        '<span class="popup-detail-value">' + escHtml(value) + '</span>'
       ).join('');
 
       pointPickerPopup.classList.remove('hidden');
@@ -4784,6 +4818,36 @@ REGIONS = SAMPLE.regions;
       // Leaflet's own attribution control is off on every map (it would render in
       // Leaflet's styling, in a corner), so this line stands in for it: the active
       // basemap's credit first, then each tile overlay currently on the map, deduped.
+      // Attribution is HTML (links, &copy;), but custom layers' come from this device's
+      // localStorage and overlays' from the admin: keep text and plain http(s) links only,
+      // built as DOM nodes (no innerHTML), so no tag or attribute of the source survives.
+      function _appendAttribNodes(src, dest) {
+        for (var n = src.firstChild; n; n = n.nextSibling) {
+          if (n.nodeType === 3) {
+            dest.appendChild(document.createTextNode(n.nodeValue));
+          } else if (n.nodeType === 1) {
+            var href = n.nodeName === 'A' ? (n.getAttribute('href') || '').trim() : '';
+            if (/^https?:\/\//i.test(href)) {
+              var a = document.createElement('a');
+              a.href = href;
+              a.target = '_blank';
+              a.rel = 'noopener noreferrer';
+              _appendAttribNodes(n, a);
+              dest.appendChild(a);
+            } else if (!/^(SCRIPT|STYLE)$/.test(n.nodeName)) {
+              _appendAttribNodes(n, dest);
+            }
+          }
+        }
+      }
+      function _attribNodes(html) {
+        var tpl = document.createElement('template');
+        tpl.innerHTML = html;
+        var frag = document.createDocumentFragment();
+        _appendAttribNodes(tpl.content, frag);
+        return frag;
+      }
+
       function _updateAttrib() {
         var el = root.getElementById('map-attribution');
         if (!el || !analyticsMap) return;
@@ -4794,7 +4858,11 @@ REGIONS = SAMPLE.regions;
         }
         add(currentTileLayer);
         analyticsMap.eachLayer(function(l) { if (l instanceof L.TileLayer) add(l); });
-        el.innerHTML = parts.join(' · ');
+        el.textContent = '';
+        parts.forEach(function(p, i) {
+          if (i > 0) el.appendChild(document.createTextNode(' · '));
+          el.appendChild(_attribNodes(p));
+        });
       }
       _updateAttrib();
       // Overlays are added/removed by the overlay legend, not here; tile-layer events

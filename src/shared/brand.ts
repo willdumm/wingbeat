@@ -5,6 +5,7 @@
  * that one file, so swapping the mark later means replacing that file only.
  */
 import rawLogoSvg from '../../logo_plain.svg';
+import { escapeHtml } from './html';
 
 const LOGO_SOURCE = rawLogoSvg
   .replace(/<\?xml[\s\S]*?\?>\s*/g, '')
@@ -50,10 +51,6 @@ const LOGO_BODY_MONO = LOGO_BODY_RAW
 // in JS, driven by the same data-theme attribute the rest of the app uses.
 const FAVICON_LIGHT = LOGO_SOURCE;
 const FAVICON_DARK = LOGO_SOURCE.replace(/fill:#000000/gi, 'fill:#E9EEF2');
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
 
 /**
  * The mark sized from `size` px (MARK_SCALE × size tall, at the artboard's own aspect), optionally paired with a

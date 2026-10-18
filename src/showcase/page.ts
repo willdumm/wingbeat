@@ -16,6 +16,7 @@ import { iconStyles, iconRuntimeScript, icon } from '../shared/icons';
 import { statusStyles } from '../shared/status';
 import { segmentedControlStyles } from '../shared/segmented-control';
 import { sharedButtonStyles } from '../shared/buttons';
+import { escapeHtml } from '../shared/html';
 import { SampleNotification, NOTIFICATION_TIME_TOKEN } from './sample-data';
 
 /**
@@ -35,10 +36,6 @@ const HERO_IMAGE = { large: 'showcase/hero-2000.jpg', small: 'showcase/hero-1200
  * narrow header's side padding, menu button and gap.
  */
 const HEADER_LOGO_SIZE = 'clamp(18px, calc((100vw - 84px) / 10.6), 32px)';
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
 
 /**
  * A phone lock screen with the newest few sample notifications. Titles and messages are

@@ -103,9 +103,9 @@ export function dashboardScriptsFlightListRender(): string {
       }
 
       const assignParts = [];
-      if (f.aircraft_tail) assignParts.push(f.aircraft_tail);
+      if (f.aircraft_tail) assignParts.push(escHtml(f.aircraft_tail));
       else if (hasAircraft) assignParts.push('Unknown Aircraft');
-      if (f.pilot_name) assignParts.push(f.pilot_name);
+      if (f.pilot_name) assignParts.push(escHtml(f.pilot_name));
       else if (f.pilot_id != null) assignParts.push('Unknown Pilot');
       else if (hasPilots) assignParts.push('Unknown Pilot');
       const assignHtml = assignParts.length > 0

@@ -60,8 +60,8 @@ export function dashboardScriptsLocationPopup(): string {
       if (gpsTime) rows.push(['GPS fix', relTime(gpsTime)]);
 
       locationPopupDetails.innerHTML = rows.map(([label, value]) =>
-        '<span class="popup-detail-label">' + label + '</span>' +
-        '<span class="popup-detail-value">' + value + '</span>'
+        '<span class="popup-detail-label">' + escHtml(label) + '</span>' +
+        '<span class="popup-detail-value">' + escHtml(value) + '</span>'
       ).join('');
 
       locationPopup.classList.remove('hidden');

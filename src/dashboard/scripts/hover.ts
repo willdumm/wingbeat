@@ -69,8 +69,8 @@ export function dashboardScriptsHover(): string {
 
       hoverTip.setContent(
         '<div style="line-height:1.6;white-space:nowrap">' +
-        (tipLabel ? '<b>' + tipLabel + '</b><br>' : '') +
-        (displayName ? displayName + '<br>' : '') +
+        (tipLabel ? '<b>' + escHtml(tipLabel) + '</b><br>' : '') +
+        (displayName ? escHtml(displayName) + '<br>' : '') +
         time + '<br>' +
         speed + '&nbsp;&nbsp;' + alt +
         '</div>'

@@ -79,7 +79,7 @@ export function analyticsScriptsLayers(): string {
       return L.geoJSON(regions, {
         style: { color: getAccentColor(), weight: 1.5, fillOpacity: 0.06 },
         onEachFeature(feature, layer) {
-          layer.bindTooltip(regionDisplayName(feature.properties.Name), { permanent: false, direction: 'center' });
+          layer.bindTooltip(escHtml(regionDisplayName(feature.properties.Name)), { permanent: false, direction: 'center' });
         },
       });
     }

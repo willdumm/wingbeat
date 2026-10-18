@@ -12,6 +12,7 @@ import { formModalStyles } from './shared/form-modal';
 import { flightEditsStyles } from './shared/flight-edits';
 import { flightEditorStyles } from './shared/flight-editor';
 import { AppSettings, settingsAsClientObject } from './settings';
+import { escapeHtml } from './shared/html';
 import { Env } from './types';
 
 /** The dashboard's stylesheet after the font import and theme tokens. The docs-site
@@ -26,7 +27,7 @@ export function dashboardHTML(settings: AppSettings, env: Env): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>${settings.app_name}</title>
+  <title>${escapeHtml(settings.app_name)}</title>
   <link rel="icon" href="${logoFaviconHref()}" />
   <script>${themeInitScript()}</script>
   <script>${viewportHeightInitScript()}</script>

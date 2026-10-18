@@ -78,7 +78,7 @@ export function analyticsScriptsAccounting(): string {
         if (stops === 0) continue;
         homeStops += stops;
         html += '<div class="region-row">';
-        html += '<span class="region-name">' + base + '</span>';
+        html += '<span class="region-name">' + escHtml(base) + '</span>';
         html += '<span class="region-hours">–<span class="region-pct"></span></span>';
         html += '<span class="region-stops">' + stops + '<span class="region-pct"></span></span>';
         html += '</div>';
@@ -94,7 +94,7 @@ export function analyticsScriptsAccounting(): string {
         const stops = regionStops[region] || 0;
         const stopsPct = awayStops > 0 && stops > 0 ? Math.round((stops / awayStops) * 100) : 0;
         html += '<div class="region-row">';
-        html += '<span class="region-name">' + region + '</span>';
+        html += '<span class="region-name">' + escHtml(region) + '</span>';
         html += '<span class="region-hours">' + fmtHours(hours) + '<span class="region-pct">' + pct + '%</span></span>';
         html += '<span class="region-stops">' + stops + '<span class="region-pct">' + (stops > 0 ? stopsPct + '%' : '') + '</span></span>';
         html += '</div>';

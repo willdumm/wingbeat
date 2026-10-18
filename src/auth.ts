@@ -1,4 +1,5 @@
 import { themeVars, themeFontImport } from './shared/theme';
+import { escapeHtml } from './shared/html';
 import { logoLockupMarkup, brandStyles, logoFaviconHref } from './shared/brand';
 
 /**
@@ -74,15 +75,6 @@ export function deviceNameFromUA(ua: string): string {
   if (/Windows/.test(ua)) return 'Windows';
   if (/Linux/.test(ua)) return 'Linux';
   return 'Device';
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 
 export function noAccessHTML(appName: string): string {
