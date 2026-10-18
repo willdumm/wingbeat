@@ -5,7 +5,7 @@ import { Env, Tenant, Point, Flight, FlightRecord, FlightPoint, Tracker, Aircraf
 import { maybePoll, pollAllActive, pollAllActiveForce, testFeed } from './poller';
 import { resegment } from './segmentation';
 import { geocodePendingPoints, geocodeLivePoint, invalidateNamedPointsCache, computeLiveLabel, resolveRefPoint } from './geocoding';
-import { haversineMiles } from './geo';
+import { haversineMiles, SPEED_THRESHOLD_KMH } from './geo';
 import { dashboardHTML } from './dashboard';
 import { analyticsHTML } from './analytics';
 import { generateToken, deviceNameFromUA, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
@@ -606,17 +606,25 @@ app.get('/api/flights/complete', async (c) => {
       'SELECT last_polled FROM poll_state WHERE tracker_id = ?'
     ).bind(trackerId).first<{ last_polled: number }>(),
     // The ground trail: the points since the tracker's last flight ended (a walk from the
-    // landing spot, say), from the last GROUND_TRAIL_S only. Empty while airborne, since
-    // the in-progress flight ends at the latest point. Not since-gated like the flights:
-    // it's small and replaced whole on every poll.
+    // landing spot, say), from the last GROUND_TRAIL_S only. Not since-gated like the
+    // flights: it's small and replaced whole on every poll.
+    //
+    // It also starts after the tracker's newest fast point, so it's empty while airborne
+    // even when the flights lag the points: a poll stores new points before segmenting
+    // them, and runSegmentation deletes the in-progress flight before writing it again
+    // (meanwhile the last flight's end is the previous landing).
     c.var.db.prepare(
       `SELECT garmin_time AS t, lat, lon, velocity_kmh AS v, elevation_m AS e, course_deg AS c
        FROM points
        WHERE tracker_id = ?1
          AND garmin_time > (SELECT MAX(end_time) FROM flights WHERE tracker_id = ?1)
          AND garmin_time > unixepoch() - ?2
+         AND garmin_time > COALESCE((
+           SELECT garmin_time FROM points
+           WHERE tracker_id = ?1 AND velocity_kmh >= ?3 AND garmin_time > unixepoch() - ?2
+           ORDER BY garmin_time DESC LIMIT 1), 0)
        ORDER BY garmin_time ASC`
-    ).bind(trackerId, GROUND_TRAIL_S).all<FlightPoint>(),
+    ).bind(trackerId, GROUND_TRAIL_S, SPEED_THRESHOLD_KMH).all<FlightPoint>(),
   ]);
 
   const { refPoint, fromNamedPoint } = await resolveRefPoint(c.var.tenant, trackerId, livePoint?.lat, livePoint?.lon);

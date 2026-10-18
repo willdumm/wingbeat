@@ -559,6 +559,24 @@ describe('GET /api/flights/complete ground trail', () => {
     assert.deepEqual(body.ground_trail.map(p => p.t), [t - 3600]);
   });
 
+  test("starts after the newest fast point, so flights lagging the points don't make one in flight", async () => {
+    const t = now();
+    const point = (id, time, v) =>
+      w.run('INSERT INTO points (garmin_time, lat, lon, velocity_kmh, tracker_id) VALUES (?, 58, -154, ?, ?)', time, v, id);
+    // runSegmentation has deleted the in-progress flight and not yet written it again: the
+    // last flight is the previous one, and the current flight's points follow it.
+    await seed(14, t - 5 * 3600, t - 4 * 3600, [t - 3600]);
+    for (const dt of [1800, 1680, 1560, 120]) await point(14, t - dt, 150);
+    assert.deepEqual((await complete(14)).ground_trail, []);
+    // A poll stored new points and hasn't segmented them yet: fast ones past the flight's end
+    // are no trail; slow ones after the newest fast one (a landing) are.
+    await seed(15, t - 1800, t - 600, []);
+    await point(15, t - 480, 150);
+    assert.deepEqual((await complete(15)).ground_trail, []);
+    await point(15, t - 360, 5);
+    assert.deepEqual((await complete(15)).ground_trail.map(p => p.t), [t - 360]);
+  });
+
   test('is empty while the latest flight is in progress, and for a tracker with no flights', async () => {
     const t = now();
     await seed(12, t - 1800, t - 60, []);

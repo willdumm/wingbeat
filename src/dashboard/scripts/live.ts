@@ -199,8 +199,7 @@ export function dashboardScriptsLive(): string {
 
     // Redraws the ground trail of each tracker showing a plane marker (at its latest
     // flight's end): in the default view, or on that tracker's latest flight. Any other
-    // view of the past has no plane, so no trail. A plane on an in-progress flight has
-    // none either: the server's trail is empty while airborne.
+    // view of the past has no plane, so no trail, and a tracker in flight has none.
     function renderGroundTrails() {
       for (const layer of groundTrailLayers) layer.remove();
       groundTrailLayers = [];
@@ -209,7 +208,8 @@ export function dashboardScriptsLive(): string {
       trailLabels = [];
       for (const tid of Object.keys(planeMarkers)) {
         const d = liveDataByTracker[tid];
-        if (!d) continue;
+        // None at all while the tracker is in flight.
+        if (!d || (d.velocity_kmh ?? 0) >= FLIGHT_THRESHOLD_KMH) continue;
         const drawn = drawGroundTrail(map, {
           from: [d.lat, d.lon],
           points: d.ground_trail ?? [],
