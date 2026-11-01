@@ -22,7 +22,6 @@ import { dashboardScriptsRefresh } from './refresh';
 import { settingsModalScript } from '../../shared/settings';
 import { formModalScript } from '../../shared/form-modal';
 import { segmentedControlScript } from '../../shared/segmented-control';
-import { tzCalendarScript } from '../../shared/time';
 import { htmlEscapeScript } from '../../shared/html';
 import { editHistoryScript } from '../../shared/edit-history';
 import { pilotDutyScript } from '../../shared/pilot-duty';
@@ -46,7 +45,6 @@ export function dashboardScripts(env: Env): string {
     mapLayerColorRuntimeScript(),
     mapLayersRuntimeScript(env),
     toggleScript(),
-    tzCalendarScript(),
     htmlEscapeScript(),
     dashboardScriptsState(SPEED_THRESHOLD_KMH),
     overlayLegendRuntimeScript(),

@@ -18,21 +18,18 @@ export function dashboardScriptsHelpers(): string {
       return dirs[Math.round(deg / 22.5) % 16];
     }
 
-    function dayKey(d) {
-      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    // A flight list day is an operator day (the date filter's days), whatever the
+    // device's timezone. Epochs in, through the core bundle's time globals.
+    function dayKey(unix) {
+      return unixToTzDateStr(unix);
     }
 
-    function fmtDay(d) {
-      return d.toLocaleDateString(undefined, {
-        weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
-      });
+    function fmtDay(unix) {
+      return tzLongDateLabel(unixToTzDateStr(unix));
     }
 
-    function fmtTime(d) {
-      return d.toLocaleTimeString(undefined, {
-        hour: '2-digit', minute: '2-digit',
-        timeZoneName: 'short',
-      });
+    function fmtTime(unix) {
+      return fmtTzTime(unix);
     }
 
     ${toKnots.toString()}

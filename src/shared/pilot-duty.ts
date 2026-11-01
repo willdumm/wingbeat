@@ -252,9 +252,10 @@ export function pilotDutyStyles(): string {
  * renderDutyLog() and the PDF export (Typst, loaded on first export) only format that
  * model. Takes flights, log and elements as arguments rather than reading the flight
  * store, so the docs-site showcase (src/showcase/) renders and exports the same log from
- * sample data. Times are shown in APP_SETTINGS.timezone. Needs tzCalendarScript()
- * (shared/time.ts), flightEditsScript() (flight-edits.ts) and htmlEscapeScript()
- * (shared/html.ts) in the same script. See docs/duty-log-editing-plan.md.
+ * sample data. Times are shown in APP_SETTINGS.timezone. Needs the core bundle's time
+ * globals (shared/core-bundle.ts) on the page, and flightEditsScript() (flight-edits.ts)
+ * and htmlEscapeScript() (shared/html.ts) in the same script. See
+ * docs/duty-log-editing-plan.md.
  */
 export function pilotDutyRenderScript(): string {
   return `
@@ -330,7 +331,7 @@ export function pilotDutyRenderScript(): string {
     // ── Dates and times in the duty timezone ──
 
     // Dates, date keys (tzAddDays, tzDateKey, tzDateLabel, ...) and H:MM durations
-    // (fmtDuration) come from tzCalendarScript() (shared/time.ts).
+    // (fmtDuration) come from the core bundle (@wingbeat/core/time).
 
     // [year, month] of the current month in the duty timezone.
     function currentDutyMonth() {

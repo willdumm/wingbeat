@@ -176,7 +176,7 @@ export function filterMarkup(): string {
   `;
 }
 
-/** Needs tzCalendarScript() (shared/time.ts) in the same script. */
+/** Needs the core bundle's time globals (shared/core-bundle.ts) on the page. */
 export function filterScript(): string {
   const markupJson = JSON.stringify(filterMarkup());
   return `

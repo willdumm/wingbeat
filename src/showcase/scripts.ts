@@ -24,8 +24,8 @@ import { dashboardScriptsFlightListRender } from '../dashboard/scripts/flight-li
 import { dashboardScriptsPointPicker } from '../dashboard/scripts/point-picker';
 import { elevationToolScript } from '../shared/elevation';
 import { analyticsScriptsRegion } from '../analytics/scripts/region';
-import { tzCalendarScript } from '../shared/time';
 import { htmlEscapeScript } from '../shared/html';
+import { coreBundle } from '../shared/core-bundle';
 import { analyticsScriptsAccounting } from '../analytics/scripts/accounting';
 import { analyticsScriptsStreamgraphRender } from '../analytics/scripts/streamgraph';
 import { analyticsScriptsLayers } from '../analytics/scripts/layers';
@@ -57,7 +57,8 @@ export function showcaseScript(sample: SampleData): string {
     `const synthesizeTrack = ${synthesizeTrack.toString()};`,
     `const formatLocalDateTime = ${formatLocalDateTime.toString()};`,
     `const trackerList = SAMPLE.trackers;`,
-    tzCalendarScript(),
+    // The time globals and the rest of @wingbeat/core, as the pages load it.
+    coreBundle,
     htmlEscapeScript(),
     themeRuntimeScript(),
     mapLayerColorRuntimeScript(),

@@ -3,7 +3,7 @@
  * day form (pilot-duty.ts), from a record's edit history (GET /api/edit-history; the
  * edit_history triggers of migration 0002), and what those forms show when a
  * save is refused because the record changed since they loaded it (409, "Edit conflicts"
- * in src/index.ts). Needs tzCalendarScript() (shared/time.ts) in the same script.
+ * in src/index.ts). Needs the core bundle's time globals (shared/core-bundle.ts) on the page.
  */
 export function editHistoryScript(): string {
   return `

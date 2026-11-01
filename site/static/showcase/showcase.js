@@ -79,101 +79,128 @@ const formatLocalDateTime = function formatLocalDateTime(epochSeconds, timezone)
   });
 };
 const trackerList = SAMPLE.trackers;
+/* @wingbeat/core browser bundle (src/client/core-entry.ts) */
+"use strict";
+(() => {
+  // packages/core/src/time.ts
+  var partsFmts = /* @__PURE__ */ new Map();
+  var abbrevFmts = /* @__PURE__ */ new Map();
+  function tzParts(tz2, unix) {
+    let fmt = partsFmts.get(tz2);
+    if (!fmt) {
+      fmt = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz2,
+        hourCycle: "h23",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+      partsFmts.set(tz2, fmt);
+    }
+    const p = {};
+    for (const { type, value } of fmt.formatToParts(unix * 1e3)) p[type] = value;
+    return p;
+  }
+  function tzOffsetAt(tz2, unix) {
+    const p = tzParts(tz2, unix);
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) / 1e3 - unix;
+  }
+  function tzLocalToEpoch(tz2, dateKey, hhmm = "00:00") {
+    const [y, m, d] = dateKey.split("-").map(Number);
+    const [h, mi] = hhmm.split(":").map(Number);
+    const asUtc = Date.UTC(y, m - 1, d, h, mi) / 1e3;
+    return asUtc - tzOffsetAt(tz2, asUtc - tzOffsetAt(tz2, asUtc));
+  }
+  function tzDayStartUnix(tz2, y, m, d) {
+    const ref = Date.UTC(y, m - 1, d, 9, 0, 0) / 1e3;
+    return Date.UTC(y, m - 1, d) / 1e3 - tzOffsetAt(tz2, ref);
+  }
+  function tzDayEndUnix(tz2, y, m, d) {
+    const ref = Date.UTC(y, m - 1, d, 20, 0, 0) / 1e3;
+    return Date.UTC(y, m - 1, d, 23, 59, 59) / 1e3 - tzOffsetAt(tz2, ref);
+  }
+  function unixToTzDateStr(tz2, unix) {
+    const p = tzParts(tz2, unix);
+    return p.year + "-" + p.month + "-" + p.day;
+  }
+  function unixToTzMonthKey(tz2, unix) {
+    const p = tzParts(tz2, unix);
+    return p.year + "-" + p.month;
+  }
+  function unixToTzTime(tz2, unix) {
+    const p = tzParts(tz2, unix);
+    return p.hour + ":" + p.minute;
+  }
+  function tzAbbrev(tz2, unix) {
+    let fmt = abbrevFmts.get(tz2);
+    if (!fmt) {
+      fmt = new Intl.DateTimeFormat("en-US", { timeZone: tz2, timeZoneName: "short" });
+      abbrevFmts.set(tz2, fmt);
+    }
+    return fmt.formatToParts(unix * 1e3).find((p) => p.type === "timeZoneName")?.value ?? tz2;
+  }
+  function fmtTzTime(tz2, unix) {
+    return unixToTzTime(tz2, unix) + " " + tzAbbrev(tz2, unix);
+  }
+  var DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  var MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function tzAddDays(dateKey, n) {
+    const [y, m, d] = dateKey.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+  }
+  function tzDateKey(y, m, d) {
+    return y + "-" + String(m).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+  }
+  function tzAddMonths(y, m, n) {
+    const t = y * 12 + (m - 1) + n;
+    return [Math.floor(t / 12), t % 12 + 1];
+  }
+  function weekday(y, m, d) {
+    return DAY_NAMES[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  }
+  function tzDateLabel(dateKey) {
+    const [y, m, d] = dateKey.split("-").map(Number);
+    return weekday(y, m, d) + " " + MONTH_ABBR[m - 1] + " " + d;
+  }
+  function tzLongDateLabel(dateKey) {
+    const [y, m, d] = dateKey.split("-").map(Number);
+    return weekday(y, m, d) + ", " + MONTH_ABBR[m - 1] + " " + d + ", " + y;
+  }
+  function tzShortDate(dateKey, sameYear) {
+    const [y, m, d] = dateKey.split("-").map(Number);
+    return MONTH_ABBR[m - 1] + " " + d + (y === sameYear ? "" : ", " + y);
+  }
+  function fmtDuration(secs, up) {
+    const mins = up ? Math.ceil(secs / 60) : Math.floor(secs / 60);
+    return Math.floor(mins / 60) + ":" + String(mins % 60).padStart(2, "0");
+  }
 
-    // One formatter per timezone: building an Intl.DateTimeFormat is far slower than
-    // formatting with one.
-    const _tzPartsFmts = {};
-    function _tzParts(unix) {
-      const tz = window.APP_SETTINGS.timezone;
-      const fmt = _tzPartsFmts[tz] || (_tzPartsFmts[tz] = new Intl.DateTimeFormat('en-US', {
-        timeZone: tz, hourCycle: 'h23',
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-      }));
-      const p = {};
-      for (const { type, value } of fmt.formatToParts(new Date(unix * 1000))) p[type] = value;
-      return p;
-    }
+  // src/client/core-entry.ts
+  var tz = () => window.APP_SETTINGS.timezone;
+  Object.assign(globalThis, {
+    // ── time: in the operator's timezone ──
+    tzLocalToEpoch: (dateKey, hhmm) => tzLocalToEpoch(tz(), dateKey, hhmm),
+    tzDayStartUnix: (y, m, d) => tzDayStartUnix(tz(), y, m, d),
+    tzDayEndUnix: (y, m, d) => tzDayEndUnix(tz(), y, m, d),
+    unixToTzDateStr: (unix) => unixToTzDateStr(tz(), unix),
+    unixToTzMonthKey: (unix) => unixToTzMonthKey(tz(), unix),
+    unixToTzTime: (unix) => unixToTzTime(tz(), unix),
+    tzAbbrev: (unix) => tzAbbrev(tz(), unix),
+    fmtTzTime: (unix) => fmtTzTime(tz(), unix),
+    // ── time: date keys and durations ──
+    tzAddDays,
+    tzDateKey,
+    tzAddMonths,
+    tzDateLabel,
+    tzLongDateLabel,
+    tzShortDate,
+    fmtDuration
+  });
+})();
 
-    // Seconds the timezone is ahead of UTC at an instant.
-    function _tzOffsetAt(unix) {
-      const p = _tzParts(unix);
-      return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) / 1000 - unix;
-    }
-
-    // The epoch of local date (YYYY-MM-DD) and time (HH:MM, default midnight).
-    function tzLocalToEpoch(dateKey, hhmm = '00:00') {
-      const [y, m, d] = dateKey.split('-').map(Number);
-      const [h, mi] = hhmm.split(':').map(Number);
-      const asUtc = Date.UTC(y, m - 1, d, h, mi) / 1000;
-      return asUtc - _tzOffsetAt(asUtc - _tzOffsetAt(asUtc));
-    }
-
-    function tzDayStartUnix(y, m, d) {
-      const ref = Date.UTC(y, m - 1, d, 9, 0, 0) / 1000;
-      return Date.UTC(y, m - 1, d) / 1000 - _tzOffsetAt(ref);
-    }
-
-    function tzDayEndUnix(y, m, d) {
-      const ref = Date.UTC(y, m - 1, d, 20, 0, 0) / 1000;
-      return Date.UTC(y, m - 1, d, 23, 59, 59) / 1000 - _tzOffsetAt(ref);
-    }
-
-    // YYYY-MM-DD of an epoch.
-    function unixToTzDateStr(unix) {
-      const p = _tzParts(unix);
-      return p.year + '-' + p.month + '-' + p.day;
-    }
-
-    // YYYY-MM of an epoch.
-    function unixToTzMonthKey(unix) {
-      const p = _tzParts(unix);
-      return p.year + '-' + p.month;
-    }
-
-    // HH:MM (24-hour) of an epoch.
-    function unixToTzTime(unix) {
-      const p = _tzParts(unix);
-      return p.hour + ':' + p.minute;
-    }
-
-    // ── Date keys (YYYY-MM-DD, no timezone involved) and durations ──
-
-    const _TZ_DAY_NAMES  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    const _TZ_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-    // The date key n days after dateKey (before it for a negative n).
-    function tzAddDays(dateKey, n) {
-      const [y, m, d] = dateKey.split('-').map(Number);
-      return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
-    }
-    function tzDateKey(y, m, d) {
-      return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-    }
-    // [year, month] n months after month m of year y.
-    function tzAddMonths(y, m, n) {
-      const t = y * 12 + (m - 1) + n;
-      return [Math.floor(t / 12), t % 12 + 1];
-    }
-    // "Mon Oct 3"
-    function tzDateLabel(dateKey) {
-      const [y, m, d] = dateKey.split('-').map(Number);
-      return _TZ_DAY_NAMES[new Date(Date.UTC(y, m - 1, d)).getUTCDay()] + ' ' + _TZ_MONTH_ABBR[m - 1] + ' ' + d;
-    }
-    // "Oct 3" (with the year when it isn't sameYear)
-    function tzShortDate(dateKey, sameYear) {
-      const [y, m, d] = dateKey.split('-').map(Number);
-      return _TZ_MONTH_ABBR[m - 1] + ' ' + d + (y === sameYear ? '' : ', ' + y);
-    }
-
-    // H:MM, rounded down to the minute; up: rounded up instead, for an amount over a
-    // limit, so 8:00:40 against an 8:00 limit reads 8:01, not 8:00. (Rounding down is right
-    // for an amount under a minimum: 9:59:30 of rest reads 9:59.)
-    function fmtDuration(secs, up) {
-      const mins = up ? Math.ceil(secs / 60) : Math.floor(secs / 60);
-      return Math.floor(mins / 60) + ':' + String(mins % 60).padStart(2, '0');
-    }
-  
 
     // HTML-escapes text (null/undefined → '') for markup and attribute values in double
     // or single quotes (& < > " ').
@@ -714,21 +741,18 @@ const trackerList = SAMPLE.trackers;
       return dirs[Math.round(deg / 22.5) % 16];
     }
 
-    function dayKey(d) {
-      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    // A flight list day is an operator day (the date filter's days), whatever the
+    // device's timezone. Epochs in, through the core bundle's time globals.
+    function dayKey(unix) {
+      return unixToTzDateStr(unix);
     }
 
-    function fmtDay(d) {
-      return d.toLocaleDateString(undefined, {
-        weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
-      });
+    function fmtDay(unix) {
+      return tzLongDateLabel(unixToTzDateStr(unix));
     }
 
-    function fmtTime(d) {
-      return d.toLocaleTimeString(undefined, {
-        hour: '2-digit', minute: '2-digit',
-        timeZoneName: 'short',
-      });
+    function fmtTime(unix) {
+      return fmtTzTime(unix);
     }
 
     function toKnots(kmh) {
@@ -1295,10 +1319,9 @@ const trackerList = SAMPLE.trackers;
       let lastDayKey = null;
       let currentGroup = null;
       for (const f of flights) {
-        const start = new Date(f.start_time * 1000);
-        const dk = dayKey(start);
+        const dk = dayKey(f.start_time);
         if (dk !== lastDayKey) {
-          currentGroup = { label: fmtDay(start), dayKey: dk, flights: [] };
+          currentGroup = { label: fmtDay(f.start_time), dayKey: dk, flights: [] };
           dayGroups.push(currentGroup);
           lastDayKey = dk;
         }
@@ -1365,7 +1388,6 @@ const trackerList = SAMPLE.trackers;
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
       });
 
-      const start = new Date(f.start_time * 1000);
       const dur = f.end_time ? ((f.end_time - f.start_time) / 3600).toFixed(1) : null;
 
       const manual = !!(f.edit && f.edit.manual);
@@ -1390,7 +1412,7 @@ const trackerList = SAMPLE.trackers;
 
       el.innerHTML =
         '<div class="flight-item-header">' +
-          '<div class="flight-date">' + fmtTime(start) + flightEditedMark(f, ['start_time', 'end_time']) +
+          '<div class="flight-date">' + fmtTime(f.start_time) + flightEditedMark(f, ['start_time', 'end_time']) +
             (dur != null ? ' <span class="flight-dur">(' + dur + ' hr)</span>' : '') + '</div>' +
           (onEdit ? '<button type="button" class="flight-edit-btn btn-icon" aria-label="Edit flight" title="Edit flight">' + FLIGHT_LIST_EDIT_HTML + '</button>' : '') +
         '</div>' +
@@ -1852,7 +1874,7 @@ const trackerList = SAMPLE.trackers;
     // ── Dates and times in the duty timezone ──
 
     // Dates, date keys (tzAddDays, tzDateKey, tzDateLabel, ...) and H:MM durations
-    // (fmtDuration) come from tzCalendarScript() (shared/time.ts).
+    // (fmtDuration) come from the core bundle (@wingbeat/core/time).
 
     // [year, month] of the current month in the duty timezone.
     function currentDutyMonth() {

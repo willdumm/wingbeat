@@ -4,6 +4,9 @@
  */
 import coreBundle from '../../build/core-bundle.txt';
 
+/** The bundle's source, for a script that inlines it (the docs-site showcase). */
+export { coreBundle };
+
 /** The bundle as a <script> carrying the page's nonce. Goes before the page's own script. */
 export function coreBundleScript(nonce: string): string {
   return `<script nonce="${nonce}">${coreBundle}</script>`;
