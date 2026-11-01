@@ -2,6 +2,13 @@ name = "flight-tracker"
 main = "src/index.ts"
 compatibility_date = "2024-11-01"
 
+# Bundles @wingbeat/core for the browser (build/core-bundle.txt), which the Worker
+# imports as a Text module (src/shared/core-bundle.ts). Runs before every `wrangler dev`
+# and `wrangler deploy`.
+[build]
+command = "node scripts/build-core.mjs"
+watch_dir = ["packages/core/src", "src/client"]
+
 # Lets src/shared/brand.ts `import` the top-level logo SVG as raw text, so the
 # brand mark has exactly one source file that flows into every rendered page.
 [[rules]]

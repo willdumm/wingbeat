@@ -13,6 +13,7 @@
 // patched wrangler; elsewhere the one in node_modules is used.
 
 import { build } from 'esbuild';
+import { coreBundlePlugin } from '../scripts/build-core.mjs';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -80,6 +81,7 @@ export async function startWorker({ bindings: overrides = {} } = {}) {
     format: 'esm',
     write: false,
     loader: { '.svg': 'text' },
+    plugins: [coreBundlePlugin()],
     logLevel: 'warning',
   });
   // A binding overridden to undefined is left unset.
