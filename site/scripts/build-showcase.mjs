@@ -13,6 +13,7 @@
 //   nix develop path:./nix --command npm run docs:showcase -- --check   # exit 1 if stale
 
 import { build } from 'esbuild';
+import { coreBundlePlugin } from '../../scripts/build-core.mjs';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +32,7 @@ const bundle = await build({
   format: 'esm',
   write: false,
   loader: { '.svg': 'text' },
+  plugins: [coreBundlePlugin()],
   logLevel: 'warning',
 });
 const { buildShowcase } = await import(

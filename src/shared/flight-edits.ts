@@ -25,8 +25,8 @@ export function flightEditsStyles(): string {
  *
  * Takes data as arguments and touches no page state, so the flight store
  * (flight-store.ts), the duty log and the docs-site showcase all call it the same way.
- * Needs tzCalendarScript() (shared/time.ts) and htmlEscapeScript() (shared/html.ts) in
- * the same script.
+ * Needs the core bundle's time globals (shared/core-bundle.ts) on the page and
+ * htmlEscapeScript() (shared/html.ts) in the same script.
  */
 export function flightEditsScript(): string {
   return `

@@ -1,11 +1,12 @@
 // Test harness for the client-side scripts that live inside TypeScript template strings
-// (tzCalendarScript(), htmlEscapeScript(), flightEditsScript(), pilotDutyRenderScript(),
+// (htmlEscapeScript(), flightEditsScript(), pilotDutyRenderScript(),
 // flightStoreScript(), editHistoryScript()).
 // tsc can't see into those strings, so the tests run the real script text instead:
 //
 //   1. esbuild bundles a tiny in-memory entry that re-exports the script-string functions
-//      (nothing is written to disk), the same way site/scripts/build-showcase.mjs does;
-//   2. the scripts' text is concatenated and evaluated in a node:vm context with a stub
+//      and the @wingbeat/core browser bundle (nothing is written to disk), the same way
+//      site/scripts/build-showcase.mjs does;
+//   2. the core bundle runs first, as on the pages, then the scripts' text is concatenated and evaluated in a node:vm context with a stub
 //      window (APP_SETTINGS) and no DOM, the same order the pages ship them;
 //   3. the context's Date.now() reads a settable clock, so "today", the current month and
 //      the "as of now" totals are deterministic.
@@ -15,6 +16,7 @@
 // on them directly.
 
 import { build } from 'esbuild';
+import { coreBundlePlugin } from '../scripts/build-core.mjs';
 import vm from 'node:vm';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,7 +26,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const bundle = await build({
   stdin: {
     contents: `
-      export { tzCalendarScript } from './src/shared/time';
+      export { coreBundle } from './src/shared/core-bundle';
       export { htmlEscapeScript } from './src/shared/html';
       export { flightEditsScript } from './src/shared/flight-edits';
       export { pilotDutyRenderScript } from './src/shared/pilot-duty';
@@ -39,6 +41,7 @@ const bundle = await build({
   format: 'esm',
   write: false,
   loader: { '.svg': 'text' },
+  plugins: [coreBundlePlugin()],
   logLevel: 'warning',
 });
 const scripts = await import(
@@ -49,9 +52,9 @@ const scripts = await import(
 // properties of the context's global object, so they're collected by a script evaluated
 // in the same context.
 const EXPORTS = [
-  // time.ts
+  // the core bundle (@wingbeat/core/time)
   'tzLocalToEpoch', 'unixToTzDateStr', 'unixToTzTime', 'unixToTzMonthKey', 'tzDayStartUnix', 'tzDayEndUnix',
-  'tzAddDays', 'fmtDuration',
+  'tzAddDays', 'fmtDuration', 'fmtTzTime',
   // flight-edits.ts
   'applyFlightEdits', 'flightRemarks', 'flightEntrySummary', 'flightFormTimes', 'flightTrackedTimes',
   // pilot-duty.ts
@@ -93,7 +96,7 @@ export function loadEngine({ settings = {}, now = '2026-10-15 12:00', fetch } = 
   const dispatch = (type, event) => { for (const fn of listeners.get(type) ?? []) fn(event); };
   vm.runInContext('Date.now = () => __clock.ms;', context);
   const source = [
-    scripts.tzCalendarScript(),
+    scripts.coreBundle,
     scripts.htmlEscapeScript(),
     scripts.flightEditsScript(),
     scripts.pilotDutyRenderScript(),

@@ -1,6 +1,9 @@
 # Plan: Wingbeat mobile app (Expo)
 
-**Status: planned.** Nothing here is built yet. All open questions are answered.
+**Status: phase 1 started.** Done: the foundation (`packages/core`, the browser bundle as a
+Text module, the nonce test, the theme tokens) and step 1, `time` (core time with zone
+abbreviations, operator days in the flight list, the device-time scan test with its list of
+uses still to remove). Next: step 2, `flight-edits`. All open questions are answered.
 
 ## Settled so far
 

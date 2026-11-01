@@ -13,7 +13,6 @@ import { flightEditorScript } from '../../shared/flight-editor';
 import { aircraftInfoScript } from '../../shared/aircraft-info';
 import { analyticsScriptsRegion } from './region';
 import { analyticsScriptsAccounting } from './accounting';
-import { tzCalendarScript } from '../../shared/time';
 import { htmlEscapeScript } from '../../shared/html';
 import { editHistoryScript } from '../../shared/edit-history';
 import { analyticsScriptsStreamgraphRender, analyticsScriptsStreamgraph } from './streamgraph';
@@ -28,7 +27,6 @@ export function analyticsScripts(env: Env): string {
     mapLayersRuntimeScript(env),
     overlayLegendRuntimeScript(),
     toggleScript(),
-    tzCalendarScript(),
     htmlEscapeScript(),
     flightEditsScript(),
     flightStoreScript(),

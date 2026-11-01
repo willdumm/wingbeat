@@ -11,7 +11,7 @@ import { MAX_FLIGHT_TEXT_LENGTH } from './record-limits';
  * The view lives in the settings modal (settings.ts places flightEditorMarkup()); the
  * script needs the flight store, flight-edits.ts, form-modal.ts (apiWrite,
  * runFormAction), segmented-control.ts, edit-history.ts, html.ts (escHtml) and
- * tzCalendarScript(), all on both pages.
+ * the core bundle's time globals (shared/core-bundle.ts), all on both pages.
  */
 export function flightEditorMarkup(): string {
   return /* html */ `

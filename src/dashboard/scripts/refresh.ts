@@ -5,10 +5,7 @@ export function dashboardScriptsRefresh(): string {
   return `
     // ── Post-poll map refresh helpers ─────────────────────────────────────────
     function getDayFlights(dk) {
-      return filteredFlights.filter(f => {
-        const start = new Date(f.start_time * 1000);
-        return dayKey(start) === dk;
-      });
+      return filteredFlights.filter(f => dayKey(f.start_time) === dk);
     }
 
     // The flight's identity across re-segmentation: its tracker's own start time (a
