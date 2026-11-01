@@ -32,6 +32,18 @@ describe('security headers', () => {
       if (p !== '/login') assert.ok(tags.length > 5);
     }
   });
+  test('the dashboard and analytics pages inline the core bundle in a script with the nonce', async () => {
+    for (const p of ['/', '/analytics']) {
+      const r = await w.request('GET', p);
+      const nonce = /script-src 'nonce-([^']+)'/.exec(r.headers.get('content-security-policy'))[1];
+      const scripts = [...r.body.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
+      const core = scripts.filter(m => m[2].startsWith('/* @wingbeat/core browser bundle'));
+      assert.equal(core.length, 1, p);
+      assert.ok(core[0][1].includes(`nonce="${nonce}"`), p);
+      // Just ahead of the page script (the last one), which calls the globals it defines.
+      assert.equal(scripts.indexOf(core[0]), scripts.length - 2, p);
+    }
+  });
   test('the nonce differs per request', async () => {
     const n = async () => /nonce-([^']+)'/.exec((await w.request('GET', '/analytics')).headers.get('content-security-policy'))[1];
     assert.notEqual(await n(), await n());

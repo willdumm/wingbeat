@@ -17,7 +17,7 @@ The tracker continuously polls a Garmin InReach MapShare KML feed (via a per-min
 
 **Runtime:** Cloudflare Worker (TypeScript, Hono framework)  
 **Database:** Cloudflare D1 (managed SQLite)  
-**Frontend:** Inline HTML + vanilla JS + Leaflet.js (no build step, TypeScript bundled via esbuild)  
+**Frontend:** Inline HTML + vanilla JS + Leaflet.js, plus `@wingbeat/core` (`packages/core`, typed client logic) bundled by esbuild into an inline script. Wrangler's `[build]` command (`scripts/build-core.mjs`) builds it before every `wrangler dev` and `wrangler deploy`  
 **Deployment:** `wrangler deploy`
 
 ---
@@ -271,7 +271,10 @@ wingbeat/
 │   │   ├── markup.ts
 │   │   ├── styles.ts
 │   │   └── scripts/
+│   ├── client/core-entry.ts            # browser entry of @wingbeat/core: its functions as page globals
 │   └── shared/                         # Shared components (settings modal, flight store, …)
+├── packages/core/                      # @wingbeat/core: typed, DOM-free logic shared by the pages, Worker and app (npm workspace)
+├── scripts/build-core.mjs              # bundles packages/core for the browser (Wrangler's [build] command)
 ├── migrations/
 │   ├── 0001_initial.sql                # full schema; new migrations start at 0002_
 │   └── 0002_duty_records.sql           # flight corrections, duty/rest days, dated defaults, edit_history
