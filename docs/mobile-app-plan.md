@@ -400,6 +400,33 @@ Those render chunks call core for anything they compute.
    route group alongside (see "The API contract"). The render chunks the showcase calls stay
    where they are, and `docs:showcase --check` runs on every step.
 
+### Phase 1 progress and conventions
+
+Done on the `core-foundation` branch (deployed to staging 2026-11-02): the foundation and
+step 1 (`time`). How it's built, for the steps that follow:
+
+- **Core modules** live in `packages/core/src/<name>.ts`, each listed in `exports` in
+  `packages/core/package.json`. They take what they used to read from the page as
+  parameters (`time` takes `tz` first).
+- **Browser glue** is `src/client/core-entry.ts`: it `Object.assign`s each function to
+  `globalThis` under its old global name, binding page state (`window.APP_SETTINGS.timezone`)
+  at call time. A moved script string is deleted, and its callers stay the same.
+- **The bundle**: `scripts/build-core.mjs` writes `build/core-bundle.txt` (gitignored).
+  `src/shared/core-bundle.ts` imports it (`coreBundleScript(nonce)` for the pages,
+  `coreBundle` for the showcase). Tests, `docs:showcase` and the harness build it in
+  memory with `coreBundlePlugin()`, not from disk.
+- **Tests**: core modules are tested directly through `test/core.mjs` (`importCore('time')`);
+  `test/harness.mjs` runs the shipped bundle before the script strings, so the existing
+  engine tests double as the bundle's smoke test. Add new globals to its `EXPORTS`.
+- **Device time**: `test/device-time.test.mjs` has an exact per-file `KNOWN` count of the
+  remaining `new Date(` / `toLocaleDateString` / `toLocaleTimeString` uses. Each step lowers
+  or removes its files' entries.
+- **Display**: `fmtTzTime()` ("14:05 AKDT", 24-hour) for times in lists, cards, popups and
+  alerts; `tzLongDateLabel()` for day headings. The flight list now groups by operator day.
+- **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
+  `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
+  commit not yet pushed. It must be pushed before or with the first tag that has the bundle.
+
 ### Times and the operator's timezone
 
 **The rule: every time and date is shown in the operator's timezone (the tenant's
@@ -452,8 +479,10 @@ Those render chunks call core for anything they compute.
 | `analytics/scripts/accounting.ts` (`monthLabel`) | Month label | Device locale only. The bucketing already uses operator months |
 | `shared/settings.ts` | Device last seen, invite expiry, webhook last triggered, feed test's latest point | Device time, no zone shown |
 
-**Keep it fixed:** a test (in `npm test`) scans the client script sources outside core and
-fails if it finds `new Date(`, `toLocaleDateString` or `toLocaleTimeString`. Client code
+**Keep it fixed:** a test (in `npm test`, `test/device-time.test.mjs`) scans the client
+script sources outside core and fails if it finds `new Date(`, `toLocaleDateString` or
+`toLocaleTimeString` beyond its list of known uses, which shrinks to nothing by the end of
+phase 1. Client code
 gets the time from `Date.now()` and formats it only through core's `time`, so a new
 device-time display can't slip back in. Number formatting (`toLocaleString()` on a count)
 is still allowed.
