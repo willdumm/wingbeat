@@ -166,7 +166,7 @@ to avoid churn.
 It takes data as arguments and touches no page state, so the showcase can call it on
 sample data.
 
-**`flightStore`** (`flight-store.ts`):
+**`flightStore`** (`packages/core/src/flight-store.ts`):
 
 - Keeps raw flights as today and also holds `entries` + `version` in the same
   localStorage blob. (As built, a history cursor instead of `version`; see "After

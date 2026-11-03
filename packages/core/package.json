@@ -6,9 +6,15 @@
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "exports": {
+    "./api/client": "./src/api/client.ts",
+    "./api/flights": "./src/api/flights.ts",
     "./flight-edits": "./src/flight-edits.ts",
+    "./flight-store": "./src/flight-store.ts",
     "./record-limits": "./src/record-limits.ts",
     "./time": "./src/time.ts",
     "./tokens": "./src/tokens.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
   }
 }

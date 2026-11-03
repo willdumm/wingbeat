@@ -778,7 +778,7 @@ client's cursor are the rows to send:
   re-render. The migration's `(entity, id)` index on `edit_history` serves the scan.
 - With no cursor (or 0), or one past the newest id (a reset or recreated database), it
   returns every row and `full: true`, and the client replaces its copy.
-- The client (`flight-store.ts`) keeps the cursor in `_mem` as `entries_last_history_id`,
+- The client (`packages/core/src/flight-store.ts`) keeps the cursor in its cached copy as `entries_last_history_id`,
   saved to localStorage next to the flights' per-tracker cursors, and fetches corrections
   alongside the trackers' flights on the same fetch/merge/save/notify path
   (`_fsFetchSince`, `_fsAdvance`). `mergeFlightCorrections` merges on the key, not the id,

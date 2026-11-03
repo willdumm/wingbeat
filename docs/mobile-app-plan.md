@@ -3,8 +3,9 @@
 **Status: phase 1 started.** Done: the foundation (`packages/core`, the browser bundle as a
 Text module, the nonce test, the theme tokens), step 1, `time` (core time with zone
 abbreviations, operator days in the flight list, the device-time scan test with its list of
-uses still to remove), and step 2, `flight-edits` (with `record-limits`). Next: step 3,
-`flight-store`. All open questions are answered.
+uses still to remove), step 2, `flight-edits` (with `record-limits`), and step 3,
+`flight-store` (with the API client and the flights and corrections response schemas).
+Next: step 4, `duty`. All open questions are answered.
 
 ## Settled so far
 
@@ -404,7 +405,8 @@ Those render chunks call core for anything they compute.
 ### Phase 1 progress and conventions
 
 Done on the `core-foundation` branch (deployed to staging 2026-11-02): the foundation,
-step 1 (`time`) and step 2 (`flight-edits`). How it's built, for the steps that follow:
+step 1 (`time`) and step 2 (`flight-edits`); step 3 (`flight-store`) is on the branch
+and on staging. How it's built, for the steps that follow:
 
 - **Core modules** live in `packages/core/src/<name>.ts`, each listed in `exports` in
   `packages/core/package.json`. They take what they used to read from the page as
@@ -431,6 +433,24 @@ step 1 (`time`) and step 2 (`flight-edits`). How it's built, for the steps that 
   (`FLIGHT_EDIT_FIELD_NAMES`, `FLIGHT_MAX_SECS`, …) are globals from the bundle too.
 - **Modules the Worker shares** move whole and are imported as `@wingbeat/core/<name>`
   from `src/` (`record-limits` moved with `flight-edits`, which needs `MAX_FLIGHT_SECS`).
+- **API client and schemas** (from step 3): `packages/core/src/api/client.ts`
+  (`createApiClient({ baseUrl, auth, mismatch })`, `auth` either the same-origin cookie or a
+  bearer token; `mismatch` `'strict'` throws `ApiShapeError`, `'warn'` logs
+  `[wingbeat api] unexpected response` and returns the data anyway; a non-2xx is
+  `ApiHttpError`). Each route group's response schemas go in `packages/core/src/api/<group>.ts`
+  (`zod/mini`, unknown keys allowed). The web's client in `core-entry.ts` is warn-only. Each
+  schema gets a response-shape test in `test/worker-sql.test.mjs` in the same change.
+- **Stores are factories**: `createFlightStore({ storage, client, flightThresholdKmh,
+  watchExternalChanges })` takes sync or async storage; `core-entry.ts` creates the page's
+  `flightStore` from `localStorage` and the `storage` event. `snapshot()` returns its state
+  for tests.
+- **Dependencies**: zod is in `dependencies` of both the root (the Worker's tests and, later,
+  its validators) and `packages/core`. It made the browser bundle 58.8 KB unminified (9.8 KB
+  before), so `build-core.mjs` now minifies it: 26.8 KB, inlined in each page.
+- **Request validation** starts with the write routes (`corrections`, step 5), not with
+  `flight-store`'s two GETs: their only query parameters (`tracker`, `since`) are already
+  parsed leniently in the handler (a bad `since` reads as 0), so a query schema would change
+  nothing a client sees.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.

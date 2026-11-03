@@ -1,0 +1,140 @@
+// @wingbeat/core/flight-store with its storage and API client passed in (the web's own
+// wiring, localStorage and fetch, is tested in flight-store-sync.test.mjs), and
+// @wingbeat/core/api/client: the cached blob's key and shape, async storage (the app's),
+// and what a response that doesn't match its schema does.
+
+import { describe, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { importCore } from './core.mjs';
+
+const { createFlightStore, FLIGHT_STORE_KEY } = await importCore('flight-store');
+const { createApiClient, ApiShapeError, ApiHttpError } = await importCore('api/client');
+const { FlightCorrectionsResponse } = await importCore('api/flights');
+
+const flight = (id, start, extra = {}) => ({
+  id, tracker_id: 1, start_time: start, end_time: start + 600, modified_at: start, aircraft_tail: null,
+  pilot_id: null, pilot_name: null, origin_label: null, destination_label: null,
+  start_lat: null, start_lon: null, end_lat: null, end_lon: null, points: [{ t: start, lat: 58, lon: -154, v: 10, e: null, c: null }], ...extra,
+});
+const complete = (flights) => ({ last_polled: 5, live_label: null, geocode_pending: false, flights, last_modified_at: flights.at(-1)?.modified_at ?? null });
+const noCorrections = { entries: [], deleted: [], last_history_id: 3 };
+
+/** A client answering each path from routes (path prefix → body), recording the paths. */
+function stubClient(routes) {
+  const paths = [];
+  return {
+    paths,
+    async get(path) {
+      paths.push(path);
+      const hit = Object.entries(routes).find(([prefix]) => path.startsWith(prefix));
+      return structuredClone(hit[1]);
+    },
+  };
+}
+
+describe('createFlightStore', () => {
+  test('saves the web’s blob, under ft_flights_v2, in exactly its shape', async () => {
+    const saved = new Map();
+    const store = createFlightStore({
+      storage: { getItem: (k) => saved.get(k) ?? null, setItem: (k, v) => saved.set(k, v) },
+      client: stubClient({ '/api/flights/complete': complete([flight(1, 1000)]), '/api/flight-corrections': noCorrections }),
+      flightThresholdKmh: 37,
+    });
+    assert.equal(FLIGHT_STORE_KEY, 'ft_flights_v2');
+    store.init();
+    await store.refresh([1]);
+    const blob = JSON.parse(saved.get('ft_flights_v2'));
+    assert.deepEqual(Object.keys(blob).sort(), ['entries', 'entries_last_history_id', 'flights', 'last_modified_at_by_tracker']);
+    assert.deepEqual(blob.last_modified_at_by_tracker, { 1: 1000 });
+    assert.equal(blob.entries_last_history_id, 3);
+    assert.deepEqual(blob.flights.map(f => f.id), [1]);
+  });
+
+  test('sync storage loads within init(), so the store is readable right after', () => {
+    const blob = { last_modified_at_by_tracker: { 1: 1000 }, flights: [flight(1, 1000)], entries: [], entries_last_history_id: 7 };
+    const store = createFlightStore({
+      storage: { getItem: () => JSON.stringify(blob), setItem() {} },
+      client: stubClient({}), flightThresholdKmh: 37,
+    });
+    assert.equal(store.init(), undefined);
+    assert.equal(store.historyId(), 7);
+    assert.deepEqual(store.getAll().map(f => f.id), [1]);
+  });
+
+  test('async storage (the app’s): init() returns a promise, refresh continues from its cursors', async () => {
+    const blob = { last_modified_at_by_tracker: { 1: 1000 }, flights: [flight(1, 1000)], entries: [], entries_last_history_id: 7 };
+    let written = null;
+    const client = stubClient({ '/api/flights/complete': complete([]), '/api/flight-corrections': { ...noCorrections, last_history_id: 9 } });
+    const store = createFlightStore({
+      storage: { getItem: async () => JSON.stringify(blob), setItem: async (k, v) => { written = [k, v]; } },
+      client, flightThresholdKmh: 37,
+    });
+    await store.init();
+    assert.equal(store.historyId(), 7);
+    await store.refresh([1]);
+    assert.deepEqual(client.paths.sort(), ['/api/flight-corrections?since=7', '/api/flights/complete?tracker=1&since=1000']);
+    assert.equal(JSON.parse(written[1]).entries_last_history_id, 9);
+  });
+
+  test('a repaired old blob (no cursor) and a broken one', () => {
+    const old = createFlightStore({
+      storage: { getItem: () => JSON.stringify({ last_modified_at_by_tracker: {}, flights: [], entries_version: 4 }), setItem() {} },
+      client: stubClient({}), flightThresholdKmh: 37,
+    });
+    old.init();
+    assert.deepEqual(old.snapshot(), { last_modified_at_by_tracker: {}, flights: [], entries: [], entries_last_history_id: 0 });
+    const broken = createFlightStore({ storage: { getItem: () => '{nope', setItem() {} }, client: stubClient({}), flightThresholdKmh: 37 });
+    broken.init();
+    assert.equal(broken.historyId(), 0);
+  });
+
+  test('getCompleted leaves out a tracker’s newest flight while its last point is at flight speed', async () => {
+    const store = createFlightStore({
+      storage: { getItem: () => null, setItem() {} },
+      client: stubClient({
+        '/api/flights/complete': complete([flight(1, 1000), flight(2, 5000, { points: [{ t: 5000, lat: 58, lon: -154, v: 120, e: null, c: null }] })]),
+        '/api/flight-corrections': noCorrections,
+      }),
+      flightThresholdKmh: 37,
+    });
+    store.init();
+    await store.refresh([1]);
+    assert.deepEqual(store.getAll().map(f => f.id), [1, 2]);
+    assert.deepEqual(store.getCompleted().map(f => f.id), [1]);
+  });
+});
+
+describe('createApiClient', () => {
+  const respond = (body, status = 200) => async () => ({ ok: status < 300, status, json: async () => body });
+  const good = { entries: [], deleted: [], last_history_id: 1 };
+  const bad = { entries: [{ id: 'x' }], deleted: [], last_history_id: 1 };
+
+  test('a matching response is returned, unknown keys kept', async () => {
+    const client = createApiClient({ fetch: () => respond({ ...good, extra: 1 }) });
+    assert.deepEqual(await client.get('/api/flight-corrections', FlightCorrectionsResponse), { ...good, extra: 1 });
+  });
+
+  test('strict (the app): a mismatch is an ApiShapeError', async () => {
+    const client = createApiClient({ fetch: () => respond(bad) });
+    await assert.rejects(client.get('/api/flight-corrections', FlightCorrectionsResponse), ApiShapeError);
+  });
+
+  test('warn (the web): a mismatch is logged and the data used anyway', async () => {
+    const warned = [];
+    const client = createApiClient({ fetch: () => respond(bad), mismatch: 'warn', warn: (m) => warned.push(m) });
+    assert.deepEqual(await client.get('/api/flight-corrections', FlightCorrectionsResponse), bad);
+    assert.deepEqual(warned, ['[wingbeat api] unexpected response from /api/flight-corrections']);
+  });
+
+  test('an HTTP error, and the bearer token the app sends', async () => {
+    await assert.rejects(createApiClient({ fetch: () => respond({}, 500) }).get('/x', FlightCorrectionsResponse),
+      (e) => e instanceof ApiHttpError && e.message === 'HTTP 500');
+    let seen;
+    const client = createApiClient({
+      baseUrl: 'https://op.example', auth: { kind: 'bearer', token: 't0k' },
+      fetch: () => async (url, init) => { seen = [url, init.headers.Authorization]; return { ok: true, status: 200, json: async () => good }; },
+    });
+    await client.get('/api/flight-corrections', FlightCorrectionsResponse);
+    assert.deepEqual(seen, ['https://op.example/api/flight-corrections', 'Bearer t0k']);
+  });
+});

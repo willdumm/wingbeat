@@ -1,6 +1,6 @@
 // Test harness for the client-side scripts that live inside TypeScript template strings
 // (htmlEscapeScript(), flightEditsScript(), pilotDutyRenderScript(),
-// flightStoreScript(), editHistoryScript()).
+// editHistoryScript()).
 // tsc can't see into those strings, so the tests run the real script text instead:
 //
 //   1. esbuild bundles a tiny in-memory entry that re-exports the script-string functions
@@ -30,7 +30,6 @@ const bundle = await build({
       export { htmlEscapeScript } from './src/shared/html';
       export { flightEditsScript } from './src/shared/flight-edits';
       export { pilotDutyRenderScript } from './src/shared/pilot-duty';
-      export { flightStoreScript } from './src/shared/flight-store';
       export { editHistoryScript } from './src/shared/edit-history';
     `,
     resolveDir: ROOT,
@@ -62,7 +61,7 @@ const EXPORTS = [
   // pilot-duty.ts
   'computeDutyData', '_buildTypstSource', 'dutyExportPresets', 'dutyTotals', 'dutyDayText', 'currentDutyMonth', '_DUTY_LIMITS',
   'dutySaveConfirmText', 'dutyEntryOn', 'dutyDefaultOn', 'dutyMethodOn',
-  // flight-store.ts
+  // the core bundle (@wingbeat/core/flight-store)
   'flightCorrectionKey', 'mergeFlightCorrections', 'flightStore',
   // edit-history.ts
   'editConflictText',
@@ -102,7 +101,6 @@ export function loadEngine({ settings = {}, now = '2026-10-15 12:00', fetch } = 
     scripts.htmlEscapeScript(),
     scripts.flightEditsScript(),
     scripts.pilotDutyRenderScript(),
-    scripts.flightStoreScript(),
     scripts.editHistoryScript(),
   ].join('\n');
   vm.runInContext(source, context, { filename: 'engine.js' });
