@@ -13,8 +13,16 @@ import type { FlightCorrection, FlightEditField } from '@wingbeat/core/flight-ed
 import * as time from '@wingbeat/core/time';
 import * as duty from '@wingbeat/core/duty';
 import type { ComputeDutyDataOptions, DutyDay, DutyInputFlight, DutyInterval, DutyTotalsOptions } from '@wingbeat/core/duty';
+import * as corrections from '@wingbeat/core/corrections';
+import type { FlightFormFields, FlightFormTarget, FlightFormValues, FlightSaveOptions } from '@wingbeat/core/corrections';
+import * as editHistory from '@wingbeat/core/edit-history';
+import type { EditHistoryRow } from '@wingbeat/core/api/edit-history';
+import * as filters from '@wingbeat/core/filters';
+import type { FilterState } from '@wingbeat/core/filters';
 import { createApiClient } from '@wingbeat/core/api/client';
-import { getDutyLog, getDutyMethods } from '@wingbeat/core/api/duty';
+import * as dutyApi from '@wingbeat/core/api/duty';
+import * as correctionsApi from '@wingbeat/core/api/corrections';
+import { getEditHistory } from '@wingbeat/core/api/edit-history';
 import { createFlightStore, flightCorrectionKey, mergeFlightCorrections, FLIGHT_STORE_KEY } from '@wingbeat/core/flight-store';
 import { SPEED_THRESHOLD_KMH } from '../geo';
 
@@ -79,6 +87,23 @@ Object.assign(globalThis, {
     duty.dutySaveConfirmText(tz(), records, keys, values),
   dutyRemarksText: duty.dutyRemarksText,
   dutyExportPresets: duty.dutyExportPresets,
+  // ── corrections: the flight editor's requests and the flight form's validation ──
+  flightRef: corrections.flightRef,
+  flightAssignmentRequest: corrections.flightAssignmentRequest,
+  flightFlagsRequest: corrections.flightFlagsRequest,
+  flightFormTimesOf: (fields: Pick<FlightFormFields, 'date' | 'dep' | 'arr'>) => corrections.flightFormTimesOf(tz(), fields),
+  flightTimesChanged: corrections.flightTimesChanged,
+  readFlightForm: (fields: FlightFormFields, target: FlightFormTarget) => corrections.readFlightForm(tz(), fields, target),
+  flightSaveRequest: (v: FlightFormValues, target: FlightFormTarget, opts: FlightSaveOptions) =>
+    corrections.flightSaveRequest(v, target, opts),
+  // ── edit-history: the forms' "Last changed by …" and conflict text ──
+  editConflictText: (conflict: { at: number; user_name?: string | null }) => editHistory.editConflictText(tz(), conflict),
+  lastEditText: (h: EditHistoryRow, prev?: EditHistoryRow | null) => editHistory.lastEditText(tz(), h, prev),
+  // ── filters: the flight filter's state and test (persisted by filters.ts) ──
+  emptyFilterState: filters.emptyFilterState,
+  normalizeFilterState: filters.normalizeFilterState,
+  flightMatchesFilters: (flight: Parameters<typeof filters.matchesFlight>[1], state: FilterState) =>
+    filters.matchesFlight(tz(), flight, state),
 });
 
 // ── flight-store: the page's one store, cached in localStorage ──
@@ -88,9 +113,24 @@ Object.assign(globalThis, {
 const api = createApiClient({ mismatch: 'warn' });
 
 Object.assign(globalThis, {
-  // The duty log's reads (the duty route group).
-  fetchDutyLog: (pilotId: number | string) => getDutyLog(api, pilotId),
-  fetchDutyMethods: () => getDutyMethods(api),
+  // The duty log's reads and writes (the duty route group).
+  fetchDutyLog: (pilotId: number | string) => dutyApi.getDutyLog(api, pilotId),
+  fetchDutyMethods: () => dutyApi.getDutyMethods(api),
+  putDutyDays: (pilotId: number | string, body: dutyApi.DutyDaysRequest) => dutyApi.putDutyDays(api, pilotId, body),
+  clearDutyDays: (pilotId: number | string, body: dutyApi.DutyDaysClearRequest) => dutyApi.clearDutyDays(api, pilotId, body),
+  putDefaultDuty: (pilotId: number | string, body: dutyApi.DefaultDutyRequest) => dutyApi.putDefaultDuty(api, pilotId, body),
+  deleteDefaultDuty: (pilotId: number | string, date: string, baseHistoryId?: number | null) =>
+    dutyApi.deleteDefaultDuty(api, pilotId, date, baseHistoryId),
+  putDutyMethod: (body: dutyApi.DutyMethodRequest) => dutyApi.putDutyMethod(api, body),
+  deleteDutyMethod: (date: string, baseHistoryId?: number | null) => dutyApi.deleteDutyMethod(api, date, baseHistoryId),
+  // The flight editor's writes (the corrections route group).
+  saveFlightCorrection: (body: correctionsApi.CorrectionRequest) => correctionsApi.saveFlightCorrection(api, body),
+  updateManualFlight: (id: number, body: correctionsApi.CorrectionRequest) => correctionsApi.updateManualFlight(api, id, body),
+  deleteFlightCorrection: (id: number, baseHistoryId?: number | null) => correctionsApi.deleteFlightCorrection(api, id, baseHistoryId),
+  setFlightFlags: (body: correctionsApi.BulkFlagsRequest) => correctionsApi.setFlightFlags(api, body),
+  setFlightAssignment: (body: correctionsApi.AssignmentRequest) => correctionsApi.setFlightAssignment(api, body),
+  // A record's edit history (the forms' "Last changed by …").
+  fetchEditHistory: (entities: string | string[], key: string, limit?: number) => getEditHistory(api, entities, key, limit),
   flightCorrectionKey,
   mergeFlightCorrections,
   flightStore: createFlightStore({

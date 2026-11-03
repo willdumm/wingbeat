@@ -5,6 +5,7 @@
  *
  *   const client = createApiClient({ baseUrl: '', mismatch: 'warn' });
  *   const data = await client.get('/api/flight-corrections?since=5', FlightCorrectionsResponse);
+ *   await client.write('PUT', '/api/duty-methods', body, DutyMethodsWriteResponse);
  */
 import * as z from 'zod/mini';
 
@@ -26,12 +27,24 @@ export interface ApiClientOptions {
   warn?: (message: string, detail: unknown) => void;
 }
 
-/** A non-2xx response. */
+/**
+ * A non-2xx response. A write's message is the server's error ({ error }) when it sent one.
+ * A save refused because the record changed since the form loaded it (409, src/index.ts
+ * "Edit conflicts") carries the server's conflict ({ id, at, user_id, user_name }).
+ */
 export class ApiHttpError extends Error {
-  constructor(readonly path: string, readonly status: number) {
-    super('HTTP ' + status);
+  constructor(readonly path: string, readonly status: number, message?: string, readonly conflict?: EditConflict) {
+    super(message || 'HTTP ' + status);
     this.name = 'ApiHttpError';
   }
+}
+
+/** The newest change to a record since a form's base_history_id. */
+export interface EditConflict {
+  id: number;
+  at: number;
+  user_id: number | null;
+  user_name: string | null;
 }
 
 /** A response whose shape isn't what this client expects of the instance's API. */
@@ -42,8 +55,12 @@ export class ApiShapeError extends Error {
   }
 }
 
+export type WriteMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
 export interface ApiClient {
   get<S extends z.ZodMiniType>(path: string, schema: S): Promise<z.infer<S>>;
+  /** Sends a write (body, if any, as JSON) and returns its response, parsed with schema. */
+  write<S extends z.ZodMiniType>(method: WriteMethod, path: string, body: unknown, schema: S): Promise<z.infer<S>>;
 }
 
 export function createApiClient({
@@ -53,22 +70,40 @@ export function createApiClient({
   fetch: getFetch = () => globalThis.fetch,
   warn = (message, detail) => console.warn(message, detail),
 }: ApiClientOptions = {}): ApiClient {
+  const authHeaders = (): Record<string, string> =>
+    auth.kind === 'bearer' ? { Authorization: 'Bearer ' + auth.token } : {};
+
+  function parse<S extends z.ZodMiniType>(path: string, schema: S, body: unknown): z.infer<S> {
+    const parsed = z.safeParse(schema, body);
+    if (parsed.success) return parsed.data;
+    if (mismatch === 'warn') {
+      warn('[wingbeat api] unexpected response from ' + path, parsed.error.issues);
+      return body as z.infer<S>;
+    }
+    throw new ApiShapeError(path, parsed.error.issues);
+  }
+
   return {
     async get(path, schema) {
-      const init: RequestInit | undefined = auth.kind === 'bearer'
-        ? { headers: { Authorization: 'Bearer ' + auth.token } }
-        : undefined;
+      const init: RequestInit | undefined = auth.kind === 'bearer' ? { headers: authHeaders() } : undefined;
       // Called with one argument for cookie auth, as the pages' bare fetch calls were.
       const resp = await (init ? getFetch()(baseUrl + path, init) : getFetch()(baseUrl + path));
       if (!resp.ok) throw new ApiHttpError(path, resp.status);
-      const body: unknown = await resp.json();
-      const parsed = z.safeParse(schema, body);
-      if (parsed.success) return parsed.data;
-      if (mismatch === 'warn') {
-        warn('[wingbeat api] unexpected response from ' + path, parsed.error.issues);
-        return body as z.infer<typeof schema>;
+      return parse(path, schema, await resp.json());
+    },
+
+    async write(method, path, body, schema) {
+      const resp = await getFetch()(baseUrl + path, {
+        method,
+        headers: body === undefined ? authHeaders() : { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const err = (await resp.json().catch(() => ({}))) as { error?: unknown; conflict?: EditConflict };
+        throw new ApiHttpError(path, resp.status, typeof err.error === 'string' ? err.error : undefined,
+          resp.status === 409 && err.conflict ? err.conflict : undefined);
       }
-      throw new ApiShapeError(path, parsed.error.issues);
+      return parse(path, schema, await resp.json());
     },
   };
 }

@@ -5,8 +5,10 @@ Text module, the nonce test, the theme tokens), step 1, `time` (core time with z
 abbreviations, operator days in the flight list, the device-time scan test with its list of
 uses still to remove), step 2, `flight-edits` (with `record-limits`), step 3,
 `flight-store` (with the API client and the flights and corrections response schemas), and
-step 4, `duty` (with the duty reads' response schemas). Next: step 5, `corrections`,
-`edit-history` and `filters`. All open questions are answered.
+step 4, `duty` (with the duty reads' response schemas), and step 5, `corrections`,
+`edit-history` and `filters` (with the client's writes and the Worker's request
+validation for the corrections and duty writes). Next: step 6, `live`, `maintenance` and
+`alerts`. All open questions are answered.
 
 ## Settled so far
 
@@ -406,8 +408,9 @@ Those render chunks call core for anything they compute.
 ### Phase 1 progress and conventions
 
 Done on the `core-foundation` branch (deployed to staging 2026-11-02): the foundation,
-step 1 (`time`) and step 2 (`flight-edits`); step 3 (`flight-store`) and step 4 (`duty`)
-are on the branch and on staging. How it's built, for the steps that follow:
+step 1 (`time`) and step 2 (`flight-edits`); step 3 (`flight-store`), step 4 (`duty`)
+and step 5 (`corrections`, `edit-history`, `filters`) are on the branch and on staging.
+How it's built, for the steps that follow:
 
 - **Core modules** live in `packages/core/src/<name>.ts`, each listed in `exports` in
   `packages/core/package.json`. They take what they used to read from the page as
@@ -449,11 +452,34 @@ are on the branch and on staging. How it's built, for the steps that follow:
   its validators) and `packages/core`. It made the browser bundle 58.8 KB unminified (9.8 KB
   before), so `build-core.mjs` now minifies it: 26.8 KB, inlined in each page (39.0 KB with
   `duty`).
-- **Request validation** starts with the write routes in step 5, when `apiWrite()` moves to
-  the client (`corrections`, and the duty writes it already sends: duty days, default duty,
-  the method). The reads moved so far take only `tracker`, `since` and `pilot`, which their
-  handlers already parse (a bad `since` reads as 0, a bad `pilot` is a 400), so a query
-  schema would change nothing a client sees.
+- **Writes** (from step 5) go through the client's `write(method, path, body, schema)`,
+  which replaced `apiWrite()`: a refusal is an `ApiHttpError` with the server's `error` as
+  its message, and a 409's `conflict` on it, which `runFormAction()` and
+  `showEditConflict()` already read. Each write is a small function in `api/<group>.ts`
+  (`saveFlightCorrection`, `putDutyDays`, …), bound as a page global of the same name, with
+  its response schema there too. The bodies are core's (`corrections.ts`'s
+  `flightSaveRequest()`, `flightFlagsRequest()`, …) or the forms' own (the duty forms).
+- **Request validation** (from step 5): the Worker's write routes take
+  `valid('json' | 'query', schema)` (`src/index.ts`, "Request validation":
+  `@hono/zod-validator` with `z.safeParseAsync`, since `zod/mini` schemas have no methods,
+  and zod's English messages). A mismatch is a 400 `{ error: '<field>: <message>' }`; a body
+  that isn't JSON is a 400 `{ error }` too (`app.onError`). Request schemas are
+  `z.object` (unknown keys stripped) with each field's type only, and the handlers keep
+  their own checks of what values mean, with their messages. They live in
+  `api/<group>-requests.ts` (shared pieces in `api/requests.ts`), not in `api/<group>.ts`:
+  zod's `.check()` calls keep them from being tree-shaken, and the browser only needs their
+  types. Covered so far: the corrections and duty writes. The reads moved so far take only
+  `tracker`, `since` and `pilot`, which their handlers already parse (a bad `since` reads
+  as 0, a bad `pilot` is a 400), so a query schema would change nothing a client sees.
+- **Worker tests of what the web sends**: `test/worker-sql.test.mjs` ("the requests the web
+  sends") sends each write through core's own client (strict, over `adminFetch` from
+  `test/worker.mjs`) with the bodies core or the forms build, so a request schema can't
+  refuse what the pages send and every write's response is checked against its schema.
+- **Step 5's browser check** drove the flight form (a manual flight's edit, a tracked
+  flight's correction with its pilot change, a flight added across midnight, the form's own
+  validation, an edit conflict, Revert to tracker), the bulk actions, the duty writes, the
+  "Last changed by …" line and the filter store on a local Worker with the browser in
+  Europe/Berlin; all as before. The bundle is 45.7 KB minified (39.0 KB at step 4).
 - **Clock-reading logic takes `now`** (Unix seconds) after `tz`: `computeDutyData(tz, now,
   …)`, `currentDutyMonth(tz, now)`. `core-entry.ts` binds both, so the page globals keep
   their old signatures; `test/core-duty.test.mjs` checks core never reads `Date.now()`.

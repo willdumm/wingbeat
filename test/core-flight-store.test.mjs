@@ -10,6 +10,7 @@ import { importCore } from './core.mjs';
 const { createFlightStore, FLIGHT_STORE_KEY } = await importCore('flight-store');
 const { createApiClient, ApiShapeError, ApiHttpError } = await importCore('api/client');
 const { FlightCorrectionsResponse } = await importCore('api/flights');
+const { OkResponse } = await importCore('api/corrections');
 
 const flight = (id, start, extra = {}) => ({
   id, tracker_id: 1, start_time: start, end_time: start + 600, modified_at: start, aircraft_tail: null,
@@ -136,5 +137,29 @@ describe('createApiClient', () => {
     });
     await client.get('/api/flight-corrections', FlightCorrectionsResponse);
     assert.deepEqual(seen, ['https://op.example/api/flight-corrections', 'Bearer t0k']);
+  });
+
+  test('a write sends its body as JSON (none for a delete), with the bearer token', async () => {
+    const seen = [];
+    const fetch = async (url, init) => { seen.push([url, init]); return { ok: true, status: 200, json: async () => ({ ok: true }) }; };
+    const client = createApiClient({ auth: { kind: 'bearer', token: 't0k' }, fetch: () => fetch });
+    assert.deepEqual(await client.write('PUT', '/api/duty-methods', { method: 'b' }, OkResponse), { ok: true });
+    await client.write('DELETE', '/api/duty-methods/2026-01-01', undefined, OkResponse);
+    assert.deepEqual(seen, [
+      ['/api/duty-methods', { method: 'PUT', headers: { Authorization: 'Bearer t0k', 'Content-Type': 'application/json' }, body: '{"method":"b"}' }],
+      ['/api/duty-methods/2026-01-01', { method: 'DELETE', headers: { Authorization: 'Bearer t0k' }, body: undefined }],
+    ]);
+  });
+
+  test('a refused write throws with the server’s message, and a 409 with its conflict', async () => {
+    const conflict = { id: 9, at: 100, user_id: 2, user_name: 'Bea' };
+    const client = (body, status) => createApiClient({ fetch: () => respond(body, status) });
+    await assert.rejects(client({ error: 'Pilot not found' }, 404).write('PUT', '/x', {}, OkResponse),
+      (e) => e instanceof ApiHttpError && e.message === 'Pilot not found' && e.status === 404 && e.conflict === undefined);
+    await assert.rejects(client({ error: 'Changed by Bea', conflict }, 409).write('PUT', '/x', {}, OkResponse),
+      (e) => e.message === 'Changed by Bea' && e.conflict === conflict);
+    // No JSON error body: the status.
+    const noJson = createApiClient({ fetch: () => async () => ({ ok: false, status: 502, json: async () => { throw new Error('html'); } }) });
+    await assert.rejects(noJson.write('POST', '/x', {}, OkResponse), (e) => e.message === 'HTTP 502');
   });
 });
