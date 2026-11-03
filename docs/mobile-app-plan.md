@@ -8,9 +8,10 @@ uses still to remove), step 2, `flight-edits` (with `record-limits`), step 3,
 step 4, `duty` (with the duty reads' response schemas), step 5, `corrections`,
 `edit-history` and `filters` (with the client's writes and the Worker's request
 validation for the corrections and duty writes), step 6, `live`, `maintenance` and
-`alerts` (with the bootstrap, trackers, aircraft and pilots reads' response schemas), and
-step 7, `regions` (merged with `src/geo.ts`), `accounting` and `analytics`.
-Next: step 8, `elevation`. All open questions are answered.
+`alerts` (with the bootstrap, trackers, aircraft and pilots reads' response schemas),
+step 7, `regions` (merged with `src/geo.ts`), `accounting` and `analytics`, and step 8,
+`elevation`. Next: the rest of phase 1's "Done when" (see "Phases"), such as the settings
+modal's 11 device-time uses and moving tests off the harness. All open questions are answered.
 
 ## Settled so far
 
@@ -412,8 +413,8 @@ Those render chunks call core for anything they compute.
 Done on the `core-foundation` branch (deployed to staging 2026-11-02): the foundation,
 step 1 (`time`) and step 2 (`flight-edits`); step 3 (`flight-store`), step 4 (`duty`)
 step 5 (`corrections`, `edit-history`, `filters`), step 6 (`live`, `maintenance`,
-`alerts`) and step 7 (`regions`, `accounting`, `analytics`) are on the branch and on
-staging.
+`alerts`), step 7 (`regions`, `accounting`, `analytics`) and step 8 (`elevation`) are
+on the branch and on staging.
 How it's built, for the steps that follow:
 
 - **Core modules** live in `packages/core/src/<name>.ts`, each listed in `exports` in
@@ -557,6 +558,18 @@ How it's built, for the steps that follow:
   stream graph, whose buckets now start at the operator's midnight (before: UTC, so an
   evening flight counted toward the next day) with each region's total over all buckets
   unchanged. The bundle is 59.4 KB minified (55.6 KB at step 6).
+- **Step 8** (`elevation`): `packages/core/src/elevation.ts` has the DEM constants
+  (`DEM_TILE_SIZE`, which `src/shared/elevation.ts` imports for its canvas sizes,
+  `DEM_MAX_ZOOM`, the water mask), `demZoomFor`, `latLngToTilePixel`,
+  `decodeTerrarium` (RGBA to meters), `demSubTile` (a map tile's z12 parent and
+  sub-rectangle), `elevationColorFor` (the ramp) and `paintElevationTint` (the tint's
+  pixel loop into an RGBA buffer), all globals under those names. The page keeps the
+  pmtiles.js fetch and cache, the canvases, the Leaflet layer and the panel; the app can
+  reuse the same functions for a MapLibre custom layer or the cursor readout. Test:
+  `core-elevation`. Its browser check hashed every tint tile's pixels at z9, z12 and z14
+  and after a range change, `elevationAt()` at four points and three zooms against the
+  real DEM, and the readouts after a map click, before and after, on a local Worker
+  and on staging: identical. The bundle is 60.7 KB minified.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.

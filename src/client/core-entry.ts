@@ -31,6 +31,7 @@ import * as accounting from '@wingbeat/core/accounting';
 import type { AccountingFlight } from '@wingbeat/core/accounting';
 import * as analytics from '@wingbeat/core/analytics';
 import type { StreamInterval } from '@wingbeat/core/analytics';
+import * as elevation from '@wingbeat/core/elevation';
 import { createApiClient } from '@wingbeat/core/api/client';
 import * as dutyApi from '@wingbeat/core/api/duty';
 import * as correctionsApi from '@wingbeat/core/api/corrections';
@@ -160,6 +161,13 @@ Object.assign(globalThis, {
   sgComputeDataIn: analytics.sgComputeData,
   interpolateRoutePoints: analytics.interpolateRoutePoints,
   endpointHeatPointsIn: analytics.endpointHeatPoints,
+  // ── elevation: DEM tile math, Terrarium decoding and the tint's color ramp ──
+  demZoomFor: elevation.demZoomFor,
+  latLngToTilePixel: elevation.latLngToTilePixel,
+  decodeTerrarium: elevation.decodeTerrarium,
+  demSubTile: elevation.demSubTile,
+  elevationColorFor: elevation.elevationColorFor,
+  paintElevationTint: elevation.paintElevationTint,
 });
 
 // ── flight-store: the page's one store, cached in localStorage ──

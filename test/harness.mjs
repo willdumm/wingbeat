@@ -75,6 +75,8 @@ const EXPORTS = [
   // the core bundle (@wingbeat/core/regions, accounting, analytics)
   'haversineKm', 'homeBaseNamesIn', 'computeRegionHoursIn', 'computeMonthlyAccountingIn', 'tzLongMonthLabel',
   'sgGenerateBuckets', 'sgComputeDataIn', 'interpolateRoutePoints', 'endpointHeatPointsIn',
+  // the core bundle (@wingbeat/core/elevation)
+  'latLngToTilePixel', 'decodeTerrarium', 'demSubTile', 'paintElevationTint',
 ];
 
 export const TZ = 'America/Anchorage';

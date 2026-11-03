@@ -24,6 +24,7 @@
     "./corrections": "./src/corrections.ts",
     "./duty": "./src/duty.ts",
     "./edit-history": "./src/edit-history.ts",
+    "./elevation": "./src/elevation.ts",
     "./filters": "./src/filters.ts",
     "./flight-edits": "./src/flight-edits.ts",
     "./flight-store": "./src/flight-store.ts",
