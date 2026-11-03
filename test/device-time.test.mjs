@@ -21,8 +21,6 @@ const PATTERN = /new Date\(|toLocaleDateString|toLocaleTimeString/g;
 const KNOWN = {
   // Server-side: notification text, with an explicit timeZone. (Also inlined in the showcase.)
   'src/shared/format.ts': 1,
-  // duty step: the days in a month (UTC date math) and the PDF's "generated" stamp.
-  'src/shared/pilot-duty.ts': 2,
   // live / maintenance / alerts step.
   'src/shared/aircraft-info.ts': 9,
   'src/dashboard/scripts/alerts.ts': 4,

@@ -3,9 +3,10 @@
 **Status: phase 1 started.** Done: the foundation (`packages/core`, the browser bundle as a
 Text module, the nonce test, the theme tokens), step 1, `time` (core time with zone
 abbreviations, operator days in the flight list, the device-time scan test with its list of
-uses still to remove), step 2, `flight-edits` (with `record-limits`), and step 3,
-`flight-store` (with the API client and the flights and corrections response schemas).
-Next: step 4, `duty`. All open questions are answered.
+uses still to remove), step 2, `flight-edits` (with `record-limits`), step 3,
+`flight-store` (with the API client and the flights and corrections response schemas), and
+step 4, `duty` (with the duty reads' response schemas). Next: step 5, `corrections`,
+`edit-history` and `filters`. All open questions are answered.
 
 ## Settled so far
 
@@ -405,8 +406,8 @@ Those render chunks call core for anything they compute.
 ### Phase 1 progress and conventions
 
 Done on the `core-foundation` branch (deployed to staging 2026-11-02): the foundation,
-step 1 (`time`) and step 2 (`flight-edits`); step 3 (`flight-store`) is on the branch
-and on staging. How it's built, for the steps that follow:
+step 1 (`time`) and step 2 (`flight-edits`); step 3 (`flight-store`) and step 4 (`duty`)
+are on the branch and on staging. How it's built, for the steps that follow:
 
 - **Core modules** live in `packages/core/src/<name>.ts`, each listed in `exports` in
   `packages/core/package.json`. They take what they used to read from the page as
@@ -446,11 +447,26 @@ and on staging. How it's built, for the steps that follow:
   for tests.
 - **Dependencies**: zod is in `dependencies` of both the root (the Worker's tests and, later,
   its validators) and `packages/core`. It made the browser bundle 58.8 KB unminified (9.8 KB
-  before), so `build-core.mjs` now minifies it: 26.8 KB, inlined in each page.
-- **Request validation** starts with the write routes (`corrections`, step 5), not with
-  `flight-store`'s two GETs: their only query parameters (`tracker`, `since`) are already
-  parsed leniently in the handler (a bad `since` reads as 0), so a query schema would change
-  nothing a client sees.
+  before), so `build-core.mjs` now minifies it: 26.8 KB, inlined in each page (39.0 KB with
+  `duty`).
+- **Request validation** starts with the write routes in step 5, when `apiWrite()` moves to
+  the client (`corrections`, and the duty writes it already sends: duty days, default duty,
+  the method). The reads moved so far take only `tracker`, `since` and `pilot`, which their
+  handlers already parse (a bad `since` reads as 0, a bad `pilot` is a 400), so a query
+  schema would change nothing a client sees.
+- **Clock-reading logic takes `now`** (Unix seconds) after `tz`: `computeDutyData(tz, now,
+  …)`, `currentDutyMonth(tz, now)`. `core-entry.ts` binds both, so the page globals keep
+  their old signatures; `test/core-duty.test.mjs` checks core never reads `Date.now()`.
+- **Moved logic keeps its spec tests where they were.** The duty suites (duty-limits,
+  rest-days, totals, dated-defaults, dst, day-form, duty-export) still run through the
+  shipped bundle's globals, unchanged; the core test (`core-duty.test.mjs`) covers what's new:
+  the parameters, and the same results as the page's globals. Step 4 checked the staging
+  duty log (rendered HTML, computed model, PDF Typst source for every month, a quarter and
+  12 months) and the alerts against step 3's at a pinned clock: identical (staging had
+  no alerts at the time, so those matched as empty).
+- **Page reads** go through small core functions over the page's client (`getDutyLog`,
+  `getDutyMethods` in `api/duty.ts`), bound as globals (`fetchDutyLog`,
+  `fetchDutyMethods`); a non-2xx throws `ApiHttpError`, which the callers already catch.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.
