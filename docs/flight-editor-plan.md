@@ -483,7 +483,7 @@ Where the implementation departs from, or adds to, the plan above:
   correction is keyed to, found by tracker and start time). The day form's Through range
   goes through `PUT /api/duty-days/:pilot` (`{ dates, … }`, also used for a single day) and
   `POST /api/duty-days/:pilot/clear` (`{ dates }`), one statement each (`json_each`), at
-  most 366 dates (`MAX_DUTY_DAYS_PER_REQUEST` in `src/shared/record-limits.ts`, shared by
+  most 366 dates (`MAX_DUTY_DAYS_PER_REQUEST` in `packages/core/src/record-limits.ts`, shared by
   the server and the day form). The bulk route is one statement per kind of flight
   (`json_each` over the refs), whatever the selection size; Part 135 and restore only
   update existing rows, so a flight with no corrections doesn't get a row inserted and
@@ -491,7 +491,7 @@ Where the implementation departs from, or adds to, the plan above:
 - **`PUT /api/flight-corrections/:id` is for manual flights.** A tracked flight's row is
   refused there: `POST` is the one path for tracked corrections, since it also takes the
   assignment and drops a row left empty.
-- **Limits** (`src/shared/record-limits.ts`, shared by the server and the forms' inputs):
+- **Limits** (`packages/core/src/record-limits.ts`, shared by the server and the forms' inputs):
   labels and remarks at most 200 characters, duty notes 1,000, and dates are real calendar
   dates (2026-02-31 is refused). A flight longer than 24 h (`MAX_FLIGHT_SECS`) is refused,
   except a tracked flight whose times are left as the tracker recorded them.

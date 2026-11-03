@@ -303,7 +303,7 @@ history"), so a request's writes land together or not at all.
 - `PUT /api/duty-days/:pilot`: `{ dates: [YYYY-MM-DD, …], duty_start, duty_end, rest,
   note, base_history_id? }` sets every date in one statement (`json_each`), all or none. The day form uses it
   for one day as well as for a Through range. At most `MAX_DUTY_DAYS_PER_REQUEST` (366)
-  dates, a limit the form shares (`src/shared/record-limits.ts`). A day left with nothing
+  dates, a limit the form shares (`packages/core/src/record-limits.ts`). A day left with nothing
   (no times, not rest, no note) is deleted. `rest_designated_at` is set the first time
   `rest` goes 0→1, kept on later edits, and cleared when rest is unset.
 - `POST /api/duty-days/:pilot/clear`: `{ dates, base_history_id? }`, the same cap,

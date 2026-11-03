@@ -14,7 +14,7 @@ import { generateToken, sha256Hex, deviceNameFromUA, noAccessHTML, joinHTML, joi
 import { loadSettings, invalidateSettingsCache } from './settings';
 import { keyedBasemapPreset, readEnvSecret, substituteTileUrl } from './shared/map-controls';
 import { lookupTileMetadata, sanitizeAttribution } from './tile-metadata';
-import { MAX_DUTY_DAYS_PER_REQUEST, MAX_FLIGHT_TEXT_LENGTH, MAX_DUTY_NOTE_LENGTH, MAX_FLIGHT_SECS } from './shared/record-limits';
+import { MAX_DUTY_DAYS_PER_REQUEST, MAX_FLIGHT_TEXT_LENGTH, MAX_DUTY_NOTE_LENGTH, MAX_FLIGHT_SECS } from '@wingbeat/core/record-limits';
 
 const SESSION_COOKIE = 'session';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 365;

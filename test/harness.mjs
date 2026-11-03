@@ -55,8 +55,10 @@ const EXPORTS = [
   // the core bundle (@wingbeat/core/time)
   'tzLocalToEpoch', 'unixToTzDateStr', 'unixToTzTime', 'unixToTzMonthKey', 'tzDayStartUnix', 'tzDayEndUnix',
   'tzAddDays', 'fmtDuration', 'fmtTzTime',
+  // the core bundle (@wingbeat/core/flight-edits)
+  'applyFlightEdits', 'flightRemarks', 'flightEntrySummary', 'flightFormTimes', 'flightTrackedTimes', 'FLIGHT_MAX_SECS',
   // flight-edits.ts
-  'applyFlightEdits', 'flightRemarks', 'flightEntrySummary', 'flightFormTimes', 'flightTrackedTimes',
+  'flightEditedMark', 'flightRemarksHtml',
   // pilot-duty.ts
   'computeDutyData', '_buildTypstSource', 'dutyExportPresets', 'dutyTotals', 'dutyDayText', 'currentDutyMonth', '_DUTY_LIMITS',
   'dutySaveConfirmText', 'dutyEntryOn', 'dutyDefaultOn', 'dutyMethodOn',

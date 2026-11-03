@@ -8,7 +8,7 @@ import { SPEED_THRESHOLD_KMH } from '../geo';
  * It also syncs the flight corrections (GET /api/flight-corrections) the same way, from a
  * cursor (since=, an edit_history id) that's advanced as deltas are merged, and serves
  * effective flights: getAll/getCompleted apply them with applyFlightEdits()
- * (flight-edits.ts, needed in the same script), so every page shows corrected times and
+ * (@wingbeat/core/flight-edits, from the core bundle), so every page shows corrected times and
  * labels, manual flights, and no removed flights. getRaw() returns the tracker's own
  * records. See docs/flight-editor-plan.md.
  */

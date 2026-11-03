@@ -1,6 +1,7 @@
-// Flight corrections: applyFlightEdits() (flight-edits.ts) and the flight store's
-// flightCorrectionKey() / mergeFlightCorrections() (flight-store.ts), plus a correction
-// flowing through to the duty log.
+// Flight corrections on the page: the core bundle's flight-edits globals and the HTML
+// built from them (flight-edits.ts), the flight store's flightCorrectionKey() /
+// mergeFlightCorrections() (flight-store.ts), and a correction flowing through to the
+// duty log.
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,104 +30,40 @@ function entry(id, fields = {}) {
   };
 }
 
-describe('applyFlightEdits', () => {
+// applyFlightEdits() and the rest of @wingbeat/core/flight-edits are tested in
+// core-flight-edits.test.mjs. This checks the shipped browser bundle's globals and the
+// HTML the script string builds from them.
+describe('core bundle flight-edits globals', () => {
   const f1 = tracked(1, 10, '2026-03-10 09:00', '2026-03-10 10:00');
-  const f2 = tracked(2, 10, '2026-03-10 11:00', '2026-03-10 12:00');
 
-  test('no entries: the records themselves, sorted', () => {
-    const { flights, unmatched, unplaced } = engine.applyFlightEdits([f2, f1], []);
-    assert.equal(flights.length, 2);
-    assert.equal(flights[0], f1);
-    assert.equal(flights[1], f2);
-    assert.equal(unmatched.length + unplaced.length, 0);
+  test('applyFlightEdits, flightRemarks and flightFormTimes are on the page', () => {
+    const e = entry(7, { tracker_id: 10, flight_start_time: f1.start_time, part91: 1, remark: 'Ferry' });
+    assert.deepEqual([...engine.flightRemarks(engine.applyFlightEdits([f1], [e]).flights[0])], ['Part 91', 'Ferry']);
+    assert.equal(engine.flightFormTimes('2026-03-10', '23:30', '00:45').end_time, at('2026-03-11 00:45'));
+    assert.equal(engine.FLIGHT_MAX_SECS, 24 * 3600);
   });
 
-  test('corrected fields are applied and the tracker’s values kept in original', () => {
-    const e = entry(7, {
-      tracker_id: 10, flight_start_time: f1.start_time,
-      start_time: at('2026-03-10 08:45'), origin_label: 'PAEN', part91: 1, remark: 'Ferry',
-    });
-    const { flights } = engine.applyFlightEdits([f1, f2], [e]);
-    const eff = flights[0];
-    assert.notEqual(eff, f1, 'a copy, not the record');
-    assert.equal(f1.start_time, at('2026-03-10 09:00'), 'the record is untouched');
-    assert.equal(eff.start_time, at('2026-03-10 08:45'));
-    assert.equal(eff.end_time, f1.end_time);
-    assert.equal(eff.origin_label, 'PAEN');
-    assert.equal(eff.destination_label, 'PADQ');
-    assert.deepEqual(plain(eff.edit.original), { start_time: f1.start_time, origin_label: 'PAKN' });
-    assert.equal(eff.edit.manual, false);
-    assert.equal(eff.edit.part91, true);
-    assert.equal(eff.edit.entry, e);
-    assert.equal(eff.modified_at, 500, 'bumped by the edit');
-    assert.deepEqual([...engine.flightRemarks(eff)], ['Part 91', 'Ferry']);
-    assert.equal(flights[1], f2, 'an untouched flight is the record itself');
-  });
-
-  test('flights are sorted by corrected start time', () => {
-    const e = entry(7, { tracker_id: 10, flight_start_time: f1.start_time, start_time: at('2026-03-10 11:30'), end_time: at('2026-03-10 12:30') });
-    const { flights } = engine.applyFlightEdits([f1, f2], [e]);
-    assert.deepEqual(ids(flights), [2, 1]);
-  });
-
-  test('a Part 91 classification alone is not an edited field', () => {
-    const e = entry(7, { tracker_id: 10, flight_start_time: f1.start_time, part91: 1, unpaid: 1 });
-    const eff = engine.applyFlightEdits([f1], [e]).flights[0];
-    assert.deepEqual(plain(eff.edit.original), {});
-    assert.equal(eff.edit.unpaid, true);
-    assert.deepEqual([...engine.flightRemarks(eff)], ['Part 91 (unpaid)']);
-  });
-
-  test('a removed flight is hidden unless includeRemoved', () => {
-    const e = entry(7, { tracker_id: 10, flight_start_time: f1.start_time, excluded: 1 });
-    assert.deepEqual(ids(engine.applyFlightEdits([f1, f2], [e]).flights), [2]);
-    const all = engine.applyFlightEdits([f1, f2], [e], { includeRemoved: true }).flights;
-    assert.deepEqual(ids(all), [1, 2]);
-    assert.equal(all[0].edit.excluded, true);
-  });
-
-  test('manual flights: negative id, no tracker, their own pilot and aircraft', () => {
-    const m = entry(9, {
-      start_time: at('2026-03-10 14:00'), end_time: at('2026-03-10 15:30'),
-      origin_label: 'PAKN', destination_label: 'PAIL', pilot_id: 2, aircraft_tail: 'N2',
-    });
-    const { flights } = engine.applyFlightEdits([f1], [m], { pilots: [{ id: 1, name: 'Ann' }, { id: 2, name: 'Bob' }] });
-    const mf = flights[1];
-    assert.equal(mf.id, -9);
-    assert.equal(mf.tracker_id, null);
-    assert.equal(mf.pilot_id, 2);
-    assert.equal(mf.pilot_name, 'Bob');
-    assert.equal(mf.aircraft_tail, 'N2');
-    assert.equal(mf.points.length, 0);
-    assert.equal(mf.edit.manual, true);
-    assert.equal(mf.end_time - mf.start_time, 90 * 60);
-  });
-
-  test('an unknown pilot gives a null pilot_name; a removed manual flight is hidden', () => {
-    const m = entry(9, { start_time: at('2026-03-10 14:00'), end_time: at('2026-03-10 15:00'), pilot_id: 3 });
-    assert.equal(engine.applyFlightEdits([], [m]).flights[0].pilot_name, null);
-    const removed = { ...m, excluded: 1 };
-    assert.equal(engine.applyFlightEdits([], [removed]).flights.length, 0);
-    assert.equal(engine.applyFlightEdits([], [removed], { includeRemoved: true }).flights.length, 1);
-  });
-
-  test('unmatched (tracker loaded, flight gone) vs unplaced (tracker not loaded)', () => {
-    const gone = entry(7, { tracker_id: 10, flight_start_time: at('2026-03-09 09:00'), origin_label: 'X' });
-    const other = entry(8, { tracker_id: 99, flight_start_time: at('2026-03-09 09:00'), origin_label: 'Y' });
-    const r = engine.applyFlightEdits([f1, f2], [gone, other]);
-    assert.deepEqual(ids(r.unmatched), [7]);
-    assert.deepEqual(ids(r.unplaced), [8]);
-    assert.deepEqual(ids(r.flights), [1, 2], 'neither is applied');
-    // A tracker the caller fetched counts as loaded even with no flights left.
-    const r2 = engine.applyFlightEdits([f1, f2], [gone, other], { knownTrackerIds: [99] });
-    assert.deepEqual(ids(r2.unmatched), [7, 8]);
-    assert.equal(r2.unplaced.length, 0);
-  });
-
-  test('flightEntrySummary describes what a row would change', () => {
+  test('the timezone-taking ones read APP_SETTINGS.timezone', () => {
     const e = entry(7, { tracker_id: 10, flight_start_time: f1.start_time, start_time: at('2026-03-10 08:05'), part91: 1, excluded: 1 });
     assert.equal(engine.flightEntrySummary(e), 'Dep 08:05, Part 91, removed');
-    assert.equal(engine.flightEntrySummary(entry(7, { tracker_id: 10 })), 'no corrections');
+    const utc = loadEngine({ settings: { timezone: 'UTC' } });
+    assert.equal(utc.flightEntrySummary(e), 'Dep 16:05, Part 91, removed');
+    assert.equal(utc.flightFormTimes('2026-03-10', '09:00', '09:40').start_time, Date.UTC(2026, 2, 10, 9) / 1000);
+  });
+
+  test('flightEditedMark: † with the tracker’s values; flightRemarksHtml: the remarks line', () => {
+    const e = entry(7, {
+      tracker_id: 10, flight_start_time: f1.start_time,
+      start_time: at('2026-03-10 08:45'), origin_label: 'PA<EN', part91: 1, remark: 'A & B',
+    });
+    const eff = engine.applyFlightEdits([f1], [e]).flights[0];
+    assert.equal(engine.flightEditedMark(eff, ['start_time', 'end_time']),
+      '<span class="flight-edited" title="Tracker: Dep 09:00">†</span>');
+    assert.equal(engine.flightEditedMark(eff, ['end_time']), '');
+    assert.equal(engine.flightEditedMark({ ...f1, origin_label: 'X', edit: { original: { origin_label: 'P<Q' } } }, ['origin_label']),
+      '<span class="flight-edited" title="Tracker: Origin P&lt;Q">†</span>');
+    assert.equal(engine.flightRemarksHtml(eff), '<div class="flight-remarks">Part 91 · A &amp; B</div>');
+    assert.equal(engine.flightRemarksHtml(f1), '');
   });
 });
 
