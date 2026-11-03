@@ -53,3 +53,23 @@ describe('security headers', () => {
     assertBaseline(r.headers);
   });
 });
+
+describe('search engines are kept out', () => {
+  test('robots.txt disallows everything and is served signed out', async () => {
+    const r = await w.request('GET', '/robots.txt', undefined, { as: null });
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-type'), /^text\/plain/);
+    assert.equal(r.body, 'User-agent: *\nDisallow: /\n');
+  });
+  test('every response carries X-Robots-Tag, the login page and the auth redirect included', async () => {
+    for (const [path, as, status] of [['/login', null, 200], ['/', null, 302], ['/', 'admin', 200], ['/robots.txt', null, 200]]) {
+      const r = await w.request('GET', path, undefined, { as });
+      assert.equal(r.status, status, `${path} as ${as}`);
+      assert.equal(r.headers.get('x-robots-tag'), 'noindex, nofollow', `${path} as ${as}`);
+    }
+  });
+  test('the login page also has a robots meta tag', async () => {
+    const r = await w.request('GET', '/login', undefined, { as: null });
+    assert.match(r.body, /<meta name="robots" content="noindex, nofollow" \/>/);
+  });
+});

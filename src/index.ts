@@ -215,6 +215,10 @@ app.use('*', async (c, next) => {
   c.header('X-Frame-Options', 'DENY');
   c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
   c.header('Permissions-Policy', 'accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()');
+  // Keep every instance out of search engines: tenant hostnames are public in
+  // certificate-transparency logs. This header, not robots.txt, is what keeps a URL out
+  // of the index (a crawler blocked by robots.txt never sees a noindex).
+  c.header('X-Robots-Tag', 'noindex, nofollow');
   if (new URL(c.req.url).protocol === 'https:') {
     c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
@@ -222,6 +226,9 @@ app.use('*', async (c, next) => {
     c.header('Content-Security-Policy', buildCsp(nonce));
   }
 });
+
+// Ahead of tenant routing and auth, so crawlers get the rules on any host while signed out.
+app.get('/robots.txt', (c) => c.text('User-agent: *\nDisallow: /\n'));
 
 app.use('*', async (c, next) => {
   const routing = parseRouting(c.env);

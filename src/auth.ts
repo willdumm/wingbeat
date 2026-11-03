@@ -88,6 +88,7 @@ export function noAccessHTML(appName: string): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
   <title>${escapeHtml(appName)}</title>
   <link rel="icon" href="${logoFaviconHref('dark')}" />
   <style>${authPageStyles()}</style>
