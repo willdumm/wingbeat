@@ -2,7 +2,6 @@ import { Env } from '../../types';
 import { themeRuntimeScript } from '../../shared/theme';
 import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, overlayLegendRuntimeScript } from '../../shared/map-controls';
 import { toggleScript } from '../../shared/toggle';
-import { flightStoreScript } from '../../shared/flight-store';
 import { flightEditsScript } from '../../shared/flight-edits';
 import { filterScript } from '../../shared/filters';
 import { settingsModalScript } from '../../shared/settings';
@@ -29,7 +28,6 @@ export function analyticsScripts(env: Env): string {
     toggleScript(),
     htmlEscapeScript(),
     flightEditsScript(),
-    flightStoreScript(),
     filterScript(),
     formModalScript(),
     editHistoryScript(),

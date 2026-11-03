@@ -11,8 +11,15 @@
 import * as flightEdits from '@wingbeat/core/flight-edits';
 import type { FlightCorrection, FlightEditField } from '@wingbeat/core/flight-edits';
 import * as time from '@wingbeat/core/time';
+import { createApiClient } from '@wingbeat/core/api/client';
+import { createFlightStore, flightCorrectionKey, mergeFlightCorrections, FLIGHT_STORE_KEY } from '@wingbeat/core/flight-store';
+import { SPEED_THRESHOLD_KMH } from '../geo';
 
-declare const window: { APP_SETTINGS: { timezone: string } };
+declare const window: {
+  APP_SETTINGS: { timezone: string };
+  addEventListener(type: 'storage', listener: (e: { key: string | null }) => void): void;
+};
+declare const localStorage: { getItem(key: string): string | null; setItem(key: string, value: string): void };
 
 // Read on every call: the settings modal can change the timezone without a reload.
 const tz = () => window.APP_SETTINGS.timezone;
@@ -47,4 +54,28 @@ Object.assign(globalThis, {
   flightOriginalText: (field: FlightEditField, value: unknown) => flightEdits.flightOriginalText(tz(), field, value),
   flightFormTimes: (dateKey: string, dep: string, arr: string) => flightEdits.flightFormTimes(tz(), dateKey, dep, arr),
   flightTrackedTimes: flightEdits.flightTrackedTimes,
+});
+
+// ── flight-store: the page's one store, cached in localStorage ──
+// The page's API client. Warn-only: a response that doesn't match its schema is logged and
+// used anyway, until a release shows no mismatches (docs/mobile-app-plan.md, "The API
+// contract"). Same-origin, so the session cookie goes with it.
+const api = createApiClient({ mismatch: 'warn' });
+
+Object.assign(globalThis, {
+  flightCorrectionKey,
+  mergeFlightCorrections,
+  flightStore: createFlightStore({
+    // Read when used, not now: tests swap the page's localStorage.
+    storage: {
+      getItem: (key) => localStorage.getItem(key),
+      setItem: (key, value) => localStorage.setItem(key, value),
+    },
+    client: api,
+    flightThresholdKmh: SPEED_THRESHOLD_KMH,
+    // Another tab saved its copy.
+    watchExternalChanges: (onChange) => window.addEventListener('storage', (e) => {
+      if (e.key === FLIGHT_STORE_KEY) onChange();
+    }),
+  }),
 });

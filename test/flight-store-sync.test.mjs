@@ -1,11 +1,11 @@
-// The flight store's refresh (flightStore.refresh() → _fsFetchMerge() in flight-store.ts):
+// The flight store's refresh (flightStore.refresh(), @wingbeat/core/flight-store, as the
+// core bundle puts it on the page with localStorage and the page's fetch):
 // merging a corrections response into the cached copy, dropping one that another tab's
 // save overtook, the cursor the flight form saves with (historyId()), and queueing a
 // refresh asked for while one is in flight.
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import vm from 'node:vm';
 import { loadEngine, plain } from './harness.mjs';
 
 const STORAGE_KEY = 'ft_flights_v2';
@@ -37,7 +37,7 @@ function storeWith(entries, cursor) {
   const engine = loadEngine({ fetch });
   engine.storage.set(STORAGE_KEY, cached(entries, cursor));
   engine.flightStore.init();
-  const mem = () => plain(vm.runInContext('_mem', engine.context));
+  const mem = () => plain(engine.flightStore.snapshot());
   const saved = () => JSON.parse(engine.storage.get(STORAGE_KEY));
   return { engine, calls, mem, saved };
 }
@@ -128,7 +128,7 @@ describe('flightStore.refresh: corrections', () => {
     engine.flightStore.init();
     const result = await engine.flightStore.refresh([1]);
     assert.equal(result.changed, false);
-    const mem = plain(vm.runInContext('_mem', engine.context));
+    const mem = plain(engine.flightStore.snapshot());
     assert.deepEqual([mem.entries.map(e => e.id), mem.entries_last_history_id], [[1], 5]);
   });
 });

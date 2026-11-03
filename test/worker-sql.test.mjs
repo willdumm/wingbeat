@@ -2,7 +2,7 @@
 // duty-day statement, the edit_history triggers (migration 0002), the
 // incremental corrections sync (ENTRIES_SINCE_SQL) and the edit conflict check
 // (base_history_id), plus route validation around them, and GET /api/flights/complete's
-// ground trail.
+// ground trail, and the flights route group's response shapes.
 // test/worker.mjs runs src/index.ts in Miniflare on a fresh D1 database with every
 // migration applied (Miniflare's SQLite may differ slightly from production D1's).
 //
@@ -12,6 +12,7 @@
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startWorker } from './worker.mjs';
+import { importCore } from './core.mjs';
 
 let w;
 before(async () => {
@@ -586,5 +587,48 @@ describe('GET /api/flights/complete ground trail', () => {
     const body = await complete(13);
     assert.deepEqual(body.ground_trail, []);
     assert.equal(body.last_point_time, t - 60);
+  });
+});
+
+// Each route's real response parses with its response schema in @wingbeat/core/api, so a
+// handler drifting from the contract the clients parse with fails here.
+describe('response shapes: the flights route group', async () => {
+  const z = await import('zod/mini');
+  const api = await importCore('api/flights');
+  const assertShape = (schema, body) => {
+    const r = z.safeParse(schema, body);
+    assert.ok(r.success, JSON.stringify(r.error?.issues));
+  };
+
+  test('GET /api/flights/complete, with flights, with nothing new, and with no tracker', async () => {
+    const t = next();
+    const fid = await trackerFlight(t, t + 1800, { tracker: 2 });
+    await w.run('UPDATE flights SET modified_at = ? WHERE id = ?', t, fid);
+    for (const [time, v] of [[t, 60], [t + 1800, 10]]) {
+      const pid = (await w.run('INSERT INTO points (garmin_time, lat, lon, velocity_kmh, tracker_id) VALUES (?, 58, -154, ?, 2) RETURNING id', time, v)).results[0].id;
+      await w.run('INSERT INTO point_flights (point_id, flight_id) VALUES (?, ?)', pid, fid);
+    }
+    const full = (await w.request('GET', '/api/flights/complete?tracker=2')).body;
+    assert.ok(full.flights.some(f => f.id === fid));
+    assertShape(api.FlightsCompleteResponse, full);
+    assertShape(api.FlightsCompleteResponse,
+      (await w.request('GET', '/api/flights/complete?tracker=2&since=' + full.last_modified_at)).body);
+    assertShape(api.FlightsCompleteResponse, (await w.request('GET', '/api/flights/complete?tracker=999')).body);
+  });
+
+  test('GET /api/flight-corrections, full and as a delta with a deleted key', async () => {
+    const a = next();
+    await trackerFlight(a);
+    await w.request('POST', '/api/flight-corrections', { tracker_id: 1, flight_start_time: a, remark: 'Shape' });
+    await w.request('POST', '/api/flight-corrections', { pilot_id: 1, start_time: next(), end_time: clock + 600 });
+    const full = (await w.request('GET', '/api/flight-corrections')).body;
+    assert.equal(full.full, true);
+    assert.ok(full.entries.length >= 2);
+    assertShape(api.FlightCorrectionsResponse, full);
+    const m = await mark();
+    await w.request('POST', '/api/flight-corrections', { tracker_id: 1, flight_start_time: a });
+    const delta = (await w.request('GET', '/api/flight-corrections?since=' + m)).body;
+    assert.deepEqual(delta.deleted, ['1/' + a]);
+    assertShape(api.FlightCorrectionsResponse, delta);
   });
 });

@@ -18,8 +18,9 @@
     "docs:showcase": "node site/scripts/build-showcase.mjs"
   },
   "dependencies": {
+    "esbuild": "^0.28.1",
     "hono": "^4.13.13",
-    "esbuild": "^0.28.1"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260722.1",

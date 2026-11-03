@@ -28,6 +28,8 @@ export async function coreBundleText() {
     platform: 'browser',
     format: 'iife',
     target: 'es2022',
+    // Minified: zod/mini makes up most of it, and it's inlined in every page.
+    minify: true,
     write: false,
     banner: { js: '/* @wingbeat/core browser bundle (src/client/core-entry.ts) */' },
     logLevel: 'warning',

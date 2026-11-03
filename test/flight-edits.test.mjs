@@ -1,6 +1,6 @@
 // Flight corrections on the page: the core bundle's flight-edits globals and the HTML
 // built from them (flight-edits.ts), the flight store's flightCorrectionKey() /
-// mergeFlightCorrections() (flight-store.ts), and a correction flowing through to the
+// mergeFlightCorrections() (@wingbeat/core/flight-store), and a correction flowing through to the
 // duty log.
 
 import { describe, test } from 'node:test';

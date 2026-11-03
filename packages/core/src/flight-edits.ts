@@ -49,7 +49,7 @@ export interface FlightRecord {
   id: number;
   tracker_id: number | null;
   start_time: number;
-  end_time: number;
+  end_time: number | null;
   origin_label?: string | null;
   destination_label?: string | null;
   modified_at?: number | null;
