@@ -84,6 +84,13 @@ describe('core time', () => {
     assert.equal(time.tzLongDateLabel('2026-10-03'), 'Sat, Oct 3, 2026');
     assert.equal(time.tzShortDate('2026-10-03', 2026), 'Oct 3');
     assert.equal(time.tzShortDate('2025-10-03', 2026), 'Oct 3, 2025');
+    assert.equal(time.tzShortMonthLabel(2026, 10), 'Oct 2026');
+    assert.deepEqual([time.tzDaysInMonth(2027, 2), time.tzDaysInMonth(2028, 2), time.tzDaysInMonth(2026, 12)], [28, 29, 31]);
+  });
+
+  test('fmtTzPointTime: a track point to the second, on its operator day', () => {
+    assert.equal(time.fmtTzPointTime(TZ, utc('2026-07-16T06:05:09Z')), 'Jul 15, 22:05:09 AKDT');
+    assert.equal(time.fmtTzPointTime('Europe/Berlin', utc('2026-07-16T06:05:09Z')), 'Jul 16, 08:05:09 GMT+2');
   });
 
   test('fmtDuration rounds down, or up for an amount over a limit', () => {

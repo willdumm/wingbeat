@@ -54,8 +54,7 @@ export function dashboardScriptsHover(): string {
       }
 
       const time = nearest.garmin_time
-        ? new Date(nearest.garmin_time * 1000).toLocaleString(undefined,
-            { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        ? fmtTzPointTime(nearest.garmin_time)
         : '\u2014';
       const speed = nearest.velocity_kmh != null ? toKnots(nearest.velocity_kmh) : '\u2014';
       const alt = nearest.elevation_m != null ? toFeet(nearest.elevation_m) : '\u2014';

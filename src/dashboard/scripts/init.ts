@@ -6,16 +6,13 @@ export function dashboardScriptsInit(): string {
     // ── Init: fetch lists, init filters, start poll loop ─────────────────────
     (async () => {
       try {
-        const bootResp = await fetch('/api/bootstrap');
-        if (bootResp.ok) {
-          const d = await bootResp.json();
-          trackerList = d.trackers;
-          aircraftList = d.aircraft;
-          pilotList = d.pilots;
-          flightStore.setPilots(pilotList);
-          overlayList = d.overlays;
-          currentUser = d.me;
-        }
+        const d = await fetchBootstrap();
+        trackerList = d.trackers;
+        aircraftList = d.aircraft;
+        pilotList = d.pilots;
+        flightStore.setPilots(pilotList);
+        overlayList = d.overlays;
+        currentUser = d.me;
       } catch (_) {}
       _ftRenderOverlayLegend();
 

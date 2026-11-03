@@ -105,14 +105,11 @@ export function analyticsScriptsMap(): string {
 
     // ── Settings modal hooks ──────────────────────────────────────────────────
     settingsAfterTrackerChange = async () => {
-      try {
-        const [trackerResp, aircraftResp, pilotResp] = await Promise.all([
-          fetch('/api/trackers'), fetch('/api/aircraft'), fetch('/api/pilots'),
-        ]);
-        if (trackerResp.ok) { const d = await trackerResp.json(); trackerList = d.trackers; }
-        if (aircraftResp.ok) { const d = await aircraftResp.json(); aircraftList = d.aircraft; }
-        if (pilotResp.ok) { const d = await pilotResp.json(); pilotList = d.pilots; flightStore.setPilots(pilotList); }
-      } catch (_) {}
+      // Each list on its own: one that fails to load keeps its old value.
+      const [trackers, aircraft, pilots] = await Promise.allSettled([fetchTrackers(), fetchAircraft(), fetchPilots()]);
+      if (trackers.status === 'fulfilled') trackerList = trackers.value.trackers;
+      if (aircraft.status === 'fulfilled') aircraftList = aircraft.value.aircraft;
+      if (pilots.status === 'fulfilled') { pilotList = pilots.value.pilots; flightStore.setPilots(pilotList); }
       refreshFilterDropdowns();
       rerender();
     };
@@ -130,18 +127,13 @@ export function analyticsScriptsMap(): string {
     // ── Initialization ────────────────────────────────────────────────────────
     async function init() {
       await loadRegions();
-      try {
-        const [trackerResp, aircraftResp, pilotResp, overlayResp] = await Promise.all([
-          fetch('/api/trackers'),
-          fetch('/api/aircraft'),
-          fetch('/api/pilots'),
-          fetch('/api/overlays'),
-        ]);
-        if (trackerResp.ok) { const d = await trackerResp.json(); trackerList = d.trackers; }
-        if (aircraftResp.ok) { const d = await aircraftResp.json(); aircraftList = d.aircraft; }
-        if (pilotResp.ok) { const d = await pilotResp.json(); pilotList = d.pilots; flightStore.setPilots(pilotList); }
-        if (overlayResp.ok) { const d = await overlayResp.json(); overlayList = d.overlays; }
-      } catch (_) {}
+      // Each list on its own: one that fails to load keeps its old value.
+      const [trackers, aircraft, pilots, overlays] = await Promise.allSettled([fetchTrackers(), fetchAircraft(), fetchPilots(),
+        fetch('/api/overlays').then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))]);
+      if (trackers.status === 'fulfilled') trackerList = trackers.value.trackers;
+      if (aircraft.status === 'fulfilled') aircraftList = aircraft.value.aircraft;
+      if (pilots.status === 'fulfilled') { pilotList = pilots.value.pilots; flightStore.setPilots(pilotList); }
+      if (overlays.status === 'fulfilled') overlayList = overlays.value.overlays;
 
       const activeTrackers = trackerList.filter(t => t.active && !t.deleted);
       if (!activeTrackers.length) {

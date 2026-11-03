@@ -350,80 +350,21 @@ export function aircraftInfoStyles(): string {
   `;
 }
 
-export function sharedMaintenanceHelperScripts(): string {
-  return `
-    function _flightHours(f) {
-      var pts = f.points;
-      var endTime = (f.end_time !== null && f.end_time !== undefined)
-        ? f.end_time
-        : (pts && pts.length > 0 ? Math.max.apply(null, pts.map(function(p) { return p.t; })) : f.start_time);
-      return (endTime - f.start_time) / 3600;
-    }
-
-    function _estimatedMeter(recordedValue, recordedAt, correctionFactor, tail, flights) {
-      if (recordedValue === null || recordedValue === undefined ||
-          recordedAt === null || recordedAt === undefined) return null;
-      var cf = (correctionFactor !== null && correctionFactor !== undefined) ? correctionFactor : 1.0;
-      var hours = flights
-        .filter(function(f) { return f.aircraft_tail === tail && f.start_time >= recordedAt; })
-        .reduce(function(s, f) { return s + _flightHours(f); }, 0);
-      return recordedValue + cf * hours;
-    }
-
-    function _calendarDueDate(lastDoneAt, intervalMonths) {
-      var d = new Date(lastDoneAt * 1000);
-      var year = d.getFullYear();
-      var month = d.getMonth() + 1 + intervalMonths;
-      while (month > 12) { month -= 12; year += 1; }
-      return new Date(year, month, 0, 23, 59, 59);
-    }
-
-    function _maintenanceStatus(item, estHobbs, estTach) {
-      if (item.schedule_type === 'hobbs' || item.schedule_type === 'tach') {
-        var est = item.schedule_type === 'hobbs' ? estHobbs : estTach;
-        if (est === null) {
-          return { status: 'timer_not_recorded', due_label: (item.schedule_type === 'hobbs' ? 'Hobbs' : 'Tach') + ' not recorded' };
-        }
-        var due = (item.last_done_value || 0) + item.interval_hours;
-        var rem = due - est;
-        var threshold = item.interval_hours * 0.1;
-        var st = rem < 0 ? 'overdue' : rem <= threshold ? 'due_soon' : 'ok';
-        var lbl = rem < 0
-          ? 'Overdue ' + Math.abs(rem).toFixed(1) + ' hr'
-          : 'Due in ' + rem.toFixed(1) + ' hr';
-        return { status: st, remaining_hours: rem, due_label: lbl };
-      } else {
-        if (item.last_done_at == null) {
-          return { status: 'timer_not_recorded', due_label: 'Last service date not set' };
-        }
-        var dueDate = _calendarDueDate(item.last_done_at, item.interval_months);
-        var remDays = (dueDate.getTime() - Date.now()) / 86400000;
-        var st2 = remDays < 0 ? 'overdue' : remDays <= 30 ? 'due_soon' : 'ok';
-        var dueStr = dueDate.toLocaleString('default', { month: 'short', year: 'numeric' });
-        var lbl2 = remDays < 0
-          ? 'Overdue ' + Math.round(Math.abs(remDays)) + ' days'
-          : 'Due ' + dueStr;
-        return { status: st2, remaining_days: remDays, due_label: lbl2 };
-      }
-    }
-  `;
-}
-
 /**
  * Read-mostly rendering for the aircraft info view: the Hobbs/Tach timer sections and the
  * maintenance schedule, as HTML strings built from an aircraft record and its estimated
  * meter readings. Pure (no settings/store state), so the docs-site showcase
  * (src/showcase/) renders the same sections from sample data; aircraftInfoScript() below
  * adds the admin bindings on top. Needs htmlEscapeScript() (shared/html.ts) in the same
- * script.
+ * script, and the core bundle's maintenance globals (_estimatedMeter, _maintenanceStatus,
+ * _flightHours: @wingbeat/core/maintenance).
  */
 export function aircraftInfoRenderScript(): string {
   return `
-    ${sharedMaintenanceHelperScripts()}
-
+    // A reading's date: its operator day.
     function _acFormatDate(ts) {
       if (!ts) return 'unknown';
-      return new Date(ts * 1000).toLocaleDateString();
+      return tzShortDate(unixToTzDateStr(ts));
     }
 
     function _acStatusDotHtml(status) {
@@ -600,11 +541,18 @@ export function aircraftInfoScript(): string {
     var _acInfoAircraft = null;
     var _acInfoPendingCf = null;
 
+    // The "Reading taken at" inputs and the schedule's date inputs are in the operator's
+    // timezone, whatever the device's is.
     function _acLocalDatetimeNow() {
-      var d = new Date();
-      var pad = function(n) { return String(n).padStart(2, '0'); };
-      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
-        'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+      var now = Math.floor(Date.now() / 1000);
+      return unixToTzDateStr(now) + 'T' + unixToTzTime(now);
+    }
+
+    // A datetime-local input's value (YYYY-MM-DDTHH:MM) as an epoch; now when it's empty.
+    function _acDatetimeToTs(value) {
+      if (!value) return Math.floor(Date.now() / 1000);
+      var parts = value.split('T');
+      return tzLocalToEpoch(parts[0], parts[1].slice(0, 5));
     }
 
     function _acFlightHoursSince(tail, since) {
@@ -617,15 +565,12 @@ export function aircraftInfoScript(): string {
       if (!dateStr) return null;
       var parts = dateStr.split('-');
       if (parts.length !== 3) return null;
-      return Math.floor(new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10)).getTime() / 1000);
+      return tzLocalToEpoch(dateStr);
     }
 
     function _acTsToDateInput(ts) {
       if (!ts) return '';
-      var d = new Date(ts * 1000);
-      return d.getFullYear() + '-' +
-        String(d.getMonth() + 1).padStart(2, '0') + '-' +
-        String(d.getDate()).padStart(2, '0');
+      return unixToTzDateStr(ts);
     }
 
     // ── API save ──
@@ -802,7 +747,7 @@ export function aircraftInfoScript(): string {
           var msg = document.getElementById('ac-' + type + '-msg');
           if (isNaN(val) || val < 0) { msg.textContent = 'Enter a valid reading.'; msg.className = 'ac-field-msg ac-msg-err'; return; }
           var dtInput = document.getElementById('ac-' + type + '-datetime');
-          var recordedAt = dtInput && dtInput.value ? Math.floor(new Date(dtInput.value).getTime() / 1000) : Math.floor(Date.now() / 1000);
+          var recordedAt = _acDatetimeToTs(dtInput && dtInput.value);
           var body = {};
           body[type + '_time'] = val;
           body[type + '_recorded_at'] = recordedAt;
@@ -843,7 +788,7 @@ export function aircraftInfoScript(): string {
           var msg = document.getElementById('ac-' + type + '-update-msg');
           if (isNaN(val) || val < 0) { msg.textContent = 'Enter a valid reading.'; msg.className = 'ac-field-msg ac-msg-err'; return; }
           var dtInput = document.getElementById('ac-' + type + '-update-datetime');
-          var now = dtInput && dtInput.value ? Math.floor(new Date(dtInput.value).getTime() / 1000) : Math.floor(Date.now() / 1000);
+          var now = _acDatetimeToTs(dtInput && dtInput.value);
           var oldVal = a[type + '_time'];
           var oldAt  = a[type + '_recorded_at'];
           var cf = (a[type + '_correction'] !== null && a[type + '_correction'] !== undefined) ? a[type + '_correction'] : 1.0;

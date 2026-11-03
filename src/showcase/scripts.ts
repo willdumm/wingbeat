@@ -6,7 +6,6 @@
  * Because the demos call the real renderers, a change to the app UI shows up here on
  * the next `npm run docs:showcase`.
  */
-import { SPEED_THRESHOLD_KMH } from '../geo';
 import { Env } from '../types';
 import { themeRuntimeScript } from '../shared/theme';
 import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, sharedTileLayerDefs, sharedMapControlsScripts, staticSiteBasemapPresets } from '../shared/map-controls';
@@ -52,7 +51,6 @@ export function showcaseScript(sample: SampleData): string {
     `const SAMPLE = ${JSON.stringify(sample)};`,
     `const DEMO_CSS = ${JSON.stringify(demoStylesheets())};`,
     `const DEMO_MARKUP = ${JSON.stringify(demoMarkup(sample.appName))};`,
-    `const FLIGHT_THRESHOLD_KMH = ${SPEED_THRESHOLD_KMH};`,
     // Assigned rather than declared: the bundler may rename the function itself.
     `const synthesizeTrack = ${synthesizeTrack.toString()};`,
     `const formatLocalDateTime = ${formatLocalDateTime.toString()};`,
@@ -287,7 +285,7 @@ function showcaseDriverScript(): string {
       // first aircraft in flight rather than cycling through the fleet; the flights demo
       // still maps every in-progress flight.
       const phone = window.matchMedia('(max-width: 640px)');
-      const firstInFlight = ACTIVE_TRACKERS.find(t => (LIVE_BY_TRACKER[t.id]?.velocity_kmh ?? 0) >= FLIGHT_THRESHOLD_KMH) ?? ACTIVE_TRACKERS[0];
+      const firstInFlight = ACTIVE_TRACKERS.find(t => isInFlight(LIVE_BY_TRACKER[t.id])) ?? ACTIVE_TRACKERS[0];
 
       function render() {
         container.innerHTML = '';
@@ -297,7 +295,7 @@ function showcaseDriverScript(): string {
             trackerId: t.id,
             label: t.assigned_aircraft || t.name,
             live: d,
-            inFlight: !!d && (d.velocity_kmh ?? 0) >= FLIGHT_THRESHOLD_KMH,
+            inFlight: isInFlight(d),
             color: colorFor(t.id),
             showMetrics: true,
           }));

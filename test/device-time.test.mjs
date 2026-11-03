@@ -21,11 +21,6 @@ const PATTERN = /new Date\(|toLocaleDateString|toLocaleTimeString/g;
 const KNOWN = {
   // Server-side: notification text, with an explicit timeZone. (Also inlined in the showcase.)
   'src/shared/format.ts': 1,
-  // live / maintenance / alerts step.
-  'src/shared/aircraft-info.ts': 9,
-  'src/dashboard/scripts/alerts.ts': 4,
-  'src/dashboard/scripts/hover.ts': 1,
-  'src/dashboard/scripts/point-picker.ts': 1,
   // regions / accounting / analytics step.
   'src/analytics/scripts/streamgraph.ts': 6,
   'src/analytics/scripts/accounting.ts': 1,

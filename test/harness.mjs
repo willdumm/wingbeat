@@ -70,6 +70,8 @@ const EXPORTS = [
   'readFlightForm', 'flightFormTimesOf', 'editConflictText', 'lastEditText', 'flightMatchesFilters',
   // filters.ts
   'filterStore',
+  // the core bundle (@wingbeat/core/live, maintenance, alerts)
+  'isInFlight', 'isGpsFresh', 'nextLivePoll', '_maintenanceStatus', '_estimatedMeter', 'computeAlertsFor', 'fmtTzPointTime',
 ];
 
 export const TZ = 'America/Anchorage';
