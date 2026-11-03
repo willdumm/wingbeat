@@ -2,9 +2,9 @@
 // duty-day statement, the edit_history triggers (migration 0002), the
 // incremental corrections sync (ENTRIES_SINCE_SQL) and the edit conflict check
 // (base_history_id), plus route validation around them, and GET /api/flights/complete's
-// ground trail, the flights and duty route groups' response shapes, the writes exactly as
-// the web sends them (through @wingbeat/core's client, which checks their responses too),
-// and the request validation (the core request schemas).
+// ground trail, the response shapes of the flights, duty, bootstrap, trackers, aircraft and
+// pilots reads, the writes exactly as the web sends them (through @wingbeat/core's client,
+// which checks their responses too), and the request validation (the core request schemas).
 // test/worker.mjs runs src/index.ts in Miniflare on a fresh D1 database with every
 // migration applied (Miniflare's SQLite may differ slightly from production D1's).
 //
@@ -660,6 +660,57 @@ describe('response shapes: the duty route group', async () => {
     assertShape(api.DutyMethodsResponse, body);
     // The duty log carries the same list.
     assertShape(api.DutyLogResponse, (await w.request('GET', '/api/duty-days?pilot=1')).body);
+  });
+});
+
+describe('response shapes: bootstrap, trackers, aircraft and pilots', async () => {
+  const z = await import('zod/mini');
+  const { createApiClient } = await importCore('api/client');
+  const { getBootstrap, BootstrapResponse } = await importCore('api/bootstrap');
+  const { getTrackers, TrackersResponse } = await importCore('api/trackers');
+  const { getAircraft, AircraftResponse } = await importCore('api/aircraft');
+  const { getPilots, PilotsResponse } = await importCore('api/pilots');
+  const assertShape = (schema, body) => {
+    const r = z.safeParse(schema, body);
+    assert.ok(r.success, JSON.stringify(r.error?.issues));
+  };
+
+  before(async () => {
+    await w.db.batch([
+      w.db.prepare(`UPDATE aircraft SET name = 'Cub', hobbs_time = 1000.5, hobbs_recorded_at = 1780000000, tach_correction = 0.95,
+        maintenance_schedule = ? WHERE tail_number = 'N2'`).bind(JSON.stringify([
+        { id: 'a', name: 'Oil', schedule_type: 'hobbs', interval_hours: 50, last_done_value: 990 },
+        { id: 'b', name: 'Annual', schedule_type: 'calendar', interval_months: 12, last_done_at: 1770000000 },
+        { id: 'c', name: 'ELT', schedule_type: 'calendar', interval_months: 12 },
+      ])),
+      w.db.prepare(`INSERT INTO tile_overlays (label, url, attribution, max_zoom, default_enabled, default_enabled_by_basemap) VALUES
+        ('Sectional', 'https://example.com/{z}/{x}/{y}.png', '<a href="https://example.com">FAA</a>', 12, 1, '{"osm":true}'),
+        ('Plain', 'https://example.com/p/{z}/{x}/{y}.png', NULL, NULL, 0, NULL)`),
+      w.db.prepare("INSERT INTO pilot_default_duty (pilot_id, effective_date, duty_start, duty_end) VALUES (1, '2026-01-01', '08:00', '17:00')"),
+    ]);
+  });
+
+  test('as the admin, through the core client (strict), with a maintenance schedule, overlays and a default duty', async () => {
+    const client = createApiClient({ baseUrl: 'http://localhost', fetch: () => w.adminFetch });
+    const boot = await getBootstrap(client);
+    assert.equal(boot.me.role, 'admin');
+    assert.ok(boot.trackers.every(t => typeof t.source_url === 'string'));
+    assert.equal(boot.aircraft.find(a => a.tail_number === 'N2').maintenance_schedule.length, 3);
+    assert.equal(boot.overlays.length, 2);
+    assert.ok(boot.pilots.find(p => p.id === 1).default_duties.length >= 1);
+    assert.deepEqual((await getTrackers(client)).trackers, boot.trackers);
+    assert.deepEqual((await getAircraft(client)).aircraft, boot.aircraft);
+    assert.deepEqual((await getPilots(client)).pilots, boot.pilots);
+  });
+
+  test('as a viewer: trackers without their feed URL', async () => {
+    const boot = (await w.request('GET', '/api/bootstrap', undefined, { as: 'viewer' })).body;
+    assert.equal(boot.me.role, 'viewer');
+    assert.ok(boot.trackers.length && boot.trackers.every(t => !('source_url' in t)));
+    assertShape(BootstrapResponse, boot);
+    assertShape(TrackersResponse, (await w.request('GET', '/api/trackers', undefined, { as: 'viewer' })).body);
+    assertShape(AircraftResponse, (await w.request('GET', '/api/aircraft?active=1', undefined, { as: 'viewer' })).body);
+    assertShape(PilotsResponse, (await w.request('GET', '/api/pilots?active=1', undefined, { as: 'viewer' })).body);
   });
 });
 

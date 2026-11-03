@@ -5,10 +5,11 @@ Text module, the nonce test, the theme tokens), step 1, `time` (core time with z
 abbreviations, operator days in the flight list, the device-time scan test with its list of
 uses still to remove), step 2, `flight-edits` (with `record-limits`), step 3,
 `flight-store` (with the API client and the flights and corrections response schemas), and
-step 4, `duty` (with the duty reads' response schemas), and step 5, `corrections`,
+step 4, `duty` (with the duty reads' response schemas), step 5, `corrections`,
 `edit-history` and `filters` (with the client's writes and the Worker's request
-validation for the corrections and duty writes). Next: step 6, `live`, `maintenance` and
-`alerts`. All open questions are answered.
+validation for the corrections and duty writes), and step 6, `live`, `maintenance` and
+`alerts` (with the bootstrap, trackers, aircraft and pilots reads' response schemas).
+Next: step 7, `regions`, `accounting` and `analytics`. All open questions are answered.
 
 ## Settled so far
 
@@ -409,7 +410,8 @@ Those render chunks call core for anything they compute.
 
 Done on the `core-foundation` branch (deployed to staging 2026-11-02): the foundation,
 step 1 (`time`) and step 2 (`flight-edits`); step 3 (`flight-store`), step 4 (`duty`)
-and step 5 (`corrections`, `edit-history`, `filters`) are on the branch and on staging.
+step 5 (`corrections`, `edit-history`, `filters`) and step 6 (`live`, `maintenance`,
+`alerts`) are on the branch and on staging.
 How it's built, for the steps that follow:
 
 - **Core modules** live in `packages/core/src/<name>.ts`, each listed in `exports` in
@@ -470,7 +472,8 @@ How it's built, for the steps that follow:
   zod's `.check()` calls keep them from being tree-shaken, and the browser only needs their
   types. Covered so far: the corrections and duty writes. The reads moved so far take only
   `tracker`, `since` and `pilot`, which their handlers already parse (a bad `since` reads
-  as 0, a bad `pilot` is a 400), so a query schema would change nothing a client sees.
+  as 0, a bad `pilot` is a 400), and `active` (aircraft and pilots: `1` or anything
+  else), so a query schema would change nothing a client sees.
 - **Worker tests of what the web sends**: `test/worker-sql.test.mjs` ("the requests the web
   sends") sends each write through core's own client (strict, over `adminFetch` from
   `test/worker.mjs`) with the bodies core or the forms build, so a request schema can't
@@ -493,6 +496,37 @@ How it's built, for the steps that follow:
 - **Page reads** go through small core functions over the page's client (`getDutyLog`,
   `getDutyMethods` in `api/duty.ts`), bound as globals (`fetchDutyLog`,
   `fetchDutyMethods`); a non-2xx throws `ApiHttpError`, which the callers already catch.
+- **Step 6** (`live`, `maintenance`, `alerts`): the flight threshold is bound in
+  `core-entry.ts` (`SPEED_THRESHOLD_KMH`), like `tz` and `now`, so the page's
+  `FLIGHT_THRESHOLD_KMH` is gone: `isInFlight(d)`, `isFlightInProgress()`,
+  `nextLivePoll()` and `isGpsFresh()` (`GPS_FRESH_SECS`, the old bare `240`) are globals.
+  Where a page function reads page state (`trackerList`, `aircraftList`, …) it stays as a
+  one-line wrapper with its old name over a differently named global
+  (`buildLiveDataByTracker()` → `trackerLiveData()`, `computeAlerts()` →
+  `computeAlertsFor({ flights, aircraft, pilots, trackers })`), since a page function may
+  not shadow the global it calls. Globals the showcase calls keep their old names
+  (`_estimatedMeter`, `_maintenanceStatus`, `_flightHours`); `sharedMaintenanceHelperScripts()`
+  is gone. The device-time uses in `aircraft-info.ts`, `alerts.ts`, `hover.ts` and
+  `point-picker.ts` are gone: a calendar item's due date is the end of an operator month,
+  the Hobbs/tach "Reading taken at" input and the schedule's date inputs are read and
+  filled in the operator's timezone (`tzLocalToEpoch`, `unixToTzDateStr`), the unassigned
+  flight alert says "23:30 AKST", and track points show `fmtTzPointTime()`
+  ("Jul 15, 22:05:09 AKDT").
+- **List reads** (step 6): `fetchBootstrap()`, `fetchTrackers()`, `fetchAircraft()` and
+  `fetchPilots()` (`api/bootstrap.ts`, `api/trackers.ts`, `api/aircraft.ts`,
+  `api/pilots.ts`; `active`/`deleted` are SQLite's 0/1). The pages read the three lists
+  with `Promise.allSettled`, so one that fails keeps its old value, as before. Their
+  writes (in the settings modal) move with the settings route group.
+- **Step 6's browser check** compared alerts, every maintenance item's status, the
+  aircraft info sections' HTML, each tracker's live data, the in-progress flights, the
+  status cards and the next poll's delay before and after, on a local Worker seeded with
+  maintenance schedules, unassigned flights, a pilot near a duty limit and a flight in
+  progress, at a pinned clock: identical in an Anchorage browser but for the new time and
+  date formats, and a Berlin browser now gets the same results (before, an annual done on
+  the evening of Oct 31 AKDT was due a month later in Berlin, and an unassigned flight at
+  23:30 AKST was listed on the next day). It also saved a Hobbs reading and schedule dates
+  from a Berlin browser: stored as operator time. Staging had no alerts or maintenance
+  items, so they matched as empty. The bundle is 55.6 KB minified (45.7 KB at step 5).
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.

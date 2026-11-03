@@ -1235,12 +1235,10 @@ export function settingsModalScript(): string {
       if (isAdmin) renderSettingsUsersList();
 
       // Refresh lists in case they changed since last load.
-      try {
-        const [ar, pr] = await Promise.all([fetch('/api/aircraft'), fetch('/api/pilots')]);
-        if (ar.ok) { const d = await ar.json(); aircraftList = d.aircraft; renderSettingsAircraftList(); }
-        if (pr.ok) { const d = await pr.json(); pilotList = d.pilots; flightStore.setPilots(pilotList); renderSettingsPilotList(); }
-        settingsResetAddForm();
-      } catch (_) {}
+      const [ar, pr] = await Promise.allSettled([fetchAircraft(), fetchPilots()]);
+      if (ar.status === 'fulfilled') { aircraftList = ar.value.aircraft; renderSettingsAircraftList(); }
+      if (pr.status === 'fulfilled') { pilotList = pr.value.pilots; flightStore.setPilots(pilotList); renderSettingsPilotList(); }
+      settingsResetAddForm();
       if (isAdmin) renderSetupGuide(false);
       else document.getElementById('settings-section-setup').style.display = 'none';
     }

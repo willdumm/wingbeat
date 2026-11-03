@@ -8,15 +8,6 @@ export function dashboardScriptsRefresh(): string {
       return filteredFlights.filter(f => dayKey(f.start_time) === dk);
     }
 
-    // The flight's identity across re-segmentation: its tracker's own start time (a
-    // corrected departure doesn't change it). Manual flights have no tracker.
-    function _trackedStart(f) {
-      return f.edit && 'start_time' in f.edit.original ? f.edit.original.start_time : f.start_time;
-    }
-    function _sameTrackedFlight(a, b) {
-      return a.tracker_id != null && a.tracker_id === b.tracker_id && _trackedStart(a) === _trackedStart(b);
-    }
-
     // Everything the map is drawn from: the flights and each tracker's live position and
     // ground trail. A full draw (selectFlight, selectDayView) records it in renderedMapSig.
     function mapDataSig() {
@@ -47,7 +38,7 @@ export function dashboardScriptsRefresh(): string {
       if (activeFlightId !== null) {
         const oldActive = oldFlights.find(f => f.id === activeFlightId);
         const stillThere = allFlights.some(f => f.id === activeFlightId) ||
-          (oldActive && allFlights.some(f => _sameTrackedFlight(f, oldActive)));
+          (oldActive && allFlights.some(f => sameTrackedFlight(f, oldActive)));
         if (!stillThere) {
           activeFlightId = null;
           showDefaultMapView({ fit: mapInputSettled() });
@@ -57,7 +48,7 @@ export function dashboardScriptsRefresh(): string {
 
       // Idle: go back to following the most recent flight once it has new data.
       if (!recentInteraction && latestTracked) {
-        const oldLatest = oldFlights.find(f => _sameTrackedFlight(f, latestTracked));
+        const oldLatest = oldFlights.find(f => sameTrackedFlight(f, latestTracked));
         if (!oldLatest || oldLatest.modified_at !== latestTracked.modified_at) {
           activeFlightId = null;
           showDefaultMapView({ fit: mapInputSettled() });
@@ -75,13 +66,13 @@ export function dashboardScriptsRefresh(): string {
           // auto-incremented ID. Its tracked start is stable, so use it to find the
           // replacement.
           const oldActive = oldFlights.find(f => f.id === activeFlightId);
-          if (oldActive) flight = allFlights.find(f => _sameTrackedFlight(f, oldActive));
+          if (oldActive) flight = allFlights.find(f => sameTrackedFlight(f, oldActive));
         }
         // Auto-follow a genuinely new flight when the user was watching the previously
         // newest one. "Genuinely new" = a tracked start not present in oldFlights at all
         // (as opposed to a resegmentation, which keeps it).
         if (latestTracked && oldLatestTracked && activeFlightId === oldLatestTracked.id &&
-            !oldFlights.some(f => _sameTrackedFlight(f, latestTracked))) {
+            !oldFlights.some(f => sameTrackedFlight(f, latestTracked))) {
           flight = latestTracked;
         }
         if (!flight) return;

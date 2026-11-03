@@ -79,9 +79,7 @@ export function dashboardScriptsPointPicker(rootExpr = 'document'): string {
           const _f = allFlights.find(fl => fl.id === routePoint.flight_id);
           if (_f?.pilot_name) rows.push(['Pilot', _f.pilot_name]);
         }
-        if (routePoint.garmin_time) rows.push(['Time',
-          new Date(routePoint.garmin_time * 1000).toLocaleString(undefined,
-            { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })]);
+        if (routePoint.garmin_time) rows.push(['Time', fmtTzPointTime(routePoint.garmin_time)]);
         if (routePoint.velocity_kmh != null) rows.push(['Speed', toKnots(routePoint.velocity_kmh)]);
         if (routePoint.elevation_m != null) rows.push(['Altitude', toFeet(routePoint.elevation_m)]);
       }

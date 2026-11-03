@@ -1,4 +1,3 @@
-import { SPEED_THRESHOLD_KMH } from '../../geo';
 import { Env } from '../../types';
 import { themeRuntimeScript } from '../../shared/theme';
 import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, overlayLegendRuntimeScript } from '../../shared/map-controls';
@@ -45,7 +44,7 @@ export function dashboardScripts(env: Env): string {
     mapLayersRuntimeScript(env),
     toggleScript(),
     htmlEscapeScript(),
-    dashboardScriptsState(SPEED_THRESHOLD_KMH),
+    dashboardScriptsState(),
     overlayLegendRuntimeScript(),
     flightEditsScript(),
     filterScript(),

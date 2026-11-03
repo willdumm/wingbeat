@@ -1,6 +1,6 @@
 /**
- * Map initialisation, all shared mutable state, and the FLIGHT_THRESHOLD_KMH
- * constant (injected from the server-side SPEED_THRESHOLD_KMH).  Assembled
+ * Map initialisation and all shared mutable state (the flight threshold behind
+ * isInFlight() and friends comes with the core bundle).  Assembled
  * first in the IIFE so every subsequent chunk can reference these bindings.
  *
  * `sidebar` is declared here (not in init.ts) because flight-list.ts and
@@ -8,7 +8,7 @@
  */
 import { sharedTileLayerDefs } from '../../shared/map-controls';
 
-export function dashboardScriptsState(speedThreshold: number): string {
+export function dashboardScriptsState(): string {
   return `
     // ── Map setup ─────────────────────────────────────────────────────────────
     // No view yet: the first one is the fit to the current flights (showDefaultMapView in
@@ -72,9 +72,6 @@ export function dashboardScriptsState(speedThreshold: number): string {
     // that is drawn as a day view or as the latest flight); null for a selected flight.
     let activeDayDate = null;
     let renderedMapSig = null; // mapDataSig() as of the last full map draw (refresh.ts)
-
-    // Speed threshold (km/h) injected from the server-side constant.
-    const FLIGHT_THRESHOLD_KMH = ${speedThreshold};
 
     // ── Adaptive live-poll scheduling ─────────────────────────────────────────
     let livePollTimer = null;

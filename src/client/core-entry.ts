@@ -19,10 +19,19 @@ import * as editHistory from '@wingbeat/core/edit-history';
 import type { EditHistoryRow } from '@wingbeat/core/api/edit-history';
 import * as filters from '@wingbeat/core/filters';
 import type { FilterState } from '@wingbeat/core/filters';
+import * as live from '@wingbeat/core/live';
+import * as maintenance from '@wingbeat/core/maintenance';
+import type { MaintenanceItem } from '@wingbeat/core/maintenance';
+import * as alerts from '@wingbeat/core/alerts';
+import type { AlertLists } from '@wingbeat/core/alerts';
 import { createApiClient } from '@wingbeat/core/api/client';
 import * as dutyApi from '@wingbeat/core/api/duty';
 import * as correctionsApi from '@wingbeat/core/api/corrections';
 import { getEditHistory } from '@wingbeat/core/api/edit-history';
+import { getBootstrap } from '@wingbeat/core/api/bootstrap';
+import { getTrackers } from '@wingbeat/core/api/trackers';
+import { getAircraft } from '@wingbeat/core/api/aircraft';
+import { getPilots } from '@wingbeat/core/api/pilots';
 import { createFlightStore, flightCorrectionKey, mergeFlightCorrections, FLIGHT_STORE_KEY } from '@wingbeat/core/flight-store';
 import { SPEED_THRESHOLD_KMH } from '../geo';
 
@@ -47,6 +56,7 @@ Object.assign(globalThis, {
   unixToTzTime: (unix: number) => time.unixToTzTime(tz(), unix),
   tzAbbrev: (unix: number) => time.tzAbbrev(tz(), unix),
   fmtTzTime: (unix: number) => time.fmtTzTime(tz(), unix),
+  fmtTzPointTime: (unix: number) => time.fmtTzPointTime(tz(), unix),
   // ── time: date keys and durations ──
   tzAddDays: time.tzAddDays,
   tzDateKey: time.tzDateKey,
@@ -104,6 +114,25 @@ Object.assign(globalThis, {
   normalizeFilterState: filters.normalizeFilterState,
   flightMatchesFilters: (flight: Parameters<typeof filters.matchesFlight>[1], state: FilterState) =>
     filters.matchesFlight(tz(), flight, state),
+  // ── live: the status cards' and Live view's rules (the threshold is the server's) ──
+  GPS_FRESH_SECS: live.GPS_FRESH_SECS,
+  trackerLiveData: live.trackerLiveData,
+  isInFlight: (d: Parameters<typeof live.isInFlight>[1]) => live.isInFlight(SPEED_THRESHOLD_KMH, d),
+  isGpsFresh: (gpsTime: number) => live.isGpsFresh(now(), gpsTime),
+  isFlightInProgress: (flight: Parameters<typeof live.isFlightInProgress>[1], flights: Parameters<typeof live.isFlightInProgress>[2],
+                       liveByTracker: Parameters<typeof live.isFlightInProgress>[3]) =>
+    live.isFlightInProgress(SPEED_THRESHOLD_KMH, flight, flights, liveByTracker),
+  nextLivePoll: (liveByTracker: Parameters<typeof live.nextLivePoll>[2], lastKnownGarminTime: number | null) =>
+    live.nextLivePoll(SPEED_THRESHOLD_KMH, now(), liveByTracker, lastKnownGarminTime),
+  trackedStart: live.trackedStart,
+  sameTrackedFlight: live.sameTrackedFlight,
+  // ── maintenance: estimated meters and each schedule item's status ──
+  _flightHours: maintenance.flightHours,
+  _estimatedMeter: maintenance.estimatedMeter,
+  _maintenanceStatus: (item: MaintenanceItem, estHobbs: number | null, estTach: number | null) =>
+    maintenance.maintenanceStatus(tz(), now(), item, estHobbs, estTach),
+  // ── alerts: the dashboard's alerts feed (its rows are HTML in alerts.ts) ──
+  computeAlertsFor: (lists: AlertLists) => alerts.computeAlerts(tz(), now(), lists),
 });
 
 // ── flight-store: the page's one store, cached in localStorage ──
@@ -113,6 +142,11 @@ Object.assign(globalThis, {
 const api = createApiClient({ mismatch: 'warn' });
 
 Object.assign(globalThis, {
+  // The pages' lists: the dashboard's first load, and each list again after a settings change.
+  fetchBootstrap: () => getBootstrap(api),
+  fetchTrackers: () => getTrackers(api),
+  fetchAircraft: () => getAircraft(api),
+  fetchPilots: () => getPilots(api),
   // The duty log's reads and writes (the duty route group).
   fetchDutyLog: (pilotId: number | string) => dutyApi.getDutyLog(api, pilotId),
   fetchDutyMethods: () => dutyApi.getDutyMethods(api),

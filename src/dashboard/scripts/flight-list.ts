@@ -248,7 +248,7 @@ export function dashboardScriptsFlightList(): string {
       const latestForTracker = allFlights.find(f => f.tracker_id === flight.tracker_id);
       const isLatestForTracker = latestForTracker?.id === flight.id;
       const trackerLive = liveDataByTracker[flight.tracker_id] ?? null;
-      const inProgress = isLatestForTracker && (trackerLive == null || (trackerLive.velocity_kmh ?? 0) >= FLIGHT_THRESHOLD_KMH);
+      const inProgress = isLatestForTracker && (trackerLive == null || isInFlight(trackerLive));
 
       const drawn = drawFlightTrack(map, flight, {
         inProgress,

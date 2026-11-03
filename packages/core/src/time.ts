@@ -90,6 +90,12 @@ export function fmtTzTime(tz: string, unix: number): string {
   return unixToTzTime(tz, unix) + ' ' + tzAbbrev(tz, unix);
 }
 
+/** "Oct 3, 14:05:09 AKDT": a track point's time, to the second (the map's tooltips). */
+export function fmtTzPointTime(tz: string, unix: number): string {
+  const p = tzParts(tz, unix);
+  return MONTH_ABBR[+p.month - 1] + ' ' + +p.day + ', ' + p.hour + ':' + p.minute + ':' + p.second + ' ' + tzAbbrev(tz, unix);
+}
+
 // ── Date keys (YYYY-MM-DD, no timezone involved) and durations ──
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -131,6 +137,16 @@ export function tzLongDateLabel(dateKey: string): string {
 export function tzShortDate(dateKey: string, sameYear?: number): string {
   const [y, m, d] = dateKey.split('-').map(Number);
   return MONTH_ABBR[m - 1] + ' ' + d + (y === sameYear ? '' : ', ' + y);
+}
+
+/** "Oct 2026" */
+export function tzShortMonthLabel(y: number, m: number): string {
+  return MONTH_ABBR[m - 1] + ' ' + y;
+}
+
+/** The number of days in month m (1-12) of year y. */
+export function tzDaysInMonth(y: number, m: number): number {
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
 }
 
 /**
