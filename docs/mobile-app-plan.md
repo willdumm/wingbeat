@@ -10,8 +10,9 @@ step 4, `duty` (with the duty reads' response schemas), step 5, `corrections`,
 validation for the corrections and duty writes), step 6, `live`, `maintenance` and
 `alerts` (with the bootstrap, trackers, aircraft and pilots reads' response schemas),
 step 7, `regions` (merged with `src/geo.ts`), `accounting` and `analytics`, and step 8,
-`elevation`. Next: the rest of phase 1's "Done when" (see "Phases"), such as the settings
-modal's 11 device-time uses and moving tests off the harness. All open questions are answered.
+`elevation`. The eight steps are done, but phase 1 isn't: see "Left in phase 1" at the end of
+"Phase 1 progress and conventions". Next: the settings route group. All open questions are
+answered.
 
 ## Settled so far
 
@@ -410,11 +411,12 @@ Those render chunks call core for anything they compute.
 
 ### Phase 1 progress and conventions
 
-Done on the `core-foundation` branch (deployed to staging 2026-11-02): the foundation,
-step 1 (`time`) and step 2 (`flight-edits`); step 3 (`flight-store`), step 4 (`duty`)
-step 5 (`corrections`, `edit-history`, `filters`), step 6 (`live`, `maintenance`,
-`alerts`), step 7 (`regions`, `accounting`, `analytics`) and step 8 (`elevation`) are
-on the branch and on staging.
+Done on the `core-foundation` branch, one commit per step: the foundation, step 1
+(`time`), step 2 (`flight-edits`), step 3 (`flight-store`), step 4 (`duty`), step 5
+(`corrections`, `edit-history`, `filters`), step 6 (`live`, `maintenance`, `alerts`),
+step 7 (`regions`, `accounting`, `analytics`) and step 8 (`elevation`). All of them are
+on staging (step 8 since 2026-11-03), and the branch is pushed, rebased onto v0.2.4. None of
+it is on prod yet.
 How it's built, for the steps that follow:
 
 - **Core modules** live in `packages/core/src/<name>.ts`, each listed in `exports` in
@@ -489,9 +491,10 @@ How it's built, for the steps that follow:
 - **Clock-reading logic takes `now`** (Unix seconds) after `tz`: `computeDutyData(tz, now,
   …)`, `currentDutyMonth(tz, now)`. `core-entry.ts` binds both, so the page globals keep
   their old signatures; `test/core-duty.test.mjs` checks core never reads `Date.now()`.
-- **Moved logic keeps its spec tests where they were.** The duty suites (duty-limits,
-  rest-days, totals, dated-defaults, dst, day-form, duty-export) still run through the
-  shipped bundle's globals, unchanged; the core test (`core-duty.test.mjs`) covers what's new:
+- **Moved logic keeps its spec tests where they were** while it moves, so a step's diff
+  doesn't rewrite its own spec. Porting them to `importCore()` comes after the steps (see
+  "Left in phase 1"). The duty suites (duty-limits, rest-days, totals, dated-defaults, dst,
+  day-form, duty-export) still run through the shipped bundle's globals, unchanged; the core test (`core-duty.test.mjs`) covers what's new:
   the parameters, and the same results as the page's globals. Step 4 checked the staging
   duty log (rendered HTML, computed model, PDF Typst source for every month, a quarter and
   12 months) and the alerts against step 3's at a pinned clock: identical (staging had
@@ -573,6 +576,34 @@ How it's built, for the steps that follow:
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.
+
+**Left in phase 1** (checked 2026-11-03, after step 8), against its "Done when" under
+"Phases":
+
+1. **Routes still on bare `fetch()`**, with no schemas, response-shape tests or core client:
+   the settings modal (36 calls in `settings.ts`: settings, users, invites, the signed-in
+   user's sessions and device links, trackers and the feed test, aircraft, pilots, webhooks,
+   overlays), the regions and
+   named-points editors (`regions-editor.ts`, `named-points-editor.ts`), the setup guide,
+   the aircraft info panel's save (`aircraft-info.ts`), the analytics page's `/api/regions`
+   and `/api/overlays` reads, the flight editor's `/api/named-points`, `/api/tile-metadata`
+   (`map-controls.ts`), `/api/me/ping` and the duty PDF fetch (`pilot-duty.ts`). Request
+   validation covers only the corrections and duty writes; the other write routes need it
+   too. The settings route group is the big one, and it takes items 2 and 3 with it.
+2. **Device time in Settings**: `settings.ts`'s 11 uses (device last seen, invite expiry,
+   webhook last triggered, the feed test) still show device time; the scan test's `KNOWN`
+   allows them. `format.ts`'s one (server-side, explicit `timeZone`) and the showcase's
+   three are fine as they are.
+3. **The Settings warning before changing the timezone** once duty records exist (see
+   "Times and the operator's timezone"): not built.
+4. **Spec tests off the harness**: duty-limits, rest-days, totals, dated-defaults, dst,
+   day-form, edit-conflict, flight-store-sync and the core half of flight-edits still test
+   core logic only through the bundle's globals. They move to `importCore()`, leaving the
+   harness for what's still a script string (the PDF builder in duty-export, flight-edits'
+   chips) and the bundle smoke test (each `core-*` test's page-binding check).
+5. **Prod**: release the stack (push `wingbeat-hosting`'s `[build]` commit first), then
+   watch for `[wingbeat api] unexpected response` warnings before the web client goes
+   strict.
 
 ### Times and the operator's timezone
 
@@ -680,7 +711,7 @@ checks, and Hono still does the routing and validation.
 
 This pays off before the app exists. Every API call the dashboard makes is checked at both
 ends, its logic gets type checking and normal imports, and the template-string harness
-shrinks to the PDF builder's test. Nothing about the dashboard's
+shrinks to what's still a script string (the PDF builder, the chips) and a bundle smoke test. Nothing about the dashboard's
 look, its no-framework approach or its deploy changes.
 
 ### What isn't shared
@@ -1590,7 +1621,7 @@ app itself only once the probe passes.
      `time`, `flight-edits`, `flight-store`, `duty` (with the before/after duty-log, alert
      and PDF comparison on staging), `corrections` / `edit-history` / `filters`, `live` /
      `maintenance` / `alerts`, then `regions` (merged with `src/geo.ts`) / `accounting` /
-     `analytics`. Tests for everything that had none.
+     `analytics`, then `elevation`. Tests for everything that had none.
    - **Every route the web calls** gets schemas, request validation, response-shape tests
      and the core client, route group by route group with the module that uses it. The web
      parses warn-only at first.
@@ -1599,8 +1630,9 @@ app itself only once the probe passes.
      analytics, date and time inputs read in the operator's zone, the device-time scan test,
      and the Settings warning before changing the timezone once duty records exist.
    - Done when every step has been used on staging with no regressions, `npm test` passes
-     (including the scan test), `docs:showcase --check` is clean, and the only harness test
-     left is the PDF builder's. Worth doing even if the app never ships. Phases 2 and 3 don't
+     (including the scan test), `docs:showcase --check` is clean, and the harness only tests
+     what's still a script string (the PDF builder, flight-edits' chips) plus the bundle's
+     smoke test. Worth doing even if the app never ships. Phases 2 and 3 don't
      wait for it.
 2. **Web Push in the dashboard; retire Pushover** (Decision 4, step 1). `push_subscriptions`
    and `push_devices` (one migration), per-instance VAPID keys in `settings`, Web Push sending
