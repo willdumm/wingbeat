@@ -403,6 +403,9 @@ Formatting and severity:
 
 ### 4. Duty log UI — `src/shared/pilot-duty.ts`
 
+(The computation, warnings and totals have since moved to `packages/core/src/duty.ts`; see
+`docs/mobile-app-plan.md`.)
+
 A full-screen Settings view, opened from a pilot's "Duty log" button. It uses
 `buttons.ts`, `segmented-control.ts`, `status.ts`, `icon()`, the shared form modal
 (`form-modal.ts`) and theme tokens, and follows `docs/frontend-patterns.md` for the
@@ -822,8 +825,9 @@ months) through this month. `_buildTypstSource` takes one month's row model or s
 ### Tests
 
 `npm test` (`node --test`, in the nix shell) runs `test/`: `test/harness.mjs` evaluates the
-real script strings of `pilot-duty.ts`, `flight-edits.ts`, `time.ts`, `html.ts` and
-`flight-store.ts` in a `node:vm` context with a settable clock. The suites cover the rules in this doc: the
+shipped `@wingbeat/core` bundle (the compliance logic is `packages/core/src/duty.ts`) and the
+real script strings of `pilot-duty.ts`, `flight-edits.ts` and `html.ts` in a `node:vm`
+context with a settable clock. The suites cover the rules in this doc: the
 (b), (c), (d) and (e) checks, rest days, the quarter and year totals, DST days, the dated
 default duty and method (`dated-defaults.test.mjs`), `applyFlightEdits`, the corrections
 delta merge, and the flight form's times. `test/worker.mjs` runs the real Worker in

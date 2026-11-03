@@ -2883,9 +2883,7 @@ export function settingsModalScript(): string {
     async function _loadDutyMethods() {
       const errorEl = document.getElementById('settings-duty-method-error');
       try {
-        const resp = await fetch('/api/duty-methods');
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        _dutyMethods = await resp.json();
+        _dutyMethods = await fetchDutyMethods();
         errorEl.textContent = '';
       } catch (_) {
         errorEl.textContent = 'Couldn’t load the duty method. Reopen Global Settings to try again.';

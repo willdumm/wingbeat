@@ -58,9 +58,11 @@ const EXPORTS = [
   'applyFlightEdits', 'flightRemarks', 'flightEntrySummary', 'flightFormTimes', 'flightTrackedTimes', 'FLIGHT_MAX_SECS',
   // flight-edits.ts
   'flightEditedMark', 'flightRemarksHtml',
-  // pilot-duty.ts
-  'computeDutyData', '_buildTypstSource', 'dutyExportPresets', 'dutyTotals', 'dutyDayText', 'currentDutyMonth', '_DUTY_LIMITS',
+  // the core bundle (@wingbeat/core/duty)
+  'computeDutyData', 'dutyExportPresets', 'dutyTotals', 'dutyDayText', 'currentDutyMonth', '_DUTY_LIMITS',
   'dutySaveConfirmText', 'dutyEntryOn', 'dutyDefaultOn', 'dutyMethodOn',
+  // pilot-duty.ts
+  '_buildTypstSource',
   // the core bundle (@wingbeat/core/flight-store)
   'flightCorrectionKey', 'mergeFlightCorrections', 'flightStore',
   // edit-history.ts

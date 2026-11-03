@@ -7,7 +7,9 @@
   "type": "module",
   "exports": {
     "./api/client": "./src/api/client.ts",
+    "./api/duty": "./src/api/duty.ts",
     "./api/flights": "./src/api/flights.ts",
+    "./duty": "./src/duty.ts",
     "./flight-edits": "./src/flight-edits.ts",
     "./flight-store": "./src/flight-store.ts",
     "./record-limits": "./src/record-limits.ts",

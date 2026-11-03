@@ -2,7 +2,7 @@
 // duty-day statement, the edit_history triggers (migration 0002), the
 // incremental corrections sync (ENTRIES_SINCE_SQL) and the edit conflict check
 // (base_history_id), plus route validation around them, and GET /api/flights/complete's
-// ground trail, and the flights route group's response shapes.
+// ground trail, and the flights and duty route groups' response shapes.
 // test/worker.mjs runs src/index.ts in Miniflare on a fresh D1 database with every
 // migration applied (Miniflare's SQLite may differ slightly from production D1's).
 //
@@ -630,5 +630,33 @@ describe('response shapes: the flights route group', async () => {
     const delta = (await w.request('GET', '/api/flight-corrections?since=' + m)).body;
     assert.deepEqual(delta.deleted, ['1/' + a]);
     assertShape(api.FlightCorrectionsResponse, delta);
+  });
+});
+
+describe('response shapes: the duty route group', async () => {
+  const z = await import('zod/mini');
+  const api = await importCore('api/duty');
+  const assertShape = (schema, body) => {
+    const r = z.safeParse(schema, body);
+    assert.ok(r.success, JSON.stringify(r.error?.issues));
+  };
+
+  test('GET /api/duty-days, empty and with a duty day, a rest day, a note and a default duty', async () => {
+    assertShape(api.DutyLogResponse, (await w.request('GET', '/api/duty-days?pilot=999')).body);
+    await w.request('PUT', '/api/duty-days/2', { dates: ['2027-02-01'], duty_start: '08:00', duty_end: '17:00' });
+    await w.request('PUT', '/api/duty-days/2', { dates: ['2027-02-02'], rest: true, note: 'Shape' });
+    await w.request('PUT', '/api/pilots/2/default-duty', { effective_date: '2027-01-01', duty_start: '07:00', duty_end: '16:00' });
+    const log = (await w.request('GET', '/api/duty-days?pilot=2')).body;
+    assert.ok(log.days.length >= 2 && log.default_duties.length >= 1);
+    assertShape(api.DutyLogResponse, log);
+  });
+
+  test('GET /api/duty-methods', async () => {
+    await w.request('PUT', '/api/duty-methods', { effective_date: '2027-03-01', method: 'c' });
+    const body = (await w.request('GET', '/api/duty-methods')).body;
+    assert.ok(body.methods.some(m => m.method === 'c'));
+    assertShape(api.DutyMethodsResponse, body);
+    // The duty log carries the same list.
+    assertShape(api.DutyLogResponse, (await w.request('GET', '/api/duty-days?pilot=1')).body);
   });
 });
