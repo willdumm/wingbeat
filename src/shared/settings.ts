@@ -2920,7 +2920,7 @@ export function settingsModalScript(): string {
       showEditConflict(document.getElementById('settings-duty-method-error'), conflict, { reload: _loadDutyMethods });
     }
 
-    // Runs a write of the method list (apiWrite), then shows the list it returns.
+    // Runs a write of the method list (putDutyMethod, deleteDutyMethod), then shows the list again.
     async function _writeDutyMethods(fn) {
       const controls = [...document.querySelectorAll('#settings-duty-method-save, #settings-duty-method-cancel, #settings-duty-methods button')];
       const errorEl = document.getElementById('settings-duty-method-error');
@@ -2934,8 +2934,7 @@ export function settingsModalScript(): string {
     function _removeDutyMethod(entries, entry) {
       if (!confirm('Remove the duty method entry “' + _dutyDatedWhen(entries, entry) + ': ' + _DUTY_METHOD_NAMES[entry.method] +
         '”? The days it covered then follow the other entries.')) return;
-      _writeDutyMethods(() => apiWrite('DELETE', '/api/duty-methods/' + entry.effective_date +
-        '?base_history_id=' + _dutyMethods.last_history_id));
+      _writeDutyMethods(() => deleteDutyMethod(entry.effective_date, _dutyMethods.last_history_id));
     }
 
     document.getElementById('settings-duty-method-cancel').addEventListener('click', () => _editDutyMethod(null));
@@ -2950,7 +2949,7 @@ export function settingsModalScript(): string {
         _DUTY_METHOD_NAMES[other.method] + '). Replace it?')) return;
       const body = { effective_date: from, method, base_history_id: _dutyMethods.last_history_id };
       if (edit) body.replaces = edit.effective_date;
-      _writeDutyMethods(() => apiWrite('PUT', '/api/duty-methods', body));
+      _writeDutyMethods(() => putDutyMethod(body));
     });
 
     document.getElementById('settings-pushover-token-save').addEventListener('click', async () => {

@@ -161,30 +161,11 @@ export function formModalScript(): string {
   return `
     // ── Form modal ────────────────────────────────────────────────────────────
 
-    // Sends a JSON write (body, if any, as JSON) and returns the response's JSON; throws
-    // with the server's message when it fails, for runFormAction() to show. Used by the
-    // flight form and editor and the duty log's forms. A save refused because the record
-    // changed since the form loaded it (409, src/index.ts "Edit conflicts") throws with
-    // the server's conflict ({ id, at, user_id, user_name }) as the error's .conflict.
-    async function apiWrite(method, url, body) {
-      const resp = await fetch(url, {
-        method,
-        headers: body ? { 'Content-Type': 'application/json' } : undefined,
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        const e = new Error(err.error || ('HTTP ' + resp.status));
-        if (resp.status === 409 && err.conflict) e.conflict = err.conflict;
-        throw e;
-      }
-      return resp.json();
-    }
-
     // Runs a form's write: fn() with controls (its buttons) disabled and errorEl cleared,
-    // then the controls enabled again. A failure's message goes in errorEl; an edit
-    // conflict goes to onConflict(conflict) instead, when given (showEditConflict(), in
-    // edit-history.ts). Returns whether fn went through. Shared by the flight form, the
+    // then the controls enabled again. A failure's message goes in errorEl (a write through
+    // the core client throws with the server's message); an edit conflict (a 409's
+    // .conflict, src/index.ts "Edit conflicts") goes to onConflict(conflict) instead, when
+    // given (showEditConflict(), in edit-history.ts). Returns whether fn went through. Shared by the flight form, the
     // flight editor's bulk actions and the duty log's forms.
     async function runFormAction(controls, errorEl, fn, onConflict = null) {
       controls.forEach(c => { c.disabled = true; });

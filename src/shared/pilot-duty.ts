@@ -771,8 +771,9 @@ export function pilotDutyRenderScript(): string {
 /**
  * The duty log view in the settings modal: loads the log for a pilot, month navigation,
  * PDF export, and (for admins) the day form (/api/duty-days) and the shared flight form
- * and editor (flight-editor.ts) for flights. Also needs form-modal.ts (apiWrite,
- * runFormAction) and edit-history.ts (showLastEdit) in the same script.
+ * and editor (flight-editor.ts) for flights. Also needs form-modal.ts (runFormAction) and
+ * edit-history.ts (showLastEdit) in the same script, and the core bundle's duty writes
+ * (putDutyDays, …: shared/core-bundle.ts).
  */
 export function pilotDutyScript(): string {
   return `
@@ -952,7 +953,6 @@ export function pilotDutyScript(): string {
       const $ = sel => modal.querySelector(sel);
       const errorEl = $('.form-modal-error');
       const buttons = [...modal.querySelectorAll('.form-modal-footer button, .duty-dated-list button')];
-      const url = '/api/pilots/' + encodeURIComponent(pilotId) + '/default-duty';
       async function reload() {
         await _dutyFetchLog();
         _dutyLoad();
@@ -976,8 +976,8 @@ export function pilotDutyScript(): string {
         if (btn.dataset.edit != null) { _dutyOpenDefaultForm({ edit: entry }); return; }
         if (!confirm('Remove the default duty entry “' + _dutyDatedWhen(entries, entry) + ': ' + timesOf(entry) +
           '”? The days it covered then follow the other entries.')) return;
-        const ok = await _dutySave(buttons, errorEl, async () => saved(await apiWrite('DELETE',
-          url + '/' + entry.effective_date + '?base_history_id=' + baseHistoryId)), onConflict);
+        const ok = await _dutySave(buttons, errorEl, async () => saved(await deleteDefaultDuty(pilotId,
+          entry.effective_date, baseHistoryId)), onConflict);
         if (ok) _dutyOpenDefaultForm();
       });
       $('[data-act="cancel"]').addEventListener('click', close);
@@ -992,7 +992,7 @@ export function pilotDutyScript(): string {
         if (other && !confirm('There’s already an entry dated ' + tzShortDate(from, null) + ' (' + timesOf(other) + '). Replace it?')) return;
         const body = { effective_date: from, duty_start: start, duty_end: end, base_history_id: baseHistoryId };
         if (edit) body.replaces = edit.effective_date;
-        const ok = await _dutySave(buttons, errorEl, async () => saved(await apiWrite('PUT', url, body)), onConflict);
+        const ok = await _dutySave(buttons, errorEl, async () => saved(await putDefaultDuty(pilotId, body)), onConflict);
         if (ok) close();
       });
     }
@@ -1243,7 +1243,6 @@ export function pilotDutyScript(): string {
 
       // The whole range in one request, which the server writes in one batch: every day is
       // saved, or none.
-      const pilotUrl = '/api/duty-days/' + encodeURIComponent(_dutyPilotId);
 
       $('[data-act="cancel"]').addEventListener('click', close);
       $('[data-act="save"]').addEventListener('click', async () => {
@@ -1258,7 +1257,7 @@ export function pilotDutyScript(): string {
         const ask = dutySaveConfirmText((_dutyLog && _dutyLog.days) || [], keys, body);
         if (ask && !confirm(ask)) return;
         const ok = await _dutySave(buttons, errorEl,
-          () => apiWrite('PUT', pilotUrl, { ...body, base_history_id: baseHistoryId }), onConflict);
+          () => putDutyDays(_dutyPilotId, { ...body, base_history_id: baseHistoryId }), onConflict);
         if (ok) close();
       });
       $('[data-act="clear"]').addEventListener('click', async () => {
@@ -1266,7 +1265,7 @@ export function pilotDutyScript(): string {
         if (typeof keys === 'string') { errorEl.textContent = keys; return; }
         if (keys.length > 1 && !confirm('Clear duty, rest and notes for all ' + keys.length + ' days?')) return;
         const ok = await _dutySave(buttons, errorEl,
-          () => apiWrite('POST', pilotUrl + '/clear', { dates: keys, base_history_id: baseHistoryId }), onConflict);
+          () => clearDutyDays(_dutyPilotId, { dates: keys, base_history_id: baseHistoryId }), onConflict);
         if (ok) close();
       });
     }

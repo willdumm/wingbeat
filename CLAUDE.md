@@ -85,6 +85,9 @@ the duty-log compliance spec in `docs/duty-log-editing-plan.md`.
 Run it too after changing the flight-correction or duty-day routes in `src/index.ts`, or adding a
 migration: `test/worker-sql.test.mjs` runs the real Worker in Miniflare against a fresh D1 with
 every migration applied (see `test/worker.mjs`).
+The corrections and duty write routes validate their bodies with the request schemas in
+`packages/core/src/api/<group>-requests.ts`, which strip unknown keys: a new field a form
+sends must be added there too, or the handler never sees it.
 
 ## Migrations
 

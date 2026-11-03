@@ -15,6 +15,12 @@ import { loadSettings, invalidateSettingsCache } from './settings';
 import { keyedBasemapPreset, readEnvSecret, substituteTileUrl } from './shared/map-controls';
 import { lookupTileMetadata, sanitizeAttribution } from './tile-metadata';
 import { MAX_DUTY_DAYS_PER_REQUEST, MAX_FLIGHT_TEXT_LENGTH, MAX_DUTY_NOTE_LENGTH, MAX_FLIGHT_SECS } from '@wingbeat/core/record-limits';
+import { BaseHistoryQuery } from '@wingbeat/core/api/requests';
+import { AssignmentRequest, BulkFlagsRequest, CorrectionRequest } from '@wingbeat/core/api/corrections-requests';
+import { DefaultDutyRequest, DutyDaysClearRequest, DutyDaysRequest, DutyMethodRequest } from '@wingbeat/core/api/duty-requests';
+import { zValidator } from '@hono/zod-validator';
+import * as z from 'zod/mini';
+import { en as zodEnglish } from 'zod/locales';
 
 const SESSION_COOKIE = 'session';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 365;
@@ -28,6 +34,38 @@ type AuthUser = { id: number; name: string; role: string; sessionId: number; dev
 type Variables = { user: AuthUser; db: D1Database; tenant: Tenant; cspNonce: string };
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// ── Request validation ────────────────────────────────────────────────────────
+// The write routes the web and the app call validate their JSON body (and a delete its
+// query) with the request schemas in @wingbeat/core/api, which strip unknown keys and check
+// each field's type (docs/mobile-app-plan.md, "The API contract"). A request that doesn't
+// match gets a 400 { error } naming the first field that's wrong; the handlers keep their
+// own checks of what the values mean.
+
+// zod/mini has no messages of its own.
+z.config(zodEnglish());
+
+// zod/mini schemas have no methods (the validator's default calls schema.safeParseAsync), so
+// it gets z.safeParseAsync; the cast is only because TypeScript can't resolve the validator's
+// result type for a generic S.
+function valid<T extends 'json' | 'query', S extends z.ZodMiniType>(target: T, schema: S) {
+  return zValidator(target, schema, (result, c) => {
+    if (result.success) return;
+    const issue = result.error.issues[0];
+    return c.json({ error: (issue.path.length ? issue.path.join('.') + ': ' : '') + issue.message }, 400);
+  }, { validationFunction: (sch, value) => z.safeParseAsync(sch, value) as never });
+}
+
+// A JSON body that doesn't parse (the validator's 400) gets a JSON error like any other bad
+// request; every other error is handled as Hono does by default.
+app.onError((err, c) => {
+  if (err instanceof HTTPException) {
+    if (err.status === 400 && !err.res) return c.json({ error: err.message }, 400);
+    return err.getResponse();
+  }
+  console.error(err);
+  return c.text('Internal Server Error', 500);
+});
 
 type SessionLookup = { id: number; user_id: number; name: string; role: string; device_name: string | null; last_seen_at: number; token_hashed: number };
 
@@ -1360,15 +1398,11 @@ function assignmentStatements(db: D1Database, { ids, entryIds, trackerId = null,
 
 // Sets aircraft and/or pilot on tracked flights (flight_ids, written to flights and their
 // points) and manual flights (entry_ids, flight_corrections rows with no tracker).
-app.put('/api/flights/assignment', requireAdmin, async (c) => {
-  const body = await c.req.json<{ flight_ids?: unknown; entry_ids?: unknown; aircraft_tail?: string | null; pilot_id?: number | null }>();
+app.put('/api/flights/assignment', requireAdmin, valid('json', AssignmentRequest), async (c) => {
+  const body = c.req.valid('json');
 
-  const intList = (v: unknown) => Array.isArray(v)
-    ? (v as unknown[]).filter((id): id is number => typeof id === 'number' && Number.isInteger(id))
-    : null;
-  const ids = intList(body.flight_ids ?? []);
-  const entryIds = intList(body.entry_ids ?? []);
-  if (ids === null || entryIds === null) return c.json({ error: 'flight_ids and entry_ids must be arrays' }, 400);
+  const ids = body.flight_ids ?? [];
+  const entryIds = body.entry_ids ?? [];
   if (ids.length === 0 && entryIds.length === 0) return c.json({ error: 'No valid flight IDs' }, 400);
 
   const hasAircraft = Object.prototype.hasOwnProperty.call(body, 'aircraft_tail');
@@ -1635,9 +1669,8 @@ app.get('/api/duty-days', async (c) => {
   });
 });
 
-app.post('/api/flight-corrections', requireAdmin, async (c) => {
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+app.post('/api/flight-corrections', requireAdmin, valid('json', CorrectionRequest), async (c) => {
+  const body: Record<string, unknown> = c.req.valid('json');
   const tracked = body.tracker_id != null || body.flight_start_time != null;
   if (tracked && !(Number.isInteger(body.tracker_id) && Number.isInteger(body.flight_start_time))) {
     return c.json({ error: 'tracker_id and flight_start_time must both be integers' }, 400);
@@ -1702,7 +1735,7 @@ app.post('/api/flight-corrections', requireAdmin, async (c) => {
 
 // Updates a manual flight (the body is the form's full state, with base_history_id: see
 // "Edit conflicts").
-app.put('/api/flight-corrections/:id', requireAdmin, async (c) => {
+app.put('/api/flight-corrections/:id', requireAdmin, valid('json', CorrectionRequest), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (Number.isNaN(id)) return c.json({ error: 'Invalid id' }, 400);
   const existing = await c.var.db.prepare('SELECT tracker_id FROM flight_corrections WHERE id = ?')
@@ -1713,8 +1746,7 @@ app.put('/api/flight-corrections/:id', requireAdmin, async (c) => {
   if (existing.tracker_id != null) {
     return c.json({ error: 'Tracked-flight corrections are saved with POST /api/flight-corrections' }, 400);
   }
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const body: Record<string, unknown> = c.req.valid('json');
   const fields = await parseEntryFields(c.var.db, body, false);
   if (typeof fields === 'string') return c.json({ error: fields }, 400);
   const baseId = parseBaseHistoryId(body.base_history_id);
@@ -1731,10 +1763,9 @@ app.put('/api/flight-corrections/:id', requireAdmin, async (c) => {
 // in one batch. Tracked flights are upserted keeping their other corrections; manual
 // flights are updated by id. Setting Part 135 clears unpaid (only Part 91 can be unpaid).
 // Tracked rows left with nothing in them are deleted.
-app.post('/api/flight-corrections/bulk', requireAdmin, async (c) => {
-  let body: { flights?: unknown; set?: { part91?: unknown; excluded?: unknown } };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
-  if (!Array.isArray(body.flights) || body.flights.length === 0) return c.json({ error: 'flights must be a non-empty array' }, 400);
+app.post('/api/flight-corrections/bulk', requireAdmin, valid('json', BulkFlagsRequest), async (c) => {
+  const body = c.req.valid('json');
+  if (body.flights.length === 0) return c.json({ error: 'flights must be a non-empty array' }, 400);
   if (body.flights.length > 5000) return c.json({ error: 'At most 5000 flights at a time' }, 400);
   const set = body.set ?? {};
   const flag = (v: unknown): number | null => v === undefined ? null : (v ? 1 : 0);
@@ -1743,13 +1774,9 @@ app.post('/api/flight-corrections/bulk', requireAdmin, async (c) => {
 
   const tracked: { tracker_id: number; flight_start_time: number }[] = [];
   const entryIds: number[] = [];
-  for (const f of body.flights as Record<string, unknown>[]) {
-    if (f && Number.isInteger(f.entry_id)) entryIds.push(f.entry_id as number);
-    else if (f && Number.isInteger(f.tracker_id) && Number.isInteger(f.flight_start_time)) {
-      tracked.push({ tracker_id: f.tracker_id as number, flight_start_time: f.flight_start_time as number });
-    } else {
-      return c.json({ error: 'Each flight needs tracker_id and flight_start_time, or entry_id' }, 400);
-    }
+  for (const f of body.flights) {
+    if ('entry_id' in f) entryIds.push(f.entry_id);
+    else tracked.push({ tracker_id: f.tracker_id, flight_start_time: f.flight_start_time });
   }
   const trackerIds = [...new Set(tracked.map(f => f.tracker_id))];
   if (trackerIds.length) {
@@ -1804,10 +1831,10 @@ app.post('/api/flight-corrections/bulk', requireAdmin, async (c) => {
 // The flight form's Revert to tracker and Delete send ?base_history_id= (see "Edit
 // conflicts"), checked against the row's corrections only: a revert leaves the flight's
 // aircraft/pilot as they are.
-app.delete('/api/flight-corrections/:id', requireAdmin, async (c) => {
+app.delete('/api/flight-corrections/:id', requireAdmin, valid('query', BaseHistoryQuery), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (Number.isNaN(id)) return c.json({ error: 'Invalid id' }, 400);
-  const baseId = parseBaseHistoryId(c.req.query('base_history_id'));
+  const baseId = parseBaseHistoryId(c.req.valid('query').base_history_id);
   if (typeof baseId === 'string') return c.json({ error: baseId }, 400);
   let base: SaveBase | undefined;
   if (baseId !== undefined) {
@@ -1885,11 +1912,10 @@ function dutyDaysBase(pilotId: number, dates: string[], v: unknown): SaveBase | 
 // Sets one pilot's dates ({ dates, duty_start, duty_end, rest, note, base_history_id }) in
 // one statement: the day form, for one day or a Through range. All the days are written,
 // or none.
-app.put('/api/duty-days/:pilot', requireAdmin, async (c) => {
+app.put('/api/duty-days/:pilot', requireAdmin, valid('json', DutyDaysRequest), async (c) => {
   const pilotId = parseInt(c.req.param('pilot') ?? '', 10);
   if (Number.isNaN(pilotId)) return c.json({ error: 'Invalid pilot id' }, 400);
-  let body: { dates?: unknown; duty_start?: unknown; duty_end?: unknown; rest?: unknown; note?: unknown; base_history_id?: unknown };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const body = c.req.valid('json');
   const dates = parseDutyDates(body.dates);
   if (typeof dates === 'string') return c.json({ error: dates }, 400);
   const fields = parseDutyDayFields(body);
@@ -1902,11 +1928,10 @@ app.put('/api/duty-days/:pilot', requireAdmin, async (c) => {
 });
 
 // Clears many dates at once ({ dates, base_history_id }), in one statement.
-app.post('/api/duty-days/:pilot/clear', requireAdmin, async (c) => {
+app.post('/api/duty-days/:pilot/clear', requireAdmin, valid('json', DutyDaysClearRequest), async (c) => {
   const pilotId = parseInt(c.req.param('pilot') ?? '', 10);
   if (Number.isNaN(pilotId)) return c.json({ error: 'Invalid pilot id' }, 400);
-  let body: { dates?: unknown; base_history_id?: unknown };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const body = c.req.valid('json');
   const dates = parseDutyDates(body.dates);
   if (typeof dates === 'string') return c.json({ error: dates }, 400);
   const base = dutyDaysBase(pilotId, dates, body.base_history_id);
@@ -1943,11 +1968,10 @@ function savedBase(id: number | undefined, ref: HistoryRef): SaveBase | undefine
 // replaces?, base_history_id? }. Times are both HH:MM (not equal) or both null (no default
 // from that date); an entry already on that date is replaced, and so is the one dated
 // replaces (moved to effective_date), in the same batch. Returns { default_duties }.
-app.put('/api/pilots/:id/default-duty', requireAdmin, async (c) => {
+app.put('/api/pilots/:id/default-duty', requireAdmin, valid('json', DefaultDutyRequest), async (c) => {
   const pilotId = parseInt(c.req.param('id'), 10);
   if (Number.isNaN(pilotId)) return c.json({ error: 'Invalid pilot id' }, 400);
-  let body: { effective_date?: unknown; duty_start?: unknown; duty_end?: unknown; replaces?: unknown; base_history_id?: unknown };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const body = c.req.valid('json');
   const entry = parseDatedEntry(body);
   if (typeof entry === 'string') return c.json({ error: entry }, 400);
   const start = hhmm(body.duty_start), end = hhmm(body.duty_end);
@@ -1971,12 +1995,12 @@ app.put('/api/pilots/:id/default-duty', requireAdmin, async (c) => {
 
 // Removes the entry dated :date (?base_history_id=): its days fall back to the entry before
 // it (or, for the earliest, the next one). Returns { default_duties }.
-app.delete('/api/pilots/:id/default-duty/:date', requireAdmin, async (c) => {
+app.delete('/api/pilots/:id/default-duty/:date', requireAdmin, valid('query', BaseHistoryQuery), async (c) => {
   const pilotId = parseInt(c.req.param('id'), 10);
   if (Number.isNaN(pilotId)) return c.json({ error: 'Invalid pilot id' }, 400);
   const date = c.req.param('date');
   if (!isDateKey(date)) return c.json({ error: 'date must be YYYY-MM-DD' }, 400);
-  const baseId = parseBaseHistoryId(c.req.query('base_history_id'));
+  const baseId = parseBaseHistoryId(c.req.valid('query').base_history_id);
   if (typeof baseId === 'string') return c.json({ error: baseId }, 400);
   const db = c.var.db;
   const [del, list] = await recordedBatch(c, [
@@ -1997,9 +2021,8 @@ app.get('/api/duty-methods', async (c) => {
 
 // The method from a date: { effective_date, method: 'b' | 'c', replaces?, base_history_id? },
 // like a default duty entry. Returns { methods }.
-app.put('/api/duty-methods', requireAdmin, async (c) => {
-  let body: { effective_date?: unknown; method?: unknown; replaces?: unknown; base_history_id?: unknown };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+app.put('/api/duty-methods', requireAdmin, valid('json', DutyMethodRequest), async (c) => {
+  const body = c.req.valid('json');
   const entry = parseDatedEntry(body);
   if (typeof entry === 'string') return c.json({ error: entry }, 400);
   if (body.method !== 'b' && body.method !== 'c') return c.json({ error: 'method must be b or c' }, 400);
@@ -2017,10 +2040,10 @@ app.put('/api/duty-methods', requireAdmin, async (c) => {
   return c.json({ methods: results[results.length - 1].results as DutyMethodEntry[] });
 });
 
-app.delete('/api/duty-methods/:date', requireAdmin, async (c) => {
+app.delete('/api/duty-methods/:date', requireAdmin, valid('query', BaseHistoryQuery), async (c) => {
   const date = c.req.param('date');
   if (!isDateKey(date)) return c.json({ error: 'date must be YYYY-MM-DD' }, 400);
-  const baseId = parseBaseHistoryId(c.req.query('base_history_id'));
+  const baseId = parseBaseHistoryId(c.req.valid('query').base_history_id);
   if (typeof baseId === 'string') return c.json({ error: baseId }, 400);
   const [del, list] = await recordedBatch(c, [
     c.var.db.prepare('DELETE FROM duty_method_history WHERE effective_date = ?').bind(date),

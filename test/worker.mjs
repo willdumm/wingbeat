@@ -65,9 +65,11 @@ export function splitSql(sql) {
  * Starts the Worker on a fresh database: migrations applied, an admin (user 1, "Ada
  * Admin") and a viewer (user 2) signed in. Call dispose() when done (it stops workerd).
  *
- * Returns { db, request, sql, all, first, dispose, migrations }:
- *   request(method, path, body?, { as: 'admin' | 'viewer' | null, headers })  → { status, body }
- *                                         (as: null sends no session cookie; headers are added to the request; the result also has the response `headers`)
+ * Returns { db, request, adminFetch, sql, all, first, dispose, migrations }:
+ *   request(method, path, body?, { as: 'admin' | 'viewer' | null, headers, raw })  → { status, body }
+ *                                         (as: null sends no session cookie; headers are added to the request; raw sends a
+ *                                         string body as it is; the result also has the response `headers`)
+ *   adminFetch(url, init)                 fetch as the signed-in admin, for @wingbeat/core's API client
  * startWorker({ bindings }) overrides Worker bindings (a value of undefined leaves one unset).
  *   db                                    the D1 binding, for seeding and checking rows
  *   all(sql, ...params) / first(sql, ...params) / run(sql, ...params)  shorthands on it
@@ -107,7 +109,8 @@ export async function startWorker({ bindings: overrides = {} } = {}) {
         .bind(await sha256Hex(ADMIN_TOKEN), await sha256Hex(VIEWER_TOKEN)),
     ]);
 
-    async function request(method, urlPath, body, { as = 'admin', headers = {} } = {}) {
+    // raw: body is sent as it is (a string), not as JSON.
+    async function request(method, urlPath, body, { as = 'admin', headers = {}, raw = false } = {}) {
       const resp = await mf.dispatchFetch('http://localhost' + urlPath, {
         method,
         headers: {
@@ -115,7 +118,7 @@ export async function startWorker({ bindings: overrides = {} } = {}) {
           ...(body === undefined ? {} : { 'content-type': 'application/json' }),
           ...headers,
         },
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
         redirect: 'manual',
       });
       const text = await resp.text();
@@ -129,6 +132,11 @@ export async function startWorker({ bindings: overrides = {} } = {}) {
       db,
       migrations,
       request,
+      // A fetch for @wingbeat/core's API client (createApiClient({ baseUrl: 'http://localhost', fetch })),
+      // signed in as the admin as a page would be: the requests the web pages send, as they send them.
+      adminFetch: (url, init = {}) => mf.dispatchFetch(url, {
+        ...init, headers: { ...init.headers, cookie: 'session=' + ADMIN_TOKEN }, redirect: 'manual',
+      }),
       all: async (sql, ...params) => (await stmt(sql, params).all()).results,
       first: (sql, ...params) => stmt(sql, params).first(),
       run: (sql, ...params) => stmt(sql, params).run(),

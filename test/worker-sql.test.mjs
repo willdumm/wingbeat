@@ -2,7 +2,9 @@
 // duty-day statement, the edit_history triggers (migration 0002), the
 // incremental corrections sync (ENTRIES_SINCE_SQL) and the edit conflict check
 // (base_history_id), plus route validation around them, and GET /api/flights/complete's
-// ground trail, and the flights and duty route groups' response shapes.
+// ground trail, the flights and duty route groups' response shapes, the writes exactly as
+// the web sends them (through @wingbeat/core's client, which checks their responses too),
+// and the request validation (the core request schemas).
 // test/worker.mjs runs src/index.ts in Miniflare on a fresh D1 database with every
 // migration applied (Miniflare's SQLite may differ slightly from production D1's).
 //
@@ -658,5 +660,158 @@ describe('response shapes: the duty route group', async () => {
     assertShape(api.DutyMethodsResponse, body);
     // The duty log carries the same list.
     assertShape(api.DutyLogResponse, (await w.request('GET', '/api/duty-days?pilot=1')).body);
+  });
+});
+
+// The write routes validate their requests with @wingbeat/core/api's request schemas, so
+// these send exactly what the pages send: the bodies built by core's corrections helpers
+// and the duty forms' bodies, through core's own API client, as the page's client sends
+// them. The client is strict here, so each response must also parse with its schema.
+describe('the requests the web sends, through the core client', async () => {
+  const { createApiClient, ApiHttpError } = await importCore('api/client');
+  const capi = await importCore('api/corrections');
+  const dapi = await importCore('api/duty');
+  const { getEditHistory } = await importCore('api/edit-history');
+  const corrections = await importCore('corrections');
+  const time = await importCore('time');
+  const TZ = 'America/Anchorage';
+  let client;
+  before(() => { client = createApiClient({ baseUrl: 'http://localhost', fetch: () => w.adminFetch }); });
+
+  // The flight form's fields for a flight from start to end.
+  const fields = (start, end, over = {}) => ({
+    date: time.unixToTzDateStr(TZ, start), dep: time.unixToTzTime(TZ, start), arr: time.unixToTzTime(TZ, end),
+    origin: '', dest: '', aircraft: '', pilot: '', part: '135', pay: 'paid', remark: '', ...over,
+  });
+  const noCoords = () => [null, null];
+
+  test('the flight form: a tracked flight’s correction with its pilot change, then Revert to tracker', async () => {
+    const a = Math.floor(next() / 60) * 60;   // on a minute, as the form’s times are
+    const fid = await trackerFlight(a, a + 3600);
+    const orig = { tracker_id: 1, start_time: a, end_time: a + 3600, origin_label: null, destination_label: null, aircraft_tail: 'N1', pilot_id: 1 };
+    const target = { tracked: true, orig };
+    const base = await mark();
+    const v = corrections.readFlightForm(TZ, fields(a, a + 3600, { remark: 'Checkride', pilot: '2', aircraft: 'N1', part: '91' }), target);
+    const req = corrections.flightSaveRequest(v, target, { removed: false, baseHistoryId: base, coords: noCoords });
+    const { entry } = await capi.saveFlightCorrection(client, req.body);
+    assert.equal(entry.remark, 'Checkride');
+    assert.equal(entry.part91, 1);
+    assert.equal((await w.first('SELECT pilot_id FROM flights WHERE id = ?', fid)).pilot_id, 2);
+    // Its history, as the form's "Last changed by …" reads it.
+    const { history } = await getEditHistory(client, ['flight_corrections', 'flight_assignment'], '1/' + a, 2);
+    assert.deepEqual(history.map(h => h.entity).sort(), ['flight_assignment', 'flight_corrections']);
+    assert.deepEqual(await capi.deleteFlightCorrection(client, entry.id, await mark()), { ok: true });
+    assert.equal(await correction(1, a), null);
+  });
+
+  test('the flight form: a manual flight added, edited against its base, then deleted', async () => {
+    const s = Math.floor(next() / 60) * 60;
+    const target = { tracked: false, entryId: null };
+    const v = corrections.readFlightForm(TZ, fields(s, s + 1800, { pilot: '1', origin: 'PAKN', part: '91', pay: 'unpaid' }), target);
+    const req = corrections.flightSaveRequest(v, target, { removed: false, baseHistoryId: await mark(), coords: () => [58.7, -157] });
+    const { entry } = await capi.saveFlightCorrection(client, req.body);
+    assert.deepEqual([entry.origin_label, entry.unpaid, entry.start_lat], ['PAKN', 1, 58.7]);
+    const edit = { tracked: false, entryId: entry.id };
+    const v2 = corrections.readFlightForm(TZ, fields(s, s + 2400, { pilot: '2' }), edit);
+    const req2 = corrections.flightSaveRequest(v2, edit, { removed: false, baseHistoryId: await mark(), coords: noCoords });
+    const updated = (await capi.updateManualFlight(client, req2.entryId, req2.body)).entry;
+    assert.deepEqual([updated.pilot_id, updated.end_time - updated.start_time], [2, 2400]);
+    assert.deepEqual(await capi.deleteFlightCorrection(client, entry.id, await mark()), { ok: true });
+  });
+
+  test('the flight editor’s bulk actions: Part 91, remove and restore, and aircraft/pilot', async () => {
+    const a = next();
+    const fid = await trackerFlight(a);
+    const manual = (await w.request('POST', '/api/flight-corrections', { pilot_id: 1, start_time: next(), end_time: clock + 600 })).body.entry;
+    const flights = [
+      { id: fid, tracker_id: 1, start_time: a, end_time: a + 3600, edit: null },
+      { id: 'm', tracker_id: null, start_time: manual.start_time, end_time: manual.end_time, edit: { entry: manual, original: {} } },
+    ];
+    assert.deepEqual(await capi.setFlightFlags(client, corrections.flightFlagsRequest(flights, { part91: true })), { ok: true });
+    assert.equal((await correction(1, a)).part91, 1);
+    await capi.setFlightFlags(client, corrections.flightFlagsRequest(flights, { excluded: true }));
+    await capi.setFlightFlags(client, corrections.flightFlagsRequest(flights, { excluded: false }));
+    assert.equal((await correction(1, a)).excluded, 0);
+    const r = await capi.setFlightAssignment(client, corrections.flightAssignmentRequest(flights, { pilot_id: 2 }));
+    assert.deepEqual(r, { ok: true, pilot_id: 2, pilot_name: 'Quinn' });
+    assert.deepEqual(await capi.setFlightAssignment(client, corrections.flightAssignmentRequest(flights.slice(0, 1), { aircraft_tail: null })),
+      { ok: true, aircraft_tail: null });
+    // The flight editor's delete of corrections no flight has any more: no base.
+    assert.deepEqual(await capi.deleteFlightCorrection(client, manual.id), { ok: true });
+  });
+
+  test('the day form: a duty day with an empty note, a rest range, then Clear', async () => {
+    const days = ['2027-05-01', '2027-05-02'];
+    const base = await mark();
+    // The form's body: rest a boolean, note the field's text ('' when empty).
+    assert.deepEqual(await dapi.putDutyDays(client, 1, { dates: days.slice(0, 1), duty_start: '07:00', duty_end: '15:00', rest: false, note: '', base_history_id: base }), { ok: true });
+    assert.equal((await dutyDay(1, days[0])).note, null);
+    await dapi.putDutyDays(client, 1, { dates: days, duty_start: null, duty_end: null, rest: true, note: 'Off', base_history_id: await mark() });
+    assert.equal((await dutyDay(1, days[1])).rest, 1);
+    assert.deepEqual(await dapi.clearDutyDays(client, 1, { dates: days, base_history_id: await mark() }), { ok: true });
+    assert.equal(await dutyDay(1, days[0]), null);
+  });
+
+  test('the default-duty form: an entry, moved (replaces), and removed', async () => {
+    const first = await dapi.putDefaultDuty(client, 2, { effective_date: '2027-06-01', duty_start: '08:00', duty_end: '17:00', base_history_id: await mark() });
+    assert.ok(first.default_duties.some(d => d.effective_date === '2027-06-01'));
+    const moved = await dapi.putDefaultDuty(client, 2, { effective_date: '2027-06-02', duty_start: null, duty_end: null,
+      base_history_id: await mark(), replaces: '2027-06-01' });
+    assert.deepEqual(moved.default_duties.filter(d => d.effective_date.startsWith('2027-06')),
+      [{ effective_date: '2027-06-02', duty_start: null, duty_end: null }]);
+    const after = await dapi.deleteDefaultDuty(client, 2, '2027-06-02', await mark());
+    assert.ok(!after.default_duties.some(d => d.effective_date.startsWith('2027-06')));
+  });
+
+  test('Global Settings’ duty method: an entry, moved, and removed', async () => {
+    await dapi.putDutyMethod(client, { effective_date: '2027-07-01', method: 'c', base_history_id: await mark() });
+    const moved = await dapi.putDutyMethod(client, { effective_date: '2027-07-02', method: 'b', base_history_id: await mark(), replaces: '2027-07-01' });
+    assert.deepEqual(moved.methods.filter(m => m.effective_date.startsWith('2027-07')), [{ effective_date: '2027-07-02', method: 'b' }]);
+    const after = await dapi.deleteDutyMethod(client, '2027-07-02', await mark());
+    assert.ok(!after.methods.some(m => m.effective_date.startsWith('2027-07')));
+  });
+
+  test('a save refused as a conflict throws with the server’s message and its conflict', async () => {
+    const date = '2027-08-01';
+    const base = await mark();
+    await w.request('PUT', '/api/duty-days/1', { dates: [date], rest: true });
+    await assert.rejects(dapi.putDutyDays(client, 1, { dates: [date], duty_start: null, duty_end: null, rest: false, note: '', base_history_id: base }),
+      (e) => e instanceof ApiHttpError && e.status === 409 && /^Changed by Ada Admin/.test(e.message) && e.conflict.user_name === 'Ada Admin');
+  });
+});
+
+describe('request validation', () => {
+  test('a field of the wrong type is a 400 naming it', async () => {
+    const r = await w.request('POST', '/api/flight-corrections', { pilot_id: 1, start_time: next(), end_time: clock + 60, remark: 5 });
+    assert.equal(r.status, 400);
+    assert.match(r.body.error, /^remark: /);
+    const ids = await w.request('PUT', '/api/flights/assignment', { flight_ids: ['1'], pilot_id: 1 });
+    assert.equal(ids.status, 400);
+    assert.match(ids.body.error, /^flight_ids\.0: /);
+    const method = await w.request('PUT', '/api/duty-methods', { effective_date: '2027-09-01', method: 'x' });
+    assert.equal(method.status, 400);
+    assert.match(method.body.error, /^method: /);
+    const days = await w.request('POST', '/api/duty-days/1/clear', { dates: '2027-09-01' });
+    assert.match(days.body.error, /^dates: /);
+  });
+
+  test('unknown keys are dropped, not refused', async () => {
+    const r = await w.request('POST', '/api/flight-corrections', { pilot_id: 1, start_time: next(), end_time: clock + 60, id: 999_999, updated_at: 1, extra: 'x' });
+    assert.equal(r.status, 200);
+    assert.notEqual(r.body.entry.id, 999_999);
+    assert.notEqual(r.body.entry.updated_at, 1);
+  });
+
+  test('a body that isn’t JSON is a 400 with a JSON error', async () => {
+    const r = await w.request('PUT', '/api/duty-days/1', '{"dates": [', { raw: true });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.error, 'Malformed JSON in request body');
+  });
+
+  test('the handlers’ own checks still apply', async () => {
+    const r = await w.request('POST', '/api/flight-corrections/bulk', { flights: [], set: { part91: true } });
+    assert.deepEqual([r.status, r.body.error], [400, 'flights must be a non-empty array']);
+    const bad = await w.request('PUT', '/api/duty-days/1', { dates: ['2027-09-01'], duty_start: '25:00', duty_end: '26:00' });
+    assert.deepEqual([bad.status, bad.body.error], [400, 'Duty times must be HH:MM']);
   });
 });

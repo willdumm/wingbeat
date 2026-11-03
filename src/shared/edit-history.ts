@@ -3,7 +3,9 @@
  * day form (pilot-duty.ts), from a record's edit history (GET /api/edit-history; the
  * edit_history triggers of migration 0002), and what those forms show when a
  * save is refused because the record changed since they loaded it (409, "Edit conflicts"
- * in src/index.ts). Needs the core bundle's time globals (shared/core-bundle.ts) on the page.
+ * in src/index.ts). The text is @wingbeat/core/edit-history's (editConflictText(),
+ * lastEditText()) and the read goes through the core client (fetchEditHistory()), from
+ * the core bundle (shared/core-bundle.ts) on the page.
  */
 export function editHistoryScript(): string {
   return `
@@ -19,26 +21,11 @@ export function editHistoryScript(): string {
       el.textContent = '';
       el.dataset.editKey = key;   // the day form asks again when its date changes
       try {
-        const resp = await fetch('/api/edit-history?entity=' + encodeURIComponent([].concat(entities).join(',')) +
-          '&key=' + encodeURIComponent(key) + '&limit=2');
-        if (!resp.ok) return null;
-        const [h, prev] = (await resp.json()).history;
+        const [h, prev] = (await fetchEditHistory(entities, key, 2)).history;
         if (!h || el.dataset.editKey !== key) return null;
-        // An aircraft/pilot change on its own says which; one saved together with the
-        // flight's corrections (the flight form writes both in one batch) is a plain change.
-        const withPrev = prev && prev.entity !== h.entity && prev.at === h.at && prev.user_id === h.user_id;
-        el.textContent = (h.entity === 'flight_assignment' && !withPrev ? _editAssignmentChanged(h) : 'Last changed') +
-          ' by ' + (h.user_name || 'an unknown user') + ', ' +
-          tzDateLabel(unixToTzDateStr(h.at)) + ' ' + unixToTzTime(h.at) + '.';
+        el.textContent = lastEditText(h, prev);
         return h;
       } catch (_) { return null; }
-    }
-
-    // "Changed by <user> since this was loaded (<date> <time>)." for an edit conflict
-    // ({ at, user_name }: the server's 409, or a newer history row than the form's data).
-    function editConflictText(conflict) {
-      return 'Changed by ' + (conflict.user_name || 'an unknown user') + ' since this was loaded (' +
-        tzDateLabel(unixToTzDateStr(conflict.at)) + ' ' + unixToTzTime(conflict.at) + ').';
     }
 
     // Shows an edit conflict in a form's errorEl with a Reload button, which calls
@@ -57,15 +44,6 @@ export function editHistoryScript(): string {
         reload();
       });
       errorEl.appendChild(btn);
-    }
-
-    // "Pilot last changed", "Aircraft last changed" or both, for a flight_assignment
-    // history row (before/after: { pilot_id, aircraft_tail } as JSON).
-    function _editAssignmentChanged(h) {
-      let before = {}, after = {};
-      try { before = JSON.parse(h.before) || {}; after = JSON.parse(h.after) || {}; } catch (_) {}
-      const aircraft = before.aircraft_tail !== after.aircraft_tail, pilot = before.pilot_id !== after.pilot_id;
-      return (aircraft && pilot ? 'Aircraft and pilot' : aircraft ? 'Aircraft' : pilot ? 'Pilot' : 'Aircraft or pilot') + ' last changed';
     }
   `;
 }

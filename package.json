@@ -18,6 +18,7 @@
     "docs:showcase": "node site/scripts/build-showcase.mjs"
   },
   "dependencies": {
+    "@hono/zod-validator": "^0.9.1",
     "esbuild": "^0.28.1",
     "hono": "^4.13.13",
     "zod": "^4.6.7"
