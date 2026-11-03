@@ -7,8 +7,8 @@ compatibility_date = "2026-09-25"
 # No account_id: Workers Builds supplies CLOUDFLARE_ACCOUNT_ID (export it yourself for a
 # hand deploy). It has to be the account that owns the route's zone.
 
-# Only the custom domain: no workers.dev or preview URLs, which would sit outside the
-# Cloudflare Access application that keeps the site private.
+# Only the custom domain: no workers.dev or preview URLs, which would be duplicate copies
+# of the site for search engines (and would sit outside any Cloudflare Access application).
 workers_dev = false
 preview_urls = false
 

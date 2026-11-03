@@ -3,6 +3,8 @@ title = 'Wingbeat Documentation'
 theme = 'hugo-book'
 
 disablePathToLower = true
+# No page has tags or categories; their empty list pages would only be thin sitemap entries.
+disableKinds = ['taxonomy', 'term']
 enableGitInfo = false
 
 [markup]

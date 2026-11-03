@@ -42,7 +42,7 @@ nix develop path:../nix --command sh -c 'set -a && . ../.env && set +a && ./scri
 ```
 
 
-`static/_headers` sets security headers and `X-Robots-Tag: noindex, nofollow` on every response (Workers static assets apply it; it is not itself served), and `static/robots.txt` disallows all crawlers. The CSP is limited to `frame-ancestors`/`object-src`/`base-uri` because the pages use inline scripts and unpkg scripts.
+`static/_headers` sets security headers on every response (Workers static assets apply it; it is not itself served). The site is meant to be indexed: `static/robots.txt` allows all crawlers and points them at Hugo's `/sitemap.xml`. (The app Worker is the opposite: it sends `X-Robots-Tag: noindex` from every customer instance.) The CSP is limited to `frame-ancestors`/`object-src`/`base-uri` because the pages use inline scripts and unpkg scripts.
 ## Home page (showcase)
 
 The home page shows the real dashboard and analytics UI running on generated sample
