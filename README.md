@@ -258,7 +258,6 @@ wingbeat/
 │   ├── segmentation.ts                 # Flight segmentation algorithm
 │   ├── notifications.ts                # Webhook dispatch for takeoff/landing/gap events
 │   ├── geocoding.ts                    # Overpass reverse-geocoding, location labels
-│   ├── geo.ts                          # Haversine distance helpers
 │   ├── auth.ts                         # Session cookie signing, login/join HTML
 │   ├── types.ts                        # Shared TypeScript types
 │   ├── dashboard.ts                    # Dashboard HTML shell

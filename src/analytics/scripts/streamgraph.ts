@@ -6,7 +6,7 @@ export function analyticsScriptsStreamgraphRender(): string {
 
     // Color palette cycled across whatever regions exist in the regions table (see
     // /api/regions), so the streamgraph always reflects the live region set instead of a
-    // fixed list. Home bases ("… (Base)" regions, see findHomeBase) draw from their own
+    // fixed list. Home bases ("… (Base)" regions, see @wingbeat/core/regions) draw from their own
     // pink palette so they stand apart from the destination regions.
     const SG_PALETTE = [
       '#f43f5e', '#f97316', '#eab308', '#22c55e', '#14b8a6',
@@ -25,54 +25,10 @@ export function analyticsScriptsStreamgraphRender(): string {
       return map;
     }
 
-    function sgResolveInterval(iv, s, e) {
-      if (iv !== 'auto') return iv;
-      if (s === null || e === null) return 'month';
-      const days = (e - s) / 86400;
-      return days >= 60 ? 'month' : days >= 14 ? 'week' : 'day';
-    }
-
-    function sgGenerateBuckets(s, e, iv) {
-      const buckets = [];
-      if (iv === 'month') {
-        const d0 = new Date(s * 1000);
-        let cur = Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), 1) / 1000;
-        while (cur < e) {
-          const d = new Date(cur * 1000);
-          const y = d.getUTCFullYear(), m = d.getUTCMonth();
-          const next = Date.UTC(m === 11 ? y + 1 : y, m === 11 ? 0 : m + 1, 1) / 1000;
-          buckets.push({ start: cur, end: next, label: d.toLocaleString('default', { month: 'short', year: '2-digit', timeZone: 'UTC' }) });
-          cur = next;
-        }
-      } else if (iv === 'week') {
-        const d0 = new Date(s * 1000);
-        const dow = d0.getUTCDay();
-        let cur = Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), d0.getUTCDate() - (dow === 0 ? 6 : dow - 1)) / 1000;
-        while (cur < e) {
-          const d = new Date(cur * 1000);
-          buckets.push({ start: cur, end: cur + 7 * 86400, label: d.toLocaleString('default', { month: 'short', day: 'numeric', timeZone: 'UTC' }) });
-          cur += 7 * 86400;
-        }
-      } else {
-        const d0 = new Date(s * 1000);
-        let cur = Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), d0.getUTCDate()) / 1000;
-        while (cur < e) {
-          const d = new Date(cur * 1000);
-          buckets.push({ start: cur, end: cur + 86400, label: d.toLocaleString('default', { month: 'short', day: 'numeric', timeZone: 'UTC' }) });
-          cur += 86400;
-        }
-      }
-      return buckets;
-    }
-
+    // sgResolveInterval and sgGenerateBuckets (operator days, weeks and months) come from
+    // @wingbeat/core/analytics; so does each bucket's data, over the page's REGIONS.
     function sgComputeData(buckets, s, e, flights, mode) {
-      return buckets.map(b => {
-        const bs = Math.max(b.start, s);
-        const be = Math.min(b.end, e);
-        if (bs >= be) return {};
-        const inBucket = flights.filter(f => f.start_time >= bs && f.start_time < be);
-        return mode === 'time' ? computeRegionHours(inBucket) : computeRegionStops(inBucket);
-      });
+      return sgComputeDataIn(REGIONS, buckets, s, e, flights, mode);
     }
 
     // Catmull-rom → cubic bezier, tension t=1/6 for standard smoothness.
@@ -150,7 +106,7 @@ export function analyticsScriptsStreamgraphRender(): string {
       const homeBases = new Set(homeBaseNames());
       for (const d of rawData) {
         for (const [k, v] of Object.entries(d)) {
-          if (k === 'Other') continue;
+          if (k === OTHER_REGION) continue;
           if (homeBases.has(k) && !opts.showHomeBase) continue;
           if ((v || 0) > 0) regionTotals[k] = (regionTotals[k] || 0) + v;
         }

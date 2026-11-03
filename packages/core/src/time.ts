@@ -100,6 +100,8 @@ export function fmtTzPointTime(tz: string, unix: number): string {
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September',
+  'October', 'November', 'December'];
 
 /** The date key n days after dateKey (before it for a negative n). */
 export function tzAddDays(dateKey: string, n: number): string {
@@ -142,6 +144,22 @@ export function tzShortDate(dateKey: string, sameYear?: number): string {
 /** "Oct 2026" */
 export function tzShortMonthLabel(y: number, m: number): string {
   return MONTH_ABBR[m - 1] + ' ' + y;
+}
+
+/** "Oct 26", for a chart axis */
+export function tzAxisMonthLabel(y: number, m: number): string {
+  return MONTH_ABBR[m - 1] + ' ' + String(y % 100).padStart(2, '0');
+}
+
+/** "October 2026" */
+export function tzLongMonthLabel(y: number, m: number): string {
+  return MONTH_NAMES[m - 1] + ' ' + y;
+}
+
+/** The weekday of a date key, 0 (Sunday) to 6. */
+export function tzWeekday(dateKey: string): number {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 }
 
 /** The number of days in month m (1-12) of year y. */

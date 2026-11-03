@@ -1,5 +1,5 @@
 import { updateFlightLabelsFromCache } from './geocoding';
-import { SPEED_THRESHOLD_KMH, haversineMiles } from './geo';
+import { SPEED_THRESHOLD_KMH, haversineMiles } from '@wingbeat/core/regions';
 
 const SHORT_GAP_S = 6 * 60;     // 6 min
 export const LONG_GAP_S = 15 * 60;     // 15 min

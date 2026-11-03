@@ -72,6 +72,9 @@ const EXPORTS = [
   'filterStore',
   // the core bundle (@wingbeat/core/live, maintenance, alerts)
   'isInFlight', 'isGpsFresh', 'nextLivePoll', '_maintenanceStatus', '_estimatedMeter', 'computeAlertsFor', 'fmtTzPointTime',
+  // the core bundle (@wingbeat/core/regions, accounting, analytics)
+  'haversineKm', 'homeBaseNamesIn', 'computeRegionHoursIn', 'computeMonthlyAccountingIn', 'tzLongMonthLabel',
+  'sgGenerateBuckets', 'sgComputeDataIn', 'interpolateRoutePoints', 'endpointHeatPointsIn',
 ];
 
 export const TZ = 'America/Anchorage';
