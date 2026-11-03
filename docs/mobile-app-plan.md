@@ -1,9 +1,10 @@
 # Plan: Wingbeat mobile app (Expo)
 
 **Status: phase 1 started.** Done: the foundation (`packages/core`, the browser bundle as a
-Text module, the nonce test, the theme tokens) and step 1, `time` (core time with zone
+Text module, the nonce test, the theme tokens), step 1, `time` (core time with zone
 abbreviations, operator days in the flight list, the device-time scan test with its list of
-uses still to remove). Next: step 2, `flight-edits`. All open questions are answered.
+uses still to remove), and step 2, `flight-edits` (with `record-limits`). Next: step 3,
+`flight-store`. All open questions are answered.
 
 ## Settled so far
 
@@ -402,8 +403,8 @@ Those render chunks call core for anything they compute.
 
 ### Phase 1 progress and conventions
 
-Done on the `core-foundation` branch (deployed to staging 2026-11-02): the foundation and
-step 1 (`time`). How it's built, for the steps that follow:
+Done on the `core-foundation` branch (deployed to staging 2026-11-02): the foundation,
+step 1 (`time`) and step 2 (`flight-edits`). How it's built, for the steps that follow:
 
 - **Core modules** live in `packages/core/src/<name>.ts`, each listed in `exports` in
   `packages/core/package.json`. They take what they used to read from the page as
@@ -423,6 +424,13 @@ step 1 (`time`). How it's built, for the steps that follow:
   or removes its files' entries.
 - **Display**: `fmtTzTime()` ("14:05 AKDT", 24-hour) for times in lists, cards, popups and
   alerts; `tzLongDateLabel()` for day headings. The flight list now groups by operator day.
+- **What stays a script string** is the HTML built from core's results: `flight-edits`
+  kept the chips, `flightEditedMark()` and `flightRemarksHtml()` in
+  `src/shared/flight-edits.ts`, and core's `flightEntrySummary()`, `flightOriginalText()`
+  and `flightFormTimes()` take `tz` like `time`. Constants the scripts read
+  (`FLIGHT_EDIT_FIELD_NAMES`, `FLIGHT_MAX_SECS`, …) are globals from the bundle too.
+- **Modules the Worker shares** move whole and are imported as `@wingbeat/core/<name>`
+  from `src/` (`record-limits` moved with `flight-edits`, which needs `MAX_FLIGHT_SECS`).
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.

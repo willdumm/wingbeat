@@ -1,7 +1,7 @@
 import { icon } from './icons';
 import { lightThemeToken } from './theme';
 import { complianceNoticeMarkup } from './help';
-import { MAX_DUTY_DAYS_PER_REQUEST, MAX_DUTY_NOTE_LENGTH } from './record-limits';
+import { MAX_DUTY_DAYS_PER_REQUEST, MAX_DUTY_NOTE_LENGTH } from '@wingbeat/core/record-limits';
 
 /** Duty log view body: month navigation + export toolbar, then the table and totals. */
 export function pilotDutyMarkup(): string {
@@ -246,15 +246,15 @@ export function pilotDutyStyles(): string {
 
 /**
  * Pilot duty log computation and rendering. computeDutyData() turns one pilot's effective
- * flights (corrections already applied by applyFlightEdits(), flight-edits.ts) and
- * duty/rest days (GET /api/duty-days) into a month of day rows with §135.267 warnings and
- * totals;
+ * flights (corrections already applied by applyFlightEdits(), @wingbeat/core/flight-edits)
+ * and duty/rest days (GET /api/duty-days) into a month of day rows with §135.267 warnings
+ * and totals;
  * renderDutyLog() and the PDF export (Typst, loaded on first export) only format that
  * model. Takes flights, log and elements as arguments rather than reading the flight
  * store, so the docs-site showcase (src/showcase/) renders and exports the same log from
- * sample data. Times are shown in APP_SETTINGS.timezone. Needs the core bundle's time
- * globals (shared/core-bundle.ts) on the page, and flightEditsScript() (flight-edits.ts)
- * and htmlEscapeScript() (shared/html.ts) in the same script. See
+ * sample data. Times are shown in APP_SETTINGS.timezone. Needs the core bundle's time and
+ * flight-edits globals (shared/core-bundle.ts) on the page, and flightEditsScript()
+ * (flight-edits.ts) and htmlEscapeScript() (shared/html.ts) in the same script. See
  * docs/duty-log-editing-plan.md.
  */
 export function pilotDutyRenderScript(): string {

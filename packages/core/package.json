@@ -6,6 +6,8 @@
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "exports": {
+    "./flight-edits": "./src/flight-edits.ts",
+    "./record-limits": "./src/record-limits.ts",
     "./time": "./src/time.ts",
     "./tokens": "./src/tokens.ts"
   }
