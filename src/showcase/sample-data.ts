@@ -17,7 +17,7 @@
  * synthesizeTrack() (tracks.ts), which keeps the payload small.
  */
 import { computeLiveLabel } from '../geocoding';
-import { haversineKm } from '../geo';
+import { haversineKm } from '@wingbeat/core/regions';
 import { eventTitle, eventMessage, NotificationEvent } from '../notifications';
 import { formatLocalDateTime } from '../shared/format';
 import { synthesizeTrack, TrackFix, TrackTerrain } from './tracks';

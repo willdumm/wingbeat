@@ -1,5 +1,5 @@
 import { Tenant, Point } from './types';
-import { haversineKm, haversineMiles, SPEED_THRESHOLD_KMH } from './geo';
+import { haversineKm, haversineMiles, SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
 
 const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',

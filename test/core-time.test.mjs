@@ -85,6 +85,9 @@ describe('core time', () => {
     assert.equal(time.tzShortDate('2026-10-03', 2026), 'Oct 3');
     assert.equal(time.tzShortDate('2025-10-03', 2026), 'Oct 3, 2025');
     assert.equal(time.tzShortMonthLabel(2026, 10), 'Oct 2026');
+    assert.equal(time.tzLongMonthLabel(2026, 10), 'October 2026');
+    assert.deepEqual([time.tzAxisMonthLabel(2026, 10), time.tzAxisMonthLabel(2005, 1)], ['Oct 26', 'Jan 05']);
+    assert.deepEqual(['2026-11-01', '2026-11-02', '2026-11-07'].map(time.tzWeekday), [0, 1, 6]);
     assert.deepEqual([time.tzDaysInMonth(2027, 2), time.tzDaysInMonth(2028, 2), time.tzDaysInMonth(2026, 12)], [28, 29, 31]);
   });
 

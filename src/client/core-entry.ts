@@ -24,6 +24,13 @@ import * as maintenance from '@wingbeat/core/maintenance';
 import type { MaintenanceItem } from '@wingbeat/core/maintenance';
 import * as alerts from '@wingbeat/core/alerts';
 import type { AlertLists } from '@wingbeat/core/alerts';
+import * as regions from '@wingbeat/core/regions';
+import { SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
+import type { Regions } from '@wingbeat/core/regions';
+import * as accounting from '@wingbeat/core/accounting';
+import type { AccountingFlight } from '@wingbeat/core/accounting';
+import * as analytics from '@wingbeat/core/analytics';
+import type { StreamInterval } from '@wingbeat/core/analytics';
 import { createApiClient } from '@wingbeat/core/api/client';
 import * as dutyApi from '@wingbeat/core/api/duty';
 import * as correctionsApi from '@wingbeat/core/api/corrections';
@@ -33,7 +40,6 @@ import { getTrackers } from '@wingbeat/core/api/trackers';
 import { getAircraft } from '@wingbeat/core/api/aircraft';
 import { getPilots } from '@wingbeat/core/api/pilots';
 import { createFlightStore, flightCorrectionKey, mergeFlightCorrections, FLIGHT_STORE_KEY } from '@wingbeat/core/flight-store';
-import { SPEED_THRESHOLD_KMH } from '../geo';
 
 declare const window: {
   APP_SETTINGS: { timezone: string };
@@ -133,6 +139,27 @@ Object.assign(globalThis, {
     maintenance.maintenanceStatus(tz(), now(), item, estHobbs, estTach),
   // ── alerts: the dashboard's alerts feed (its rows are HTML in alerts.ts) ──
   computeAlertsFor: (lists: AlertLists) => alerts.computeAlerts(tz(), now(), lists),
+  // ── regions: distances and which region a point is in (the analytics page holds REGIONS
+  // and wraps the …In functions under their old names) ──
+  haversineKm: regions.haversineKm,
+  pointInPolygon: regions.pointInPolygon,
+  computeCentroid: regions.computeCentroid,
+  isHomeBaseRegion: regions.isHomeBaseRegion,
+  regionDisplayName: regions.regionDisplayName,
+  UNKNOWN_LOCATION: regions.UNKNOWN_LOCATION,
+  OTHER_REGION: regions.OTHER_REGION,
+  homeBaseNamesIn: regions.homeBaseNames,
+  // ── accounting: region hours and stops, per operator month ──
+  computeRegionHoursIn: accounting.computeRegionHours,
+  computeRegionStopsIn: accounting.computeRegionStops,
+  computeMonthlyAccountingIn: (r: Regions, flights: AccountingFlight[]) => accounting.computeMonthlyAccounting(tz(), r, flights),
+  tzLongMonthLabel: time.tzLongMonthLabel,
+  // ── analytics: the stream graph's buckets and data, the map layers' points ──
+  sgResolveInterval: analytics.sgResolveInterval,
+  sgGenerateBuckets: (s: number, e: number, iv: StreamInterval) => analytics.sgGenerateBuckets(tz(), s, e, iv),
+  sgComputeDataIn: analytics.sgComputeData,
+  interpolateRoutePoints: analytics.interpolateRoutePoints,
+  endpointHeatPointsIn: analytics.endpointHeatPoints,
 });
 
 // ── flight-store: the page's one store, cached in localStorage ──

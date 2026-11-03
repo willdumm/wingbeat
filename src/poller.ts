@@ -2,7 +2,7 @@ import { Tenant, ParsedPoint } from './types';
 import { safeFetch } from './safe-fetch';
 import { runSegmentation, resegment, fetchRecentFlights, LONG_GAP_S } from './segmentation';
 import { geocodePendingPoints, geocodeLivePoint, computeLiveLabel, resolveRefPoint } from './geocoding';
-import { SPEED_THRESHOLD_KMH } from './geo';
+import { SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
 import { loadSettings } from './settings';
 import { dispatchNotifications, mapshareUrl, trackerLabel, NotificationEvent } from './notifications';
 

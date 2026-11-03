@@ -7,9 +7,10 @@ uses still to remove), step 2, `flight-edits` (with `record-limits`), step 3,
 `flight-store` (with the API client and the flights and corrections response schemas), and
 step 4, `duty` (with the duty reads' response schemas), step 5, `corrections`,
 `edit-history` and `filters` (with the client's writes and the Worker's request
-validation for the corrections and duty writes), and step 6, `live`, `maintenance` and
-`alerts` (with the bootstrap, trackers, aircraft and pilots reads' response schemas).
-Next: step 7, `regions`, `accounting` and `analytics`. All open questions are answered.
+validation for the corrections and duty writes), step 6, `live`, `maintenance` and
+`alerts` (with the bootstrap, trackers, aircraft and pilots reads' response schemas), and
+step 7, `regions` (merged with `src/geo.ts`), `accounting` and `analytics`.
+Next: step 8, `elevation`. All open questions are answered.
 
 ## Settled so far
 
@@ -410,8 +411,9 @@ Those render chunks call core for anything they compute.
 
 Done on the `core-foundation` branch (deployed to staging 2026-11-02): the foundation,
 step 1 (`time`) and step 2 (`flight-edits`); step 3 (`flight-store`), step 4 (`duty`)
-step 5 (`corrections`, `edit-history`, `filters`) and step 6 (`live`, `maintenance`,
-`alerts`) are on the branch and on staging.
+step 5 (`corrections`, `edit-history`, `filters`), step 6 (`live`, `maintenance`,
+`alerts`) and step 7 (`regions`, `accounting`, `analytics`) are on the branch and on
+staging.
 How it's built, for the steps that follow:
 
 - **Core modules** live in `packages/core/src/<name>.ts`, each listed in `exports` in
@@ -527,6 +529,34 @@ How it's built, for the steps that follow:
   23:30 AKST was listed on the next day). It also saved a Hobbs reading and schedule dates
   from a Berlin browser: stored as operator time. Staging had no alerts or maintenance
   items, so they matched as empty. The bundle is 55.6 KB minified (45.7 KB at step 5).
+- **Step 7** (`regions`, `accounting`, `analytics`): `src/geo.ts` is gone; the Worker
+  (`segmentation.ts`, `geocoding.ts`, `poller.ts`, `index.ts`), the showcase's sample data
+  and `core-entry.ts` import `haversineKm`, `haversineMiles` and `SPEED_THRESHOLD_KMH`
+  from `@wingbeat/core/regions`, which also has the page's region logic. The regions are a
+  parameter (`Regions`, the `/api/regions` GeoJSON or null), so the analytics page keeps
+  `REGIONS` and `loadRegions()` (the regions route group moves with settings) and wraps
+  the core globals it needs under their old names: `homeBaseNames()` →
+  `homeBaseNamesIn(REGIONS)`, `computeRegionHours()`/`computeRegionStops()`/
+  `computeMonthlyAccounting()` → `…In(REGIONS, flights)`, `sgComputeData()` →
+  `sgComputeDataIn(REGIONS, …)`, and `buildEndpointHeatLayer()` takes its points from
+  `endpointHeatPointsIn(REGIONS, flights, mode)`. `findRegion()`, `findHomeBase()` and
+  `computeWeightedEndpoints()` had no callers left on the page, so they're core-only.
+  `sgResolveInterval`, `sgGenerateBuckets` (tz bound), `interpolateRoutePoints`,
+  `haversineKm`, `pointInPolygon`, `computeCentroid`, `isHomeBaseRegion`,
+  `regionDisplayName`, `UNKNOWN_LOCATION` and `OTHER_REGION` are globals under their own
+  names. The stream graph's buckets are operator days, weeks (from Monday) and months, with
+  fixed English labels ("Oct 26" for a month, "Nov 2" for a day or week), and the
+  accounting table's months are `tzLongMonthLabel()` ("October 2026"); `streamgraph.ts`
+  and `accounting.ts` have no device-time uses left. Tests: `core-regions`,
+  `core-accounting` and `core-analytics` (shared regions in `test/regions-fixture.mjs`).
+- **Step 7's browser check** snapshotted the analytics page's region lookups, region hours
+  and stops, monthly accounting, accounting table and totals HTML, the stream graph's
+  buckets, data and SVG for every interval and mode, the route points and the endpoint
+  heat, on the page's flights and on 400 synthetic flights over the sample regions, before
+  and after, locally (Anchorage and Berlin browsers) and on staging: identical but for the
+  stream graph, whose buckets now start at the operator's midnight (before: UTC, so an
+  evening flight counted toward the next day) with each region's total over all buckets
+  unchanged. The bundle is 59.4 KB minified (55.6 KB at step 6).
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.

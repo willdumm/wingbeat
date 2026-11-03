@@ -6,7 +6,9 @@
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "exports": {
+    "./accounting": "./src/accounting.ts",
     "./alerts": "./src/alerts.ts",
+    "./analytics": "./src/analytics.ts",
     "./api/aircraft": "./src/api/aircraft.ts",
     "./api/bootstrap": "./src/api/bootstrap.ts",
     "./api/client": "./src/api/client.ts",
@@ -28,6 +30,7 @@
     "./live": "./src/live.ts",
     "./maintenance": "./src/maintenance.ts",
     "./record-limits": "./src/record-limits.ts",
+    "./regions": "./src/regions.ts",
     "./time": "./src/time.ts",
     "./tokens": "./src/tokens.ts"
   },

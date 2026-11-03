@@ -7,7 +7,7 @@ import { checkPublicHttpsUrl } from './safe-fetch';
 import { mapshareUrl } from './notifications';
 import { resegment } from './segmentation';
 import { geocodePendingPoints, geocodeLivePoint, invalidateNamedPointsCache, computeLiveLabel, resolveRefPoint } from './geocoding';
-import { haversineMiles, SPEED_THRESHOLD_KMH } from './geo';
+import { haversineMiles, SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
 import { dashboardHTML } from './dashboard';
 import { analyticsHTML } from './analytics';
 import { generateToken, sha256Hex, deviceNameFromUA, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
