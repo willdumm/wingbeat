@@ -925,15 +925,21 @@ describe('the settings modal’s requests, through the core client', async () =>
     const edited = await trackers.updateTracker(client, added.id, { name: 'Three', source_url: 'https://share.garmin.com/Feed/Share/abc',
       assigned_aircraft: 'N1', assigned_pilot: 1 });
     assert.deepEqual(edited, { ok: true, mapshare_url: 'https://share.garmin.com/abc' });
-    // (Its flights count is D1's changes, which include the edit_history trigger's rows.)
-    assert.equal((await trackers.applyTrackerAssignment(client, added.id, { aircraft: true, pilot: true })).ok, true);
+    assert.deepEqual(await trackers.applyTrackerAssignment(client, added.id, { aircraft: true, pilot: true }), { ok: true, flights: 1 });
+    // Counted once each, whichever field each flight was missing, and only flights changed.
+    for (const [tail, pilot] of [[null, 1], ['N1', null], [null, null]]) {
+      const t = next();
+      await w.run('INSERT INTO flights (tracker_id, start_time, end_time, aircraft_tail, pilot_id) VALUES (?, ?, ?, ?, ?)', added.id, t, t + 600, tail, pilot);
+    }
+    assert.deepEqual(await trackers.applyTrackerAssignment(client, added.id, { aircraft: true, pilot: true }), { ok: true, flights: 3 });
+    assert.deepEqual(await trackers.applyTrackerAssignment(client, added.id, { aircraft: true, pilot: true }), { ok: true, flights: 0 });
     assert.deepEqual(await trackers.getTrackerUnassigned(client, added.id), { without_aircraft: 0, without_pilot: 0 });
     // A feed moved to another site without its access code drops the stored one.
     const moved = await trackers.updateTracker(client, added.id, { name: 'Three', source_url: 'https://example.org/feed' });
     assert.equal(moved.credentials_cleared, true);
     assert.deepEqual(await trackers.updateTracker(client, added.id, { active: false }), { ok: true, mapshare_url: 'https://example.org/feed' });
-    // Its one flight has no points to label it from, so it stays unlabeled.
-    assert.deepEqual(await trackers.geocodeTracker(client, added.id), { ok: true, remaining: 1 });
+    // Its flights have no points to label them from, so they stay unlabeled.
+    assert.deepEqual(await trackers.geocodeTracker(client, added.id), { ok: true, remaining: 4 });
     assert.deepEqual(await trackers.deleteTracker(client, added.id), { ok: true });
     await assert.rejects(trackers.testTrackerFeed(client, { source_url: 'http://example.com/feed' }), (e) => e.status === 400 && /^source_url: /.test(e.serverError));
     await assert.rejects(trackers.importTrackerHistory(client, added.id, '2026-01-01', null), refused(404, 'Tracker not found'));
