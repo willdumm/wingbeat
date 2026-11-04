@@ -385,8 +385,8 @@ export function flightEditorScript(): string {
     async function _feLoadNamedPoints() {
       if (_feNamedPoints) return _feNamedPoints;
       try {
-        const resp = await fetch('/api/named-points');
-        const data = resp.ok ? await resp.json() : { features: [] };
+        // A refused read counts as none (and is kept); a network error tries again next time.
+        const data = await fetchNamedPoints().catch((err) => { if (err.status) return { features: [] }; throw err; });
         _feNamedPoints = data.features.map(ft => ({ name: ft.properties.name, lon: ft.geometry.coordinates[0], lat: ft.geometry.coordinates[1] }));
       } catch (_) { return []; }
       return _feNamedPoints;

@@ -338,22 +338,12 @@ export function regionsEditorScript(): string {
         if (!region || region.multiPoly) return;
         const ri = _rgRegions.indexOf(region);
         const geojson = _rgRegionToGeojson(ri);
-        if (region.dbId === null) {
-          const resp = await fetch('/api/regions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: region.name, geojson }),
-          });
-          const data = await resp.json();
-          if (resp.ok) region.dbId = data.id;
-          else throw new Error(data.error ?? 'Save failed');
-        } else {
-          const resp = await fetch('/api/regions/' + region.dbId, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: region.name, geojson }),
-          });
-          if (!resp.ok) { const d = await resp.json().catch(() => ({})); throw new Error(d.error ?? 'Save failed'); }
+        try {
+          if (region.dbId === null) region.dbId = (await createRegion({ name: region.name, geojson })).id;
+          else await updateRegion(region.dbId, { name: region.name, geojson });
+        } catch (err) {
+          if (err.status) throw new Error(err.serverError ?? 'Save failed');
+          throw err;
         }
       });
       await Promise.all(saves);
@@ -743,9 +733,7 @@ export function regionsEditorScript(): string {
       for (const poly of _rgPolygonLayers.values()) poly.remove();
       _rgPolygonLayers.clear();
       try {
-        const resp = await fetch('/api/regions', { cache: 'no-store' });
-        if (!resp.ok) { _setEditorStatus('rg-editor-status', 'Failed to load regions.', true); return; }
-        const geojson = await resp.json();
+        const geojson = await fetchRegions();
         _rgBuildTopology(geojson.features);
         for (let ri = 0; ri < _rgRegions.length; ri++) _rgRenderPolygon(ri);
         _setEditorStatus('rg-editor-status', '', false);
@@ -770,7 +758,8 @@ export function regionsEditorScript(): string {
       _rgSelectedIdx = null;
       _rgHidePanel();
       if (region.dbId !== null) {
-        await fetch('/api/regions/' + region.dbId, { method: 'DELETE' });
+        // A refused delete is ignored, as it always was; only a network error fails it.
+        await deleteRegion(region.dbId).catch((err) => { if (!err.status) throw err; });
       }
       _rgUpdateDirtyIndicator();
     }

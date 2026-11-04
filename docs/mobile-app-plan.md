@@ -10,10 +10,11 @@ step 4, `duty` (with the duty reads' response schemas), step 5, `corrections`,
 validation for the corrections and duty writes), step 6, `live`, `maintenance` and
 `alerts` (with the bootstrap, trackers, aircraft and pilots reads' response schemas),
 step 7, `regions` (merged with `src/geo.ts`), `accounting` and `analytics`, step 8,
-`elevation`, and step 9, the settings route group (with operator-time dates in Settings and
-the timezone-change warning). Phase 1 isn't done: see "Left in phase 1" at the end of
-"Phase 1 progress and conventions". Next: step 10, the regions and named-points routes and
-the duty PDF fetch. All open questions are answered.
+`elevation`, step 9, the settings route group (with operator-time dates in Settings and
+the timezone-change warning), and step 10, the regions and named-points route groups. Every
+API call the pages make now goes through the core client. Phase 1 isn't done: see "Left in
+phase 1" at the end of "Phase 1 progress and conventions". Next: the spec tests off the
+harness. All open questions are answered.
 
 ## Settled so far
 
@@ -608,25 +609,47 @@ How it's built, for the steps that follow:
   `POST /api/trackers/:id/apply-assignment` reports `flights: 2` for one flight, since
   D1's `meta.changes` counts the edit_history trigger's row too (the web ignores the
   count). The bundle is 67.5 KB minified.
+- **Step 10** (the regions and named-points route groups): `api/regions.ts` and
+  `api/named-points.ts` (GeoJSON FeatureCollection responses; a region's geometry is
+  checked only as `{ type, coordinates: [...] }`, since an import can bring a
+  MultiPolygon), with `regions-requests.ts` (`RegionRequest`, and
+  `FeatureCollectionImportRequest`, which both imports use) and
+  `named-points-requests.ts`. The globals are `fetchRegions`, `createRegion`,
+  `updateRegion`, `deleteRegion`, `importRegions` and the same five for named points.
+  The callers are the region and named-points editors, Settings' export and import of both,
+  the setup guide (`_sgFetchJson` is gone), the analytics page's `loadRegions()` and the
+  flight editor's `_feLoadNamedPoints()`. Each keeps its old messages and its handling of a
+  refused request against a network error. The region editor still ignores a refused
+  delete. Export now writes `JSON.stringify` of the parsed list, byte for byte the server's
+  text. Import parses the file first, so a file that isn't JSON fails as "Import failed."
+  without a request. The Worker validates all six writes with `valid('json', …)` and keeps
+  its own checks ("name is required", "lat and lon are required", "Nothing to update",
+  "Expected a GeoJSON FeatureCollection"). A named point's PUT without `max_km` still keeps
+  its radius. Tests: two new describes in `worker-sql`, for the requests through the strict
+  client and for request validation. The browser check drove both imports (and a file
+  that isn't JSON), both exports, the setup guide, the region editor (rename, save as new,
+  delete, a refused delete, a refused save), the named-points editor (rename, add, delete,
+  refused save and delete), the flight editor's point list and the analytics page's
+  regions, on a local Worker, before and after. Everything was identical but the
+  non-JSON import's 400, which is no longer sent. The bundle is 70.6 KB minified. **The
+  duty PDF "fetch"** in `pilot-duty.ts` turned out to be the Typst compiler, its wasm and
+  the fonts from jsDelivr, cached with the Cache API. It isn't an API route, so it stays a
+  bare `fetch`. The app will build its PDF its own way. The only other bare `fetch` left
+  is Settings' `POST /logout`, a page route.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.
 
-**Left in phase 1** (checked 2026-11-03, after step 9), against its "Done when" under
-"Phases" (items 2 and 3 of the list after step 8, Settings' device time and the timezone
-warning, came with step 9):
+**Left in phase 1** (checked 2026-11-03, after step 10), against its "Done when" under
+"Phases". Step 9 took Settings' device time and the timezone warning, and steps 9 and 10
+moved every remaining route onto the core client:
 
-1. **Routes still on bare `fetch()`**: the regions and named-points editors
-   (`regions-editor.ts`, `named-points-editor.ts`), Settings' regions export and import,
-   the setup guide's two `_sgFetchJson` calls, the analytics page's `/api/regions`, the
-   flight editor's `/api/named-points` and the duty PDF fetch (`pilot-duty.ts`). Step 10,
-   with request validation for the regions and named-points writes.
-2. **Spec tests off the harness**: duty-limits, rest-days, totals, dated-defaults, dst,
+1. **Spec tests off the harness**: duty-limits, rest-days, totals, dated-defaults, dst,
    day-form, edit-conflict, flight-store-sync and the core half of flight-edits still test
    core logic only through the bundle's globals. They move to `importCore()`, leaving the
    harness for what's still a script string (the PDF builder in duty-export, flight-edits'
    chips) and the bundle smoke test (each `core-*` test's page-binding check).
-3. **Prod**: release the stack (push `wingbeat-hosting`'s `[build]` commit first), then
+2. **Prod**: release the stack (push `wingbeat-hosting`'s `[build]` commit first), then
    watch for `[wingbeat api] unexpected response` warnings before the web client goes
    strict.
 

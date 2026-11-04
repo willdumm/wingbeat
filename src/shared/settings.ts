@@ -2967,13 +2967,13 @@ export function settingsModalScript(): string {
     // ── Regions export / import ───────────────────────────────────────────────
 
     document.getElementById('settings-regions-export').addEventListener('click', () => {
-      _downloadGeoJSON('/api/regions', 'regions.geojson');
+      _downloadGeoJSON(fetchRegions, 'regions.geojson');
     });
 
     document.getElementById('settings-regions-import').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      await _importGeoJSON(file, 'settings-regions-status', '/api/regions/import');
+      await _importGeoJSON(file, 'settings-regions-status', importRegions);
       e.target.value = '';
     });
 
@@ -2985,11 +2985,10 @@ export function settingsModalScript(): string {
       el.style.color = isError ? 'var(--danger-fg)' : '';
     }
 
-    async function _downloadGeoJSON(apiUrl, filename) {
+    // read: fetchRegions or fetchNamedPoints. A failed read downloads nothing.
+    async function _downloadGeoJSON(read, filename) {
       try {
-        const resp = await fetch(apiUrl);
-        if (!resp.ok) return;
-        const blob = new Blob([await resp.text()], { type: 'application/json' });
+        const blob = new Blob([JSON.stringify(await read())], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -2999,17 +2998,13 @@ export function settingsModalScript(): string {
       } catch (_) {}
     }
 
-    async function _importGeoJSON(file, statusElId, apiUrl) {
+    // write: importRegions or importNamedPoints. A file that isn't JSON fails like a refused one.
+    async function _importGeoJSON(file, statusElId, write) {
       const statusEl = document.getElementById(statusElId);
       try {
-        const text = await file.text();
-        const resp = await fetch(apiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: text,
-        });
+        const ok = await write(JSON.parse(await file.text())).then(() => true, (err) => { if (err.status) return false; throw err; });
         statusEl.style.display = '';
-        statusEl.textContent = resp.ok ? 'Imported.' : 'Import failed.';
+        statusEl.textContent = ok ? 'Imported.' : 'Import failed.';
         setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
       } catch (_) {
         statusEl.style.display = '';

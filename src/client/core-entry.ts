@@ -46,6 +46,8 @@ import * as usersApi from '@wingbeat/core/api/users';
 import * as overlaysApi from '@wingbeat/core/api/overlays';
 import * as settingsApi from '@wingbeat/core/api/settings';
 import * as webhooksApi from '@wingbeat/core/api/webhooks';
+import * as regionsApi from '@wingbeat/core/api/regions';
+import * as namedPointsApi from '@wingbeat/core/api/named-points';
 import { createFlightStore, flightCorrectionKey, mergeFlightCorrections, FLIGHT_STORE_KEY } from '@wingbeat/core/flight-store';
 
 declare const window: {
@@ -232,6 +234,17 @@ Object.assign(globalThis, {
   createWebhook: (body: webhooksApi.WebhookCreateRequest) => webhooksApi.createWebhook(api, body),
   updateWebhook: (id: number, body: webhooksApi.WebhookUpdateRequest) => webhooksApi.updateWebhook(api, id, body),
   deleteWebhook: (id: number) => webhooksApi.deleteWebhook(api, id),
+  // The map's regions and named points: every page reads them, Settings' editors write them.
+  fetchRegions: () => regionsApi.getRegions(api),
+  createRegion: (body: regionsApi.RegionRequest) => regionsApi.createRegion(api, body),
+  updateRegion: (id: number, body: regionsApi.RegionRequest) => regionsApi.updateRegion(api, id, body),
+  deleteRegion: (id: number) => regionsApi.deleteRegion(api, id),
+  importRegions: (body: regionsApi.FeatureCollectionImportRequest) => regionsApi.importRegions(api, body),
+  fetchNamedPoints: () => namedPointsApi.getNamedPoints(api),
+  createNamedPoint: (body: namedPointsApi.NamedPointCreateRequest) => namedPointsApi.createNamedPoint(api, body),
+  updateNamedPoint: (id: number, body: namedPointsApi.NamedPointUpdateRequest) => namedPointsApi.updateNamedPoint(api, id, body),
+  deleteNamedPoint: (id: number) => namedPointsApi.deleteNamedPoint(api, id),
+  importNamedPoints: (body: regionsApi.FeatureCollectionImportRequest) => namedPointsApi.importNamedPoints(api, body),
   // The duty log's reads and writes (the duty route group).
   fetchDutyLog: (pilotId: number | string) => dutyApi.getDutyLog(api, pilotId),
   fetchDutyMethods: () => dutyApi.getDutyMethods(api),
