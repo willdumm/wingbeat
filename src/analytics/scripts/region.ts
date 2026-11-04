@@ -5,10 +5,7 @@ export function analyticsScriptsRegion(): string {
     let REGIONS = null;
 
     async function loadRegions() {
-      try {
-        const res = await fetch('/api/regions');
-        if (res.ok) REGIONS = await res.json();
-      } catch (_) {}
+      try { REGIONS = await fetchRegions(); } catch (_) {}
     }
 
     // Display names of the home base regions, sorted.

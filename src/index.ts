@@ -26,6 +26,8 @@ import { AircraftCreateRequest, AircraftUpdateRequest } from '@wingbeat/core/api
 import { PilotCreateRequest, PilotUpdateRequest } from '@wingbeat/core/api/pilots-requests';
 import { SettingsRequest } from '@wingbeat/core/api/settings-requests';
 import { WebhookCreateRequest, WebhookUpdateRequest } from '@wingbeat/core/api/webhooks-requests';
+import { FeatureCollectionImportRequest, RegionRequest } from '@wingbeat/core/api/regions-requests';
+import { NamedPointCreateRequest, NamedPointUpdateRequest } from '@wingbeat/core/api/named-points-requests';
 import { zValidator } from '@hono/zod-validator';
 import * as z from 'zod/mini';
 import { en as zodEnglish } from 'zod/locales';
@@ -2336,13 +2338,12 @@ app.get('/api/named-points', async (c) => {
   return c.json(geojson);
 });
 
-app.post('/api/named-points', requireAdmin, async (c) => {
-  let body: { name?: string; lat?: number; lon?: number; max_km?: number | null };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+app.post('/api/named-points', requireAdmin, valid('json', NamedPointCreateRequest), async (c) => {
+  const body = c.req.valid('json');
   const { name, lat, lon } = body;
-  if (typeof name !== 'string' || !name) return c.json({ error: 'name is required' }, 400);
-  if (typeof lat !== 'number' || typeof lon !== 'number') return c.json({ error: 'lat and lon are required' }, 400);
-  const maxKm = typeof body.max_km === 'number' ? body.max_km : null;
+  if (!name) return c.json({ error: 'name is required' }, 400);
+  if (lat === undefined || lon === undefined) return c.json({ error: 'lat and lon are required' }, 400);
+  const maxKm = body.max_km ?? null;
   const result = await c.var.db.prepare(
     'INSERT INTO named_points (name, lat, lon, max_km) VALUES (?, ?, ?, ?)'
   ).bind(name, lat, lon, maxKm).run();
@@ -2350,14 +2351,13 @@ app.post('/api/named-points', requireAdmin, async (c) => {
   return c.json({ id: result.meta.last_row_id, name, lat, lon, max_km: maxKm }, 201);
 });
 
-app.put('/api/named-points/:id', requireAdmin, async (c) => {
+app.put('/api/named-points/:id', requireAdmin, valid('json', NamedPointUpdateRequest), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid id' }, 400);
-  let body: { name?: string; max_km?: number | null };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const body = c.req.valid('json');
   const updates: string[] = [];
   const binds: unknown[] = [];
-  if (typeof body.name === 'string' && body.name) { updates.push('name = ?'); binds.push(body.name); }
+  if (body.name) { updates.push('name = ?'); binds.push(body.name); }
   if ('max_km' in body) { updates.push('max_km = ?'); binds.push(body.max_km ?? null); }
   if (updates.length === 0) return c.json({ error: 'Nothing to update' }, 400);
   binds.push(id);
@@ -2396,10 +2396,9 @@ app.get('/api/regions', async (c) => {
   return c.json(geojson);
 });
 
-app.post('/api/regions', requireAdmin, async (c) => {
-  let body: { name?: string; geojson?: unknown };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
-  if (typeof body.name !== 'string' || !body.name) return c.json({ error: 'name required' }, 400);
+app.post('/api/regions', requireAdmin, valid('json', RegionRequest), async (c) => {
+  const body = c.req.valid('json');
+  if (!body.name) return c.json({ error: 'name required' }, 400);
   if (!body.geojson) return c.json({ error: 'geojson required' }, 400);
   const result = await c.var.db.prepare(
     'INSERT INTO regions (name, geojson) VALUES (?, ?)'
@@ -2407,14 +2406,13 @@ app.post('/api/regions', requireAdmin, async (c) => {
   return c.json({ id: result.meta.last_row_id, ok: true });
 });
 
-app.put('/api/regions/:id', requireAdmin, async (c) => {
+app.put('/api/regions/:id', requireAdmin, valid('json', RegionRequest), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid id' }, 400);
-  let body: { name?: string; geojson?: unknown };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const body = c.req.valid('json');
   const updates: string[] = [];
   const binds: unknown[] = [];
-  if (typeof body.name === 'string' && body.name) { updates.push('name = ?'); binds.push(body.name); }
+  if (body.name) { updates.push('name = ?'); binds.push(body.name); }
   if (body.geojson != null) { updates.push('geojson = ?'); binds.push(JSON.stringify(body.geojson)); }
   if (updates.length === 0) return c.json({ error: 'Nothing to update' }, 400);
   binds.push(id);
@@ -2435,10 +2433,9 @@ app.delete('/api/regions/:id', requireAdmin, async (c) => {
 
 // ── Regions import (admin only) ───────────────────────────────────────────────
 
-app.post('/api/regions/import', requireAdmin, async (c) => {
-  let body: { type?: string; features?: Array<{ properties: Record<string, unknown>; geometry: unknown }> };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
-  if (body.type !== 'FeatureCollection' || !Array.isArray(body.features)) {
+app.post('/api/regions/import', requireAdmin, valid('json', FeatureCollectionImportRequest), async (c) => {
+  const body = c.req.valid('json');
+  if (body.type !== 'FeatureCollection' || !body.features) {
     return c.json({ error: 'Expected a GeoJSON FeatureCollection' }, 400);
   }
   const stmts: D1PreparedStatement[] = [c.var.db.prepare('DELETE FROM regions')];
@@ -2453,17 +2450,16 @@ app.post('/api/regions/import', requireAdmin, async (c) => {
 
 // ── Named points import (admin only) ─────────────────────────────────────────
 
-app.post('/api/named-points/import', requireAdmin, async (c) => {
-  let body: { type?: string; features?: Array<{ properties: Record<string, unknown>; geometry: { type: string; coordinates: [number, number] } }> };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
-  if (body.type !== 'FeatureCollection' || !Array.isArray(body.features)) {
+app.post('/api/named-points/import', requireAdmin, valid('json', FeatureCollectionImportRequest), async (c) => {
+  const body = c.req.valid('json');
+  if (body.type !== 'FeatureCollection' || !body.features) {
     return c.json({ error: 'Expected a GeoJSON FeatureCollection' }, 400);
   }
   const stmts: D1PreparedStatement[] = [c.var.db.prepare('DELETE FROM named_points')];
   for (const f of body.features) {
     const name = f.properties?.name as string | undefined;
     if (typeof name !== 'string' || !name) continue;
-    const coords = f.geometry?.coordinates;
+    const coords = (f.geometry as { coordinates?: unknown } | null | undefined)?.coordinates;
     if (!Array.isArray(coords) || typeof coords[0] !== 'number' || typeof coords[1] !== 'number') continue;
     const maxKm = typeof f.properties?.maxKm === 'number' ? f.properties.maxKm : null;
     stmts.push(c.var.db.prepare('INSERT INTO named_points (name, lat, lon, max_km) VALUES (?, ?, ?, ?)').bind(name, coords[1], coords[0], maxKm));

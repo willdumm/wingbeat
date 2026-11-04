@@ -101,10 +101,6 @@ export function setupGuideScript(): string {
       return document.getElementById(id).closest('.settings-section');
     }
 
-    async function _sgFetchJson(url) {
-      try { const r = await fetch(url); return r.ok ? await r.json() : null; } catch (_) { return null; }
-    }
-
     async function renderSetupGuide(force) {
       const section = document.getElementById('settings-section-setup');
       if (_settingsUser?.role !== 'admin') { section.style.display = 'none'; return; }
@@ -113,8 +109,8 @@ export function setupGuideScript(): string {
       const orNull = (p) => p.catch(() => null);
       const [settings, regions, namedPoints, users, invites, webhooks] = await Promise.all([
         orNull(fetchSettings()),
-        _sgFetchJson('/api/regions'),
-        _sgFetchJson('/api/named-points'),
+        orNull(fetchRegions()),
+        orNull(fetchNamedPoints()),
         orNull(fetchUsers()),
         orNull(fetchInvites()),
         orNull(fetchWebhooks()),

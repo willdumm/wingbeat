@@ -1047,3 +1047,88 @@ describe('request validation: the settings modal’s writes', () => {
     assert.deepEqual([name.status, name.body.error], [400, 'device_name must be 1-60 characters']);
   });
 });
+
+describe('the regions and named-points requests, through the core client', async () => {
+  const { createApiClient, ApiHttpError } = await importCore('api/client');
+  const regions = await importCore('api/regions');
+  const points = await importCore('api/named-points');
+  let client;
+  before(() => { client = createApiClient({ baseUrl: 'http://localhost', fetch: () => w.adminFetch }); });
+  const refused = (status, message) => (e) => e instanceof ApiHttpError && e.status === status && e.serverError === message;
+  const square = (lon, lat) => ({ type: 'Polygon', coordinates: [[[lon, lat], [lon + 1, lat], [lon + 1, lat + 1], [lon, lat]]] });
+
+  test('regions: the editor’s save (added, then renamed and redrawn), the list, a delete; Settings’ import replaces them all', async () => {
+    const { id } = await regions.createRegion(client, { name: 'Bay', geojson: square(-152, 57) });
+    assert.deepEqual(await regions.updateRegion(client, id, { name: 'Home Base: Bay', geojson: square(-153, 57) }), { ok: true });
+    const listed = (await regions.getRegions(client)).features.find(f => f.properties.id === id);
+    assert.deepEqual([listed.properties.Name, listed.geometry], ['Home Base: Bay', square(-153, 57)]);
+    assert.deepEqual(await regions.deleteRegion(client, id), { ok: true });
+    await assert.rejects(regions.updateRegion(client, id, { name: 'x' }), refused(404, 'Not found'));
+    // Name or name; a feature without one is skipped, and keys the import doesn't read are dropped.
+    assert.deepEqual(await regions.importRegions(client, { type: 'FeatureCollection', name: 'export', features: [
+      { type: 'Feature', properties: { Name: 'North' }, geometry: square(-150, 58) },
+      { type: 'Feature', properties: { name: 'South' }, geometry: square(-150, 56) },
+      { type: 'Feature', properties: null, geometry: square(-150, 54) },
+    ] }), { ok: true });
+    assert.deepEqual((await regions.getRegions(client)).features.map(f => f.properties.Name), ['North', 'South']);
+  });
+
+  test('named points: added, renamed (its radius kept), its radius cleared, listed, deleted; the import', async () => {
+    const created = await points.createNamedPoint(client, { name: 'Lodge', lat: 57.5, lon: -153.4, max_km: 2 });
+    assert.deepEqual(created, { id: created.id, name: 'Lodge', lat: 57.5, lon: -153.4, max_km: 2 });
+    await points.updateNamedPoint(client, created.id, { name: 'Bear Lodge' });
+    assert.deepEqual(await w.first('SELECT name, max_km FROM named_points WHERE id = ?', created.id), { name: 'Bear Lodge', max_km: 2 });
+    await points.updateNamedPoint(client, created.id, { name: 'Bear Lodge', max_km: null });
+    const listed = (await points.getNamedPoints(client)).features.find(f => f.properties.id === created.id);
+    assert.deepEqual([listed.properties, listed.geometry.coordinates], [{ id: created.id, name: 'Bear Lodge', maxKm: null }, [-153.4, 57.5]]);
+    assert.deepEqual(await points.deleteNamedPoint(client, created.id), { ok: true });
+    await assert.rejects(points.deleteNamedPoint(client, created.id), refused(404, 'Not found'));
+    assert.deepEqual(await points.importNamedPoints(client, { type: 'FeatureCollection', features: [
+      { type: 'Feature', properties: { name: 'Strip', maxKm: 1.5 }, geometry: { type: 'Point', coordinates: [-152, 57] } },
+      { type: 'Feature', properties: { name: 'No point' }, geometry: null },
+    ] }), { ok: true });
+    assert.deepEqual((await points.getNamedPoints(client)).features.map(f => [f.properties.name, f.properties.maxKm]), [['Strip', 1.5]]);
+  });
+
+  test('as a viewer: both lists, and no writes', async () => {
+    for (const path of ['/api/regions', '/api/named-points']) {
+      assert.equal((await w.request('GET', path, undefined, { as: 'viewer' })).status, 200, path);
+      assert.equal((await w.request('POST', path, { name: 'x' }, { as: 'viewer' })).status, 403, path);
+    }
+  });
+});
+
+describe('request validation: the regions and named-points writes', () => {
+  test('a field of the wrong type is a 400 naming it', async () => {
+    const cases = [
+      ['POST', '/api/regions', { name: 5, geojson: {} }, /^name: /],
+      ['PUT', '/api/regions/1', { name: ['x'] }, /^name: /],
+      ['POST', '/api/regions/import', { type: 'FeatureCollection', features: {} }, /^features: /],
+      ['POST', '/api/named-points', { name: 'P', lat: '57', lon: -153 }, /^lat: /],
+      ['PUT', '/api/named-points/1', { max_km: '2' }, /^max_km: /],
+      ['POST', '/api/named-points/import', { type: 'FeatureCollection', features: [5] }, /^features\.0: /],
+    ];
+    for (const [method, path, body, error] of cases) {
+      const r = await w.request(method, path, body);
+      assert.equal(r.status, 400, method + ' ' + path);
+      assert.match(r.body.error, error, method + ' ' + path);
+    }
+  });
+
+  test('the handlers’ own checks still apply', async () => {
+    const checks = [
+      ['POST', '/api/regions', { name: '', geojson: {} }, 'name required'],
+      ['POST', '/api/regions', { name: 'R' }, 'geojson required'],
+      ['PUT', '/api/regions/1', { name: '' }, 'Nothing to update'],
+      ['POST', '/api/regions/import', { type: 'Feature', features: [] }, 'Expected a GeoJSON FeatureCollection'],
+      ['POST', '/api/named-points', { name: 'P', lat: 57 }, 'lat and lon are required'],
+      ['POST', '/api/named-points', { lat: 57, lon: -153 }, 'name is required'],
+      ['PUT', '/api/named-points/1', {}, 'Nothing to update'],
+      ['POST', '/api/named-points/import', { features: [] }, 'Expected a GeoJSON FeatureCollection'],
+    ];
+    for (const [method, path, body, error] of checks) {
+      const r = await w.request(method, path, body);
+      assert.deepEqual([r.status, r.body.error], [400, error], method + ' ' + path + ' ' + JSON.stringify(body));
+    }
+  });
+});
