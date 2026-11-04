@@ -182,11 +182,12 @@ nix develop path:./nix --command npm test               # unit tests (test/, nod
 nix develop path:./nix --command npm run type-check     # tsc --noEmit
 ```
 
-`npm test` covers the client-side logic that lives in script strings, which `tsc` can't
-check: the pilot duty log's §135.267 checks and totals, flight corrections, and the
-timezone helpers. `test/harness.mjs` bundles the script-string functions with esbuild (in
-memory) and evaluates them in a `node:vm` context with a stub `window` and a controllable
-clock.
+`npm test` covers `@wingbeat/core` (the pilot duty log's §135.267 checks and totals, flight
+corrections, the timezone helpers and the rest), imported directly through `test/core.mjs`,
+and the client-side logic still in script strings, which `tsc` can't check.
+`test/harness.mjs` bundles the script-string functions and the core browser bundle with
+esbuild (in memory) and evaluates them in a `node:vm` context with a stub `window` and a
+controllable clock.
 
 ---
 

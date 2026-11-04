@@ -4,8 +4,8 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { importCore } from './core.mjs';
-import { loadEngine, TZ } from './harness.mjs';
+import { importCore, TZ } from './core.mjs';
+import { loadEngine } from './harness.mjs';
 
 const eh = await importCore('edit-history');
 const time = await importCore('time');

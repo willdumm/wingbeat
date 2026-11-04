@@ -4,8 +4,8 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { importCore } from './core.mjs';
-import { loadEngine, plain, TZ } from './harness.mjs';
+import { importCore, plain, TZ } from './core.mjs';
+import { loadEngine } from './harness.mjs';
 
 const m = await importCore('maintenance');
 const time = await importCore('time');

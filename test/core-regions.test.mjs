@@ -5,8 +5,8 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { importCore } from './core.mjs';
-import { loadEngine, plain } from './harness.mjs';
+import { importCore, plain } from './core.mjs';
+import { loadEngine } from './harness.mjs';
 import { REGIONS, KODIAK, SPINE, KATMAI, AWAY, box } from './regions-fixture.mjs';
 
 const regions = await importCore('regions');

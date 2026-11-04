@@ -7,8 +7,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as z from 'zod/mini';
-import { importCore } from './core.mjs';
-import { loadEngine, plain, TZ } from './harness.mjs';
+import { importCore, plain, TZ } from './core.mjs';
+import { loadEngine } from './harness.mjs';
 
 const corrections = await importCore('corrections');
 const api = await importCore('api/corrections-requests');

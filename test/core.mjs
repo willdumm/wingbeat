@@ -21,3 +21,11 @@ export async function importCore(name) {
   });
   return import('data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 }
+
+/** The operator timezone the tests run in. */
+export const TZ = 'America/Anchorage';
+
+/** A deep copy (JSON round trip), for deepStrictEqual against a literal. */
+export function plain(x) {
+  return x === undefined ? undefined : JSON.parse(JSON.stringify(x));
+}

@@ -5,10 +5,11 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadEngine, fixtures, plain } from './harness.mjs';
+import { importCore, plain, TZ } from './core.mjs';
+import { fixtures } from './duty-fixtures.mjs';
 
-const engine = loadEngine({ now: '2026-10-15 12:00' });   // May and June 2026 are past months
-const { flight, duty, rest, warningsOn, matching, dutyMonth, dayOf } = fixtures(engine);
+const core = { duty: await importCore('duty') };
+const { at, flight, duty, rest, warningsOn, matching, dutyMonth, dayOf } = fixtures({ now: '2026-10-15 12:00' });   // May and June 2026 are past months
 
 const def = (effective_date, duty_start, duty_end) => ({ effective_date, duty_start, duty_end });
 const meth = (effective_date, method) => ({ effective_date, method });
@@ -17,35 +18,35 @@ describe('the entry in force on a date (dutyEntryOn)', () => {
   const list = [def('2026-06-15', '07:00', '16:00'), def('2026-05-01', '08:00', '17:00')];   // any order
 
   test('the latest entry on or before the date', () => {
-    assert.equal(engine.dutyEntryOn(list, '2026-06-14').effective_date, '2026-05-01');
-    assert.equal(engine.dutyEntryOn(list, '2026-06-15').effective_date, '2026-06-15');
-    assert.equal(engine.dutyEntryOn(list, '2026-09-01').effective_date, '2026-06-15');
+    assert.equal(core.duty.dutyEntryOn(list, '2026-06-14').effective_date, '2026-05-01');
+    assert.equal(core.duty.dutyEntryOn(list, '2026-06-15').effective_date, '2026-06-15');
+    assert.equal(core.duty.dutyEntryOn(list, '2026-09-01').effective_date, '2026-06-15');
   });
 
   test('the earliest entry also applies before its date', () => {
-    assert.equal(engine.dutyEntryOn(list, '2026-01-01').effective_date, '2026-05-01');
-    assert.deepEqual(plain(engine.dutyDefaultOn([def('2026-06-01', '08:00', '17:00')], '2025-12-31')),
+    assert.equal(core.duty.dutyEntryOn(list, '2026-01-01').effective_date, '2026-05-01');
+    assert.deepEqual(plain(core.duty.dutyDefaultOn([def('2026-06-01', '08:00', '17:00')], '2025-12-31')),
       def('2026-06-01', '08:00', '17:00'));
   });
 
   test('no entries: no default, and method (b)', () => {
-    assert.equal(engine.dutyEntryOn([], '2026-06-01'), null);
-    assert.equal(engine.dutyDefaultOn([], '2026-06-01'), null);
-    assert.equal(engine.dutyMethodOn([], '2026-06-01'), 'b');
+    assert.equal(core.duty.dutyEntryOn([], '2026-06-01'), null);
+    assert.equal(core.duty.dutyDefaultOn([], '2026-06-01'), null);
+    assert.equal(core.duty.dutyMethodOn([], '2026-06-01'), 'b');
   });
 
   test('an entry with no times is no default from its date', () => {
     const cleared = [def('2026-05-01', '08:00', '17:00'), def('2026-06-01', null, null)];
-    assert.equal(engine.dutyDefaultOn(cleared, '2026-05-31').duty_start, '08:00');
-    assert.equal(engine.dutyDefaultOn(cleared, '2026-06-01'), null);
+    assert.equal(core.duty.dutyDefaultOn(cleared, '2026-05-31').duty_start, '08:00');
+    assert.equal(core.duty.dutyDefaultOn(cleared, '2026-06-01'), null);
   });
 
   test('the method in force', () => {
     const methods = [meth('2026-06-15', 'c'), meth('2026-05-01', 'b')];
-    assert.equal(engine.dutyMethodOn(methods, '2026-04-01'), 'b');
-    assert.equal(engine.dutyMethodOn(methods, '2026-06-14'), 'b');
-    assert.equal(engine.dutyMethodOn(methods, '2026-06-15'), 'c');
-    assert.equal(engine.dutyMethodOn([meth('2026-06-15', 'c')], '2026-01-01'), 'c');
+    assert.equal(core.duty.dutyMethodOn(methods, '2026-04-01'), 'b');
+    assert.equal(core.duty.dutyMethodOn(methods, '2026-06-14'), 'b');
+    assert.equal(core.duty.dutyMethodOn(methods, '2026-06-15'), 'c');
+    assert.equal(core.duty.dutyMethodOn([meth('2026-06-15', 'c')], '2026-01-01'), 'c');
   });
 });
 
@@ -94,9 +95,9 @@ describe('each day uses the default duty in force on it', () => {
     const earlier = [late[0], def('2026-06-15', '08:00', '19:00')];
     assert.deepEqual(matching(warningsOn(fl15, '2026-06-16', { days, defaultDuty: earlier }), /Previous duty/), []);
     // The totals count rest the same way.
-    const asOf = engine.tzLocalToEpoch('2026-07-01', '00:00');
-    assert.equal(engine.dutyTotals(fl15, 1, asOf, { days, defaultDuty: late }).rest.taken, 0);
-    assert.equal(engine.dutyTotals(fl15, 1, asOf, { days, defaultDuty: earlier }).rest.taken, 1);
+    const asOf = at('2026-07-01 00:00');
+    assert.equal(core.duty.dutyTotals(TZ, fl15, 1, asOf, { days, defaultDuty: late }).rest.taken, 0);
+    assert.equal(core.duty.dutyTotals(TZ, fl15, 1, asOf, { days, defaultDuty: earlier }).rest.taken, 1);
   });
 });
 
