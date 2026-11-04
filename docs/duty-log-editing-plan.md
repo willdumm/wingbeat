@@ -824,10 +824,13 @@ months) through this month. `_buildTypstSource` takes one month's row model or s
 
 ### Tests
 
-`npm test` (`node --test`, in the nix shell) runs `test/`: `test/harness.mjs` evaluates the
-shipped `@wingbeat/core` bundle (the compliance logic is `packages/core/src/duty.ts`) and the
-real script strings of `pilot-duty.ts`, `flight-edits.ts` and `html.ts` in a `node:vm`
-context with a settable clock. The suites cover the rules in this doc: the
+`npm test` (`node --test`, in the nix shell) runs `test/`. The compliance logic is
+`packages/core/src/duty.ts`, and the suites call it directly (`test/core.mjs`, with the
+fixtures in `test/duty-fixtures.mjs`), passing the operator's timezone and the clock.
+`test/harness.mjs` evaluates the shipped `@wingbeat/core` bundle and the real script strings
+of `pilot-duty.ts`, `flight-edits.ts` and `html.ts` in a `node:vm` context with a settable
+clock, for the PDF builder, the flight chips and the bundle's page globals. The suites
+cover the rules in this doc: the
 (b), (c), (d) and (e) checks, rest days, the quarter and year totals, DST days, the dated
 default duty and method (`dated-defaults.test.mjs`), `applyFlightEdits`, the corrections
 delta merge, and the flight form's times. `test/worker.mjs` runs the real Worker in

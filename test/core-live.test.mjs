@@ -6,8 +6,8 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { importCore } from './core.mjs';
-import { loadEngine, plain } from './harness.mjs';
+import { importCore, plain } from './core.mjs';
+import { loadEngine } from './harness.mjs';
 
 const live = await importCore('live');
 const KMH = 37;   // the server's SPEED_THRESHOLD_KMH

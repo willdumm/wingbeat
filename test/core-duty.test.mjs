@@ -1,21 +1,21 @@
 // @wingbeat/core/duty, imported directly: the clock and the operator's timezone are
 // parameters (computeDutyData(tz, now, …), dutyTotals(tz, …)), and the result is the one
 // the pages get through the core bundle's globals. The §135.267 rules themselves are
-// specified by the duty tests that run the shipped bundle (duty-limits, rest-days,
-// totals, dated-defaults, dst, day-form, duty-export).
+// specified by the duty spec tests (duty-limits, rest-days, totals, dated-defaults, dst,
+// day-form, duty-export), which call core the same way.
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { importCore } from './core.mjs';
-import { loadEngine, fixtures, plain, TZ } from './harness.mjs';
+import { importCore, plain, TZ } from './core.mjs';
+import { loadEngine } from './harness.mjs';
+import { fixtures } from './duty-fixtures.mjs';
 
 const duty = await importCore('duty');
 const time = await importCore('time');
 
 const NOW = '2026-10-15 12:00';
 const engine = loadEngine({ now: NOW });
-const { flight, duty: dutyRow, rest } = fixtures(engine);
-const nowSecs = time.tzLocalToEpoch(TZ, ...NOW.split(' '));
+const { flight, duty: dutyRow, rest, nowSecs } = fixtures({ now: NOW });
 
 // An October with a bit of everything: an over-limit day, a rest day designated late, a
 // day on the default duty, an unpaid Part 91 flight, and planned rest after today.

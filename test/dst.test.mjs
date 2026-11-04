@@ -4,10 +4,13 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadEngine, fixtures } from './harness.mjs';
+import { importCore } from './core.mjs';
+import { loadEngine } from './harness.mjs';
+import { fixtures } from './duty-fixtures.mjs';
 
-const engine = loadEngine({ now: '2026-12-15 12:00' });
-const { flight, duty, rest, dutyMonth, dayOf } = fixtures(engine);
+const { tzAddDays } = await importCore('time');
+const engine = loadEngine();
+const { flight, duty, rest, dutyMonth, dayOf } = fixtures({ now: '2026-12-15 12:00' });
 const H = 3600;
 const utc = (iso) => Date.parse(iso) / 1000;
 
@@ -30,7 +33,7 @@ describe('core bundle time globals', () => {
 
 describe('duty log across DST', () => {
   for (const [label, month, dstDay] of [['spring forward', '2026-03', '2026-03-08'], ['fall back', '2026-11', '2026-11-01']]) {
-    const before = engine.tzAddDays(dstDay, -1), after = engine.tzAddDays(dstDay, 1);
+    const before = tzAddDays(dstDay, -1), after = tzAddDays(dstDay, 1);
     const keys = [before, dstDay, after];
 
     test(`${label}: every day of the month once, in order`, () => {
@@ -39,7 +42,7 @@ describe('duty log across DST', () => {
       assert.equal(new Set(dk).size, dk.length);
       assert.equal(dk[0], month + '-01');
       assert.ok(dk.includes(dstDay));
-      for (let i = 1; i < dk.length; i++) assert.equal(dk[i], engine.tzAddDays(dk[i - 1], 1));
+      for (let i = 1; i < dk.length; i++) assert.equal(dk[i], tzAddDays(dk[i - 1], 1));
     });
 
     test(`${label}: regular duty and flying on the days around it give no warnings`, () => {

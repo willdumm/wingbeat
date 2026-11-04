@@ -79,9 +79,10 @@ and commit the regenerated output. `--check` fails if it's stale. See `site/READ
 ## Tests — `npm test`
 
 Run `nix develop path:./nix --command npm test` after changing `packages/core/src/` (`duty`,
-`flight-edits`, `time`, `flight-store`, …), `pilot-duty.ts` or `flight-edits.ts`: `test/` runs the
-shipped core bundle and the script strings in a `node:vm` context (see `test/harness.mjs`) against
-the duty-log compliance spec in `docs/duty-log-editing-plan.md`.
+`flight-edits`, `time`, `flight-store`, …), `pilot-duty.ts` or `flight-edits.ts`: `test/` runs core,
+imported directly (`test/core.mjs`, `test/duty-fixtures.mjs`), against the duty-log compliance spec
+in `docs/duty-log-editing-plan.md`, and the shipped core bundle and the script strings in a
+`node:vm` context (see `test/harness.mjs`).
 Run it too after changing the flight-correction or duty-day routes in `src/index.ts`, or adding a
 migration: `test/worker-sql.test.mjs` runs the real Worker in Miniflare against a fresh D1 with
 every migration applied (see `test/worker.mjs`).

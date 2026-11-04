@@ -1,15 +1,19 @@
-// The Export PDF form's period presets (dutyExportPresets) and the PDF's day grouping
-// (_buildTypstSource): warnings sit inside their day's block, between day rules only.
+// The Export PDF form's period presets (dutyExportPresets, @wingbeat/core/duty) and the
+// PDF's day grouping (_buildTypstSource, still a script string in pilot-duty.ts, so it runs
+// in the harness): warnings sit inside their day's block, between day rules only.
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadEngine, fixtures, plain } from './harness.mjs';
+import { importCore } from './core.mjs';
+import { loadEngine } from './harness.mjs';
+import { fixtures } from './duty-fixtures.mjs';
 
+const { dutyExportPresets } = await importCore('duty');
 const engine = loadEngine({ now: '2026-10-16 12:00' });
-const { flight, duty, dutyMonth } = fixtures(engine);
+const { flight, duty, dutyMonth } = fixtures({ now: '2026-10-16 12:00' });
 const idx = (y, m) => y * 12 + m - 1;
 const ranges = (shown, cur, earliest) =>
-  Object.fromEntries(plain(engine.dutyExportPresets(shown, cur, earliest)).map(p => [p.key, [p.from, p.to]]));
+  Object.fromEntries(dutyExportPresets(shown, cur, earliest).map(p => [p.key, [p.from, p.to]]));
 
 describe('export presets', () => {
   const cur = idx(2026, 10), earliest = cur - 11;

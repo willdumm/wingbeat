@@ -5,8 +5,8 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { importCore } from './core.mjs';
-import { loadEngine, plain } from './harness.mjs';
+import { importCore, plain } from './core.mjs';
+import { loadEngine } from './harness.mjs';
 
 const elevation = await importCore('elevation');
 const { DEM_TILE_SIZE: SIZE } = elevation;

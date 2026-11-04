@@ -1,17 +1,20 @@
 // Flight corrections on the page: the core bundle's flight-edits globals and the HTML
 // built from them (flight-edits.ts), the flight store's flightCorrectionKey() /
 // mergeFlightCorrections() (@wingbeat/core/flight-store), and a correction flowing through to the
-// duty log.
+// duty log (@wingbeat/core/flight-edits into @wingbeat/core/duty).
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadEngine, fixtures, plain } from './harness.mjs';
+import { importCore, plain } from './core.mjs';
+import { loadEngine } from './harness.mjs';
+import { fixtures } from './duty-fixtures.mjs';
 
+const { applyFlightEdits } = await importCore('flight-edits');
+const { flightCorrectionKey, mergeFlightCorrections } = await importCore('flight-store');
 const engine = loadEngine({ now: '2026-10-15 12:00' });
-const { at, duty, dutyMonth, dayOf } = fixtures(engine);
+const { at, duty, dutyMonth, dayOf } = fixtures({ now: '2026-10-15 12:00' });
 
-// ids in this realm (arrays from the engine have the vm context's prototypes).
-const ids = (list) => [...list].map(x => x.id);
+const ids = (list) => list.map(x => x.id);
 
 // Tracker records as the flight store holds them.
 function tracked(id, tracker, dep, arr, extra = {}) {
@@ -76,7 +79,7 @@ describe('corrections in the duty log', () => {
       tracked(3, 10, `${D} 05:00`, `${D} 06:30`),
     ];
     const days = [duty(D, '04:00', '17:00')];
-    const run = (entries) => [...dayOf(dutyMonth(engine.applyFlightEdits(flights, entries).flights, D, { days }), D).warnings];
+    const run = (entries) => [...dayOf(dutyMonth(applyFlightEdits(flights, entries).flights, D, { days }), D).warnings];
     assert.deepEqual(run([]), ['8:30 flight time in the 24 h to 15:00 (§135.267(b) limit 8:00)']);
     assert.deepEqual(run([entry(5, { tracker_id: 10, flight_start_time: flights[2].start_time, part91: 1, unpaid: 1 })]), []);
     assert.deepEqual(run([entry(5, { tracker_id: 10, flight_start_time: flights[1].start_time, end_time: at(`${D} 14:00`) })]),
@@ -87,7 +90,7 @@ describe('corrections in the duty log', () => {
     const D = '2026-03-10';
     const flights = [tracked(1, 10, `${D} 07:00`, `${D} 11:00`)];
     const e = entry(5, { tracker_id: 10, flight_start_time: flights[0].start_time, excluded: 1 });
-    const data = dutyMonth(engine.applyFlightEdits(flights, [e], { includeRemoved: true }).flights, D);
+    const data = dutyMonth(applyFlightEdits(flights, [e], { includeRemoved: true }).flights, D);
     assert.equal(dayOf(data, D).flights.length, 0);
     assert.equal(data.totals.hours[0].secs, 0);
   });
@@ -99,39 +102,39 @@ describe('flightCorrectionKey / mergeFlightCorrections', () => {
   const base = [a, m];
 
   test('keys: tracker/start for tracked rows, manual/id for manual ones', () => {
-    assert.equal(engine.flightCorrectionKey(a), '10/1000');
-    assert.equal(engine.flightCorrectionKey(m), 'manual/2');
+    assert.equal(flightCorrectionKey(a), '10/1000');
+    assert.equal(flightCorrectionKey(m), 'manual/2');
   });
 
   test('nothing incoming returns the same array', () => {
-    assert.equal(engine.mergeFlightCorrections(base, {}), base);
-    assert.equal(engine.mergeFlightCorrections(base, { entries: [], deleted: [] }), base);
+    assert.equal(mergeFlightCorrections(base, {}), base);
+    assert.equal(mergeFlightCorrections(base, { entries: [], deleted: [] }), base);
   });
 
   test('upserts by key, so a re-inserted row under a new id replaces the old one', () => {
     const a2 = { ...a, id: 11, origin_label: 'A2' };
     const b = entry(3, { tracker_id: 20, flight_start_time: 2000 });
-    const out = engine.mergeFlightCorrections(base, { entries: [a2, b] });
+    const out = mergeFlightCorrections(base, { entries: [a2, b] });
     assert.deepEqual(ids(out).sort((x, y) => x - y), [2, 3, 11]);
     assert.equal(out.find(e => e.tracker_id === 10).origin_label, 'A2');
     assert.deepEqual(ids(base), [1, 2], 'the input is not mutated');
   });
 
   test('deleted keys are tombstones', () => {
-    assert.deepEqual(ids(engine.mergeFlightCorrections(base, { deleted: ['manual/2'] })), [1]);
-    assert.deepEqual(ids(engine.mergeFlightCorrections(base, { deleted: ['10/1000', 'manual/99'] })), [2]);
+    assert.deepEqual(ids(mergeFlightCorrections(base, { deleted: ['manual/2'] })), [1]);
+    assert.deepEqual(ids(mergeFlightCorrections(base, { deleted: ['10/1000', 'manual/99'] })), [2]);
   });
 
   test('a row deleted and re-added in the same delta is kept', () => {
     const a2 = { ...a, id: 12 };
-    assert.deepEqual(ids(engine.mergeFlightCorrections(base, { entries: [a2], deleted: ['10/1000'] })).sort((x, y) => x - y), [2, 12]);
+    assert.deepEqual(ids(mergeFlightCorrections(base, { entries: [a2], deleted: ['10/1000'] })).sort((x, y) => x - y), [2, 12]);
   });
 
   test('full replaces everything, or returns the same array when identical', () => {
     const b = entry(3, { tracker_id: 20, flight_start_time: 2000 });
     const incoming = [b];
-    assert.equal(engine.mergeFlightCorrections(base, { entries: incoming, full: true }), incoming);
-    assert.equal(engine.mergeFlightCorrections(base, { entries: plain(base), full: true }), base);
-    assert.deepEqual(engine.mergeFlightCorrections(base, { entries: [], full: true }), []);
+    assert.equal(mergeFlightCorrections(base, { entries: incoming, full: true }), incoming);
+    assert.equal(mergeFlightCorrections(base, { entries: plain(base), full: true }), base);
+    assert.deepEqual(mergeFlightCorrections(base, { entries: [], full: true }), []);
   });
 });

@@ -12,9 +12,10 @@ validation for the corrections and duty writes), step 6, `live`, `maintenance` a
 step 7, `regions` (merged with `src/geo.ts`), `accounting` and `analytics`, step 8,
 `elevation`, step 9, the settings route group (with operator-time dates in Settings and
 the timezone-change warning), and step 10, the regions and named-points route groups. Every
-API call the pages make now goes through the core client. Phase 1 isn't done: see "Left in
-phase 1" at the end of "Phase 1 progress and conventions". Next: the spec tests off the
-harness. All open questions are answered.
+API call the pages make now goes through the core client, and the spec tests call core
+directly. Phase 1 isn't done: what's left is the prod release, on hold (see "Left in
+phase 1" at the end of "Phase 1 progress and conventions"). All open questions are
+answered.
 
 ## Settled so far
 
@@ -494,10 +495,11 @@ How it's built, for the steps that follow:
   …)`, `currentDutyMonth(tz, now)`. `core-entry.ts` binds both, so the page globals keep
   their old signatures; `test/core-duty.test.mjs` checks core never reads `Date.now()`.
 - **Moved logic keeps its spec tests where they were** while it moves, so a step's diff
-  doesn't rewrite its own spec. Porting them to `importCore()` comes after the steps (see
-  "Left in phase 1"). The duty suites (duty-limits, rest-days, totals, dated-defaults, dst,
-  day-form, duty-export) still run through the shipped bundle's globals, unchanged; the core test (`core-duty.test.mjs`) covers what's new:
-  the parameters, and the same results as the page's globals. Step 4 checked the staging
+  doesn't rewrite its own spec. Porting them to `importCore()` came after the steps (see
+  "Spec tests off the harness" below). Until then the duty suites (duty-limits, rest-days,
+  totals, dated-defaults, dst, day-form, duty-export) ran through the shipped bundle's
+  globals, unchanged; the core test (`core-duty.test.mjs`) covers what's new: the
+  parameters, and the same results as the page's globals. Step 4 checked the staging
   duty log (rendered HTML, computed model, PDF Typst source for every month, a quarter and
   12 months) and the alerts against step 3's at a pinned clock: identical (staging had
   no alerts at the time, so those matched as empty).
@@ -636,22 +638,31 @@ How it's built, for the steps that follow:
   the fonts from jsDelivr, cached with the Cache API. It isn't an API route, so it stays a
   bare `fetch`. The app will build its PDF its own way. The only other bare `fetch` left
   is Settings' `POST /logout`, a page route.
+- **Spec tests off the harness** (after step 10): duty-limits, rest-days, totals,
+  dated-defaults, dst, day-form, edit-conflict, flight-store-sync, duty-export's presets and
+  the core half of flight-edits call core through `importCore()`, with `tz` first and then
+  `now`, as `core-entry.ts` binds them. The fixture builders moved out of the harness to
+  `test/duty-fixtures.mjs`, which takes the timezone and the clock (`fixtures({ now })`) and
+  builds months with core's `computeDutyData`; `TZ` and `plain()` moved to `test/core.mjs`.
+  flight-store-sync builds the store as `core-entry.ts` does (a Map for localStorage, the
+  warn-only client over the test's fetch, the storage event). The harness keeps the PDF
+  builder (`_buildTypstSource`, fed core's months), flight-edits' chips, its two
+  page-binding checks and dst's time-globals checks, plus each `core-*` test's page-binding
+  check. `EXPORTS` lists only those, and `loadEngine()` lost its `fetch` and `dispatch`.
+  Names and counts are unchanged: 552 tests pass. Test-only, with `src/` untouched, so no
+  browser check or staging deploy.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.
 
-**Left in phase 1** (checked 2026-11-03, after step 10), against its "Done when" under
-"Phases". Step 9 took Settings' device time and the timezone warning, and steps 9 and 10
-moved every remaining route onto the core client:
+**Left in phase 1** (checked 2026-11-03, after the spec tests moved off the harness),
+against its "Done when" under "Phases". Step 9 took Settings' device time and the timezone
+warning, steps 9 and 10 moved every remaining route onto the core client, and the spec
+tests now call core directly:
 
-1. **Spec tests off the harness**: duty-limits, rest-days, totals, dated-defaults, dst,
-   day-form, edit-conflict, flight-store-sync and the core half of flight-edits still test
-   core logic only through the bundle's globals. They move to `importCore()`, leaving the
-   harness for what's still a script string (the PDF builder in duty-export, flight-edits'
-   chips) and the bundle smoke test (each `core-*` test's page-binding check).
-2. **Prod**: release the stack (push `wingbeat-hosting`'s `[build]` commit first), then
-   watch for `[wingbeat api] unexpected response` warnings before the web client goes
-   strict.
+1. **Prod** (on hold): release the stack (push `wingbeat-hosting`'s `[build]` commit
+   first), then watch for `[wingbeat api] unexpected response` warnings before the web
+   client goes strict.
 
 ### Times and the operator's timezone
 
