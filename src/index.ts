@@ -1085,7 +1085,7 @@ app.post('/api/trackers/:id/apply-assignment', requireAdmin, valid('json', Apply
   const stmts: D1PreparedStatement[] = [];
   if (body.aircraft && tracker.assigned_aircraft) {
     stmts.push(
-      c.var.db.prepare('UPDATE flights SET aircraft_tail = ?, modified_at = unixepoch() WHERE tracker_id = ? AND aircraft_tail IS NULL')
+      c.var.db.prepare('UPDATE flights SET aircraft_tail = ?, modified_at = unixepoch() WHERE tracker_id = ? AND aircraft_tail IS NULL RETURNING id')
         .bind(tracker.assigned_aircraft, id),
       c.var.db.prepare('UPDATE points SET aircraft_tail = ? WHERE tracker_id = ? AND aircraft_tail IS NULL')
         .bind(tracker.assigned_aircraft, id),
@@ -1093,7 +1093,7 @@ app.post('/api/trackers/:id/apply-assignment', requireAdmin, valid('json', Apply
   }
   if (body.pilot && tracker.assigned_pilot != null) {
     stmts.push(
-      c.var.db.prepare('UPDATE flights SET pilot_id = ?, modified_at = unixepoch() WHERE tracker_id = ? AND pilot_id IS NULL')
+      c.var.db.prepare('UPDATE flights SET pilot_id = ?, modified_at = unixepoch() WHERE tracker_id = ? AND pilot_id IS NULL RETURNING id')
         .bind(tracker.assigned_pilot, id),
       c.var.db.prepare('UPDATE points SET pilot_id = ? WHERE tracker_id = ? AND pilot_id IS NULL')
         .bind(tracker.assigned_pilot, id),
@@ -1102,10 +1102,11 @@ app.post('/api/trackers/:id/apply-assignment', requireAdmin, valid('json', Apply
   if (stmts.length === 0) return c.json({ error: 'Nothing to apply' }, 400);
   // Recorded: each flight given an aircraft or pilot gets an edit_history row (migration 0002).
   const results = await recordedBatch(c, stmts);
-  // Flight UPDATEs are at even indices (each is followed by its points UPDATE); a flight
-  // missing both fields is counted by both, so report the larger count.
-  const flights = Math.max(...results.filter((_, i) => i % 2 === 0).map((r) => r.meta.changes ?? 0));
-  return c.json({ ok: true, flights });
+  // Flight UPDATEs are at even indices (each is followed by its points UPDATE). Count their
+  // ids: meta.changes includes the trigger's edit_history rows, and a flight missing both
+  // fields is returned by both.
+  const ids = results.filter((_, i) => i % 2 === 0).flatMap((r) => r.results as { id: number }[]);
+  return c.json({ ok: true, flights: new Set(ids.map((r) => r.id)).size });
 });
 
 // ── Tile overlay endpoints ─────────────────────────────────────────────────────
