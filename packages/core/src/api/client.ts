@@ -28,16 +28,22 @@ export interface ApiClientOptions {
 }
 
 /**
- * A non-2xx response. A write's message is the server's error ({ error }) when it sent one.
- * A save refused because the record changed since the form loaded it (409, src/index.ts
- * "Edit conflicts") carries the server's conflict ({ id, at, user_id, user_name }).
+ * A non-2xx response. Its message is the server's error ({ error }) when it sent one, which
+ * serverError also holds (undefined when it didn't, for a form's own fallback text), and
+ * 'HTTP <status>' otherwise. A save refused because the record changed since the form loaded
+ * it (409, src/index.ts "Edit conflicts") carries the server's conflict ({ id, at, user_id,
+ * user_name }).
  */
 export class ApiHttpError extends Error {
-  constructor(readonly path: string, readonly status: number, message?: string, readonly conflict?: EditConflict) {
-    super(message || 'HTTP ' + status);
+  constructor(readonly path: string, readonly status: number, readonly serverError?: string, readonly conflict?: EditConflict) {
+    super(serverError || 'HTTP ' + status);
     this.name = 'ApiHttpError';
   }
 }
+
+/** The response of a write that returns only { ok: true }. */
+export const OkResponse = z.looseObject({ ok: z.literal(true) });
+export type OkResponse = z.infer<typeof OkResponse>;
 
 /** The newest change to a record since a form's base_history_id. */
 export interface EditConflict {
@@ -83,12 +89,18 @@ export function createApiClient({
     throw new ApiShapeError(path, parsed.error.issues);
   }
 
+  async function httpError(path: string, resp: Response): Promise<ApiHttpError> {
+    const err = (await resp.json().catch(() => ({}))) as { error?: unknown; conflict?: EditConflict };
+    return new ApiHttpError(path, resp.status, typeof err.error === 'string' ? err.error : undefined,
+      resp.status === 409 && err.conflict ? err.conflict : undefined);
+  }
+
   return {
     async get(path, schema) {
       const init: RequestInit | undefined = auth.kind === 'bearer' ? { headers: authHeaders() } : undefined;
       // Called with one argument for cookie auth, as the pages' bare fetch calls were.
       const resp = await (init ? getFetch()(baseUrl + path, init) : getFetch()(baseUrl + path));
-      if (!resp.ok) throw new ApiHttpError(path, resp.status);
+      if (!resp.ok) throw await httpError(path, resp);
       return parse(path, schema, await resp.json());
     },
 
@@ -98,11 +110,7 @@ export function createApiClient({
         headers: body === undefined ? authHeaders() : { ...authHeaders(), 'Content-Type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
-      if (!resp.ok) {
-        const err = (await resp.json().catch(() => ({}))) as { error?: unknown; conflict?: EditConflict };
-        throw new ApiHttpError(path, resp.status, typeof err.error === 'string' ? err.error : undefined,
-          resp.status === 409 && err.conflict ? err.conflict : undefined);
-      }
+      if (!resp.ok) throw await httpError(path, resp);
       return parse(path, schema, await resp.json());
     },
   };

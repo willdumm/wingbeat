@@ -116,7 +116,7 @@ export function dashboardScriptsInit(): string {
         const now = Date.now();
         if (now - _lastPingTime > 5 * 60 * 1000) {
           _lastPingTime = now;
-          try { await fetch('/api/me/ping', { method: 'POST' }); } catch (_) {}
+          try { await pingSession(); } catch (_) {}
         }
       }
     });

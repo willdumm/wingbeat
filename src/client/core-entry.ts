@@ -32,14 +32,20 @@ import type { AccountingFlight } from '@wingbeat/core/accounting';
 import * as analytics from '@wingbeat/core/analytics';
 import type { StreamInterval } from '@wingbeat/core/analytics';
 import * as elevation from '@wingbeat/core/elevation';
+import * as settings from '@wingbeat/core/settings';
 import { createApiClient } from '@wingbeat/core/api/client';
 import * as dutyApi from '@wingbeat/core/api/duty';
 import * as correctionsApi from '@wingbeat/core/api/corrections';
 import { getEditHistory } from '@wingbeat/core/api/edit-history';
 import { getBootstrap } from '@wingbeat/core/api/bootstrap';
-import { getTrackers } from '@wingbeat/core/api/trackers';
-import { getAircraft } from '@wingbeat/core/api/aircraft';
-import { getPilots } from '@wingbeat/core/api/pilots';
+import * as trackersApi from '@wingbeat/core/api/trackers';
+import * as aircraftApi from '@wingbeat/core/api/aircraft';
+import * as pilotsApi from '@wingbeat/core/api/pilots';
+import * as meApi from '@wingbeat/core/api/me';
+import * as usersApi from '@wingbeat/core/api/users';
+import * as overlaysApi from '@wingbeat/core/api/overlays';
+import * as settingsApi from '@wingbeat/core/api/settings';
+import * as webhooksApi from '@wingbeat/core/api/webhooks';
 import { createFlightStore, flightCorrectionKey, mergeFlightCorrections, FLIGHT_STORE_KEY } from '@wingbeat/core/flight-store';
 
 declare const window: {
@@ -64,6 +70,8 @@ Object.assign(globalThis, {
   tzAbbrev: (unix: number) => time.tzAbbrev(tz(), unix),
   fmtTzTime: (unix: number) => time.fmtTzTime(tz(), unix),
   fmtTzPointTime: (unix: number) => time.fmtTzPointTime(tz(), unix),
+  fmtTzDate: (unix: number) => time.fmtTzDate(tz(), unix),
+  fmtTzDateTime: (unix: number) => time.fmtTzDateTime(tz(), unix),
   // ── time: date keys and durations ──
   tzAddDays: time.tzAddDays,
   tzDateKey: time.tzDateKey,
@@ -168,6 +176,10 @@ Object.assign(globalThis, {
   demSubTile: elevation.demSubTile,
   elevationColorFor: elevation.elevationColorFor,
   paintElevationTint: elevation.paintElevationTint,
+  // ── settings: the tracker history import's windows, the timezone-change warning ──
+  trackerImportWindows: (from: string) => settings.importWindows(tz(), now(), from),
+  trackerImportDefaultFrom: () => settings.importDefaultFrom(tz(), now()),
+  timezoneChangeWarning: settings.timezoneChangeWarning,
 });
 
 // ── flight-store: the page's one store, cached in localStorage ──
@@ -179,9 +191,47 @@ const api = createApiClient({ mismatch: 'warn' });
 Object.assign(globalThis, {
   // The pages' lists: the dashboard's first load, and each list again after a settings change.
   fetchBootstrap: () => getBootstrap(api),
-  fetchTrackers: () => getTrackers(api),
-  fetchAircraft: () => getAircraft(api),
-  fetchPilots: () => getPilots(api),
+  fetchTrackers: () => trackersApi.getTrackers(api),
+  fetchAircraft: () => aircraftApi.getAircraft(api),
+  fetchPilots: () => pilotsApi.getPilots(api),
+  fetchOverlays: () => overlaysApi.getOverlays(api),
+  // The signed-in user and their devices (Settings; the dashboard's heartbeat).
+  fetchMe: () => meApi.getMe(api),
+  fetchSessions: () => meApi.getSessions(api),
+  renameSession: (id: number, body: meApi.SessionRenameRequest) => meApi.renameSession(api, id, body),
+  deleteSession: (id: number) => meApi.deleteSession(api, id),
+  createDeviceLink: () => meApi.createDeviceLink(api),
+  pingSession: () => meApi.pingSession(api),
+  // Settings' writes and admin reads (the trackers, aircraft, pilots, users, overlays,
+  // settings and webhooks route groups).
+  createTracker: (body: trackersApi.TrackerCreateRequest) => trackersApi.createTracker(api, body),
+  updateTracker: (id: number, body: trackersApi.TrackerUpdateRequest) => trackersApi.updateTracker(api, id, body),
+  deleteTracker: (id: number) => trackersApi.deleteTracker(api, id),
+  testTrackerFeed: (body: trackersApi.TestFeedRequest) => trackersApi.testTrackerFeed(api, body),
+  importTrackerHistory: (id: number, d1: string, d2: string | null) => trackersApi.importTrackerHistory(api, id, d1, d2),
+  geocodeTracker: (id: number) => trackersApi.geocodeTracker(api, id),
+  fetchTrackerUnassigned: (id: number) => trackersApi.getTrackerUnassigned(api, id),
+  applyTrackerAssignment: (id: number, body: trackersApi.ApplyAssignmentRequest) => trackersApi.applyTrackerAssignment(api, id, body),
+  createAircraft: (body: aircraftApi.AircraftCreateRequest) => aircraftApi.createAircraft(api, body),
+  updateAircraft: (tail: string, body: aircraftApi.AircraftUpdateRequest) => aircraftApi.updateAircraft(api, tail, body),
+  createPilot: (body: pilotsApi.PilotCreateRequest) => pilotsApi.createPilot(api, body),
+  updatePilot: (id: number, body: pilotsApi.PilotUpdateRequest) => pilotsApi.updatePilot(api, id, body),
+  fetchUsers: () => usersApi.getUsers(api),
+  deleteUser: (id: number) => usersApi.deleteUser(api, id),
+  fetchInvites: () => usersApi.getInvites(api),
+  createInvite: (body: usersApi.InviteRequest) => usersApi.createInvite(api, body),
+  deleteInvite: (id: number) => usersApi.deleteInvite(api, id),
+  createOverlay: (body: overlaysApi.OverlayRequest) => overlaysApi.createOverlay(api, body),
+  updateOverlay: (id: number, body: overlaysApi.OverlayRequest) => overlaysApi.updateOverlay(api, id, body),
+  deleteOverlay: (id: number) => overlaysApi.deleteOverlay(api, id),
+  fetchTileMetadata: (url: string) => overlaysApi.getTileMetadata(api, url),
+  fetchSettings: () => settingsApi.getSettings(api),
+  patchSettings: (body: settingsApi.SettingsRequest) => settingsApi.patchSettings(api, body),
+  fetchDutyRecordCounts: () => settingsApi.getDutyRecordCounts(api),
+  fetchWebhooks: () => webhooksApi.getWebhooks(api),
+  createWebhook: (body: webhooksApi.WebhookCreateRequest) => webhooksApi.createWebhook(api, body),
+  updateWebhook: (id: number, body: webhooksApi.WebhookUpdateRequest) => webhooksApi.updateWebhook(api, id, body),
+  deleteWebhook: (id: number) => webhooksApi.deleteWebhook(api, id),
   // The duty log's reads and writes (the duty route group).
   fetchDutyLog: (pilotId: number | string) => dutyApi.getDutyLog(api, pilotId),
   fetchDutyMethods: () => dutyApi.getDutyMethods(api),

@@ -96,6 +96,14 @@ describe('core time', () => {
     assert.equal(time.fmtTzPointTime('Europe/Berlin', utc('2026-07-16T06:05:09Z')), 'Jul 16, 08:05:09 GMT+2');
   });
 
+  test('fmtTzDate and fmtTzDateTime: an instant’s operator day, with its year, and its time', () => {
+    // 07:30 UTC on Jan 1 is still Dec 31 in Anchorage.
+    assert.equal(time.fmtTzDate(TZ, utc('2027-01-01T07:30:00Z')), 'Dec 31, 2026');
+    assert.equal(time.fmtTzDate('Europe/Berlin', utc('2027-01-01T07:30:00Z')), 'Jan 1, 2027');
+    assert.equal(time.fmtTzDateTime(TZ, utc('2027-01-01T07:30:00Z')), 'Dec 31, 2026, 22:30 AKST');
+    assert.equal(time.fmtTzDateTime(TZ, utc('2026-07-16T06:05:09Z')), 'Jul 15, 2026, 22:05 AKDT');
+  });
+
   test('fmtDuration rounds down, or up for an amount over a limit', () => {
     assert.equal(time.fmtDuration(8 * H + 40), '8:00');
     assert.equal(time.fmtDuration(8 * H + 40, true), '8:01');

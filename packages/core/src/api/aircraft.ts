@@ -1,10 +1,15 @@
 /**
- * The aircraft route group's read: GET /api/aircraft (each aircraft with its meter
- * readings and maintenance schedule). Response objects allow unknown keys, so an instance
- * may add fields without breaking older clients.
+ * The aircraft route group: the read, GET /api/aircraft (each aircraft with its meter
+ * readings and maintenance schedule), and the writes (Settings adds an aircraft, the
+ * aircraft info panel saves the rest). The request schemas are in aircraft-requests.ts.
+ * Response objects allow unknown keys, so an instance may add fields without breaking older
+ * clients.
  */
 import * as z from 'zod/mini';
-import type { ApiClient } from './client';
+import { OkResponse, type ApiClient } from './client';
+import type { AircraftCreateRequest, AircraftUpdateRequest } from './aircraft-requests';
+
+export type { AircraftCreateRequest, AircraftUpdateRequest } from './aircraft-requests';
 
 const nullableNum = z.nullable(z.number());
 const optionalNum = z.nullish(z.number());
@@ -43,4 +48,14 @@ export type AircraftResponse = z.infer<typeof AircraftResponse>;
 /** Every aircraft. */
 export function getAircraft(client: ApiClient): Promise<AircraftResponse> {
   return client.get('/api/aircraft', AircraftResponse);
+}
+
+/** Adds an aircraft (its tail number is stored upper-case). */
+export function createAircraft(client: ApiClient, body: AircraftCreateRequest): Promise<OkResponse> {
+  return client.write('POST', '/api/aircraft', body, OkResponse);
+}
+
+/** Changes an aircraft's fields (those in body). */
+export function updateAircraft(client: ApiClient, tail: string, body: AircraftUpdateRequest): Promise<OkResponse> {
+  return client.write('PUT', '/api/aircraft/' + encodeURIComponent(tail), body, OkResponse);
 }
