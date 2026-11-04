@@ -6,7 +6,7 @@
  * instance may add fields without breaking older clients.
  */
 import * as z from 'zod/mini';
-import type { ApiClient } from './client';
+import { OkResponse, type ApiClient } from './client';
 import { FlightCorrectionRow } from './flights';
 import type { AssignmentRequest, BulkFlagsRequest, CorrectionRequest } from './corrections-requests';
 
@@ -15,8 +15,8 @@ export type { AssignmentRequest, BulkFlagsRequest, CorrectionRequest, FlightRef 
 /** POST and PUT /api/flight-corrections: the row as saved (null: a tracked flight's row left empty, so deleted). */
 export const CorrectionWriteResponse = z.looseObject({ entry: z.nullable(FlightCorrectionRow) });
 
-/** The bulk route and the delete. */
-export const OkResponse = z.looseObject({ ok: z.literal(true) });
+/** The bulk route and the delete (shared by every route group's writes: client.ts). */
+export { OkResponse };
 
 /** PUT /api/flights/assignment: what was set (pilot_name with pilot_id). */
 export const AssignmentResponse = z.looseObject({

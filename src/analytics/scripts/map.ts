@@ -129,7 +129,7 @@ export function analyticsScriptsMap(): string {
       await loadRegions();
       // Each list on its own: one that fails to load keeps its old value.
       const [trackers, aircraft, pilots, overlays] = await Promise.allSettled([fetchTrackers(), fetchAircraft(), fetchPilots(),
-        fetch('/api/overlays').then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))]);
+        fetchOverlays()]);
       if (trackers.status === 'fulfilled') trackerList = trackers.value.trackers;
       if (aircraft.status === 'fulfilled') aircraftList = aircraft.value.aircraft;
       if (pilots.status === 'fulfilled') { pilotList = pilots.value.pilots; flightStore.setPilots(pilotList); }

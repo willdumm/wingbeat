@@ -18,6 +18,14 @@ import { MAX_DUTY_DAYS_PER_REQUEST, MAX_FLIGHT_TEXT_LENGTH, MAX_DUTY_NOTE_LENGTH
 import { BaseHistoryQuery } from '@wingbeat/core/api/requests';
 import { AssignmentRequest, BulkFlagsRequest, CorrectionRequest } from '@wingbeat/core/api/corrections-requests';
 import { DefaultDutyRequest, DutyDaysClearRequest, DutyDaysRequest, DutyMethodRequest } from '@wingbeat/core/api/duty-requests';
+import { SessionRenameRequest } from '@wingbeat/core/api/me-requests';
+import { InviteRequest } from '@wingbeat/core/api/users-requests';
+import { ApplyAssignmentRequest, TestFeedRequest, TrackerCreateRequest, TrackerUpdateRequest } from '@wingbeat/core/api/trackers-requests';
+import { OverlayRequest } from '@wingbeat/core/api/overlays-requests';
+import { AircraftCreateRequest, AircraftUpdateRequest } from '@wingbeat/core/api/aircraft-requests';
+import { PilotCreateRequest, PilotUpdateRequest } from '@wingbeat/core/api/pilots-requests';
+import { SettingsRequest } from '@wingbeat/core/api/settings-requests';
+import { WebhookCreateRequest, WebhookUpdateRequest } from '@wingbeat/core/api/webhooks-requests';
 import { zValidator } from '@hono/zod-validator';
 import * as z from 'zod/mini';
 import { en as zodEnglish } from 'zod/locales';
@@ -571,20 +579,15 @@ app.get('/api/me/sessions', async (c) => {
   return c.json({ sessions: results });
 });
 
-app.patch('/api/me/sessions/:id', async (c) => {
+app.patch('/api/me/sessions/:id', valid('json', SessionRenameRequest), async (c) => {
   const u = c.get('user');
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid session id' }, 400);
 
-  const body = await c.req.json<{ device_name?: unknown }>().catch(() => null);
-  if (!body || typeof body !== 'object') return c.json({ error: 'Invalid JSON body' }, 400);
+  const body = c.req.valid('json');
   // null or an empty name clears it (the settings UI sends '' to clear).
-  let deviceName: string | null;
-  if (body.device_name === null) deviceName = null;
-  else if (typeof body.device_name === 'string') {
-    deviceName = body.device_name.trim() || null;
-    if (deviceName && deviceName.length > 60) return c.json({ error: 'device_name must be 1-60 characters' }, 400);
-  } else return c.json({ error: 'device_name must be a string or null' }, 400);
+  const deviceName = body.device_name?.trim() || null;
+  if (deviceName && deviceName.length > 60) return c.json({ error: 'device_name must be 1-60 characters' }, 400);
 
   const existing = await c.var.db.prepare('SELECT id FROM sessions WHERE id = ? AND user_id = ?')
     .bind(id, u.id).first();
@@ -671,16 +674,15 @@ app.get('/api/invites', requireAdmin, async (c) => {
   return c.json({ invites: results });
 });
 
-app.post('/api/invites', requireAdmin, async (c) => {
-  const body = await c.req.json<{ name?: unknown; role?: unknown; expires_in_hours?: unknown }>().catch(() => null);
-  if (!body || typeof body !== 'object') return c.json({ error: 'Invalid JSON body' }, 400);
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
+app.post('/api/invites', requireAdmin, valid('json', InviteRequest), async (c) => {
+  const body = c.req.valid('json');
+  const name = body.name?.trim() ?? '';
   if (name.length < 1 || name.length > 100) return c.json({ error: 'name must be 1-100 characters' }, 400);
-  if (typeof body.role !== 'string' || !['admin', 'viewer'].includes(body.role)) {
+  if (body.role !== 'admin' && body.role !== 'viewer') {
     return c.json({ error: 'role must be admin or viewer' }, 400);
   }
-  const expiresInHours = body.expires_in_hours === undefined ? 7 * 24 : body.expires_in_hours;
-  if (typeof expiresInHours !== 'number' || !Number.isFinite(expiresInHours) || expiresInHours < 1 || expiresInHours > 720) {
+  const expiresInHours = body.expires_in_hours ?? 7 * 24;
+  if (!Number.isFinite(expiresInHours) || expiresInHours < 1 || expiresInHours > 720) {
     return c.json({ error: 'expires_in_hours must be a number from 1 to 720' }, 400);
   }
   const expiresAt = Math.floor(Date.now() / 1000) + Math.floor(expiresInHours * 3600);
@@ -908,13 +910,8 @@ app.get('/api/trackers', async (c) => {
   return c.json({ trackers: await queryTrackers(c.var.db, c.get('user').role === 'admin') });
 });
 
-app.post('/api/trackers', requireAdmin, async (c) => {
-  const body = await c.req.json<{
-    name?: string; type?: string; source_url?: string;
-    credentials?: Record<string, string> | null;
-    assigned_aircraft?: string | null;
-    assigned_pilot?: number | null;
-  }>();
+app.post('/api/trackers', requireAdmin, valid('json', TrackerCreateRequest), async (c) => {
+  const body = c.req.valid('json');
   const { name, type, source_url } = body;
 
   if (!name || !type || !source_url) {
@@ -947,7 +944,7 @@ app.post('/api/trackers', requireAdmin, async (c) => {
   return c.json({ ok: true, id, mapshare_url: type === 'inreach' ? mapshareUrl(source_url.trim()) : null });
 });
 
-app.put('/api/trackers/:id', requireAdmin, async (c) => {
+app.put('/api/trackers/:id', requireAdmin, valid('json', TrackerUpdateRequest), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid tracker id' }, 400);
 
@@ -955,11 +952,7 @@ app.put('/api/trackers/:id', requireAdmin, async (c) => {
     .bind(id).first<{ id: number; type: string; source_url: string }>();
   if (!existing) return c.json({ error: 'Tracker not found' }, 404);
 
-  const body = await c.req.json<{
-    name?: string; source_url?: string; active?: boolean;
-    assigned_aircraft?: string | null; assigned_pilot?: number | null;
-    credentials?: Record<string, string> | null;
-  }>();
+  const body = c.req.valid('json');
 
   const sets: string[] = [];
   const vals: (string | number | null)[] = [];
@@ -1017,9 +1010,8 @@ app.delete('/api/trackers/:id', requireAdmin, async (c) => {
 });
 
 // Fetches a feed without storing anything, for the tracker form's "Test feed" button.
-app.post('/api/trackers/test-feed', requireAdmin, async (c) => {
-  type Body = { source_url?: string; credentials?: Record<string, string> | null };
-  const body = await c.req.json<Body>().catch(() => ({} as Body));
+app.post('/api/trackers/test-feed', requireAdmin, valid('json', TestFeedRequest), async (c) => {
+  const body = c.req.valid('json');
   if (!body.source_url) return c.json({ error: 'source_url is required' }, 400);
   const urlCheck = checkPublicHttpsUrl(body.source_url, { ownHost: c.var.tenant.host });
   if (!urlCheck.ok) return c.json({ error: `source_url: ${urlCheck.error}` }, 400);
@@ -1079,7 +1071,7 @@ app.get('/api/trackers/:id/unassigned', requireAdmin, async (c) => {
   return c.json({ without_aircraft: row?.without_aircraft ?? 0, without_pilot: row?.without_pilot ?? 0 });
 });
 
-app.post('/api/trackers/:id/apply-assignment', requireAdmin, async (c) => {
+app.post('/api/trackers/:id/apply-assignment', requireAdmin, valid('json', ApplyAssignmentRequest), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid tracker id' }, 400);
   const tracker = await c.var.db.prepare(
@@ -1087,7 +1079,7 @@ app.post('/api/trackers/:id/apply-assignment', requireAdmin, async (c) => {
   ).bind(id).first<{ assigned_aircraft: string | null; assigned_pilot: number | null }>();
   if (!tracker) return c.json({ error: 'Tracker not found' }, 404);
 
-  const body = await c.req.json<{ aircraft?: boolean; pilot?: boolean }>().catch(() => ({} as { aircraft?: boolean; pilot?: boolean }));
+  const body = c.req.valid('json');
   const stmts: D1PreparedStatement[] = [];
   if (body.aircraft && tracker.assigned_aircraft) {
     stmts.push(
@@ -1129,15 +1121,6 @@ function validOverlayUrl(url: unknown): url is string {
   return /\{x\}/i.test(url) && /\{y\}/i.test(url) && /\{z\}/i.test(url);
 }
 
-// Per-basemap-preset-id override of default_enabled (e.g. {"topo": true, "satellite":
-// false}) — undefined/null is valid (no overrides, just use default_enabled), but if
-// present every value must be a plain boolean map, not e.g. an array or nested object.
-function validBasemapDefaults(v: unknown): v is Record<string, boolean> | null | undefined {
-  if (v === undefined || v === null) return true;
-  if (typeof v !== 'object' || Array.isArray(v)) return false;
-  return Object.values(v as Record<string, unknown>).every((x) => typeof x === 'boolean');
-}
-
 // Backs the "Look up details" button in the add-layer and overlay forms (see
 // src/tile-metadata.ts). Admin-only, like Test feed: it fetches a user-supplied URL
 // server-side. A source with no published metadata is a normal, empty result.
@@ -1155,14 +1138,13 @@ app.get('/api/overlays', async (c) => {
   return c.json({ overlays: await queryTileOverlays(c.var.db) });
 });
 
-app.post('/api/overlays', requireAdmin, async (c) => {
-  const body = await c.req.json<{
-    label?: string; url?: string; attribution?: string | null; max_zoom?: number | null;
-    default_enabled?: boolean; default_enabled_by_basemap?: Record<string, boolean> | null;
-  }>();
+// default_enabled_by_basemap overrides default_enabled per basemap preset id (e.g.
+// {"topo": true, "satellite": false}); null is no overrides (OverlayRequest checks it's a
+// map of booleans).
+app.post('/api/overlays', requireAdmin, valid('json', OverlayRequest), async (c) => {
+  const body = c.req.valid('json');
   if (!body.label) return c.json({ error: 'label is required' }, 400);
   if (!validOverlayUrl(body.url)) return c.json({ error: 'url must include {z}, {x}, and {y} placeholders' }, 400);
-  if (!validBasemapDefaults(body.default_enabled_by_basemap)) return c.json({ error: 'default_enabled_by_basemap must be a map of basemap id to boolean' }, 400);
 
   const result = await c.var.db.prepare(
     'INSERT INTO tile_overlays (label, url, attribution, max_zoom, default_enabled, default_enabled_by_basemap) VALUES (?, ?, ?, ?, ?, ?)'
@@ -1174,17 +1156,14 @@ app.post('/api/overlays', requireAdmin, async (c) => {
   return c.json({ ok: true, id: result.meta.last_row_id as number });
 });
 
-app.put('/api/overlays/:id', requireAdmin, async (c) => {
+app.put('/api/overlays/:id', requireAdmin, valid('json', OverlayRequest), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid overlay id' }, 400);
 
   const existing = await c.var.db.prepare('SELECT id FROM tile_overlays WHERE id = ?').bind(id).first();
   if (!existing) return c.json({ error: 'Overlay not found' }, 404);
 
-  const body = await c.req.json<{
-    label?: string; url?: string; attribution?: string | null; max_zoom?: number | null;
-    default_enabled?: boolean; default_enabled_by_basemap?: Record<string, boolean> | null;
-  }>();
+  const body = c.req.valid('json');
   const sets: string[] = [];
   const vals: (string | number | null)[] = [];
 
@@ -1200,7 +1179,6 @@ app.put('/api/overlays/:id', requireAdmin, async (c) => {
   if (Object.prototype.hasOwnProperty.call(body, 'max_zoom')) { sets.push('max_zoom = ?'); vals.push(body.max_zoom ?? null); }
   if (body.default_enabled !== undefined) { sets.push('default_enabled = ?'); vals.push(body.default_enabled ? 1 : 0); }
   if (Object.prototype.hasOwnProperty.call(body, 'default_enabled_by_basemap')) {
-    if (!validBasemapDefaults(body.default_enabled_by_basemap)) return c.json({ error: 'default_enabled_by_basemap must be a map of basemap id to boolean' }, 400);
     sets.push('default_enabled_by_basemap = ?');
     vals.push(body.default_enabled_by_basemap ? JSON.stringify(body.default_enabled_by_basemap) : null);
   }
@@ -2059,32 +2037,21 @@ app.get('/api/aircraft', async (c) => {
   return c.json({ aircraft: await queryAircraft(c.var.db, c.req.query('active') === '1') });
 });
 
-app.post('/api/aircraft', requireAdmin, async (c) => {
-  const body = await c.req.json<{ tail_number?: string; name?: string }>();
+app.post('/api/aircraft', requireAdmin, valid('json', AircraftCreateRequest), async (c) => {
+  const body = c.req.valid('json');
   if (!body.tail_number) return c.json({ error: 'tail_number is required' }, 400);
   await c.var.db.prepare('INSERT INTO aircraft (tail_number, name) VALUES (?, ?)')
     .bind(body.tail_number.toUpperCase(), body.name ?? null).run();
   return c.json({ ok: true });
 });
 
-app.put('/api/aircraft/:tail', requireAdmin, async (c) => {
+app.put('/api/aircraft/:tail', requireAdmin, valid('json', AircraftUpdateRequest), async (c) => {
   const tail = c.req.param('tail');
   const existing = await c.var.db.prepare('SELECT tail_number FROM aircraft WHERE tail_number = ?')
     .bind(tail).first();
   if (!existing) return c.json({ error: 'Aircraft not found' }, 404);
 
-  type AircraftUpdateBody = {
-    name?: string | null;
-    active?: boolean;
-    hobbs_time?: number | null;
-    hobbs_recorded_at?: number | null;
-    hobbs_correction?: number;
-    tach_time?: number | null;
-    tach_recorded_at?: number | null;
-    tach_correction?: number;
-    maintenance_schedule?: unknown[] | null;
-  };
-  const body = await c.req.json<AircraftUpdateBody>();
+  const body = c.req.valid('json');
   const sets: string[] = [];
   const vals: (string | number | null)[] = [];
   const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k);
@@ -2120,20 +2087,20 @@ app.get('/api/pilots', async (c) => {
   return c.json({ pilots: await queryPilots(c.var.db, c.req.query('active') === '1') });
 });
 
-app.post('/api/pilots', requireAdmin, async (c) => {
-  const body = await c.req.json<{ name?: string }>();
+app.post('/api/pilots', requireAdmin, valid('json', PilotCreateRequest), async (c) => {
+  const body = c.req.valid('json');
   if (!body.name) return c.json({ error: 'name is required' }, 400);
   const result = await c.var.db.prepare('INSERT INTO pilots (name) VALUES (?)').bind(body.name).run();
   return c.json({ ok: true, id: result.meta.last_row_id as number });
 });
 
-app.put('/api/pilots/:id', requireAdmin, async (c) => {
+app.put('/api/pilots/:id', requireAdmin, valid('json', PilotUpdateRequest), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid pilot id' }, 400);
   const existing = await c.var.db.prepare('SELECT id FROM pilots WHERE id = ?').bind(id).first();
   if (!existing) return c.json({ error: 'Pilot not found' }, 404);
 
-  const body = await c.req.json<{ name?: string; active?: boolean; default_duty_start?: unknown; default_duty_end?: unknown }>();
+  const body = c.req.valid('json');
   // The default duty is dated now, so it's no longer a field of the pilot.
   if (body.default_duty_start !== undefined || body.default_duty_end !== undefined) {
     return c.json({ error: 'Set the default duty with PUT /api/pilots/:id/default-duty' }, 400);
@@ -2513,6 +2480,16 @@ app.get('/api/settings', requireAdmin, async (c) => {
   return c.json(Object.fromEntries(results.map(r => [r.key, r.value])));
 });
 
+// What a change of the timezone setting would move: the duty days and default duty entries,
+// stored as dates and wall-clock times in it (docs/mobile-app-plan.md, "Times and the
+// operator's timezone"). Global Settings asks before saving a new timezone when there are any.
+app.get('/api/settings/duty-records', requireAdmin, async (c) => {
+  const row = await c.var.db.prepare(
+    'SELECT (SELECT COUNT(*) FROM duty_days) AS duty_days, (SELECT COUNT(*) FROM pilot_default_duty) AS default_duties'
+  ).first<{ duty_days: number; default_duties: number }>();
+  return c.json({ duty_days: row?.duty_days ?? 0, default_duties: row?.default_duties ?? 0 });
+});
+
 // Per-key checks for PATCH /api/settings; returns the value to store, or an error message.
 const SETTING_NUMBER_RANGES: Record<string, [number, number]> = {
   map_default_lat: [-90, 90],
@@ -2552,17 +2529,14 @@ function validateSetting(key: string, value: string | number): { value: string }
   return { value: String(value) };
 }
 
-app.patch('/api/settings', requireAdmin, async (c) => {
+app.patch('/api/settings', requireAdmin, valid('json', SettingsRequest), async (c) => {
   const ALLOWED_KEYS = new Set(['app_name', 'timezone', 'map_default_lat', 'map_default_lng', 'map_default_zoom', 'gap_alert_minutes', 'gap_alert_stop_minutes', 'pushover_api_token', 'setup_dismissed']);
-  let body: Record<string, string | number>;
-  try { body = await c.req.json<Record<string, string | number>>(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
-  if (!body || typeof body !== 'object' || Array.isArray(body)) return c.json({ error: 'Expected a JSON object' }, 400);
+  const body = c.req.valid('json');
   const stmts: D1PreparedStatement[] = [];
   for (const [key, value] of Object.entries(body)) {
     // Dated now (migration 0002), so not a plain setting.
     if (key === 'duty_method') return c.json({ error: 'Set the duty method with PUT /api/duty-methods' }, 400);
     if (!ALLOWED_KEYS.has(key)) return c.json({ error: `Unknown setting key: ${key}` }, 400);
-    if (typeof value !== 'string' && typeof value !== 'number') return c.json({ error: `Value for ${key} must be a string or number` }, 400);
     const checked = validateSetting(key, value);
     if ('error' in checked) return c.json({ error: checked.error }, 400);
     stmts.push(c.var.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').bind(key, checked.value));
@@ -2599,19 +2573,16 @@ app.get('/api/webhooks', requireAdmin, async (c) => {
   return c.json({ webhooks: results });
 });
 
-app.post('/api/webhooks', requireAdmin, async (c) => {
-  let body: { type?: string; url?: string; pushover_user_key?: string; label?: string | null; events?: unknown };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+app.post('/api/webhooks', requireAdmin, valid('json', WebhookCreateRequest), async (c) => {
+  const body = c.req.valid('json');
 
   const type = body.type === 'pushover' ? 'pushover' : 'webhook';
   if (type === 'webhook') {
-    if (typeof body.url !== 'string' || !body.url) return c.json({ error: 'url is required' }, 400);
+    if (!body.url) return c.json({ error: 'url is required' }, 400);
     const urlCheck = checkPublicHttpsUrl(body.url, { ownHost: c.var.tenant.host });
     if (!urlCheck.ok) return c.json({ error: `url: ${urlCheck.error}` }, 400);
   } else {
-    if (typeof body.pushover_user_key !== 'string' || !body.pushover_user_key) {
-      return c.json({ error: 'pushover_user_key is required' }, 400);
-    }
+    if (!body.pushover_user_key) return c.json({ error: 'pushover_user_key is required' }, 400);
   }
 
   const events = body.events === undefined
@@ -2631,7 +2602,7 @@ app.post('/api/webhooks', requireAdmin, async (c) => {
   return c.json({ ok: true, id: result.meta.last_row_id }, 201);
 });
 
-app.put('/api/webhooks/:id', requireAdmin, async (c) => {
+app.put('/api/webhooks/:id', requireAdmin, valid('json', WebhookUpdateRequest), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid webhook id' }, 400);
 
@@ -2640,8 +2611,7 @@ app.put('/api/webhooks/:id', requireAdmin, async (c) => {
   ).bind(id).first<{ type: string; url: string; pushover_user_key: string | null; label: string | null; events: string; active: number }>();
   if (!existing) return c.json({ error: 'Webhook not found' }, 404);
 
-  let body: { type?: string; url?: string; pushover_user_key?: string | null; label?: string | null; events?: unknown; active?: boolean };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const body = c.req.valid('json');
 
   // Merge onto the existing row first so url/pushover_user_key/type are always written
   // together as a consistent triple, never left half-updated by a partial SET list.

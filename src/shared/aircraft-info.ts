@@ -578,19 +578,13 @@ export function aircraftInfoScript(): string {
     async function _acSaveAircraft(body) {
       var a = _acInfoAircraft;
       try {
-        var resp = await fetch('/api/aircraft/' + encodeURIComponent(a.tail_number), {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        if (!resp.ok) {
-          var d = await resp.json().catch(function() { return {}; });
-          alert(d.error || 'Failed to save.');
-          return false;
-        }
-        Object.assign(a, body);
-        return true;
-      } catch (_) { alert('Network error.'); return false; }
+        await updateAircraft(a.tail_number, body);
+      } catch (err) {
+        alert(err.status ? err.serverError || 'Failed to save.' : 'Network error.');
+        return false;
+      }
+      Object.assign(a, body);
+      return true;
     }
 
     // ── Open / close ──

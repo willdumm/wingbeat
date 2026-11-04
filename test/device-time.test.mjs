@@ -21,8 +21,6 @@ const PATTERN = /new Date\(|toLocaleDateString|toLocaleTimeString/g;
 const KNOWN = {
   // Server-side: notification text, with an explicit timeZone. (Also inlined in the showcase.)
   'src/shared/format.ts': 1,
-  // Settings (device last seen, invite expiry, webhook last triggered, feed test).
-  'src/shared/settings.ts': 11,
   // Docs-site sample dates (UTC date math) and the phone mockup's clock (explicit timeZone).
   'src/showcase/scripts.ts': 3,
 };

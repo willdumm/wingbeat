@@ -8,6 +8,9 @@ import type { ApiClient } from './client';
 import { Aircraft } from './aircraft';
 import { Pilot } from './pilots';
 import { Tracker } from './trackers';
+import { TileOverlay } from './overlays';
+
+export { TileOverlay } from './overlays';
 
 const nullableStr = z.nullable(z.string());
 
@@ -20,17 +23,6 @@ export const Me = z.looseObject({
   session_id: z.number(),
 });
 
-/** A tile overlay. default_enabled is SQLite's 0/1; attribution is sanitized HTML. */
-export const TileOverlay = z.looseObject({
-  id: z.number(),
-  label: z.string(),
-  url: z.string(),
-  attribution: nullableStr,
-  max_zoom: z.nullable(z.number()),
-  default_enabled: z.number(),
-  default_enabled_by_basemap: z.nullable(z.record(z.string(), z.boolean())),
-});
-
 /** GET /api/bootstrap */
 export const BootstrapResponse = z.looseObject({
   me: Me,
@@ -41,7 +33,6 @@ export const BootstrapResponse = z.looseObject({
 });
 
 export type Me = z.infer<typeof Me>;
-export type TileOverlay = z.infer<typeof TileOverlay>;
 export type BootstrapResponse = z.infer<typeof BootstrapResponse>;
 
 /** The dashboard's first load. */

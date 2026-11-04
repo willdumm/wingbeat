@@ -866,3 +866,184 @@ describe('request validation', () => {
     assert.deepEqual([bad.status, bad.body.error], [400, 'Duty times must be HH:MM']);
   });
 });
+
+// The settings route group and the groups Settings writes to (me, users, trackers,
+// aircraft, pilots, overlays, settings, webhooks): each read's response shape, and each
+// write as the settings modal, the aircraft info panel and the setup guide send it, through
+// core's strict client.
+describe('the settings modal’s requests, through the core client', async () => {
+  const { createApiClient, ApiHttpError } = await importCore('api/client');
+  const me = await importCore('api/me');
+  const users = await importCore('api/users');
+  const trackers = await importCore('api/trackers');
+  const aircraft = await importCore('api/aircraft');
+  const pilots = await importCore('api/pilots');
+  const overlays = await importCore('api/overlays');
+  const settings = await importCore('api/settings');
+  const webhooks = await importCore('api/webhooks');
+  let client;
+  before(() => { client = createApiClient({ baseUrl: 'http://localhost', fetch: () => w.adminFetch }); });
+  const refused = (status, message) => (e) => e instanceof ApiHttpError && e.status === status && e.serverError === message;
+
+  test('me: the user, their devices renamed and revoked, a device link and the ping', async () => {
+    const user = await me.getMe(client);
+    assert.deepEqual([user.id, user.role], [1, 'admin']);
+    await w.run("INSERT INTO sessions (user_id, token, token_hashed, device_name) VALUES (1, 'other-device', 0, 'Old phone')");
+    const { sessions } = await me.getSessions(client);
+    const other = sessions.find(s => s.device_name === 'Old phone');
+    assert.deepEqual(await me.renameSession(client, other.id, { device_name: '  iPad  ' }), { ok: true });
+    assert.equal((await w.first('SELECT device_name FROM sessions WHERE id = ?', other.id)).device_name, 'iPad');
+    await me.renameSession(client, other.id, { device_name: '' });
+    assert.equal((await w.first('SELECT device_name FROM sessions WHERE id = ?', other.id)).device_name, null);
+    assert.deepEqual(await me.deleteSession(client, other.id), { ok: true });
+    assert.match((await me.createDeviceLink(client)).url, /^\/join\/[0-9a-f]+$/);
+    assert.deepEqual(await me.pingSession(client), { ok: true });
+    await assert.rejects(me.deleteSession(client, other.id), refused(404, 'Session not found'));
+  });
+
+  test('users and invites: an invite created, listed and revoked; a user removed', async () => {
+    const created = await users.createInvite(client, { name: 'Nia New', role: 'viewer' });
+    assert.match(created.url, /^\/join\//);
+    const { invites } = await users.getInvites(client);
+    const invite = invites.find(i => i.invited_name === 'Nia New');
+    assert.equal(invite.token, created.token);
+    assert.deepEqual(await users.deleteInvite(client, invite.id), { ok: true });
+    await w.run("INSERT INTO users (id, name, role) VALUES (30, 'Gone Soon', 'viewer')");
+    assert.ok((await users.getUsers(client)).users.some(u => u.id === 30 && u.device_count === 0));
+    assert.deepEqual(await users.deleteUser(client, 30), { ok: true });
+    await assert.rejects(users.deleteUser(client, 1), refused(400, 'You cannot delete your own account'));
+    await assert.rejects(users.createInvite(client, { name: 'X', role: 'owner' }), refused(400, 'role must be admin or viewer'));
+  });
+
+  test('trackers: added, edited (assignment and access code), paused, its assignment carried over, then deleted', async () => {
+    const added = await trackers.createTracker(client, { name: 'Three', type: 'inreach',
+      source_url: 'https://share.garmin.com/Feed/Share/abc', credentials: { password: 'pw' }, assigned_aircraft: null, assigned_pilot: null });
+    assert.equal(added.mapshare_url, 'https://share.garmin.com/abc');
+    const s = next();
+    await w.run('INSERT INTO flights (tracker_id, start_time, end_time) VALUES (?, ?, ?)', added.id, s, s + 600);
+    assert.deepEqual(await trackers.getTrackerUnassigned(client, added.id), { without_aircraft: 1, without_pilot: 1 });
+    const edited = await trackers.updateTracker(client, added.id, { name: 'Three', source_url: 'https://share.garmin.com/Feed/Share/abc',
+      assigned_aircraft: 'N1', assigned_pilot: 1 });
+    assert.deepEqual(edited, { ok: true, mapshare_url: 'https://share.garmin.com/abc' });
+    // (Its flights count is D1's changes, which include the edit_history trigger's rows.)
+    assert.equal((await trackers.applyTrackerAssignment(client, added.id, { aircraft: true, pilot: true })).ok, true);
+    assert.deepEqual(await trackers.getTrackerUnassigned(client, added.id), { without_aircraft: 0, without_pilot: 0 });
+    // A feed moved to another site without its access code drops the stored one.
+    const moved = await trackers.updateTracker(client, added.id, { name: 'Three', source_url: 'https://example.org/feed' });
+    assert.equal(moved.credentials_cleared, true);
+    assert.deepEqual(await trackers.updateTracker(client, added.id, { active: false }), { ok: true, mapshare_url: 'https://example.org/feed' });
+    // Its one flight has no points to label it from, so it stays unlabeled.
+    assert.deepEqual(await trackers.geocodeTracker(client, added.id), { ok: true, remaining: 1 });
+    assert.deepEqual(await trackers.deleteTracker(client, added.id), { ok: true });
+    await assert.rejects(trackers.testTrackerFeed(client, { source_url: 'http://example.com/feed' }), (e) => e.status === 400 && /^source_url: /.test(e.serverError));
+    await assert.rejects(trackers.importTrackerHistory(client, added.id, '2026-01-01', null), refused(404, 'Tracker not found'));
+  });
+
+  test('aircraft: added, then the info panel’s saves (name, meter with its time, correction, schedule, hide)', async () => {
+    assert.deepEqual(await aircraft.createAircraft(client, { tail_number: 'n77', name: null }), { ok: true });
+    const save = (body) => aircraft.updateAircraft(client, 'N77', body);
+    await save({ name: 'Beaver' });
+    await save({ hobbs_time: 1234.5, hobbs_recorded_at: 1_780_000_000 });
+    await save({ tach_time: 900, tach_recorded_at: null, tach_correction: 0.9 });
+    await save({ maintenance_schedule: [{ id: 'x', name: 'Oil', schedule_type: 'hobbs', interval_hours: 50, last_done_value: 1200 }] });
+    assert.deepEqual(await save({ active: false }), { ok: true });
+    const row = (await aircraft.getAircraft(client)).aircraft.find(a => a.tail_number === 'N77');
+    assert.deepEqual([row.name, row.hobbs_time, row.hobbs_recorded_at, row.tach_correction, row.active, row.maintenance_schedule.length],
+      ['Beaver', 1234.5, 1_780_000_000, 0.9, 0, 1]);
+    await assert.rejects(aircraft.updateAircraft(client, 'N404', { name: 'x' }), refused(404, 'Aircraft not found'));
+  });
+
+  test('pilots: added, renamed and hidden; the old default-duty fields are still pointed elsewhere', async () => {
+    const { id } = await pilots.createPilot(client, { name: 'Rae' });
+    assert.deepEqual(await pilots.updatePilot(client, id, { name: 'Rae R.' }), { ok: true });
+    await pilots.updatePilot(client, id, { active: false });
+    assert.deepEqual(await w.first('SELECT name, active FROM pilots WHERE id = ?', id), { name: 'Rae R.', active: 0 });
+    await assert.rejects(pilots.updatePilot(client, id, { default_duty_start: '08:00' }),
+      refused(400, 'Set the default duty with PUT /api/pilots/:id/default-duty'));
+  });
+
+  test('overlays: added, edited, listed, removed; the tile-metadata lookup’s refusal', async () => {
+    const body = { label: 'Chart', url: 'https://example.com/{z}/{x}/{y}.png', attribution: null, max_zoom: null,
+      default_enabled: true, default_enabled_by_basemap: { osm: false } };
+    const { id } = await overlays.createOverlay(client, body);
+    assert.deepEqual(await overlays.updateOverlay(client, id, { ...body, label: 'Chart 2', max_zoom: 11, default_enabled_by_basemap: null }), { ok: true });
+    const ov = (await overlays.getOverlays(client)).overlays.find(o => o.id === id);
+    assert.deepEqual([ov.label, ov.max_zoom, ov.default_enabled, ov.default_enabled_by_basemap], ['Chart 2', 11, 1, null]);
+    assert.deepEqual(await overlays.deleteOverlay(client, id), { ok: true });
+    await assert.rejects(overlays.updateOverlay(client, id, { label: 'x' }), refused(404, 'Overlay not found'));
+    // A read refused with { error } carries it too.
+    await assert.rejects(overlays.getTileMetadata(client, ''), refused(400, 'url is required'));
+  });
+
+  test('settings: read, Global Settings’ save and the setup guide’s, and the duty records a timezone change would move', async () => {
+    assert.deepEqual(await settings.patchSettings(client, { app_name: 'Seahawk', timezone: 'America/Anchorage', map_default_lat: 57.8,
+      map_default_lng: -152.4, map_default_zoom: 9, gap_alert_minutes: 30 }), { ok: true });
+    await settings.patchSettings(client, { setup_dismissed: '1' });
+    await settings.patchSettings(client, { pushover_api_token: '' });
+    const s = await settings.getSettings(client);
+    assert.deepEqual([s.app_name, s.map_default_lat, s.setup_dismissed], ['Seahawk', '57.8', '1']);
+    await w.run("DELETE FROM duty_days WHERE date LIKE '2031-%'");
+    const before = await settings.getDutyRecordCounts(client);
+    await w.request('PUT', '/api/duty-days/1', { dates: ['2031-01-01', '2031-01-02'], rest: true });
+    const after = await settings.getDutyRecordCounts(client);
+    assert.equal(after.duty_days, before.duty_days + 2);
+    assert.equal(after.default_duties, (await w.first('SELECT COUNT(*) AS n FROM pilot_default_duty')).n);
+    await assert.rejects(settings.patchSettings(client, { nope: 1 }), refused(400, 'Unknown setting key: nope'));
+  });
+
+  test('webhooks: a webhook and a Pushover target added, listed, paused and removed', async () => {
+    const hook = await webhooks.createWebhook(client, { type: 'webhook', url: 'https://example.com/hook', label: null, events: ['takeoff', 'landing'] });
+    const push = await webhooks.createWebhook(client, { type: 'pushover', pushover_user_key: 'ukey', label: 'Ops', events: ['gap'] });
+    const { webhooks: list } = await webhooks.getWebhooks(client);
+    assert.deepEqual(list.filter(h => h.id === hook.id || h.id === push.id).map(h => [h.type, h.url, h.events]),
+      [['webhook', 'https://example.com/hook', '["takeoff","landing"]'], ['pushover', '', '["gap"]']]);
+    assert.ok(list.every(h => !('pushover_user_key' in h)));
+    assert.deepEqual(await webhooks.updateWebhook(client, hook.id, { active: false }), { ok: true });
+    assert.deepEqual(await webhooks.deleteWebhook(client, hook.id), { ok: true });
+    await webhooks.deleteWebhook(client, push.id);
+    await assert.rejects(webhooks.createWebhook(client, { type: 'webhook', url: '', events: ['gap'] }), refused(400, 'url is required'));
+  });
+
+  test('as a viewer: their own devices, the overlays, and no admin reads', async () => {
+    assert.equal((await w.request('GET', '/api/me/sessions', undefined, { as: 'viewer' })).status, 200);
+    assert.equal((await w.request('GET', '/api/overlays', undefined, { as: 'viewer' })).status, 200);
+    for (const path of ['/api/users', '/api/invites', '/api/settings', '/api/settings/duty-records', '/api/webhooks']) {
+      assert.equal((await w.request('GET', path, undefined, { as: 'viewer' })).status, 403, path);
+    }
+  });
+});
+
+describe('request validation: the settings modal’s writes', () => {
+  test('a field of the wrong type is a 400 naming it', async () => {
+    const cases = [
+      ['PATCH', '/api/me/sessions/1', { device_name: 5 }, /^device_name: /],
+      ['POST', '/api/invites', { name: 'A', role: 'viewer', expires_in_hours: '24' }, /^expires_in_hours: /],
+      ['POST', '/api/trackers', { name: 'T', type: 'spot', source_url: 'https://example.com/x', assigned_pilot: 'one' }, /^assigned_pilot: /],
+      ['PUT', '/api/trackers/1', { active: 'yes' }, /^active: /],
+      ['POST', '/api/aircraft', { tail_number: 5 }, /^tail_number: /],
+      ['PUT', '/api/aircraft/N1', { hobbs_correction: null }, /^hobbs_correction: /],
+      ['PUT', '/api/pilots/1', { name: ['Pat'] }, /^name: /],
+      ['POST', '/api/overlays', { label: 'L', url: 'https://e.com/{z}/{x}/{y}', default_enabled_by_basemap: { osm: 'on' } }, /^default_enabled_by_basemap\.osm: /],
+      ['PATCH', '/api/settings', { app_name: ['x'] }, /^app_name: /],
+      ['PATCH', '/api/settings', [1], /: /],
+      ['POST', '/api/webhooks', { url: 'https://e.com', events: 'gap' }, /^events: /],
+      ['PUT', '/api/webhooks/1', { active: 1 }, /^active: /],
+    ];
+    for (const [method, path, body, error] of cases) {
+      const r = await w.request(method, path, body);
+      assert.equal(r.status, 400, method + ' ' + path);
+      assert.match(r.body.error, error, method + ' ' + path);
+    }
+  });
+
+  test('the handlers’ own checks still apply', async () => {
+    const tracker = await w.request('POST', '/api/trackers', { name: 'T', source_url: 'https://example.com/x' });
+    assert.deepEqual([tracker.status, tracker.body.error], [400, 'name, type, and source_url are required']);
+    const overlay = await w.request('POST', '/api/overlays', { label: 'L', url: 'https://e.com/tiles' });
+    assert.deepEqual([overlay.status, overlay.body.error], [400, 'url must include {z}, {x}, and {y} placeholders']);
+    const tz = await w.request('PATCH', '/api/settings', { timezone: 'Mars/Olympus' });
+    assert.deepEqual([tz.status, tz.body.error], [400, 'timezone must be a valid IANA time zone']);
+    const name = await w.request('PATCH', '/api/me/sessions/1', { device_name: 'x'.repeat(61) });
+    assert.deepEqual([name.status, name.body.error], [400, 'device_name must be 1-60 characters']);
+  });
+});

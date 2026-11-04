@@ -599,12 +599,8 @@ export function mapLayersSettingsScript(): string {
       btn.disabled = true;
       status.textContent = 'Looking up the tile server…';
       try {
-        var resp = await fetch('/api/tile-metadata?url=' + encodeURIComponent(url));
-        var data = await resp.json().catch(function() { return {}; });
-        var meta = data.metadata;
-        if (!resp.ok) {
-          status.textContent = 'Lookup failed: ' + (data.error || ('HTTP ' + resp.status)) + '.';
-        } else if (!meta) {
+        var meta = (await fetchTileMetadata(url)).metadata;
+        if (!meta) {
           status.textContent = 'This tile server doesn\\'t publish any details. Fill them in by hand.';
         } else {
           var filled = [];
@@ -622,8 +618,9 @@ export function mapLayersSettingsScript(): string {
             ? 'Filled in ' + filled.join(', ') + ' from the server\\'s ' + from + '. Check them before saving.'
             : 'Found the server\\'s ' + from + ', but every field it covers is already filled in.';
         }
-      } catch (_) {
-        status.textContent = 'Couldn\\'t reach the server.';
+      } catch (err) {
+        // A lookup the server refused (or that failed) says why: an ApiHttpError's message.
+        status.textContent = err.status ? 'Lookup failed: ' + err.message + '.' : 'Couldn\\'t reach the server.';
       }
       btn.disabled = false;
     }

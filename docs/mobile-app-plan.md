@@ -9,10 +9,11 @@ step 4, `duty` (with the duty reads' response schemas), step 5, `corrections`,
 `edit-history` and `filters` (with the client's writes and the Worker's request
 validation for the corrections and duty writes), step 6, `live`, `maintenance` and
 `alerts` (with the bootstrap, trackers, aircraft and pilots reads' response schemas),
-step 7, `regions` (merged with `src/geo.ts`), `accounting` and `analytics`, and step 8,
-`elevation`. The eight steps are done, but phase 1 isn't: see "Left in phase 1" at the end of
-"Phase 1 progress and conventions". Next: the settings route group. All open questions are
-answered.
+step 7, `regions` (merged with `src/geo.ts`), `accounting` and `analytics`, step 8,
+`elevation`, and step 9, the settings route group (with operator-time dates in Settings and
+the timezone-change warning). Phase 1 isn't done: see "Left in phase 1" at the end of
+"Phase 1 progress and conventions". Next: step 10, the regions and named-points routes and
+the duty PDF fetch. All open questions are answered.
 
 ## Settled so far
 
@@ -573,35 +574,59 @@ How it's built, for the steps that follow:
   and after a range change, `elevationAt()` at four points and three zooms against the
   real DEM, and the readouts after a map click, before and after, on a local Worker
   and on staging: identical. The bundle is 60.7 KB minified.
+- **Step 9** (the settings route group): every route the settings modal calls but the
+  regions export and import, plus the setup guide's settings, users, invites and webhooks
+  reads and its PATCH, the aircraft info panel's save, `/api/tile-metadata`, the
+  analytics page's `/api/overlays` and `/api/me/ping`, go through the core client. New API
+  modules `me`, `users`, `overlays` (`TileOverlay` moved there; bootstrap re-exports
+  it), `settings` and `webhooks`, and writes in `trackers`, `aircraft` and `pilots`, each
+  group's request schemas in its `-requests.ts`. The Worker validates every write in these
+  groups with `valid('json', …)` and keeps its checks of what values mean
+  (`validBasemapDefaults` went, the schema covers it). Two schemas stay loose on purpose:
+  `PilotUpdateRequest` keeps `default_duty_start`/`_end` as `unknown`, so the handler's
+  "use the duty routes" message still fires, and `SettingsRequest` is a `z.record`, so an
+  unknown key still reaches "Unknown setting key". `ApiHttpError` has `serverError` (the
+  server's `{ error }`, now read for failed reads too); the page's writes `alert()`
+  `err.serverError ?? <the old fallback>` on an HTTP error and stay silent on a network
+  error, as before. `packages/core/src/settings.ts` has `importWindows` and
+  `importDefaultFrom` (the tracker history import, in operator days) and
+  `timezoneChangeWarning`; `time.ts` has `fmtTzDate` ("Nov 3, 2026") and
+  `fmtTzDateTime` ("Nov 3, 2026, 14:05 AKST"), which Settings now uses for last seen,
+  invite expiry, webhook last triggered and the feed test, so `settings.ts` is off the
+  device-time scan's `KNOWN`. **The timezone warning:** a new admin route,
+  `GET /api/settings/duty-records`, counts duty days and default duties; Global Settings'
+  Save, when the timezone differs from the loaded one, fetches the counts and `confirm()`s
+  the warning (dismiss: nothing is saved). Tests: `core-settings`, a
+  `fmtTzDate`/`fmtTzDateTime` case in `core-time`, and in `worker-sql` the settings
+  modal's requests through the strict client and the settings writes' request validation.
+  Its browser check drove the settings modal on a local Worker (pilots, aircraft and the
+  info rename, trackers, overlays, invites, devices, Global Settings with a timezone change
+  dismissed then accepted, webhooks, with refused writes), before and after: the same
+  dialogs, lists and final tables, but for the dates (operator day and zone, e.g. "Nov 8,
+  2026" for "11/8/2026") and the new timezone confirms, with no `[wingbeat api]` warnings;
+  a Berlin browser gave the same output as an Anchorage one. Found, not fixed:
+  `POST /api/trackers/:id/apply-assignment` reports `flights: 2` for one flight, since
+  D1's `meta.changes` counts the edit_history trigger's row too (the web ignores the
+  count). The bundle is 67.5 KB minified.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.
 
-**Left in phase 1** (checked 2026-11-03, after step 8), against its "Done when" under
-"Phases":
+**Left in phase 1** (checked 2026-11-03, after step 9), against its "Done when" under
+"Phases" (items 2 and 3 of the list after step 8, Settings' device time and the timezone
+warning, came with step 9):
 
-1. **Routes still on bare `fetch()`**, with no schemas, response-shape tests or core client:
-   the settings modal (36 calls in `settings.ts`: settings, users, invites, the signed-in
-   user's sessions and device links, trackers and the feed test, aircraft, pilots, webhooks,
-   overlays), the regions and
-   named-points editors (`regions-editor.ts`, `named-points-editor.ts`), the setup guide,
-   the aircraft info panel's save (`aircraft-info.ts`), the analytics page's `/api/regions`
-   and `/api/overlays` reads, the flight editor's `/api/named-points`, `/api/tile-metadata`
-   (`map-controls.ts`), `/api/me/ping` and the duty PDF fetch (`pilot-duty.ts`). Request
-   validation covers only the corrections and duty writes; the other write routes need it
-   too. The settings route group is the big one, and it takes items 2 and 3 with it.
-2. **Device time in Settings**: `settings.ts`'s 11 uses (device last seen, invite expiry,
-   webhook last triggered, the feed test) still show device time; the scan test's `KNOWN`
-   allows them. `format.ts`'s one (server-side, explicit `timeZone`) and the showcase's
-   three are fine as they are.
-3. **The Settings warning before changing the timezone** once duty records exist (see
-   "Times and the operator's timezone"): not built.
-4. **Spec tests off the harness**: duty-limits, rest-days, totals, dated-defaults, dst,
+1. **Routes still on bare `fetch()`**: the regions and named-points editors
+   (`regions-editor.ts`, `named-points-editor.ts`), Settings' regions export and import,
+   the setup guide's two `_sgFetchJson` calls, the analytics page's `/api/regions`, the
+   flight editor's `/api/named-points` and the duty PDF fetch (`pilot-duty.ts`). Step 10,
+   with request validation for the regions and named-points writes.
+2. **Spec tests off the harness**: duty-limits, rest-days, totals, dated-defaults, dst,
    day-form, edit-conflict, flight-store-sync and the core half of flight-edits still test
    core logic only through the bundle's globals. They move to `importCore()`, leaving the
    harness for what's still a script string (the PDF builder in duty-export, flight-edits'
    chips) and the bundle smoke test (each `core-*` test's page-binding check).
-5. **Prod**: release the stack (push `wingbeat-hosting`'s `[build]` commit first), then
+3. **Prod**: release the stack (push `wingbeat-hosting`'s `[build]` commit first), then
    watch for `[wingbeat api] unexpected response` warnings before the web client goes
    strict.
 

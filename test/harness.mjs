@@ -77,6 +77,8 @@ const EXPORTS = [
   'sgGenerateBuckets', 'sgComputeDataIn', 'interpolateRoutePoints', 'endpointHeatPointsIn',
   // the core bundle (@wingbeat/core/elevation)
   'latLngToTilePixel', 'decodeTerrarium', 'demSubTile', 'paintElevationTint',
+  // the core bundle (@wingbeat/core/settings, time's date formats)
+  'trackerImportWindows', 'trackerImportDefaultFrom', 'timezoneChangeWarning', 'fmtTzDate', 'fmtTzDateTime',
 ];
 
 export const TZ = 'America/Anchorage';

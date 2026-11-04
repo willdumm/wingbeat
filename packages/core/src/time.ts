@@ -96,6 +96,17 @@ export function fmtTzPointTime(tz: string, unix: number): string {
   return MONTH_ABBR[+p.month - 1] + ' ' + +p.day + ', ' + p.hour + ':' + p.minute + ':' + p.second + ' ' + tzAbbrev(tz, unix);
 }
 
+/** "Oct 3, 2026": an instant's operator day, with its year (Settings' last seen and expiry dates). */
+export function fmtTzDate(tz: string, unix: number): string {
+  const p = tzParts(tz, unix);
+  return MONTH_ABBR[+p.month - 1] + ' ' + +p.day + ', ' + p.year;
+}
+
+/** "Oct 3, 2026, 14:05 AKDT": an instant as a date and time, for a one-off event (a webhook's last delivery). */
+export function fmtTzDateTime(tz: string, unix: number): string {
+  return fmtTzDate(tz, unix) + ', ' + fmtTzTime(tz, unix);
+}
+
 // ── Date keys (YYYY-MM-DD, no timezone involved) and durations ──
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
