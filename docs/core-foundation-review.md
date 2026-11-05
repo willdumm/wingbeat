@@ -171,4 +171,4 @@ changed.
 | 9 | `flightCorrectionKey` reuse | Fixed |
 | 10 | Flight store robustness | To do |
 | 11 | Inlined bundle | To do |
-| 12 | Test details | To do |
+| 12 | Test details | Fixed |
