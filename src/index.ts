@@ -8,6 +8,7 @@ import { mapshareUrl } from './notifications';
 import { resegment } from './segmentation';
 import { geocodePendingPoints, geocodeLivePoint, invalidateNamedPointsCache, computeLiveLabel, resolveRefPoint } from './geocoding';
 import { haversineMiles, SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
+import { flightCorrectionKey } from '@wingbeat/core/flight-store';
 import { dashboardHTML } from './dashboard';
 import { analyticsHTML } from './analytics';
 import { generateToken, sha256Hex, deviceNameFromUA, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
@@ -1736,7 +1737,7 @@ app.put('/api/flight-corrections/:id', requireAdmin, valid('json', CorrectionReq
     `UPDATE flight_corrections SET ${ENTRY_COLUMNS.map(k => `${k} = ?`).join(', ')}, updated_at = unixepoch()
      WHERE id = ? RETURNING *`
   ).bind(...ENTRY_COLUMNS.map(k => fields[k]), id)],
-  baseId === undefined ? undefined : { id: baseId, refs: [['flight_corrections', `manual/${id}`]] });
+  baseId === undefined ? undefined : { id: baseId, refs: [['flight_corrections', flightCorrectionKey({ tracker_id: null, id, flight_start_time: null })]] });
   return c.json({ entry: (update.results[0] as FlightCorrection | undefined) ?? null });
 });
 
@@ -1822,8 +1823,7 @@ app.delete('/api/flight-corrections/:id', requireAdmin, valid('query', BaseHisto
     const row = await c.var.db.prepare('SELECT id, tracker_id, flight_start_time FROM flight_corrections WHERE id = ?')
       .bind(id).first<Pick<FlightCorrection, 'id' | 'tracker_id' | 'flight_start_time'>>();
     if (!row) return c.json({ error: 'Not found' }, 404);
-    const key = row.tracker_id == null ? `manual/${row.id}` : `${row.tracker_id}/${row.flight_start_time}`;
-    base = { id: baseId, refs: [['flight_corrections', key]] };
+    base = { id: baseId, refs: [['flight_corrections', flightCorrectionKey(row)]] };
   }
   const [result] = await recordedBatch(c, [c.var.db.prepare('DELETE FROM flight_corrections WHERE id = ?').bind(id)], base);
   if (result.meta.changes === 0) return c.json({ error: 'Not found' }, 404);

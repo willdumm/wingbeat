@@ -168,7 +168,7 @@ changed.
 | 6 | Core clock scan | To do |
 | 7 | Page-global check | To do |
 | 8 | CLAUDE.md drift | To do |
-| 9 | `flightCorrectionKey` reuse | To do |
+| 9 | `flightCorrectionKey` reuse | Fixed |
 | 10 | Flight store robustness | To do |
 | 11 | Inlined bundle | To do |
 | 12 | Test details | To do |
