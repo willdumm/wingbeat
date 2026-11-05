@@ -28,6 +28,16 @@ test('sgResolveInterval: auto by the range’s length', () => {
 });
 
 describe('sgGenerateBuckets: operator days', () => {
+  test('east of UTC, the day DST starts on begins at its own midnight', () => {
+    const berlin = 'Europe/Berlin';
+    const buckets = analytics.sgGenerateBuckets(berlin, Date.UTC(2026, 2, 28, 12) / 1000, Date.UTC(2026, 2, 30, 12) / 1000, 'day');
+    assert.deepEqual(buckets.map(b => b.start), [
+      Date.UTC(2026, 2, 27, 23) / 1000,   // Mar 28, CET
+      Date.UTC(2026, 2, 28, 23) / 1000,   // Mar 29, CET until 02:00
+      Date.UTC(2026, 2, 29, 22) / 1000,   // Mar 30, CEST
+    ]);
+  });
+
   test('months start at the operator’s midnight, across the end of daylight time', () => {
     const buckets = analytics.sgGenerateBuckets(TZ, at('2026-10-31 20:00'), at('2026-12-15 00:00'), 'month');
     assert.deepEqual(buckets, [

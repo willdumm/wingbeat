@@ -162,7 +162,7 @@ changed.
 |---|---|---|
 | 1 | CI doesn't run `npm test` | Won't fix |
 | 2 | Silent non-HTTP errors | To do |
-| 3 | Day bounds on DST days | To do |
+| 3 | Day bounds on DST days | Fixed |
 | 4 | apply-assignment count | Fixed |
 | 5 | Request timeout | To do |
 | 6 | Core clock scan | To do |

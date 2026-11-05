@@ -655,6 +655,11 @@ How it's built, for the steps that follow:
   - Finding 4: `apply-assignment` counts the union of its flight UPDATEs' `RETURNING id`,
     not `meta.changes` (which counts the edit_history trigger's rows too). The page doesn't
     show the count, so no browser check.
+  - Finding 3: `tzDayStartUnix` / `tzDayEndUnix` build on `tzLocalToEpoch` (start is local
+    midnight, or the end of the gap where DST starts at midnight; end is the next day's
+    start less one). The time tests sweep 2026 in nine zones. Anchorage's bounds and stream
+    graph buckets are unchanged on staging, from 2025 through 2027; the showcase only took
+    the new bundle.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.

@@ -110,3 +110,65 @@ describe('core time', () => {
     assert.equal(time.fmtDuration(9 * H + 59 * 60 + 30), '9:59');
   });
 });
+
+describe('core time, in zones around the world', () => {
+  const dayKeys = (year) => {
+    const keys = [];
+    for (let d = Date.UTC(year, 0, 1); d < Date.UTC(year + 1, 0, 1); d += 86400_000) keys.push(new Date(d).toISOString().slice(0, 10));
+    return keys;
+  };
+  const parts = (key) => key.split('-').map(Number);
+  // Half-hour offsets (Adelaide, St John's, Kolkata), a half-hour DST shift (Lord Howe), and
+  // zones east of UTC whose DST spans the new year (Sydney, Auckland).
+  for (const zone of ['America/Anchorage', 'Europe/Berlin', 'Australia/Sydney', 'Australia/Adelaide',
+    'America/St_Johns', 'Asia/Kolkata', 'Australia/Lord_Howe', 'Pacific/Auckland', 'Pacific/Kiritimati']) {
+    test(zone + ': each day of the year runs from local midnight to the next, with no gap or overlap', () => {
+      for (const key of dayKeys(2026)) {
+        const start = time.tzDayStartUnix(zone, ...parts(key));
+        const end = time.tzDayEndUnix(zone, ...parts(key));
+        assert.equal(time.unixToTzDateStr(zone, start), key);
+        assert.equal(time.unixToTzTime(zone, start), '00:00', key);
+        assert.equal(time.unixToTzDateStr(zone, start - 1), time.tzAddDays(key, -1), key);
+        assert.equal(time.unixToTzDateStr(zone, end), key);
+        assert.equal(time.unixToTzDateStr(zone, end + 1), time.tzAddDays(key, 1), key);
+        assert.equal(end + 1, time.tzDayStartUnix(zone, ...parts(time.tzAddDays(key, 1))), key);
+        assert.equal(start, time.tzLocalToEpoch(zone, key), key);
+      }
+    });
+
+    test(zone + ': tzLocalToEpoch round trips outside the DST shift', () => {
+      for (const key of dayKeys(2026)) {
+        const at = time.tzLocalToEpoch(zone, key, '12:30');
+        assert.equal(time.unixToTzDateStr(zone, at), key);
+        assert.equal(time.unixToTzTime(zone, at), '12:30', key);
+      }
+    });
+  }
+
+  test('the days DST changes on, pinned', () => {
+    const length = (zone, y, m, d) => (time.tzDayEndUnix(zone, y, m, d) + 1 - time.tzDayStartUnix(zone, y, m, d)) / H;
+    assert.equal(time.tzDayStartUnix('Europe/Berlin', 2026, 3, 29), utc('2026-03-28T23:00:00Z'));
+    assert.equal(length('Europe/Berlin', 2026, 3, 29), 23);
+    assert.equal(time.tzDayStartUnix('Europe/Berlin', 2026, 10, 25), utc('2026-10-24T22:00:00Z'));
+    assert.equal(length('Europe/Berlin', 2026, 10, 25), 25);
+    assert.equal(time.tzDayStartUnix('Australia/Sydney', 2026, 10, 4), utc('2026-10-03T14:00:00Z'));
+    assert.equal(length('Australia/Sydney', 2026, 10, 4), 23);
+    assert.equal(time.tzDayStartUnix('Australia/Sydney', 2026, 4, 5), utc('2026-04-04T13:00:00Z'));
+    assert.equal(length('Australia/Sydney', 2026, 4, 5), 25);
+    assert.equal(length('Australia/Lord_Howe', 2026, 10, 4), 23.5);
+    assert.equal(length('Australia/Lord_Howe', 2026, 4, 5), 24.5);
+  });
+
+  test('where DST starts at midnight (Havana), the day starts when the clocks jump to 01:00', () => {
+    const start = time.tzDayStartUnix('America/Havana', 2026, 3, 8);
+    assert.equal(start, utc('2026-03-08T05:00:00Z'));
+    assert.equal(time.unixToTzDateStr('America/Havana', start), '2026-03-08');
+    assert.equal(time.unixToTzTime('America/Havana', start), '01:00');
+    assert.equal(time.unixToTzDateStr('America/Havana', start - 1), '2026-03-07');
+    assert.equal(time.tzDayEndUnix('America/Havana', 2026, 3, 7), start - 1);
+  });
+
+  test('a day number past the end of the month rolls over', () => {
+    assert.equal(time.tzDayStartUnix('Europe/Berlin', 2026, 1, 32), time.tzDayStartUnix('Europe/Berlin', 2026, 2, 1));
+  });
+});

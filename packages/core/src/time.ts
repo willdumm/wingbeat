@@ -43,14 +43,16 @@ export function tzLocalToEpoch(tz: string, dateKey: string, hhmm = '00:00'): num
   return asUtc - tzOffsetAt(tz, asUtc - tzOffsetAt(tz, asUtc));
 }
 
+/** The first second of a local day. Where DST starts at midnight (Havana), that's the end of the gap. */
 export function tzDayStartUnix(tz: string, y: number, m: number, d: number): number {
-  const ref = Date.UTC(y, m - 1, d, 9, 0, 0) / 1000;
-  return Date.UTC(y, m - 1, d) / 1000 - tzOffsetAt(tz, ref);
+  const key = new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10);
+  const t = tzLocalToEpoch(tz, key);
+  return unixToTzDateStr(tz, t) === key ? t : t + tzOffsetAt(tz, t + 86400) - tzOffsetAt(tz, t);
 }
 
+/** The last second of a local day: the next day's start, less one. */
 export function tzDayEndUnix(tz: string, y: number, m: number, d: number): number {
-  const ref = Date.UTC(y, m - 1, d, 20, 0, 0) / 1000;
-  return Date.UTC(y, m - 1, d, 23, 59, 59) / 1000 - tzOffsetAt(tz, ref);
+  return tzDayStartUnix(tz, y, m, d + 1) - 1;
 }
 
 /** YYYY-MM-DD of an epoch: its operator day. */
