@@ -53,6 +53,8 @@ const scripts = await import(
   'data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64')
 );
 
+export const { coreBundle } = scripts;
+
 // Everything the tests reach for, by name. Top-level const/let in the scripts aren't
 // properties of the context's global object, so they're collected by a script evaluated
 // in the same context.
@@ -60,11 +62,11 @@ const EXPORTS = [
   // the core bundle (@wingbeat/core/time)
   'tzLocalToEpoch', 'unixToTzDateStr', 'unixToTzTime', 'tzAddDays', 'fmtTzTime',
   // the core bundle (@wingbeat/core/flight-edits)
-  'applyFlightEdits', 'flightRemarks', 'flightEntrySummary', 'flightFormTimes', 'FLIGHT_MAX_SECS',
+  'applyFlightEdits', 'flightRemarks', 'flightEntrySummary', 'flightFormTimes',
   // flight-edits.ts
   'flightEditedMark', 'flightRemarksHtml',
   // the core bundle (@wingbeat/core/duty)
-  'computeDutyData', 'dutyTotals',
+  'computeDutyData',
   // pilot-duty.ts
   '_buildTypstSource',
   // the core bundle (@wingbeat/core/corrections, edit-history)

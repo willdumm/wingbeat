@@ -43,7 +43,6 @@ describe('core bundle flight-edits globals', () => {
     const e = entry(7, { tracker_id: 10, flight_start_time: f1.start_time, part91: 1, remark: 'Ferry' });
     assert.deepEqual([...engine.flightRemarks(engine.applyFlightEdits([f1], [e]).flights[0])], ['Part 91', 'Ferry']);
     assert.equal(engine.flightFormTimes('2026-03-10', '23:30', '00:45').end_time, at('2026-03-11 00:45'));
-    assert.equal(engine.FLIGHT_MAX_SECS, 24 * 3600);
   });
 
   test('the timezone-taking ones read APP_SETTINGS.timezone', () => {

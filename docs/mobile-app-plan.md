@@ -671,6 +671,15 @@ How it's built, for the steps that follow:
     the device's clock or timezone (and tests the scan itself), and its client scan covers
     `Intl.DateTimeFormat(` too. Core was already clean, and the per-module clock stubs stay.
     Test-only, so no browser check or deploy.
+  - Finding 7: `test/page-globals.test.mjs` takes the real pages from the Worker and checks
+    that everything `core-entry.ts` assigns is defined by the bundle, and that each
+    identifier the page scripts use undeclared (found with TypeScript's checker) is a
+    bundle, browser or vendored global. The 16 globals no page calls are gone
+    (`tzDayEndUnix`, `tzAbbrev`, `FLIGHT_EDIT_FIELDS`, `FLIGHT_CONFIRM_SECS`,
+    `FLIGHT_MAX_SECS`, `flightTrackedTimes`, `_DUTY_LIMITS`, `dutyTotals`, `GPS_FRESH_SECS`,
+    `trackedStart`, `pointInPolygon`, `computeCentroid`, `UNKNOWN_LOCATION`,
+    `elevationColorFor`, `flightCorrectionKey`, `mergeFlightCorrections`); they stay
+    exported from core. Both pages load on staging with no errors.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.

@@ -12,7 +12,7 @@ import * as flightEdits from '@wingbeat/core/flight-edits';
 import type { FlightCorrection, FlightEditField } from '@wingbeat/core/flight-edits';
 import * as time from '@wingbeat/core/time';
 import * as duty from '@wingbeat/core/duty';
-import type { ComputeDutyDataOptions, DutyDay, DutyInputFlight, DutyInterval, DutyTotalsOptions } from '@wingbeat/core/duty';
+import type { ComputeDutyDataOptions, DutyDay, DutyInputFlight, DutyInterval } from '@wingbeat/core/duty';
 import * as corrections from '@wingbeat/core/corrections';
 import type { FlightFormFields, FlightFormTarget, FlightFormValues, FlightSaveOptions } from '@wingbeat/core/corrections';
 import * as editHistory from '@wingbeat/core/edit-history';
@@ -48,7 +48,7 @@ import * as settingsApi from '@wingbeat/core/api/settings';
 import * as webhooksApi from '@wingbeat/core/api/webhooks';
 import * as regionsApi from '@wingbeat/core/api/regions';
 import * as namedPointsApi from '@wingbeat/core/api/named-points';
-import { createFlightStore, flightCorrectionKey, mergeFlightCorrections, FLIGHT_STORE_KEY } from '@wingbeat/core/flight-store';
+import { createFlightStore, FLIGHT_STORE_KEY } from '@wingbeat/core/flight-store';
 
 declare const window: {
   APP_SETTINGS: { timezone: string };
@@ -65,11 +65,9 @@ Object.assign(globalThis, {
   // ── time: in the operator's timezone ──
   tzLocalToEpoch: (dateKey: string, hhmm?: string) => time.tzLocalToEpoch(tz(), dateKey, hhmm),
   tzDayStartUnix: (y: number, m: number, d: number) => time.tzDayStartUnix(tz(), y, m, d),
-  tzDayEndUnix: (y: number, m: number, d: number) => time.tzDayEndUnix(tz(), y, m, d),
   unixToTzDateStr: (unix: number) => time.unixToTzDateStr(tz(), unix),
   unixToTzMonthKey: (unix: number) => time.unixToTzMonthKey(tz(), unix),
   unixToTzTime: (unix: number) => time.unixToTzTime(tz(), unix),
-  tzAbbrev: (unix: number) => time.tzAbbrev(tz(), unix),
   fmtTzTime: (unix: number) => time.fmtTzTime(tz(), unix),
   fmtTzPointTime: (unix: number) => time.fmtTzPointTime(tz(), unix),
   fmtTzDate: (unix: number) => time.fmtTzDate(tz(), unix),
@@ -83,19 +81,14 @@ Object.assign(globalThis, {
   tzShortDate: time.tzShortDate,
   fmtDuration: time.fmtDuration,
   // ── flight-edits: corrections applied to tracked flights, the flight form ──
-  FLIGHT_EDIT_FIELDS: flightEdits.FLIGHT_EDIT_FIELDS,
   FLIGHT_EDIT_FIELD_NAMES: flightEdits.FLIGHT_EDIT_FIELD_NAMES,
-  FLIGHT_CONFIRM_SECS: flightEdits.FLIGHT_CONFIRM_SECS,
-  FLIGHT_MAX_SECS: flightEdits.FLIGHT_MAX_SECS,
   applyFlightEdits: flightEdits.applyFlightEdits,
   flightRemarks: flightEdits.flightRemarks,
   flightFieldEdited: flightEdits.flightFieldEdited,
   flightEntrySummary: (e: FlightCorrection) => flightEdits.flightEntrySummary(tz(), e),
   flightOriginalText: (field: FlightEditField, value: unknown) => flightEdits.flightOriginalText(tz(), field, value),
   flightFormTimes: (dateKey: string, dep: string, arr: string) => flightEdits.flightFormTimes(tz(), dateKey, dep, arr),
-  flightTrackedTimes: flightEdits.flightTrackedTimes,
   // ── duty: the §135.267 duty log's rows, warnings and totals ──
-  _DUTY_LIMITS: duty.DUTY_LIMITS,
   DUTY_TOTALS_FOOTNOTE: duty.DUTY_TOTALS_FOOTNOTE,
   currentDutyMonth: () => duty.currentDutyMonth(tz(), now()),
   dutyPeriodLabel: duty.dutyPeriodLabel,
@@ -106,8 +99,6 @@ Object.assign(globalThis, {
   computeDutyData: (allFlights: DutyInputFlight[], pilotId: number, pilotName: string, year: number, month: number,
                     opts?: ComputeDutyDataOptions) =>
     duty.computeDutyData(tz(), now(), allFlights, pilotId, pilotName, year, month, opts),
-  dutyTotals: (flights: DutyInputFlight[], pilotId: number, asOf: number, opts?: DutyTotalsOptions) =>
-    duty.dutyTotals(tz(), flights, pilotId, asOf, opts),
   dutyDayText: (day: { rest: boolean; restDesignatedAt: number | null; duty: DutyInterval | null; defaultDuty: boolean }, year: number) =>
     duty.dutyDayText(tz(), day, year),
   dutySaveConfirmText: (records: DutyDay[], keys: string[], values: Parameters<typeof duty.dutySaveConfirmText>[3]) =>
@@ -132,7 +123,6 @@ Object.assign(globalThis, {
   flightMatchesFilters: (flight: Parameters<typeof filters.matchesFlight>[1], state: FilterState) =>
     filters.matchesFlight(tz(), flight, state),
   // ── live: the status cards' and Live view's rules (the threshold is the server's) ──
-  GPS_FRESH_SECS: live.GPS_FRESH_SECS,
   trackerLiveData: live.trackerLiveData,
   isInFlight: (d: Parameters<typeof live.isInFlight>[1]) => live.isInFlight(SPEED_THRESHOLD_KMH, d),
   isGpsFresh: (gpsTime: number) => live.isGpsFresh(now(), gpsTime),
@@ -141,7 +131,6 @@ Object.assign(globalThis, {
     live.isFlightInProgress(SPEED_THRESHOLD_KMH, flight, flights, liveByTracker),
   nextLivePoll: (liveByTracker: Parameters<typeof live.nextLivePoll>[2], lastKnownGarminTime: number | null) =>
     live.nextLivePoll(SPEED_THRESHOLD_KMH, now(), liveByTracker, lastKnownGarminTime),
-  trackedStart: live.trackedStart,
   sameTrackedFlight: live.sameTrackedFlight,
   // ── maintenance: estimated meters and each schedule item's status ──
   _flightHours: maintenance.flightHours,
@@ -153,11 +142,8 @@ Object.assign(globalThis, {
   // ── regions: distances and which region a point is in (the analytics page holds REGIONS
   // and wraps the …In functions under their old names) ──
   haversineKm: regions.haversineKm,
-  pointInPolygon: regions.pointInPolygon,
-  computeCentroid: regions.computeCentroid,
   isHomeBaseRegion: regions.isHomeBaseRegion,
   regionDisplayName: regions.regionDisplayName,
-  UNKNOWN_LOCATION: regions.UNKNOWN_LOCATION,
   OTHER_REGION: regions.OTHER_REGION,
   homeBaseNamesIn: regions.homeBaseNames,
   // ── accounting: region hours and stops, per operator month ──
@@ -176,7 +162,6 @@ Object.assign(globalThis, {
   latLngToTilePixel: elevation.latLngToTilePixel,
   decodeTerrarium: elevation.decodeTerrarium,
   demSubTile: elevation.demSubTile,
-  elevationColorFor: elevation.elevationColorFor,
   paintElevationTint: elevation.paintElevationTint,
   // ── settings: the tracker history import's windows, the timezone-change warning ──
   trackerImportWindows: (from: string) => settings.importWindows(tz(), now(), from),
@@ -263,8 +248,6 @@ Object.assign(globalThis, {
   setFlightAssignment: (body: correctionsApi.AssignmentRequest) => correctionsApi.setFlightAssignment(api, body),
   // A record's edit history (the forms' "Last changed by …").
   fetchEditHistory: (entities: string | string[], key: string, limit?: number) => getEditHistory(api, entities, key, limit),
-  flightCorrectionKey,
-  mergeFlightCorrections,
   flightStore: createFlightStore({
     // Read when used, not now: tests swap the page's localStorage.
     storage: {
