@@ -13,6 +13,7 @@
 
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import * as z from 'zod/mini';
 import { startWorker } from './worker.mjs';
 import { importCore } from './core.mjs';
 
@@ -54,6 +55,12 @@ const dutyDay = (pilot, date) => w.first('SELECT * FROM duty_days WHERE pilot_id
 
 const bulk = (flights, set) => w.request('POST', '/api/flight-corrections/bulk', { flights, set });
 const ref = (fst, tracker = 1) => ({ tracker_id: tracker, flight_start_time: fst });
+
+/** A response body matches its core schema. */
+function assertShape(schema, body) {
+  const r = z.safeParse(schema, body);
+  assert.ok(r.success, JSON.stringify(r.error?.issues));
+}
 
 describe('POST /api/flight-corrections/bulk', () => {
   test('Part 91 inserts rows for flights without one, attributed to the signed-in user', async () => {
@@ -293,6 +300,20 @@ describe('flights_assignment_history_au (migration 0002)', () => {
     assert.deepEqual([h[0].entity, h[0].entity_key, h[0].action, h[0].user_name], ['flight_assignment', `1/${s}`, 'update', 'Ada Admin']);
     assert.deepEqual(h[0].before, { pilot_id: 1, aircraft_tail: 'N1' });
     assert.deepEqual(h[0].after, { pilot_id: 2, aircraft_tail: 'N2' });
+  });
+
+  test('a partial assignment leaves the other field alone; an explicit null clears', async () => {
+    const id = await trackerFlight(next());
+    const row = () => w.first('SELECT pilot_id, aircraft_tail FROM flights WHERE id = ?', id);
+    const put = async (body) => assert.equal((await w.request('PUT', '/api/flights/assignment', { flight_ids: [id], ...body })).status, 200);
+    await put({ pilot_id: 2 });
+    assert.deepEqual(await row(), { pilot_id: 2, aircraft_tail: 'N1' });
+    await put({ aircraft_tail: 'N2' });
+    assert.deepEqual(await row(), { pilot_id: 2, aircraft_tail: 'N2' });
+    await put({ pilot_id: null });
+    assert.deepEqual(await row(), { pilot_id: null, aircraft_tail: 'N2' });
+    await put({ aircraft_tail: null });
+    assert.deepEqual(await row(), { pilot_id: null, aircraft_tail: null });
   });
 
   test('assigning what a flight already has, or changing other columns, records nothing', async () => {
@@ -595,12 +616,7 @@ describe('GET /api/flights/complete ground trail', () => {
 // Each route's real response parses with its response schema in @wingbeat/core/api, so a
 // handler drifting from the contract the clients parse with fails here.
 describe('response shapes: the flights route group', async () => {
-  const z = await import('zod/mini');
   const api = await importCore('api/flights');
-  const assertShape = (schema, body) => {
-    const r = z.safeParse(schema, body);
-    assert.ok(r.success, JSON.stringify(r.error?.issues));
-  };
 
   test('GET /api/flights/complete, with flights, with nothing new, and with no tracker', async () => {
     const t = next();
@@ -636,12 +652,7 @@ describe('response shapes: the flights route group', async () => {
 });
 
 describe('response shapes: the duty route group', async () => {
-  const z = await import('zod/mini');
   const api = await importCore('api/duty');
-  const assertShape = (schema, body) => {
-    const r = z.safeParse(schema, body);
-    assert.ok(r.success, JSON.stringify(r.error?.issues));
-  };
 
   test('GET /api/duty-days, empty and with a duty day, a rest day, a note and a default duty', async () => {
     assertShape(api.DutyLogResponse, (await w.request('GET', '/api/duty-days?pilot=999')).body);
@@ -664,16 +675,11 @@ describe('response shapes: the duty route group', async () => {
 });
 
 describe('response shapes: bootstrap, trackers, aircraft and pilots', async () => {
-  const z = await import('zod/mini');
   const { createApiClient } = await importCore('api/client');
   const { getBootstrap, BootstrapResponse } = await importCore('api/bootstrap');
   const { getTrackers, TrackersResponse } = await importCore('api/trackers');
   const { getAircraft, AircraftResponse } = await importCore('api/aircraft');
   const { getPilots, PilotsResponse } = await importCore('api/pilots');
-  const assertShape = (schema, body) => {
-    const r = z.safeParse(schema, body);
-    assert.ok(r.success, JSON.stringify(r.error?.issues));
-  };
 
   before(async () => {
     await w.db.batch([

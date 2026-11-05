@@ -662,6 +662,9 @@ How it's built, for the steps that follow:
     the new bundle.
   - Finding 9: the Worker's edit-conflict refs use core's `flightCorrectionKey`. No change
     in what it does, and no browser check.
+  - Finding 12: one `assertShape` in `test/worker-sql.test.mjs`, and a test that a partial
+    `PUT /api/flights/assignment` leaves the other field alone. Test-only, so no browser
+    check or deploy.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.
