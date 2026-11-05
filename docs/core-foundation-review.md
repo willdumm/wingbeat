@@ -165,7 +165,7 @@ changed.
 | 3 | Day bounds on DST days | Fixed |
 | 4 | apply-assignment count | Fixed |
 | 5 | Request timeout | To do |
-| 6 | Core clock scan | To do |
+| 6 | Core clock scan | Fixed |
 | 7 | Page-global check | To do |
 | 8 | CLAUDE.md drift | Fixed |
 | 9 | `flightCorrectionKey` reuse | Fixed |

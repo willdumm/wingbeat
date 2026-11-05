@@ -667,6 +667,10 @@ How it's built, for the steps that follow:
     check or deploy.
   - Finding 8: `CLAUDE.md` says where the tokens' values are now, that every route group
     validates, and has the core conventions most often missed. Docs-only.
+  - Finding 6: `test/device-time.test.mjs` scans `packages/core/src` for anything that reads
+    the device's clock or timezone (and tests the scan itself), and its client scan covers
+    `Intl.DateTimeFormat(` too. Core was already clean, and the per-module clock stubs stay.
+    Test-only, so no browser check or deploy.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.
