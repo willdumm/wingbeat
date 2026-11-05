@@ -665,6 +665,8 @@ How it's built, for the steps that follow:
   - Finding 12: one `assertShape` in `test/worker-sql.test.mjs`, and a test that a partial
     `PUT /api/flights/assignment` leaves the other field alone. Test-only, so no browser
     check or deploy.
+  - Finding 8: `CLAUDE.md` says where the tokens' values are now, that every route group
+    validates, and has the core conventions most often missed. Docs-only.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.
