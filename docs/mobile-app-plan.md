@@ -660,6 +660,8 @@ How it's built, for the steps that follow:
     start less one). The time tests sweep 2026 in nine zones. Anchorage's bounds and stream
     graph buckets are unchanged on staging, from 2025 through 2027; the showcase only took
     the new bundle.
+  - Finding 9: the Worker's edit-conflict refs use core's `flightCorrectionKey`. No change
+    in what it does, and no browser check.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.
