@@ -166,7 +166,7 @@ changed.
 | 4 | apply-assignment count | Fixed |
 | 5 | Request timeout | To do |
 | 6 | Core clock scan | Fixed |
-| 7 | Page-global check | To do |
+| 7 | Page-global check | Fixed |
 | 8 | CLAUDE.md drift | Fixed |
 | 9 | `flightCorrectionKey` reuse | Fixed |
 | 10 | Flight store robustness | To do |

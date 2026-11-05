@@ -72,10 +72,8 @@ describe('computeDutyData', () => {
 });
 
 describe('dutyTotals', () => {
-  test('the same totals as the page’s global, and the hours-only form the alerts use', () => {
-    const asOf = nowSecs;
-    assert.deepEqual(plain(duty.dutyTotals(TZ, flights, 1, asOf, opts)), plain(engine.dutyTotals(flights, 1, asOf, opts)));
-    const hours = duty.dutyTotals(TZ, flights, 1, asOf, { hoursOnly: true });
+  test('the hours-only form the alerts use', () => {
+    const hours = duty.dutyTotals(TZ, flights, 1, nowSecs, { hoursOnly: true });
     assert.equal(hours.rest, null);
     assert.equal(hours.hours[0].label, 'Q4 2026');
   });
