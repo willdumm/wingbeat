@@ -34,7 +34,7 @@ describe('hashed session tokens', () => {
     assert.equal(row.token, await sha256Hex(raw));
     assert.equal(row.token_hashed, 1);
     assert.equal((await w.request('GET', '/api/me/sessions', undefined, withCookie(raw))).status, 200);
-    assert.equal((await w.request('GET', '/api/me/sessions', undefined, withCookie(row.token))).status, 302);
+    assert.equal((await w.request('GET', '/api/me/sessions', undefined, withCookie(row.token))).status, 401);
   });
 
   test('a legacy plaintext row authenticates and is upgraded in place', async () => {
@@ -55,7 +55,7 @@ describe('hashed session tokens', () => {
   test('logout deletes the hashed session', async () => {
     const raw = cookieOf(await join(await invite('Leaver')));
     await w.request('POST', '/logout', undefined, withCookie(raw));
-    assert.equal((await w.request('GET', '/api/me/sessions', undefined, withCookie(raw))).status, 302);
+    assert.equal((await w.request('GET', '/api/me/sessions', undefined, withCookie(raw))).status, 401);
     assert.equal(await w.first('SELECT 1 AS x FROM sessions WHERE token = ?', await sha256Hex(raw)), null);
   });
 });
@@ -65,7 +65,7 @@ describe('idle timeout', () => {
     const raw = cookieOf(await join(await invite('Idle')));
     const hash = await sha256Hex(raw);
     await w.run('UPDATE sessions SET last_seen_at = ? WHERE token = ?', now() - 91 * 86400, hash);
-    assert.equal((await w.request('GET', '/api/me/sessions', undefined, withCookie(raw))).status, 302);
+    assert.equal((await w.request('GET', '/api/me/sessions', undefined, withCookie(raw))).status, 401);
     assert.equal(await w.first('SELECT 1 AS x FROM sessions WHERE token = ?', hash), null);
   });
 

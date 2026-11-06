@@ -342,8 +342,7 @@ export function regionsEditorScript(): string {
           if (region.dbId === null) region.dbId = (await createRegion({ name: region.name, geojson })).id;
           else await updateRegion(region.dbId, { name: region.name, geojson });
         } catch (err) {
-          if (err.status) throw new Error(err.serverError ?? 'Save failed');
-          throw err;
+          throw new Error(apiErrorMessage(err, 'Save failed'));
         }
       });
       await Promise.all(saves);
@@ -758,8 +757,10 @@ export function regionsEditorScript(): string {
       _rgSelectedIdx = null;
       _rgHidePanel();
       if (region.dbId !== null) {
-        // A refused delete is ignored, as it always was; only a network error fails it.
-        await deleteRegion(region.dbId).catch((err) => { if (!err.status) throw err; });
+        // A refused delete is ignored, as it always was, unless the session has gone.
+        await deleteRegion(region.dbId).catch((err) => {
+          if (!err.status || err.status === 401) alert(apiErrorMessage(err, 'Failed to delete region.'));
+        });
       }
       _rgUpdateDirtyIndicator();
     }

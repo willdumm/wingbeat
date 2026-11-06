@@ -78,7 +78,28 @@ export class ApiTimeoutError extends Error {
   }
 }
 
+/** A request that got no response at all: offline, or the connection failed. */
+export class ApiNetworkError extends Error {
+  constructor(readonly path: string, readonly cause: unknown) {
+    super("Couldn't reach the server for " + path);
+    this.name = 'ApiNetworkError';
+  }
+}
+
 export const DEFAULT_TIMEOUT_MS = 120_000;
+
+/**
+ * What a form tells the user about a failed request: the server's reason when it gave one
+ * (an expired session's says to sign in again), otherwise what went wrong, or fallback for
+ * anything that isn't a request's failure.
+ */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiHttpError) return err.serverError ?? fallback;
+  if (err instanceof ApiNetworkError) return "Couldn't reach the server. Check your connection and try again.";
+  if (err instanceof ApiTimeoutError) return 'The server didn’t respond. Reload the page and check whether this went through.';
+  if (err instanceof ApiShapeError) return 'The server sent an unexpected response. Reload the page and check whether this went through.';
+  return fallback;
+}
 
 export type WriteMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -127,9 +148,21 @@ export function createApiClient({
       }, timeoutMs);
     });
     const answered = (async () => {
-      const resp = await getFetch()(baseUrl + path, { ...init, signal: controller.signal });
+      let resp: Response;
+      try {
+        resp = await getFetch()(baseUrl + path, { ...init, signal: controller.signal });
+      } catch (cause) {
+        throw new ApiNetworkError(path, cause);
+      }
       if (!resp.ok) throw await httpError(path, resp);
-      return parse(path, schema, await resp.json());
+      let body: unknown;
+      try {
+        body = await resp.json();
+      } catch (cause) {
+        // A 200 that isn't JSON (a proxy's page, say) is no use to either mismatch mode.
+        throw cause instanceof SyntaxError ? new ApiShapeError(path, 'not JSON') : new ApiNetworkError(path, cause);
+      }
+      return parse(path, schema, body);
     })();
     try {
       return await Promise.race([answered, timedOut]);

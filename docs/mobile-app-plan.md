@@ -688,6 +688,10 @@ How it's built, for the steps that follow:
     included), raising `ApiTimeoutError`; it races the abort, so a fetch that ignores its
     signal can't hang a caller either. A hung fetch fails its refresh and the queued one
     runs. Both pages load on staging with no errors.
+  - Finding 2: an `/api/*` request without a session is a 401 JSON saying to sign in again
+    (pages still redirect to `/login`). The client raises `ApiNetworkError` for a failed
+    fetch and `ApiShapeError` for a 200 that isn't JSON, and the page handlers show
+    `apiErrorMessage(err, fallback)`, a new page global, so no failure is silent.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.

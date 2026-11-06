@@ -179,3 +179,30 @@ describe('POLLER_SECRET not configured', () => {
     });
   }
 });
+
+describe('without a session', () => {
+  let w;
+  before(async () => { w = await startWorker(); });
+  after(() => w?.dispose());
+
+  for (const [method, path] of [['GET', '/api/me'], ['POST', '/api/aircraft'], ['GET', '/api/flights/complete?tracker=1'], ['GET', '/api/nothing-here']]) {
+    test(method + ' ' + path + ' is a 401 with a JSON reason, not a redirect', async () => {
+      const r = await w.request(method, path, method === 'POST' ? {} : undefined, { as: null });
+      assert.equal(r.status, 401);
+      assert.deepEqual(r.body, { error: 'Your session has expired. Reload the page to sign in again.' });
+    });
+  }
+
+  test('so is a cookie with no session behind it', async () => {
+    const r = await w.request('GET', '/api/me', undefined, { as: null, headers: { cookie: 'session=not-a-session' } });
+    assert.equal(r.status, 401);
+  });
+
+  for (const path of ['/', '/analytics', '/apiary']) {
+    test(path + ' still redirects to /login', async () => {
+      const r = await w.request('GET', path, undefined, { as: null });
+      assert.equal(r.status, 302);
+      assert.equal(new URL(r.headers.get('location'), 'http://x').pathname, '/login');
+    });
+  }
+});

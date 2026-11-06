@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { importCore } from './core.mjs';
 
 const { createFlightStore, FLIGHT_STORE_KEY } = await importCore('flight-store');
-const { createApiClient, ApiShapeError, ApiHttpError, ApiTimeoutError, DEFAULT_TIMEOUT_MS } = await importCore('api/client');
+const { createApiClient, apiErrorMessage, ApiShapeError, ApiHttpError, ApiNetworkError, ApiTimeoutError, DEFAULT_TIMEOUT_MS } = await importCore('api/client');
 const { FlightCorrectionsResponse } = await importCore('api/flights');
 const { OkResponse } = await importCore('api/corrections');
 
@@ -186,6 +186,51 @@ describe('createFlightStore: a damaged or stale cached copy', () => {
     await refreshed;
     assert.equal(store.getRaw()[0].aircraft_tail, 'NEWER');
     assert.equal(store.snapshot().last_modified_at_by_tracker[1], 900);
+  });
+});
+
+describe('createApiClient: what a failed request throws, and what a form says about it', () => {
+  const fails = async (fetch, mismatch = 'warn') => {
+    const c = createApiClient({ fetch: () => fetch, mismatch });
+    return c.write('POST', '/api/x', {}, OkResponse).then(() => assert.fail('should have thrown'), (e) => e);
+  };
+
+  test('a 401 is an ApiHttpError with the server’s message', async () => {
+    const e = await fails(async () => new Response('{"error":"Your session has expired."}', { status: 401 }));
+    assert.ok(e instanceof ApiHttpError);
+    assert.equal(e.status, 401);
+    assert.equal(apiErrorMessage(e, 'Failed.'), 'Your session has expired.');
+  });
+
+  test('an HTTP error with no message of its own uses the form’s text', async () => {
+    assert.equal(apiErrorMessage(await fails(async () => new Response('oops', { status: 500 })), 'Failed.'), 'Failed.');
+  });
+
+  for (const mismatch of ['warn', 'strict']) {
+    test('a 200 that isn’t JSON is an ApiShapeError (' + mismatch + ')', async () => {
+      const e = await fails(async () => new Response('<!doctype html><title>Login</title>'), mismatch);
+      assert.ok(e instanceof ApiShapeError);
+      assert.match(apiErrorMessage(e, 'Failed.'), /unexpected response/);
+    });
+  }
+
+  test('a strict client’s mismatch says to check whether it went through', async () => {
+    const e = await fails(async () => new Response('{"nope":1}'), 'strict');
+    assert.ok(e instanceof ApiShapeError);
+    assert.match(apiErrorMessage(e, 'Failed.'), /check whether this went through/);
+  });
+
+  test('a fetch that fails is an ApiNetworkError, and so is a body cut off', async () => {
+    const e = await fails(async () => { throw new TypeError('Failed to fetch'); });
+    assert.ok(e instanceof ApiNetworkError);
+    assert.match(apiErrorMessage(e, 'Failed.'), /Couldn't reach the server/);
+    assert.ok(await fails(async () => ({ ok: true, status: 200, json: async () => { throw new TypeError('terminated'); } })) instanceof ApiNetworkError);
+  });
+
+  test('a timeout, and anything that isn’t a request’s failure', () => {
+    assert.match(apiErrorMessage(new ApiTimeoutError('/api/x', 5), 'Failed.'), /didn’t respond/);
+    assert.equal(apiErrorMessage(new Error('a bug'), 'Failed.'), 'Failed.');
+    assert.equal(apiErrorMessage(undefined, 'Failed.'), 'Failed.');
   });
 });
 

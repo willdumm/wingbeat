@@ -580,7 +580,7 @@ export function aircraftInfoScript(): string {
       try {
         await updateAircraft(a.tail_number, body);
       } catch (err) {
-        alert(err.status ? err.serverError || 'Failed to save.' : 'Network error.');
+        alert(apiErrorMessage(err, 'Failed to save.'));
         return false;
       }
       Object.assign(a, body);

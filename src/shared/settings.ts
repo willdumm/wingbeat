@@ -1517,7 +1517,7 @@ export function settingsModalScript(): string {
           renderSettingsOverlaysList();
           _ftRenderOverlayLegend();
         } catch (err) {
-          if (err.status) alert(err.serverError ?? 'Failed to save overlay.');
+          alert(apiErrorMessage(err, 'Failed to save overlay.'));
         }
       });
 
@@ -1537,7 +1537,7 @@ export function settingsModalScript(): string {
         renderSettingsOverlaysList();
         _ftRenderOverlayLegend();
       } catch (err) {
-        if (err.status) alert(err.serverError ?? 'Failed to delete overlay.');
+        alert(apiErrorMessage(err, 'Failed to delete overlay.'));
       }
     }
 
@@ -1575,7 +1575,7 @@ export function settingsModalScript(): string {
           document.getElementById('settings-add-overlay-lookup-status').textContent = '';
           document.getElementById('settings-add-overlay').open = false;
         } catch (err) {
-          if (err.status) alert(err.serverError ?? 'Failed to add overlay.');
+          alert(apiErrorMessage(err, 'Failed to add overlay.'));
         }
       });
     }
@@ -1803,7 +1803,7 @@ export function settingsModalScript(): string {
           settingsAfterTrackerChange();
           if (aircraftAdded || pilotAdded) await settingsOfferApplyAssignment(tracker, !!aircraftAdded, !!pilotAdded);
         } catch (err) {
-          if (err.status) alert(err.serverError ?? 'Failed to save tracker.');
+          alert(apiErrorMessage(err, 'Failed to save tracker.'));
         }
       });
 
@@ -1953,7 +1953,7 @@ export function settingsModalScript(): string {
           pilot: pilot && counts.without_pilot > 0,
         });
       } catch (err) {
-        if (err.status) alert('Failed to update existing flights.');
+        alert(apiErrorMessage(err, 'Failed to update existing flights.'));
       }
     }
 
@@ -1977,7 +1977,7 @@ export function settingsModalScript(): string {
         renderSettingsTrackerList();
         settingsAfterTrackerChange();
       } catch (err) {
-        if (err.status) alert(err.serverError ?? 'Failed to delete tracker.');
+        alert(apiErrorMessage(err, 'Failed to delete tracker.'));
       }
     }
 
@@ -2026,7 +2026,7 @@ export function settingsModalScript(): string {
         renderSettingsTrackerList();
         settingsAfterTrackerChange();
       } catch (err) {
-        if (err.status) alert(err.serverError ?? 'Failed to add tracker.');
+        alert(apiErrorMessage(err, 'Failed to add tracker.'));
       }
     });
 
@@ -2168,7 +2168,7 @@ export function settingsModalScript(): string {
         document.getElementById('settings-add-aircraft').open = false;
         renderSettingsAircraftList();
       } catch (err) {
-        if (err.status) alert(err.serverError ?? 'Failed to add aircraft.');
+        alert(apiErrorMessage(err, 'Failed to add aircraft.'));
       }
     });
 
@@ -2274,7 +2274,7 @@ export function settingsModalScript(): string {
           flightStore.setPilots(pilotList);
           renderSettingsPilotList();
         } catch (err) {
-          if (err.status) errorEl.textContent = err.serverError || 'Save failed.';
+          errorEl.textContent = apiErrorMessage(err, 'Save failed.');
         }
       });
       form.querySelector('.settings-cancel-btn').addEventListener('click', () => {
@@ -2296,7 +2296,7 @@ export function settingsModalScript(): string {
         document.getElementById('settings-add-pilot').open = false;
         renderSettingsPilotList();
       } catch (err) {
-        if (err.status) alert(err.serverError ?? 'Failed to add pilot.');
+        alert(apiErrorMessage(err, 'Failed to add pilot.'));
       }
     });
 
@@ -2626,7 +2626,7 @@ export function settingsModalScript(): string {
         await deleteUser(user.id);
         renderSettingsUsersList();
       } catch (err) {
-        if (err.status) alert(err.serverError ?? 'Failed to remove user.');
+        alert(apiErrorMessage(err, 'Failed to remove user.'));
         btn.disabled = false;
       }
     }
@@ -2663,7 +2663,7 @@ export function settingsModalScript(): string {
         });
         inner.appendChild(card);
       } catch (err) {
-        if (err.status) alert(err.serverError ?? 'Failed to create invite.');
+        alert(apiErrorMessage(err, 'Failed to create invite.'));
         submitBtn.disabled = false;
       }
     });
@@ -3002,15 +3002,13 @@ export function settingsModalScript(): string {
     async function _importGeoJSON(file, statusElId, write) {
       const statusEl = document.getElementById(statusElId);
       try {
-        const ok = await write(JSON.parse(await file.text())).then(() => true, (err) => { if (err.status) return false; throw err; });
-        statusEl.style.display = '';
-        statusEl.textContent = ok ? 'Imported.' : 'Import failed.';
-        setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
-      } catch (_) {
-        statusEl.style.display = '';
-        statusEl.textContent = 'Import failed.';
-        setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+        await write(JSON.parse(await file.text()));
+        statusEl.textContent = 'Imported.';
+      } catch (err) {
+        statusEl.textContent = apiErrorMessage(err, 'Import failed.');
       }
+      statusEl.style.display = '';
+      setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
     }
 
     ${namedPointsEditorScript()}
