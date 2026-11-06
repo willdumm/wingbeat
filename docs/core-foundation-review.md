@@ -169,6 +169,6 @@ changed.
 | 7 | Page-global check | Fixed |
 | 8 | CLAUDE.md drift | Fixed |
 | 9 | `flightCorrectionKey` reuse | Fixed |
-| 10 | Flight store robustness | To do |
+| 10 | Flight store robustness | Fixed |
 | 11 | Inlined bundle | To do |
 | 12 | Test details | Fixed |

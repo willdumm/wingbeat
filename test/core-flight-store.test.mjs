@@ -105,6 +105,90 @@ describe('createFlightStore', () => {
   });
 });
 
+describe('createFlightStore: a damaged or stale cached copy', () => {
+  const stored = (raw, routes = { '/api/flights/complete': complete([]), '/api/flight-corrections': noCorrections }) => {
+    const client = stubClient(routes);
+    const store = createFlightStore({ storage: { getItem: () => raw, setItem() {} }, client, flightThresholdKmh: 50 });
+    store.init();
+    return { store, client };
+  };
+  const good = (extra) => JSON.stringify({ last_modified_at_by_tracker: { 1: 700 }, flights: [flight(1, 1000)], entries: [], entries_last_history_id: 9, ...extra });
+
+  for (const raw of ['null', '[]', '5', '"x"', '{}', '{"flights":null}', 'not json']) {
+    test('reads start empty from ' + raw, async () => {
+      const { store, client } = stored(raw);
+      assert.deepEqual(store.getAll(), []);
+      assert.deepEqual(store.getRaw(), []);
+      await store.refresh([1]);
+      assert.deepEqual(client.paths.sort(), ['/api/flight-corrections?since=0', '/api/flights/complete?tracker=1&since=0']);
+    });
+  }
+
+  test('a blob with no flights gives up its cursors, so the next refresh fetches them all', async () => {
+    const { store, client } = stored(good({ flights: undefined }));
+    assert.deepEqual(store.getAll(), []);
+    await store.refresh([1]);
+    assert.ok(client.paths.includes('/api/flights/complete?tracker=1&since=0'));
+    assert.ok(client.paths.includes('/api/flight-corrections?since=9'), 'the corrections keep theirs');
+  });
+
+  test('a blob with no corrections gives up their cursor, and keeps the flights', async () => {
+    const { store, client } = stored(good({ entries: undefined }));
+    assert.equal(store.getAll().length, 1);
+    await store.refresh([1]);
+    assert.ok(client.paths.includes('/api/flight-corrections?since=0'));
+    assert.ok(client.paths.includes('/api/flights/complete?tracker=1&since=700'), 'the flights keep theirs');
+  });
+
+  test('a blob with no flight cursors keeps its flights and fetches them again', async () => {
+    const { store, client } = stored(good({ last_modified_at_by_tracker: undefined }));
+    assert.equal(store.getAll().length, 1);
+    await store.refresh([1]);
+    assert.ok(client.paths.includes('/api/flights/complete?tracker=1&since=0'));
+  });
+
+  test('a refresh that starts before an async load resolves waits for it, and starts from its cursors', async () => {
+    let resolveLoad;
+    const client = stubClient({ '/api/flights/complete': complete([flight(2, 3000)]), '/api/flight-corrections': noCorrections });
+    const store = createFlightStore({
+      storage: { getItem: () => new Promise(r => { resolveLoad = r; }), setItem: async () => {} }, client, flightThresholdKmh: 50,
+    });
+    const init = store.init();
+    const refreshed = store.refresh([1]);
+    await new Promise(r => setTimeout(r, 0));
+    assert.deepEqual(client.paths, [], 'nothing fetched before the load');
+    resolveLoad(good());
+    await init;
+    await refreshed;
+    assert.ok(client.paths.includes('/api/flights/complete?tracker=1&since=700'));
+    assert.deepEqual(store.getRaw().map(f => f.id), [1, 2], 'the stored flight and the new one');
+  });
+
+  test('a response from before another tab’s newer copy doesn’t replace its records', async () => {
+    let saved = good({ flights: [flight(1, 1000, { aircraft_tail: 'OLD' })] });
+    let reload;
+    let answer;
+    const client = {
+      get: (path) => path.startsWith('/api/flights/complete')
+        ? new Promise(r => { answer = () => r(structuredClone(complete([flight(1, 1000, { aircraft_tail: 'STALE', modified_at: 800 })]))); })
+        : Promise.resolve(structuredClone(noCorrections)),
+    };
+    const store = createFlightStore({
+      storage: { getItem: () => saved, setItem() {} }, client, flightThresholdKmh: 50,
+      watchExternalChanges: (cb) => { reload = cb; },
+    });
+    store.init();
+    const refreshed = store.refresh([1]);
+    await new Promise(r => setTimeout(r, 0));
+    saved = good({ last_modified_at_by_tracker: { 1: 900 }, flights: [flight(1, 1000, { aircraft_tail: 'NEWER', modified_at: 900 })] });
+    reload();
+    answer();
+    await refreshed;
+    assert.equal(store.getRaw()[0].aircraft_tail, 'NEWER');
+    assert.equal(store.snapshot().last_modified_at_by_tracker[1], 900);
+  });
+});
+
 describe('createApiClient', () => {
   const respond = (body, status = 200) => async () => ({ ok: status < 300, status, json: async () => body });
   const good = { entries: [], deleted: [], last_history_id: 1 };
