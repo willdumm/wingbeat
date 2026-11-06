@@ -348,6 +348,11 @@ app.use('*', async (c, next) => {
     }
   }
 
+  // A fetch would follow the redirect and get the login page's HTML with a 200; a client
+  // needs to see that its session is gone. Pages still go to /login.
+  if (path === '/api' || path.startsWith('/api/')) {
+    return c.json({ error: 'Your session has expired. Reload the page to sign in again.' }, 401);
+  }
   return c.redirect('/login');
 });
 

@@ -33,7 +33,7 @@ import * as analytics from '@wingbeat/core/analytics';
 import type { StreamInterval } from '@wingbeat/core/analytics';
 import * as elevation from '@wingbeat/core/elevation';
 import * as settings from '@wingbeat/core/settings';
-import { createApiClient } from '@wingbeat/core/api/client';
+import { apiErrorMessage, createApiClient } from '@wingbeat/core/api/client';
 import * as dutyApi from '@wingbeat/core/api/duty';
 import * as correctionsApi from '@wingbeat/core/api/corrections';
 import { getEditHistory } from '@wingbeat/core/api/edit-history';
@@ -176,6 +176,7 @@ Object.assign(globalThis, {
 const api = createApiClient({ mismatch: 'warn' });
 
 Object.assign(globalThis, {
+  apiErrorMessage,
   // The pages' lists: the dashboard's first load, and each list again after a settings change.
   fetchBootstrap: () => getBootstrap(api),
   fetchTrackers: () => trackersApi.getTrackers(api),

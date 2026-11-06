@@ -214,8 +214,7 @@ export function namedPointsEditorScript(): string {
       try {
         if (_npSelectedId !== null) {
           const saved = await updateNamedPoint(_npSelectedId, { name, max_km: maxKm }).then(() => true, (err) => {
-            if (!err.status) throw err;
-            msgEl.textContent = err.serverError ?? 'Failed to save.';
+            msgEl.textContent = apiErrorMessage(err, 'Failed to save.');
             msgEl.style.display = '';
             return false;
           });
@@ -238,8 +237,7 @@ export function namedPointsEditorScript(): string {
           }
         } else if (_npAddLatLng) {
           const data = await createNamedPoint({ name, lat: _npAddLatLng.lat, lon: _npAddLatLng.lng, max_km: maxKm }).catch((err) => {
-            if (!err.status) throw err;
-            msgEl.textContent = err.serverError ?? 'Failed to add.';
+            msgEl.textContent = apiErrorMessage(err, 'Failed to add.');
             msgEl.style.display = '';
             return null;
           });
@@ -271,8 +269,7 @@ export function namedPointsEditorScript(): string {
       const msgEl = document.getElementById('np-editor-msg');
       try {
         const deleted = await deleteNamedPoint(_npSelectedId).then(() => true, (err) => {
-          if (!err.status) throw err;
-          msgEl.textContent = err.serverError ?? 'Failed to delete.';
+          msgEl.textContent = apiErrorMessage(err, 'Failed to delete.');
           msgEl.style.display = '';
           deleteBtn.disabled = false;
           return false;
