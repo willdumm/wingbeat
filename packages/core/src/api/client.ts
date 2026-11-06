@@ -23,6 +23,12 @@ export interface ApiClientOptions {
   mismatch?: 'strict' | 'warn';
   /** Read on every request (default: the global fetch at that time). */
   fetch?: () => typeof fetch;
+  /**
+   * How long a request may take, response body included, before it fails with
+   * ApiTimeoutError (default DEFAULT_TIMEOUT_MS). It's long because a full flight sync over
+   * a slow connection really can take a while; its job is to end a request that never will.
+   */
+  timeoutMs?: number;
   /** Where 'warn' reports a mismatch (default console.warn). */
   warn?: (message: string, detail: unknown) => void;
 }
@@ -61,6 +67,19 @@ export class ApiShapeError extends Error {
   }
 }
 
+/**
+ * A request with no answer within the client's timeoutMs. A write may still have reached
+ * the server.
+ */
+export class ApiTimeoutError extends Error {
+  constructor(readonly path: string, readonly timeoutMs: number) {
+    super('No response from ' + path + ' after ' + Math.round(timeoutMs / 1000) + ' seconds');
+    this.name = 'ApiTimeoutError';
+  }
+}
+
+export const DEFAULT_TIMEOUT_MS = 120_000;
+
 export type WriteMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export interface ApiClient {
@@ -74,6 +93,7 @@ export function createApiClient({
   auth = { kind: 'cookie' },
   mismatch = 'strict',
   fetch: getFetch = () => globalThis.fetch,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
   warn = (message, detail) => console.warn(message, detail),
 }: ApiClientOptions = {}): ApiClient {
   const authHeaders = (): Record<string, string> =>
@@ -95,23 +115,40 @@ export function createApiClient({
       resp.status === 409 && err.conflict ? err.conflict : undefined);
   }
 
-  return {
-    async get(path, schema) {
-      const init: RequestInit | undefined = auth.kind === 'bearer' ? { headers: authHeaders() } : undefined;
-      // Called with one argument for cookie auth, as the pages' bare fetch calls were.
-      const resp = await (init ? getFetch()(baseUrl + path, init) : getFetch()(baseUrl + path));
+  // Races the timeout rather than relying on the abort, so a fetch that ignores its signal
+  // (or a platform's that doesn't reach the body) can't hang the caller.
+  async function request<S extends z.ZodMiniType>(path: string, init: RequestInit, schema: S): Promise<z.infer<S>> {
+    const controller = new AbortController();
+    let timer!: ReturnType<typeof setTimeout>;
+    const timedOut = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new ApiTimeoutError(path, timeoutMs));
+        controller.abort();
+      }, timeoutMs);
+    });
+    const answered = (async () => {
+      const resp = await getFetch()(baseUrl + path, { ...init, signal: controller.signal });
       if (!resp.ok) throw await httpError(path, resp);
       return parse(path, schema, await resp.json());
+    })();
+    try {
+      return await Promise.race([answered, timedOut]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  return {
+    get(path, schema) {
+      return request(path, { headers: authHeaders() }, schema);
     },
 
-    async write(method, path, body, schema) {
-      const resp = await getFetch()(baseUrl + path, {
+    write(method, path, body, schema) {
+      return request(path, {
         method,
         headers: body === undefined ? authHeaders() : { ...authHeaders(), 'Content-Type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
-      });
-      if (!resp.ok) throw await httpError(path, resp);
-      return parse(path, schema, await resp.json());
+      }, schema);
     },
   };
 }

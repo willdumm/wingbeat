@@ -684,6 +684,10 @@ How it's built, for the steps that follow:
     gives up its cursors), a `refresh()` waits for an async storage's load, and flight
     records are dropped if another tab's copy moved the tracker's cursor meanwhile, as
     corrections already were. Both pages load on staging with no errors.
+  - Finding 5: the API client has a per-request timeout (`timeoutMs`, default 120 s, body
+    included), raising `ApiTimeoutError`; it races the abort, so a fetch that ignores its
+    signal can't hang a caller either. A hung fetch fails its refresh and the queued one
+    runs. Both pages load on staging with no errors.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.
