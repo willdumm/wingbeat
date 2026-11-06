@@ -164,7 +164,7 @@ changed.
 | 2 | Silent non-HTTP errors | To do |
 | 3 | Day bounds on DST days | Fixed |
 | 4 | apply-assignment count | Fixed |
-| 5 | Request timeout | To do |
+| 5 | Request timeout | Fixed |
 | 6 | Core clock scan | Fixed |
 | 7 | Page-global check | Fixed |
 | 8 | CLAUDE.md drift | Fixed |

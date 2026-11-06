@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { importCore } from './core.mjs';
 
 const { createFlightStore, FLIGHT_STORE_KEY } = await importCore('flight-store');
-const { createApiClient, ApiShapeError, ApiHttpError } = await importCore('api/client');
+const { createApiClient, ApiShapeError, ApiHttpError, ApiTimeoutError, DEFAULT_TIMEOUT_MS } = await importCore('api/client');
 const { FlightCorrectionsResponse } = await importCore('api/flights');
 const { OkResponse } = await importCore('api/corrections');
 
@@ -189,6 +189,47 @@ describe('createFlightStore: a damaged or stale cached copy', () => {
   });
 });
 
+describe('createApiClient: timeouts', () => {
+  const never = () => new Promise(() => {});
+  const client = (fetch, timeoutMs = 5) => createApiClient({ fetch: () => fetch, timeoutMs });
+
+  test('a fetch that never settles rejects with ApiTimeoutError, and is aborted', async () => {
+    let signal;
+    const c = client((_, init) => { signal = init.signal; return never(); });
+    await assert.rejects(c.get('/api/x', OkResponse), (e) => e instanceof ApiTimeoutError && e.path === '/api/x' && e.timeoutMs === 5);
+    assert.equal(signal.aborted, true);
+    await assert.rejects(c.write('POST', '/api/x', {}, OkResponse), ApiTimeoutError);
+  });
+
+  test('so does a response whose body never arrives', async () => {
+    const c = client(async () => ({ ok: true, status: 200, json: never }));
+    await assert.rejects(c.get('/api/x', OkResponse), ApiTimeoutError);
+  });
+
+  test('an answer in time is unaffected, and leaves no timer running', async () => {
+    const c = client(async (_, init) => { assert.equal(init.signal.aborted, false); return new Response('{"ok":true}'); }, 60_000);
+    assert.deepEqual(await c.get('/api/x', OkResponse), { ok: true });
+    await assert.rejects(client(async () => new Response('{"error":"no"}', { status: 400 }), 60_000).get('/api/x', OkResponse), ApiHttpError);
+  });
+
+  test('the default is long enough for a slow full sync', () => assert.equal(DEFAULT_TIMEOUT_MS, 120_000));
+
+  test('a hung request fails its refresh, and the next one runs', async () => {
+    let calls = 0;
+    const fetch = async (url) => {
+      if (calls++ < 2) return never();   // the first refresh's flights and corrections
+      return new Response(JSON.stringify(url.includes('corrections') ? noCorrections : complete([flight(1, 1000)])));
+    };
+    const store = createFlightStore({ storage: { getItem: () => null, setItem() {} }, client: client(fetch), flightThresholdKmh: 50 });
+    store.init();
+    const first = store.refresh([1]);
+    const queued = store.refresh([1]);
+    await assert.rejects(first, ApiTimeoutError);
+    assert.equal((await queued).changed, true);
+    assert.equal(store.getRaw().length, 1);
+  });
+});
+
 describe('createApiClient', () => {
   const respond = (body, status = 200) => async () => ({ ok: status < 300, status, json: async () => body });
   const good = { entries: [], deleted: [], last_history_id: 1 };
@@ -225,7 +266,7 @@ describe('createApiClient', () => {
 
   test('a write sends its body as JSON (none for a delete), with the bearer token', async () => {
     const seen = [];
-    const fetch = async (url, init) => { seen.push([url, init]); return { ok: true, status: 200, json: async () => ({ ok: true }) }; };
+    const fetch = async (url, { signal, ...init }) => { seen.push([url, init]); return { ok: true, status: 200, json: async () => ({ ok: true }) }; };
     const client = createApiClient({ auth: { kind: 'bearer', token: 't0k' }, fetch: () => fetch });
     assert.deepEqual(await client.write('PUT', '/api/duty-methods', { method: 'b' }, OkResponse), { ok: true });
     await client.write('DELETE', '/api/duty-methods/2026-01-01', undefined, OkResponse);
