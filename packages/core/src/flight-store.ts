@@ -84,6 +84,10 @@ export function mergeFlightCorrections<E extends Correction>(
   return [...byKey.values()];
 }
 
+function isRecord(x: unknown): boolean {
+  return typeof x === 'object' && x !== null && !Array.isArray(x);
+}
+
 function emptyBlob(): FlightStoreBlob {
   return { last_modified_at_by_tracker: {}, flights: [], entries: [], entries_last_history_id: 0 };
 }
@@ -124,6 +128,7 @@ export function createFlightStore({ storage, client, key = FLIGHT_STORE_KEY, fli
   let gen = 0;
   let effCache: { gen: number; flights: EffectiveFlight[]; unmatched: FlightCorrection[]; unplaced: FlightCorrection[] } | null = null;
   let watching = false;
+  let loading: Promise<void> | null = null;   // an async storage's load in progress
 
   const notify = () => cbs.forEach(cb => cb());
 
@@ -137,11 +142,15 @@ export function createFlightStore({ storage, client, key = FLIGHT_STORE_KEY, fli
 
   function parse(raw: string | null) {
     try {
-      if (raw) mem = JSON.parse(raw);
+      const stored = raw ? JSON.parse(raw) : null;
+      if (isRecord(stored)) mem = stored;
     } catch (_) {}
-    // A copy without a cursor (the old whole-table entries_version) is shown until the
-    // next refresh replaces it with a full fetch.
-    if (!Array.isArray(mem.entries)) mem.entries = [];
+    // A list that's missing takes its cursors with it, or the next refresh would only ask
+    // for what's newer. A copy with a list but no cursor (the old whole-table
+    // entries_version) is shown until the next refresh replaces it with a full fetch.
+    if (!Array.isArray(mem.flights)) { mem.flights = []; mem.last_modified_at_by_tracker = {}; }
+    if (!isRecord(mem.last_modified_at_by_tracker)) mem.last_modified_at_by_tracker = {};
+    if (!Array.isArray(mem.entries)) { mem.entries = []; mem.entries_last_history_id = 0; }
     if (!Number.isInteger(mem.entries_last_history_id)) mem.entries_last_history_id = 0;
     delete mem.entries_version;
     gen++;
@@ -151,7 +160,12 @@ export function createFlightStore({ storage, client, key = FLIGHT_STORE_KEY, fli
   function load(): void | Promise<void> {
     let raw: string | null | Promise<string | null>;
     try { raw = storage.getItem(key); } catch (_) { raw = null; }
-    if (raw instanceof Promise) return raw.catch(() => null).then(parse);
+    if (raw instanceof Promise) {
+      const loaded: Promise<void> = raw.catch(() => null).then(parse).finally(() => {
+        if (loading === loaded) loading = null;
+      });
+      return loading = loaded;
+    }
     parse(raw);
   }
 
@@ -174,11 +188,13 @@ export function createFlightStore({ storage, client, key = FLIGHT_STORE_KEY, fli
   const since = (path: string, cursor: number) => path + (path.includes('?') ? '&' : '?') + 'since=' + cursor;
 
   async function fetchMerge(trackerIds: number[]): Promise<RefreshResult> {
+    // The load would replace what this merges, and its cursors are where this starts.
+    if (loading) await loading;
     const entriesSince = mem.entries_last_history_id;
     const [results, entriesData] = await Promise.all([
       Promise.all(trackerIds.map(async (tid) => {
         const cursor = mem.last_modified_at_by_tracker[tid] ?? 0;
-        return { tid, data: await client.get(since('/api/flights/complete?tracker=' + encodeURIComponent(tid), cursor), FlightsCompleteResponse) };
+        return { tid, cursor, data: await client.get(since('/api/flights/complete?tracker=' + encodeURIComponent(tid), cursor), FlightsCompleteResponse) };
       })),
       // A failure keeps the cached copy.
       client.get(since('/api/flight-corrections', entriesSince), FlightCorrectionsResponse).catch(() => null),
@@ -190,13 +206,17 @@ export function createFlightStore({ storage, client, key = FLIGHT_STORE_KEY, fli
     const lastPointTimeByTracker: RefreshResult['lastPointTimeByTracker'] = {};
     const groundTrailsByTracker: RefreshResult['groundTrailsByTracker'] = {};
     let anyGeocodePending = false;
-    for (const { tid, data } of results) {
+    for (const { tid, cursor, data } of results) {
       if (!refreshedTrackers.has(tid)) { refreshedTrackers.add(tid); gen++; }
-      if (data.flights.length > 0) {
-        mergeFlights(data.flights);
-        changed = true;
+      // Dropped if another tab's save moved the tracker's cursor meanwhile, as the corrections
+      // below are: these records may be older than that copy's.
+      if ((mem.last_modified_at_by_tracker[tid] ?? 0) === cursor) {
+        if (data.flights.length > 0) {
+          mergeFlights(data.flights);
+          changed = true;
+        }
+        if (advance(mem.last_modified_at_by_tracker, String(tid), data.last_modified_at)) changed = true;
       }
-      if (advance(mem.last_modified_at_by_tracker, String(tid), data.last_modified_at)) changed = true;
       if ((data.last_polled ?? 0) > (latestLastPolled ?? 0)) latestLastPolled = data.last_polled;
       liveLabelsByTracker[tid] = data.live_label ?? null;
       lastPointTimeByTracker[tid] = data.last_point_time ?? null;

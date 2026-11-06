@@ -680,6 +680,10 @@ How it's built, for the steps that follow:
     `trackedStart`, `pointInPolygon`, `computeCentroid`, `UNKNOWN_LOCATION`,
     `elevationColorFor`, `flightCorrectionKey`, `mergeFlightCorrections`); they stay
     exported from core. Both pages load on staging with no errors.
+  - Finding 10: the flight store repairs every field of its cached copy (a missing list
+    gives up its cursors), a `refresh()` waits for an async storage's load, and flight
+    records are dropped if another tab's copy moved the tracker's cursor meanwhile, as
+    corrections already were. Both pages load on staging with no errors.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.
