@@ -32,17 +32,31 @@ describe('security headers', () => {
       if (p !== '/login') assert.ok(tags.length > 5);
     }
   });
-  test('the dashboard and analytics pages inline the core bundle in a script with the nonce', async () => {
+  test('the dashboard and analytics pages load the core bundle in a script with the nonce', async () => {
     for (const p of ['/', '/analytics']) {
       const r = await w.request('GET', p);
       const nonce = /script-src 'nonce-([^']+)'/.exec(r.headers.get('content-security-policy'))[1];
       const scripts = [...r.body.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
-      const core = scripts.filter(m => m[2].startsWith('/* @wingbeat/core browser bundle'));
+      const core = scripts.filter(m => /\bsrc="\/core-bundle\.\w+\.js"/.test(m[1]));
       assert.equal(core.length, 1, p);
       assert.ok(core[0][1].includes(`nonce="${nonce}"`), p);
       // Just ahead of the page script (the last one), which calls the globals it defines.
       assert.equal(scripts.indexOf(core[0]), scripts.length - 2, p);
+      assert.ok(!r.body.includes('@wingbeat/core browser bundle'), p + ': not inlined as well');
     }
+  });
+  test('the core bundle is served signed out, as JavaScript, cached for good, at a path only it has', async () => {
+    const page = await w.request('GET', '/');
+    const src = /<script\b[^>]*\bsrc="(\/core-bundle\.\w+\.js)"/.exec(page.body)[1];
+    const r = await w.request('GET', src, undefined, { as: null });
+    assert.equal(r.status, 200);
+    assertBaseline(r.headers);
+    assert.match(r.headers.get('content-type'), /^text\/javascript/);
+    assert.equal(r.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+    assert.ok(r.body.startsWith('/* @wingbeat/core browser bundle'));
+    // Another version's path is no route: an immutable response there would pin the wrong code.
+    const other = await w.request('GET', '/core-bundle.0.js', undefined, { as: null });
+    assert.notEqual(other.status, 200);
   });
   test('the nonce differs per request', async () => {
     const n = async () => /nonce-([^']+)'/.exec((await w.request('GET', '/analytics')).headers.get('content-security-policy'))[1];

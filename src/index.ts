@@ -9,6 +9,7 @@ import { resegment } from './segmentation';
 import { geocodePendingPoints, geocodeLivePoint, invalidateNamedPointsCache, computeLiveLabel, resolveRefPoint } from './geocoding';
 import { haversineMiles, SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
 import { flightCorrectionKey } from '@wingbeat/core/flight-store';
+import { coreBundle, coreBundlePath } from './shared/core-bundle';
 import { dashboardHTML } from './dashboard';
 import { analyticsHTML } from './analytics';
 import { generateToken, sha256Hex, deviceNameFromUA, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
@@ -278,6 +279,13 @@ app.use('*', async (c, next) => {
 
 // Ahead of tenant routing and auth, so crawlers get the rules on any host while signed out.
 app.get('/robots.txt', (c) => c.text('User-agent: *\nDisallow: /\n'));
+
+// Also ahead of them: it's the same public code for every tenant, and a page's script tag
+// has no use for a login redirect. The path changes with the content, hence `immutable`.
+app.get(coreBundlePath, (c) => c.body(coreBundle, 200, {
+  'Content-Type': 'text/javascript; charset=utf-8',
+  'Cache-Control': 'public, max-age=31536000, immutable',
+}));
 
 app.use('*', async (c, next) => {
   const routing = parseRouting(c.env);

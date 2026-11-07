@@ -17,7 +17,7 @@ The tracker continuously polls a Garmin InReach MapShare KML feed (via a per-min
 
 **Runtime:** Cloudflare Worker (TypeScript, Hono framework)  
 **Database:** Cloudflare D1 (managed SQLite)  
-**Frontend:** Inline HTML + vanilla JS + Leaflet.js, plus `@wingbeat/core` (`packages/core`, typed client logic) bundled by esbuild into an inline script. Wrangler's `[build]` command (`scripts/build-core.mjs`) builds it before every `wrangler dev` and `wrangler deploy`  
+**Frontend:** Inline HTML + vanilla JS + Leaflet.js, plus `@wingbeat/core` (`packages/core`, typed client logic) bundled by esbuild into a script the Worker serves at a content-hashed path. Wrangler's `[build]` command (`scripts/build-core.mjs`) builds it before every `wrangler dev` and `wrangler deploy`  
 **Deployment:** `wrangler deploy`
 
 ---

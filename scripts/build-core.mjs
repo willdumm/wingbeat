@@ -2,8 +2,9 @@
 // Builds the browser bundle of @wingbeat/core: esbuild bundles src/client/core-entry.ts to
 // an IIFE that assigns the core functions to the global names the pages' inline scripts
 // call, and writes it to build/core-bundle.txt. The Worker imports that file as a Text
-// module (src/shared/core-bundle.ts) and inlines it in a <script nonce> ahead of the page
-// script, so a missing bundle fails `wrangler deploy` instead of 404ing in the browser.
+// module (src/shared/core-bundle.ts) and serves it at a content-hashed path, which pages load
+// with a <script nonce src> ahead of the page script, so a missing bundle fails
+// `wrangler deploy` instead of 404ing in the browser.
 //
 // This is Wrangler's [build] command (wrangler.example.toml, and the hosting repo's
 // generated wrangler.toml), so `wrangler dev`, `wrangler deploy` and Workers Builds all run
@@ -28,14 +29,14 @@ export async function coreBundleText() {
     platform: 'browser',
     format: 'iife',
     target: 'es2022',
-    // Minified: zod/mini makes up most of it, and it's inlined in every page.
+    // Minified: zod/mini makes up most of it.
     minify: true,
     write: false,
     banner: { js: '/* @wingbeat/core browser bundle (src/client/core-entry.ts) */' },
     logLevel: 'warning',
   });
   const text = result.outputFiles[0].text;
-  // It's inlined in a <script> element, which a literal "</script" would end early.
+  // The showcase inlines it in a <script> element, which a literal "</script" would end early.
   if (/<\/script/i.test(text)) throw new Error('core bundle contains "</script"');
   return text;
 }

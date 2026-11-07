@@ -170,5 +170,5 @@ changed.
 | 8 | CLAUDE.md drift | Fixed |
 | 9 | `flightCorrectionKey` reuse | Fixed |
 | 10 | Flight store robustness | Fixed |
-| 11 | Inlined bundle | To do |
+| 11 | Inlined bundle | Fixed |
 | 12 | Test details | Fixed |

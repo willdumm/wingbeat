@@ -69,11 +69,14 @@ function freeIdentifiers(source) {
 describe('the page globals', () => {
   let w;
   const inlineScripts = {};
+  const bundles = {};
   let globals;
   before(async () => {
     w = await startWorker();
     for (const page of PAGES) {
       const html = await (await w.adminFetch('http://localhost' + page)).text();
+      const src = /<script\b[^>]*\bsrc="(\/core-bundle\.\w+\.js)"/.exec(html)?.[1];
+      bundles[page] = src && await (await w.adminFetch('http://localhost' + src)).text();
       inlineScripts[page] = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)]
         .filter(m => !/\bsrc=/.test(m[1])).map(m => m[2]);
     }
@@ -94,8 +97,8 @@ describe('the page globals', () => {
 
   for (const page of PAGES) {
     test(page + ' ships the bundle, and its scripts use no global that nothing defines', () => {
-      assert.ok(inlineScripts[page].includes(coreBundle), 'the page has the bundle');
-      const free = freeIdentifiers(inlineScripts[page].filter(s => s !== coreBundle).join('\n;\n'));
+      assert.equal(bundles[page], coreBundle, 'the page loads the bundle');
+      const free = freeIdentifiers(inlineScripts[page].join('\n;\n'));
       assert.deepEqual([...free].filter(name => globals[name] === undefined && !VENDORED.has(name)), []);
       // Guards the check itself: a walk that found nothing would pass the line above.
       assert.ok([...free].filter(name => globals[name] !== undefined).length > 100);
