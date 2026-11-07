@@ -74,10 +74,10 @@ Facts about the current code that shape the plan:
   `sharedMaintenanceHelperScripts()` (`aircraft-info.ts`). Moving it to core means passing all
   of those in.
 - **Auth is a cookie session.** The middleware in `src/index.ts` reads only the session
-  cookie (and the `POLLER_SECRET` bearer for `/api/admin/*`), and **redirects** any request
-  without a valid session to `/login`, API requests included. Session tokens are stored
-  hashed (`0003_session_token_hash.sql`). A session expires after 90 days without use
-  (`SESSION_IDLE_SECS`), and use refreshes `last_seen_at` at most hourly. There is
+  cookie (and the `POLLER_SECRET` bearer for `/api/admin/*`). A page request without a valid
+  session **redirects** to `/login`, and an `/api/*` request gets a `401` JSON. Session
+  tokens are stored hashed (`0003_session_token_hash.sql`). A session expires after 90 days
+  without use (`SESSION_IDLE_SECS`), and use refreshes `last_seen_at` at most hourly. There is
   already a device-link flow (`POST /api/me/device-link`, `/join/:token`, 15-minute TTL) and a
   per-session device list in Settings. Both carry over to the app well.
 - **The client scripts call the API with bare `fetch`** (`flight-store.ts`, `pilot-duty.ts`)
@@ -375,14 +375,15 @@ Those render chunks call core for anything they compute.
 2. Add a build step: esbuild bundles a small browser entry (`src/client/core-entry.ts`) to
    an IIFE that assigns the core functions to the same global names the inline scripts use
    now (`applyFlightEdits`, `flightStore`, …). The Worker imports it as a **Wrangler Text
-   module** and inlines it in a `<script nonce>`, like the script strings today.
-   - Not a static asset loaded with `<script src>`. The CSP's `script-src` has no `'self'`
-     (`buildCsp()` in `src/index.ts`), and its `'strict-dynamic'` makes CSP3 browsers ignore
-     host allowlists anyway, so the tag would need the nonce too. More importantly, a missing
-     Text module fails `wrangler deploy` at build time, while a missing static asset deploys
-     fine and 404s in every browser.
-   - Add a case to `test/worker-security-headers.test.mjs` that the dashboard and analytics
-     pages contain the core bundle in a script carrying the response's nonce.
+   module**, serves it at a content-hashed path (`/core-bundle.<hash>.js`), and pages load it
+   with a `<script nonce src>`. It was inlined until review finding 11.
+   - Not a Workers static asset. A missing Text module fails `wrangler deploy` at build time,
+     while a missing static asset deploys fine and 404s in every browser. The tag needs the
+     nonce either way: the CSP's `script-src` has no `'self'` (`buildCsp()` in
+     `src/index.ts`), and its `'strict-dynamic'` makes CSP3 browsers ignore host allowlists.
+   - `test/worker-security-headers.test.mjs` checks that the dashboard and analytics pages
+     load the core bundle in a script carrying the response's nonce, and that the route
+     serves it signed out with the long cache.
    - The bundle has to exist before Wrangler runs, so make the esbuild step Wrangler's
      `[build] command` in `wrangler.example.toml`, **and** in the hosting repo's generated
      `wrangler.toml` (`writeWranglerToml` in wingbeat-hosting), in the same change. Then
@@ -1529,15 +1530,15 @@ account whose operator is in another zone, that's the only correct reading of a 
 - Add `Authorization: Bearer <session token>` to the session middleware for non-admin
   paths. Admin paths stay `POLLER_SECRET`-only, and a session bearer must never satisfy
   them. Add tests in `test/worker-auth.test.mjs` for both.
-- **A failed bearer auth returns `401` JSON, not the `/login` redirect.** The app treats a
-  `401` as "this session was revoked or expired". It marks that account signed out and offers
-  to pair again, without retrying. Cookie requests keep the redirect. Test both in
-  `test/worker-auth.test.mjs`.
-- **Whether to answer `401` or redirect depends only on whether an `Authorization` header is
-  present**, not on the path or `Accept`, so a cookie request's behavior can't change. A
-  request with an `Authorization` header is judged by the bearer alone, and any cookie it also
-  carries is ignored. Test a request with a valid cookie and an invalid bearer (`401`), and a
-  cookie-only request to an API path (the redirect, as today).
+- **A failed bearer auth returns `401` JSON, on any path, never the `/login` redirect.** The
+  app treats a `401` as "this session was revoked or expired". It marks that account signed
+  out and offers to pair again, without retrying. Requests without a bearer stay as they are:
+  `/api/*` gets a `401` JSON and a page redirects. Test both in `test/worker-auth.test.mjs`.
+- **An `Authorization` header decides how a request is authenticated**, not `Accept`, so a
+  cookie request's behavior can't change. A request with the header is judged by the bearer
+  alone, and any cookie it also carries is ignored. Test a request with a valid cookie and an
+  invalid bearer (`401`), a cookie-only request to an API path without a valid session (`401`,
+  as today), and one to a page (the redirect, as today).
 - The middleware change ships as **its own deploy**, ahead of `/api/app/pair` and
   `DELETE /api/me`, so if web sign-in breaks, the cause is obvious and the revert is small.
 - **Session lifetime:** app sessions use the existing sliding expiry unchanged (90 days idle,
@@ -1824,10 +1825,11 @@ pilot-aircraft pair fits. There's no fixed decision time (this replaces "decides
 above): the matcher re-evaluates a flight as evidence arrives, over the airborne time each
 phone's evidence covers, and a phone that was monitoring and didn't see the assigned aircraft
 counts as evidence against the assignment. Answered in the web-risk review (2026-11-02):
-the core bundle is inlined as a Text module with the nonce (the CSP has no `'self'` for
-scripts; since review finding 11 it's still a Text module but loaded by a nonced `src`), `apps/mobile` isn't a root npm workspace, the web parses responses warn-only at
-first, and the matcher ships behind a server-side `auto_assign` setting (`off` / `shadow` /
-`on`), which is separate from the ruled-out bootstrap feature flags. Answered in the
+the core bundle is a Text module with the nonce (the CSP has no `'self'` for scripts; since
+review finding 11 it's served from a Worker route and loaded by a nonced `src`, not inlined),
+`apps/mobile` isn't a root npm workspace, the web parses responses warn-only at first, and
+the matcher ships behind a server-side `auto_assign` setting (`off` / `shadow` / `on`),
+which is separate from the ruled-out bootstrap feature flags. Answered in the
 restructuring (2026-11-02): Web Push in the dashboard replaces Pushover before the app
 exists. A beacon probe proves passive matching before the app is built, and the app's phases
 start only if it passes. Hosted instances call Expo directly. The push relay and the
