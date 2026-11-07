@@ -429,8 +429,8 @@ How it's built, for the steps that follow:
   `globalThis` under its old global name, binding page state (`window.APP_SETTINGS.timezone`)
   at call time. A moved script string is deleted, and its callers stay the same.
 - **The bundle**: `scripts/build-core.mjs` writes `build/core-bundle.txt` (gitignored).
-  `src/shared/core-bundle.ts` imports it (`coreBundleScript(nonce)` for the pages,
-  `coreBundle` for the showcase). Tests, `docs:showcase` and the harness build it in
+  `src/shared/core-bundle.ts` imports it (`coreBundleScript(nonce)` for the pages' script
+  tag, `coreBundle` for the Worker's route and the showcase). Tests, `docs:showcase` and the harness build it in
   memory with `coreBundlePlugin()`, not from disk.
 - **Tests**: core modules are tested directly through `test/core.mjs` (`importCore('time')`);
   `test/harness.mjs` runs the shipped bundle before the script strings, so the existing
@@ -692,6 +692,11 @@ How it's built, for the steps that follow:
     (pages still redirect to `/login`). The client raises `ApiNetworkError` for a failed
     fetch and `ApiShapeError` for a 200 that isn't JSON, and the page handlers show
     `apiErrorMessage(err, fallback)`, a new page global, so no failure is silent.
+  - Finding 11: the Worker serves the bundle at `/core-bundle.<hash>.js` (`public,
+    max-age=31536000, immutable`, ahead of tenant routing and auth), and pages load it with
+    a nonced `<script src>`. Still a Text module, so a missing bundle still fails the
+    deploy, which is why Workers static assets were passed over: no CSP or hosting config
+    change. The showcase still inlines it.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
   commit not yet pushed. It must be pushed before or with the first tag that has the bundle.
@@ -1820,7 +1825,7 @@ above): the matcher re-evaluates a flight as evidence arrives, over the airborne
 phone's evidence covers, and a phone that was monitoring and didn't see the assigned aircraft
 counts as evidence against the assignment. Answered in the web-risk review (2026-11-02):
 the core bundle is inlined as a Text module with the nonce (the CSP has no `'self'` for
-scripts), `apps/mobile` isn't a root npm workspace, the web parses responses warn-only at
+scripts; since review finding 11 it's still a Text module but loaded by a nonced `src`), `apps/mobile` isn't a root npm workspace, the web parses responses warn-only at
 first, and the matcher ships behind a server-side `auto_assign` setting (`off` / `shadow` /
 `on`), which is separate from the ruled-out bootstrap feature flags. Answered in the
 restructuring (2026-11-02): Web Push in the dashboard replaces Pushover before the app
