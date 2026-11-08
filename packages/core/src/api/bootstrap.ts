@@ -1,7 +1,8 @@
 /**
  * GET /api/bootstrap: what the dashboard loads first, in one request (the signed-in user,
- * and the trackers, aircraft, pilots and tile overlays). Response objects allow unknown
- * keys, so an instance may add fields without breaking older clients.
+ * and the trackers, aircraft, pilots and tile overlays), and the version handshake
+ * (api/version.ts). Response objects allow unknown keys, so an instance may add fields
+ * without breaking older clients.
  */
 import * as z from 'zod/mini';
 import type { ApiClient } from './client';
@@ -30,6 +31,10 @@ export const BootstrapResponse = z.looseObject({
   aircraft: z.array(Aircraft),
   pilots: z.array(Pilot),
   overlays: z.array(TileOverlay),
+  /** The server's API level (absent from servers older than the handshake). */
+  api_version: z.optional(z.number()),
+  /** The oldest client level the server serves (absent like api_version). */
+  min_client_level: z.optional(z.number()),
 });
 
 export type Me = z.infer<typeof Me>;

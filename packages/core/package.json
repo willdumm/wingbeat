@@ -38,6 +38,7 @@
     "./api/trackers-requests": "./src/api/trackers-requests.ts",
     "./api/users": "./src/api/users.ts",
     "./api/users-requests": "./src/api/users-requests.ts",
+    "./api/version": "./src/api/version.ts",
     "./api/webhooks": "./src/api/webhooks.ts",
     "./api/webhooks-requests": "./src/api/webhooks-requests.ts",
     "./corrections": "./src/corrections.ts",

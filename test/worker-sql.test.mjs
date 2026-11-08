@@ -1151,15 +1151,56 @@ describe('the app’s requests, through the core client', async () => {
   const { createApiClient, ApiHttpError } = await importCore('api/client');
   const app = await importCore('api/app');
   const me = await importCore('api/me');
-  const client = (auth) => createApiClient({ baseUrl: 'http://localhost', fetch: () => w.fetch, auth });
+  const { getBootstrap } = await importCore('api/bootstrap');
+  const version = await importCore('api/version');
+  const client = (auth, headers) => createApiClient({ baseUrl: 'http://localhost', fetch: () => w.fetch, auth, headers });
+  const deviceLink = async () => (await w.request('POST', '/api/me/device-link')).body.url.replace('/join/', '');
 
   test('pair: a device link for a session token that works as a bearer', async () => {
-    const link = (await w.request('POST', '/api/me/device-link')).body.url.replace('/join/', '');
+    const link = await deviceLink();
     const paired = await app.pair(client(), { token: link, device_name: 'Test phone' });
     assert.deepEqual([paired.me.id, paired.me.device_name], [1, 'Test phone']);
     const user = await me.getMe(client({ kind: 'bearer', token: paired.token }));
     assert.equal(user.session_id, paired.me.session_id);
     await assert.rejects(app.pair(client(), { token: link }),
       (e) => e instanceof ApiHttpError && e.status === 410 && e.serverError === 'This sign-in link has already been used.');
+  });
+
+  test('the version handshake: bootstrap’s levels, and X-Wingbeat-App recorded only when it changes', async () => {
+    const { token, me: { session_id } } = await app.pair(client(), { token: await deviceLink() });
+    const appVersion = async () => (await w.first('SELECT app_version FROM sessions WHERE id = ?', session_id)).app_version;
+    const settled = async (want) => {
+      for (let i = 0; i < 20 && await appVersion() !== want; i++) await new Promise(res => setTimeout(res, 50));
+      return appVersion();
+    };
+    const asApp = (runtime) => client({ kind: 'bearer', token }, { [version.APP_VERSION_HEADER]: version.appVersionHeaderValue(runtime) });
+
+    const boot = await getBootstrap(asApp('r1'));
+    assert.deepEqual([boot.api_version, boot.min_client_level], [version.API_VERSION, version.MIN_CLIENT_LEVEL]);
+    assert.equal(await settled('level=1; runtime=r1'), 'level=1; runtime=r1');
+    await me.getMe(asApp('r2'));
+    assert.equal(await settled('level=1; runtime=r2'), 'level=1; runtime=r2');
+    // Unchanged, it isn't rewritten (a trigger counts the writes); a request without it (or
+    // with a blank one) leaves the last one.
+    await w.run('CREATE TABLE app_version_writes (session_id INTEGER)');
+    await w.run(`CREATE TRIGGER app_version_writes_au AFTER UPDATE OF app_version ON sessions
+      BEGIN INSERT INTO app_version_writes VALUES (NEW.id); END`);
+    try {
+      await me.getMe(asApp('r2'));
+      await me.getMe(client({ kind: 'bearer', token }));
+      await me.getMe(client({ kind: 'bearer', token }, { [version.APP_VERSION_HEADER]: '  ' }));
+      await new Promise(res => setTimeout(res, 150));
+      assert.equal(await appVersion(), 'level=1; runtime=r2');
+      assert.equal((await w.first('SELECT COUNT(*) AS n FROM app_version_writes')).n, 0);
+      // The trigger does see a change.
+      await me.getMe(asApp('r3'));
+      await settled('level=1; runtime=r3');
+      assert.equal((await w.first('SELECT COUNT(*) AS n FROM app_version_writes')).n, 1);
+    } finally {
+      await w.run('DROP TRIGGER app_version_writes_au');
+      await w.run('DROP TABLE app_version_writes');
+    }
+    await me.getMe(client({ kind: 'bearer', token }, { [version.APP_VERSION_HEADER]: 'x'.repeat(150) }));
+    assert.equal(await settled('x'.repeat(version.MAX_APP_VERSION_LENGTH)), 'x'.repeat(version.MAX_APP_VERSION_LENGTH));
   });
 });

@@ -22,6 +22,7 @@ import { AssignmentRequest, BulkFlagsRequest, CorrectionRequest } from '@wingbea
 import { DefaultDutyRequest, DutyDaysClearRequest, DutyDaysRequest, DutyMethodRequest } from '@wingbeat/core/api/duty-requests';
 import { SessionRenameRequest } from '@wingbeat/core/api/me-requests';
 import { PairRequest } from '@wingbeat/core/api/app-requests';
+import { API_VERSION, APP_VERSION_HEADER, MAX_APP_VERSION_LENGTH, MIN_CLIENT_LEVEL } from '@wingbeat/core/api/version';
 import { InviteRequest } from '@wingbeat/core/api/users-requests';
 import { ApplyAssignmentRequest, TestFeedRequest, TrackerCreateRequest, TrackerUpdateRequest } from '@wingbeat/core/api/trackers-requests';
 import { OverlayRequest } from '@wingbeat/core/api/overlays-requests';
@@ -81,17 +82,18 @@ app.onError((err, c) => {
   return c.text('Internal Server Error', 500);
 });
 
-type SessionLookup = { id: number; user_id: number; name: string; role: string; device_name: string | null; last_seen_at: number; token_hashed: number };
+type SessionLookup = { id: number; user_id: number; name: string; role: string; device_name: string | null; last_seen_at: number; token_hashed: number; app_version: string | null };
 
 // Finds the live session for a cookie value. New rows store sha256(cookie) with
 // token_hashed = 1; legacy rows hold the raw cookie with token_hashed = 0. The token_hashed
 // condition keeps a hash read from the DB from working as a cookie. Idle-expired sessions
-// are deleted and reported as absent; legacy rows are upgraded in place.
+// are deleted and reported as absent; legacy rows are upgraded in place. The app's
+// X-Wingbeat-App header is recorded in app_version, written only when it changes.
 async function lookupSession(c: Context<{ Bindings: Env; Variables: Variables }>, raw: string): Promise<SessionLookup | null> {
   const hash = await sha256Hex(raw);
   const db = c.var.db;
   const row = await db.prepare(
-    `SELECT s.id, s.user_id, u.name, u.role, s.device_name, s.last_seen_at, s.token_hashed
+    `SELECT s.id, s.user_id, u.name, u.role, s.device_name, s.last_seen_at, s.token_hashed, s.app_version
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE (s.token = ?1 AND s.token_hashed = 1) OR (s.token = ?2 AND s.token_hashed = 0)`
   ).bind(hash, raw).first<SessionLookup>();
@@ -107,6 +109,10 @@ async function lookupSession(c: Context<{ Bindings: Env; Variables: Variables }>
   }
   if (now - row.last_seen_at > SESSION_TOUCH_SECS) {
     writes.push(db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?').bind(now, row.id).run());
+  }
+  const appVersion = c.req.header(APP_VERSION_HEADER)?.trim().slice(0, MAX_APP_VERSION_LENGTH);
+  if (appVersion && appVersion !== row.app_version) {
+    writes.push(db.prepare('UPDATE sessions SET app_version = ? WHERE id = ?').bind(appVersion, row.id).run());
   }
   if (writes.length) c.executionCtx.waitUntil(Promise.all(writes));
   return row;
@@ -639,7 +645,10 @@ app.get('/api/bootstrap', async (c) => {
     queryPilots(c.var.db),
     queryTileOverlays(c.var.db),
   ]);
-  return c.json({ me: meJson(c.get('user')), trackers, aircraft, pilots, overlays });
+  return c.json({
+    me: meJson(c.get('user')), trackers, aircraft, pilots, overlays,
+    api_version: API_VERSION, min_client_level: MIN_CLIENT_LEVEL,
+  });
 });
 
 app.get('/api/me/sessions', async (c) => {

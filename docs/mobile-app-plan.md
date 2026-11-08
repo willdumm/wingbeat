@@ -1626,8 +1626,9 @@ store update should be needed only for a planned native change.
   JS bundle. It goes up when the app's use of the API changes in a way the server needs to
   know about.
 
-The app sends both in an `X-Wingbeat-App` header on every request. The Worker records them
-in `sessions.app_version`.
+The app sends both in an `X-Wingbeat-App` header on every request, as
+`level=<CLIENT_API_LEVEL>; runtime=<runtimeVersion>` (`appVersionHeaderValue()` in core's
+`api/version.ts`). The Worker records it in `sessions.app_version`.
 
 **The handshake.** `GET /api/bootstrap` returns `api_version` (the server's level) and
 `min_client_level`.
@@ -1712,7 +1713,8 @@ Phase 4 is server work for the app; none of it needs the app to exist, and it's 
 through the real Worker (`test/worker*.test.mjs`). It's built on the `app-api` branch, one
 commit per step, in this order. Done: step 1, on staging since 2026-11-08 (a bad bearer gets
 the 401 JSON on API paths and pages; no bearer behaves as before); step 2 (`redeemJoinToken()`
-in `src/index.ts` is the one redemption both routes use).
+in `src/index.ts` is the one redemption both routes use); step 3 (core's API client takes
+`headers` for the app's `X-Wingbeat-App`).
 
 1. **Bearer sessions** (its own staging deploy, then its own production deploy, ahead of the
    rest; see "Auth and pairing"). The session middleware takes `Authorization: Bearer

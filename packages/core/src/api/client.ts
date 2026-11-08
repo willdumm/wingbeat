@@ -15,6 +15,8 @@ export interface ApiClientOptions {
   /** '' for the page's own origin. */
   baseUrl?: string;
   auth?: Auth;
+  /** Sent with every request (the app's X-Wingbeat-App, api/version.ts). */
+  headers?: Record<string, string>;
   /**
    * What a response that doesn't match its schema does: 'strict' throws an ApiShapeError,
    * 'warn' logs it and returns the data as it came (the web, until a release shows no
@@ -112,13 +114,14 @@ export interface ApiClient {
 export function createApiClient({
   baseUrl = '',
   auth = { kind: 'cookie' },
+  headers = {},
   mismatch = 'strict',
   fetch: getFetch = () => globalThis.fetch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   warn = (message, detail) => console.warn(message, detail),
 }: ApiClientOptions = {}): ApiClient {
   const authHeaders = (): Record<string, string> =>
-    auth.kind === 'bearer' ? { Authorization: 'Bearer ' + auth.token } : {};
+    auth.kind === 'bearer' ? { ...headers, Authorization: 'Bearer ' + auth.token } : headers;
 
   function parse<S extends z.ZodMiniType>(path: string, schema: S, body: unknown): z.infer<S> {
     const parsed = z.safeParse(schema, body);
