@@ -38,4 +38,5 @@ jobs:
           path-to-signatures: 'signatures/cla.json'
           path-to-document: 'https://raw.githubusercontent.com/willdumm/wingbeat/main/CLA.md'
           branch: 'cla-signatures'
-          allowlist: dependabot[bot]
+          # The repo's owner is the CLA's other party, so their own PRs need no signature.
+          allowlist: willdumm,dependabot[bot]
