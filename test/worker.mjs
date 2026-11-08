@@ -24,8 +24,8 @@ const { Miniflare } = await import(process.env.WINGBEAT_MINIFLARE
   ? pathToFileURL(path.join(process.env.WINGBEAT_MINIFLARE, 'dist/src/index.js')).href
   : 'miniflare');
 
-const ADMIN_TOKEN = 'test-admin-session';
-const VIEWER_TOKEN = 'test-viewer-session';
+export const ADMIN_TOKEN = 'test-admin-session';
+export const VIEWER_TOKEN = 'test-viewer-session';
 
 export async function sha256Hex(s) {
   const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));

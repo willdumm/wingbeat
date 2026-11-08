@@ -1710,7 +1710,8 @@ in `sessions.app_version`.
 
 Phase 4 is server work for the app; none of it needs the app to exist, and it's tested
 through the real Worker (`test/worker*.test.mjs`). It's built on the `app-api` branch, one
-commit per step, in this order:
+commit per step, in this order. Done: step 1, on staging since 2026-11-08 (a bad bearer gets
+the 401 JSON on API paths and pages; no bearer behaves as before).
 
 1. **Bearer sessions** (its own staging deploy, then its own production deploy, ahead of the
    rest; see "Auth and pairing"). The session middleware takes `Authorization: Bearer

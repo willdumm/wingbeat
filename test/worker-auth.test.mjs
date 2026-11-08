@@ -2,11 +2,13 @@
 // they take the POLLER_SECRET bearer token and never a session cookie, however the path is
 // spelled (percent-encoding made the router dispatch to an admin handler that the auth
 // middleware, matching on the raw path, hadn't recognized), the secret must be configured,
-// and their query/body parameters are validated.
+// and their query/body parameters are validated. Also the app's session bearer
+// (docs/mobile-app-plan.md, "Auth and pairing"): an Authorization header alone decides how a
+// request is authenticated, and a failed bearer is a 401 on every path.
 
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startWorker } from './worker.mjs';
+import { startWorker, sha256Hex, ADMIN_TOKEN, VIEWER_TOKEN } from './worker.mjs';
 
 const SECRET = 'test-secret-0123456789';
 const BEARER = { headers: { authorization: `Bearer ${SECRET}` }, as: null };
@@ -205,4 +207,99 @@ describe('without a session', () => {
       assert.equal(new URL(r.headers.get('location'), 'http://x').pathname, '/login');
     });
   }
+});
+
+describe('session bearer (the app)', () => {
+  const SIGNED_OUT = { error: 'This device was signed out. Pair it again to sign in.' };
+  const bearer = (token, extra = {}) => ({ as: null, headers: { authorization: 'Bearer ' + token, ...extra } });
+
+  test('a valid bearer signs in without a cookie', async () => {
+    const r = await w.request('GET', '/api/me', undefined, bearer(VIEWER_TOKEN));
+    assert.equal(r.status, 200);
+    assert.equal(r.body.id, 2);
+    assert.equal(r.body.role, 'viewer');
+  });
+
+  test('the scheme is case-insensitive', async () => {
+    const r = await w.request('GET', '/api/me', undefined, { as: null, headers: { authorization: 'bearer ' + ADMIN_TOKEN } });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.id, 1);
+  });
+
+  test('a valid bearer opens a page', async () => {
+    const r = await w.request('GET', '/analytics', undefined, bearer(ADMIN_TOKEN));
+    assert.equal(r.status, 200);
+  });
+
+  test("a viewer's bearer keeps the viewer's role", async () => {
+    const r = await w.request('POST', '/api/aircraft', { tail: 'N1' }, bearer(VIEWER_TOKEN));
+    assert.equal(r.status, 403);
+  });
+
+  for (const [label, auth] of [
+    ['an unknown token', 'Bearer not-a-session'],
+    ['no token', 'Bearer'],
+    ['another scheme', 'Basic ' + btoa('ada:pw')],
+    ['two tokens', `Bearer ${ADMIN_TOKEN} ${ADMIN_TOKEN}`],
+    ["the session's stored hash", 'Bearer '],
+    ['POLLER_SECRET', `Bearer ${SECRET}`],
+  ]) {
+    for (const path of ['/api/me', '/analytics', '/', '/api/nothing-here']) {
+      test(`${label}: GET ${path} is a 401 JSON, not a redirect`, async () => {
+        const header = label === "the session's stored hash" ? 'Bearer ' + await sha256Hex(ADMIN_TOKEN) : auth;
+        const r = await w.request('GET', path, undefined, { as: null, headers: { authorization: header } });
+        assert.equal(r.status, 401);
+        assert.deepEqual(r.body, SIGNED_OUT);
+      });
+    }
+  }
+
+  test('a valid cookie with an invalid bearer is a 401', async () => {
+    const r = await w.request('GET', '/api/me', undefined, { as: 'admin', headers: { authorization: 'Bearer nope' } });
+    assert.equal(r.status, 401);
+    assert.deepEqual(r.body, SIGNED_OUT);
+  });
+
+  test("a valid bearer decides over another user's cookie", async () => {
+    const r = await w.request('GET', '/api/me', undefined, { as: 'admin', headers: { authorization: 'Bearer ' + VIEWER_TOKEN } });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.id, 2);
+  });
+
+  test('a session bearer never reaches an admin route', async () => {
+    const before = await invites();
+    for (const p of ['/api/admin/bootstrap', '/api/%61dmin/bootstrap']) {
+      const r = await w.request('POST', p, {}, bearer(ADMIN_TOKEN));
+      assert.equal(r.status, 401);
+    }
+    assert.equal(await invites(), before);
+  });
+
+  test('an idle-expired session is a 401 and is deleted', async () => {
+    const token = 'idle-app-session';
+    await w.run('INSERT INTO sessions (user_id, token, token_hashed, last_seen_at) VALUES (2, ?, 1, ?)',
+      await sha256Hex(token), Math.floor(Date.now() / 1000) - 91 * 24 * 3600);
+    const r = await w.request('GET', '/api/me', undefined, bearer(token));
+    assert.equal(r.status, 401);
+    assert.equal(await w.first('SELECT id FROM sessions WHERE token = ?', await sha256Hex(token)), null);
+  });
+
+  test('a signed-out session is a 401', async () => {
+    const token = 'revoked-app-session';
+    await w.run('INSERT INTO sessions (user_id, token, token_hashed) VALUES (2, ?, 1)', await sha256Hex(token));
+    assert.equal((await w.request('GET', '/api/me', undefined, bearer(token))).status, 200);
+    await w.run('DELETE FROM sessions WHERE token = ?', await sha256Hex(token));
+    assert.equal((await w.request('GET', '/api/me', undefined, bearer(token))).status, 401);
+  });
+
+  test('an empty header is no header: the cookie decides', async () => {
+    const r = await w.request('GET', '/api/me', undefined, { as: 'viewer', headers: { authorization: '' } });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.id, 2);
+  });
+
+  test('/login and /join/* ignore the header', async () => {
+    assert.equal((await w.request('GET', '/login', undefined, bearer('nope'))).status, 200);
+    assert.equal((await w.request('GET', '/join/unknown', undefined, bearer('nope'))).status, 404);
+  });
 });

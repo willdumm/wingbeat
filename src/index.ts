@@ -111,6 +111,10 @@ async function lookupSession(c: Context<{ Bindings: Env; Variables: Variables }>
   return row;
 }
 
+function sessionUser(row: SessionLookup): AuthUser {
+  return { id: row.user_id, name: row.name, role: row.role, sessionId: row.id, device_name: row.device_name };
+}
+
 const requireAdmin: MiddlewareHandler<{ Bindings: Env; Variables: Variables }> = async (c, next) => {
   if (c.get('user').role !== 'admin') return c.json({ error: 'Forbidden' }, 403);
   return next();
@@ -348,11 +352,25 @@ app.use('*', async (c, next) => {
   // Admin routes take the bearer token, never a session cookie.
   if (isAdminPath(path)) return requireBearer(c, next);
 
+  // The app sends its session token as a bearer (docs/mobile-app-plan.md, "Auth and
+  // pairing"). The header alone decides: a request that has one is judged by it, any cookie
+  // is ignored, and a failed bearer is a 401 on every path, pages included, which the app
+  // reads as "signed out" rather than following a redirect to /login. An empty header
+  // carries no credential and counts as none.
+  const authorization = c.req.header('Authorization');
+  if (authorization) {
+    const bearer = /^Bearer +(\S+)$/i.exec(authorization)?.[1];
+    const row = bearer ? await lookupSession(c, bearer) : null;
+    if (!row) return c.json({ error: 'This device was signed out. Pair it again to sign in.' }, 401);
+    c.set('user', sessionUser(row));
+    return next();
+  }
+
   const token = getCookie(c, SESSION_COOKIE);
   if (token) {
     const row = await lookupSession(c, token);
     if (row) {
-      c.set('user', { id: row.user_id, name: row.name, role: row.role, sessionId: row.id, device_name: row.device_name });
+      c.set('user', sessionUser(row));
       return next();
     }
   }
