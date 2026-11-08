@@ -37,6 +37,7 @@ const bundle = await build({
       export { pilotDutyRenderScript } from './src/shared/pilot-duty';
       export { editHistoryScript } from './src/shared/edit-history';
       export { filterScript } from './src/shared/filters';
+      export { settingsModalScript } from './src/shared/settings';
     `,
     resolveDir: ROOT,
     loader: 'ts',
@@ -53,7 +54,7 @@ const scripts = await import(
   'data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64')
 );
 
-export const { coreBundle } = scripts;
+export const { coreBundle, editHistoryScript, settingsModalScript } = scripts;
 
 // Everything the tests reach for, by name. Top-level const/let in the scripts aren't
 // properties of the context's global object, so they're collected by a script evaluated

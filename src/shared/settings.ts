@@ -2737,15 +2737,30 @@ export function settingsModalScript(): string {
         statusEl.textContent = text;
         setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
       };
+      // Without the timezone as loaded, a save can't tell whether it changes it, so it can't
+      // warn about the duty log below: refuse rather than save unwarned.
+      if (!_tenantTimezone) {
+        showStatus('Couldn\\'t load the current settings. Reload the page and try again.');
+        return;
+      }
       try {
         // The duty log's dates and times are stored in the operator's timezone, so a new one
         // re-reads them: ask first when there are any (timezoneChangeWarning, core settings).
-        if (_tenantTimezone && body.timezone !== _tenantTimezone) {
+        if (body.timezone !== _tenantTimezone) {
           const ask = timezoneChangeWarning(_tenantTimezone, body.timezone, await fetchDutyRecordCounts());
           if (ask && !confirm(ask)) return;
         }
         await patchSettings(body);
         _tenantTimezone = body.timezone;
+        // The page's copy (settingsAsClientObject): core reads the timezone from it on every
+        // call (core-entry.ts), so times render in the new zone from here on without a reload.
+        Object.assign(window.APP_SETTINGS, {
+          appName: body.app_name,
+          timezone: body.timezone,
+          mapDefaultLat: body.map_default_lat,
+          mapDefaultLng: body.map_default_lng,
+          mapDefaultZoom: body.map_default_zoom,
+        });
         showStatus('Saved.');
       } catch (_) {
         showStatus('Failed to save.');
