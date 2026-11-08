@@ -1717,7 +1717,8 @@ in `src/index.ts` is the one redemption both routes use); step 3 (core's API cli
 `headers` for the app's `X-Wingbeat-App`); step 4 (`deleteUserAccount()` in `src/index.ts`
 is shared with `DELETE /api/users/:id`, and its last-admin check is part of the `DELETE`
 statement, so two admins leaving at once can't leave none); step 5 (`api/compat/1.ts` covers
-19 routes, listed in its header; the test also fails when a snapshot lists a route it doesn't call).
+19 routes, listed in its header; the test also fails when a snapshot lists a route it doesn't call). Steps 2–5 are on
+staging since 2026-11-08, with migration 0004 applied first. Production waits on the user.
 
 1. **Bearer sessions** (its own staging deploy, then its own production deploy, ahead of the
    rest; see "Auth and pairing"). The session middleware takes `Authorization: Bearer
