@@ -11,6 +11,8 @@
     "./analytics": "./src/analytics.ts",
     "./api/aircraft": "./src/api/aircraft.ts",
     "./api/aircraft-requests": "./src/api/aircraft-requests.ts",
+    "./api/app": "./src/api/app.ts",
+    "./api/app-requests": "./src/api/app-requests.ts",
     "./api/bootstrap": "./src/api/bootstrap.ts",
     "./api/client": "./src/api/client.ts",
     "./api/corrections": "./src/api/corrections.ts",

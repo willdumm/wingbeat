@@ -1,6 +1,6 @@
 // Session and invite handling through the real Worker (test/worker.mjs): hashed session
-// tokens, idle expiry, single-use short-lived device links, atomic invite redemption, and
-// validation of the invite / session / user-delete routes.
+// tokens, idle expiry, single-use short-lived device links, atomic invite redemption, the
+// app's pairing, and validation of the invite / session / user-delete routes.
 
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -146,6 +146,83 @@ describe('invite redemption', () => {
     await w.run('UPDATE invite_tokens SET expires_at = ? WHERE token = ?', now() - 1, token);
     assert.equal((await join(token)).status, 410);
     assert.equal((await w.first("SELECT COUNT(*) AS n FROM users WHERE name = 'Late'")).n, 0);
+  });
+});
+
+// The app's pairing redeems the same tokens as POST /join/:token, through the same function,
+// but answers in JSON with the session token instead of a cookie and a redirect.
+describe('app pairing (POST /api/app/pair)', () => {
+  const pair = (body, opts = {}) => w.request('POST', '/api/app/pair', body, { as: null, ...opts });
+  const deviceLink = async () => (await w.request('POST', '/api/me/device-link')).body.url.replace('/join/', '');
+  const bearer = (token) => ({ as: null, headers: { authorization: 'Bearer ' + token } });
+
+  test('a device link pairs once: the token is a bearer session named after the phone', async () => {
+    const link = await deviceLink();
+    const r = await pair({ token: link, device_name: '  Ada’s iPhone  ' });
+    assert.equal(r.status, 200);
+    assert.match(r.body.token, /^[0-9a-f]+$/);
+    assert.deepEqual({ ...r.body.me, session_id: 0 }, { id: 1, name: 'Ada Admin', role: 'admin', device_name: 'Ada’s iPhone', session_id: 0 });
+    const row = await w.first('SELECT id, token, token_hashed, device_name FROM sessions WHERE token = ?', await sha256Hex(r.body.token));
+    assert.deepEqual([row.id, row.token_hashed, row.device_name], [r.body.me.session_id, 1, 'Ada’s iPhone']);
+    const me = await w.request('GET', '/api/me', undefined, bearer(r.body.token));
+    assert.deepEqual(me.body, r.body.me);
+
+    const again = await pair({ token: link, device_name: 'Thief' });
+    assert.deepEqual([again.status, again.body], [410, { error: 'This sign-in link has already been used.' }]);
+    assert.equal(await w.first("SELECT 1 AS x FROM sessions WHERE device_name = 'Thief'"), null);
+    // Spent by the app, it's spent for the web too, and the other way round.
+    assert.equal((await join(link)).status, 410);
+    const webFirst = await deviceLink();
+    assert.equal((await join(webFirst)).status, 302);
+    assert.equal((await pair({ token: webFirst })).status, 410);
+  });
+
+  test('an invite creates the account, once', async () => {
+    const token = await invite('Paired Pat', 'viewer');
+    const r = await pair({ token, device_name: 'Pixel 9' });
+    assert.equal(r.status, 200);
+    const user = await w.first("SELECT id, role FROM users WHERE name = 'Paired Pat'");
+    assert.deepEqual([r.body.me.id, r.body.me.name, r.body.me.role], [user.id, 'Paired Pat', 'viewer']);
+    assert.equal((await w.request('GET', '/api/bootstrap', undefined, bearer(r.body.token))).status, 200);
+    const again = await pair({ token, device_name: 'Pixel 9' });
+    assert.deepEqual([again.status, again.body], [410, { error: 'This invite link has already been used.' }]);
+    assert.equal((await w.first("SELECT COUNT(*) AS n FROM users WHERE name = 'Paired Pat'")).n, 1);
+  });
+
+  test('a missing or blank device name falls back to the platform; a long one is cut to 60', async () => {
+    const iphone = { 'user-agent': 'Wingbeat/1 CFNetwork Darwin (iPhone)' };
+    assert.equal((await pair({ token: await deviceLink() }, { headers: iphone })).body.me.device_name, 'iPhone');
+    assert.equal((await pair({ token: await deviceLink(), device_name: '   ' }, { headers: iphone })).body.me.device_name, 'iPhone');
+    assert.equal((await pair({ token: await deviceLink(), device_name: null })).body.me.device_name, 'Device');
+    assert.equal((await pair({ token: await deviceLink(), device_name: 'x'.repeat(80) })).body.me.device_name, 'x'.repeat(60));
+  });
+
+  test('refusals are JSON: unknown, expired (not burned into an account), malformed', async () => {
+    assert.deepEqual(await pair({ token: 'nope' }).then(r => [r.status, r.body]), [404, { error: 'This link is invalid.' }]);
+    const late = await invite('Late Pairer');
+    await w.run('UPDATE invite_tokens SET expires_at = ? WHERE token = ?', now() - 1, late);
+    assert.deepEqual(await pair({ token: late }).then(r => [r.status, r.body]),
+      [410, { error: 'This link has expired. Ask an admin for a new one.' }]);
+    assert.equal((await w.first("SELECT COUNT(*) AS n FROM users WHERE name = 'Late Pairer'")).n, 0);
+    const bad = await pair({ device_name: 'x' });
+    assert.equal(bad.status, 400);
+    assert.match(bad.body.error, /^token: /);
+  });
+
+  test('needs no session, and a stale bearer or a cookie doesn’t get in its way', async () => {
+    assert.equal((await pair({ token: await deviceLink() }, bearer('revoked'))).status, 200);
+    // A cookie doesn't turn it into the web's "already signed in" redirect.
+    const r = await pair({ token: await deviceLink() }, { as: 'admin' });
+    assert.equal(r.status, 200);
+    assert.ok(r.body.token);
+  });
+
+  test('concurrent pairings with one invite produce exactly one account and one session', async () => {
+    const token = await invite('Pair Racer');
+    const rs = await Promise.all([1, 2, 3].map(() => pair({ token, device_name: 'Racer phone' })));
+    assert.deepEqual(rs.map(r => r.status).sort(), [200, 410, 410]);
+    assert.equal((await w.first("SELECT COUNT(*) AS n FROM users WHERE name = 'Pair Racer'")).n, 1);
+    assert.equal((await w.first("SELECT COUNT(*) AS n FROM sessions WHERE device_name = 'Racer phone'")).n, 1);
   });
 });
 

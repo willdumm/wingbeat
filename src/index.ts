@@ -21,6 +21,7 @@ import { BaseHistoryQuery } from '@wingbeat/core/api/requests';
 import { AssignmentRequest, BulkFlagsRequest, CorrectionRequest } from '@wingbeat/core/api/corrections-requests';
 import { DefaultDutyRequest, DutyDaysClearRequest, DutyDaysRequest, DutyMethodRequest } from '@wingbeat/core/api/duty-requests';
 import { SessionRenameRequest } from '@wingbeat/core/api/me-requests';
+import { PairRequest } from '@wingbeat/core/api/app-requests';
 import { InviteRequest } from '@wingbeat/core/api/users-requests';
 import { ApplyAssignmentRequest, TestFeedRequest, TrackerCreateRequest, TrackerUpdateRequest } from '@wingbeat/core/api/trackers-requests';
 import { OverlayRequest } from '@wingbeat/core/api/overlays-requests';
@@ -347,7 +348,7 @@ app.use('*', async (c, next) => {
   const path = c.req.path;
 
   if (path === '/login' || path === '/location') return next();
-  if (path.startsWith('/join/')) return next();
+  if (path.startsWith('/join/') || path === '/api/app/pair') return next();
 
   // Admin routes take the bearer token, never a session cookie.
   if (isAdminPath(path)) return requireBearer(c, next);
@@ -429,22 +430,66 @@ async function hasSession(c: Context<{ Bindings: Env; Variables: Variables }>): 
   return (await lookupSession(c, token)) !== null;
 }
 
+const findJoinToken = (db: D1Database, token: string) =>
+  db.prepare('SELECT * FROM invite_tokens WHERE token = ?').bind(token).first<InviteToken>();
+
+type JoinRefusal = { status: 404 | 410; message: string };
+
+const usedRefusal = (row: InviteToken): JoinRefusal => ({
+  status: 410,
+  message: row.type === 'invite' ? 'This invite link has already been used.' : 'This sign-in link has already been used.',
+});
+
+const INVALID_LINK: JoinRefusal = { status: 404, message: 'This link is invalid.' };
+
+/** Why a join token (an invite or a device link) can't be redeemed now, or null if it can. */
+function joinRefusal(row: InviteToken): JoinRefusal | null {
+  if (row.expires_at < Math.floor(Date.now() / 1000)) {
+    return { status: 410, message: 'This link has expired. Ask an admin for a new one.' };
+  }
+  if (row.used) return usedRefusal(row);
+  return null;
+}
+
+/**
+ * Redeems a join token for a new session named deviceName: the web's POST /join/:token
+ * and the app's POST /api/app/pair both sign in through here, so the two can't drift. An
+ * invite also creates its account. Returns the session's raw token, or null when another
+ * request redeemed the token first (or it expired since joinRefusal looked).
+ */
+async function redeemJoinToken(db: D1Database, row: InviteToken, deviceName: string): Promise<string | null> {
+  const sessionToken = generateToken();
+  const sessionHash = await sha256Hex(sessionToken);
+  const now = Math.floor(Date.now() / 1000);
+
+  // One D1 batch (a single transaction): the conditional consume goes first and every
+  // later statement is guarded by changes() = 1, so a lost race inserts nothing and a
+  // failure can't burn the link without creating the session (or the account).
+  const consume = db.prepare('UPDATE invite_tokens SET used = 1 WHERE id = ? AND used = 0 AND expires_at >= ?').bind(row.id, now);
+  const batch = row.type === 'invite'
+    ? await db.batch([
+      consume,
+      db.prepare('INSERT INTO users (name, role) SELECT ?, ? WHERE changes() = 1').bind(row.invited_name!, row.invited_role!),
+      db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT last_insert_rowid(), ?, 1, ? WHERE changes() = 1')
+        .bind(sessionHash, deviceName),
+    ])
+    : await db.batch([
+      consume,
+      db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT ?, ?, 1, ? WHERE changes() = 1')
+        .bind(row.user_id!, sessionHash, deviceName),
+    ]);
+  return batch[0].meta.changes === 1 ? sessionToken : null;
+}
+
 app.get('/join/:token', async (c) => {
   const token = c.req.param('token');
-  const [row, settings] = await Promise.all([
-    c.var.db.prepare('SELECT * FROM invite_tokens WHERE token = ?').bind(token).first<InviteToken>(),
-    loadSettings(c.var.tenant),
-  ]);
+  const [row, settings] = await Promise.all([findJoinToken(c.var.db, token), loadSettings(c.var.tenant)]);
 
   const appName = settings.app_name;
-  if (!row) return c.html(joinErrorHTML('This link is invalid.', appName), 404);
+  if (!row) return c.html(joinErrorHTML(INVALID_LINK.message, appName), INVALID_LINK.status);
   if (row.type === 'device_link' && await hasSession(c)) return c.redirect('/');
-  if (row.expires_at < Math.floor(Date.now() / 1000)) {
-    return c.html(joinErrorHTML('This link has expired. Ask an admin for a new one.', appName), 410);
-  }
-  if (row.used) {
-    return c.html(joinErrorHTML(row.type === 'invite' ? 'This invite link has already been used.' : 'This sign-in link has already been used.', appName), 410);
-  }
+  const refusal = joinRefusal(row);
+  if (refusal) return c.html(joinErrorHTML(refusal.message, appName), refusal.status);
 
   if (row.type === 'invite') {
     return c.html(joinHTML('invite', row.invited_name!, token, appName));
@@ -457,52 +502,43 @@ app.get('/join/:token', async (c) => {
 });
 
 app.post('/join/:token', async (c) => {
-  const token = c.req.param('token');
-  const [row, settings] = await Promise.all([
-    c.var.db.prepare('SELECT * FROM invite_tokens WHERE token = ?').bind(token).first<InviteToken>(),
-    loadSettings(c.var.tenant),
-  ]);
+  const [row, settings] = await Promise.all([findJoinToken(c.var.db, c.req.param('token')), loadSettings(c.var.tenant)]);
 
   const appName = settings.app_name;
-  if (!row) return c.html(joinErrorHTML('This link is invalid.', appName), 404);
+  if (!row) return c.html(joinErrorHTML(INVALID_LINK.message, appName), INVALID_LINK.status);
   if (row.type === 'device_link' && await hasSession(c)) return c.redirect('/');
-  if (row.expires_at < Math.floor(Date.now() / 1000)) {
-    return c.html(joinErrorHTML('This link has expired.', appName), 410);
-  }
-  if (row.used) {
-    return c.html(joinErrorHTML(row.type === 'invite' ? 'This invite link has already been used.' : 'This sign-in link has already been used.', appName), 410);
-  }
+  const refusal = joinRefusal(row);
+  if (refusal) return c.html(joinErrorHTML(refusal.message, appName), refusal.status);
 
-  const ua = c.req.header('User-Agent') ?? '';
-  const deviceName = deviceNameFromUA(ua);
-  const sessionToken = generateToken();
-  const sessionHash = await sha256Hex(sessionToken);
-  const now = Math.floor(Date.now() / 1000);
-
-  // One D1 batch (a single transaction): the conditional consume goes first and every
-  // later statement is guarded by changes() = 1, so a lost race inserts nothing and a
-  // failure can't burn the link without creating the session (or the account).
-  let batch;
-  if (row.type === 'invite') {
-    batch = await c.var.db.batch([
-      c.var.db.prepare('UPDATE invite_tokens SET used = 1 WHERE id = ? AND used = 0 AND expires_at >= ?').bind(row.id, now),
-      c.var.db.prepare('INSERT INTO users (name, role) SELECT ?, ? WHERE changes() = 1').bind(row.invited_name!, row.invited_role!),
-      c.var.db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT last_insert_rowid(), ?, 1, ? WHERE changes() = 1')
-        .bind(sessionHash, deviceName),
-    ]);
-  } else {
-    batch = await c.var.db.batch([
-      c.var.db.prepare('UPDATE invite_tokens SET used = 1 WHERE id = ? AND used = 0 AND expires_at >= ?').bind(row.id, now),
-      c.var.db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT ?, ?, 1, ? WHERE changes() = 1')
-        .bind(row.user_id!, sessionHash, deviceName),
-    ]);
-  }
-  if (batch[0].meta.changes !== 1) {
-    return c.html(joinErrorHTML(row.type === 'invite' ? 'This invite link has already been used.' : 'This sign-in link has already been used.', appName), 410);
+  const sessionToken = await redeemJoinToken(c.var.db, row, deviceNameFromUA(c.req.header('User-Agent') ?? ''));
+  if (!sessionToken) {
+    const used = usedRefusal(row);
+    return c.html(joinErrorHTML(used.message, appName), used.status);
   }
 
   c.header('Set-Cookie', `${SESSION_COOKIE}=${sessionToken}; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_MAX_AGE}; Path=/`);
   return c.redirect('/');
+});
+
+// The app's pairing (docs/mobile-app-plan.md, "Auth and pairing"): the same redemption as
+// POST /join/:token, but the session token comes back as JSON for the app to send as a
+// bearer, and the session is named after the phone rather than its User-Agent.
+app.post('/api/app/pair', valid('json', PairRequest), async (c) => {
+  const body = c.req.valid('json');
+  const row = await findJoinToken(c.var.db, body.token);
+  if (!row) return c.json({ error: INVALID_LINK.message }, INVALID_LINK.status);
+  const refusal = joinRefusal(row);
+  if (refusal) return c.json({ error: refusal.message }, refusal.status);
+
+  const deviceName = body.device_name?.trim().slice(0, 60) || deviceNameFromUA(c.req.header('User-Agent') ?? '');
+  const token = await redeemJoinToken(c.var.db, row, deviceName);
+  if (!token) {
+    const used = usedRefusal(row);
+    return c.json({ error: used.message }, used.status);
+  }
+  const session = await lookupSession(c, token);
+  if (!session) throw new Error('A session just created by pairing was not found');
+  return c.json({ token, me: meJson(sessionUser(session)) });
 });
 
 // ── Page routes ───────────────────────────────────────────────────────────────

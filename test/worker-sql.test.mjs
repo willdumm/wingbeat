@@ -1144,3 +1144,22 @@ describe('request validation: the regions and named-points writes', () => {
     }
   });
 });
+
+// The routes only the app calls, through core's strict client as the app will call them:
+// no cookie, and the paired session's token as a bearer afterwards.
+describe('the app’s requests, through the core client', async () => {
+  const { createApiClient, ApiHttpError } = await importCore('api/client');
+  const app = await importCore('api/app');
+  const me = await importCore('api/me');
+  const client = (auth) => createApiClient({ baseUrl: 'http://localhost', fetch: () => w.fetch, auth });
+
+  test('pair: a device link for a session token that works as a bearer', async () => {
+    const link = (await w.request('POST', '/api/me/device-link')).body.url.replace('/join/', '');
+    const paired = await app.pair(client(), { token: link, device_name: 'Test phone' });
+    assert.deepEqual([paired.me.id, paired.me.device_name], [1, 'Test phone']);
+    const user = await me.getMe(client({ kind: 'bearer', token: paired.token }));
+    assert.equal(user.session_id, paired.me.session_id);
+    await assert.rejects(app.pair(client(), { token: link }),
+      (e) => e instanceof ApiHttpError && e.status === 410 && e.serverError === 'This sign-in link has already been used.');
+  });
+});
