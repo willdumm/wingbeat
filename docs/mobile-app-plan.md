@@ -652,7 +652,7 @@ How it's built, for the steps that follow:
   check. `EXPORTS` lists only those, and `loadEngine()` lost its `fetch` and `dispatch`.
   Names and counts are unchanged: 552 tests pass. Test-only, with `src/` untouched, so no
   browser check or staging deploy.
-- **Review fixes** (`docs/core-foundation-review.md`, one commit each):
+- **Review fixes** (the first review of the branch, kept in PR #7's description; one commit each):
   - Finding 4: `apply-assignment` counts the union of its flight UPDATEs' `RETURNING id`,
     not `meta.changes` (which counts the edit_history trigger's rows too). The page doesn't
     show the count, so no browser check.
@@ -698,9 +698,20 @@ How it's built, for the steps that follow:
     a nonced `<script src>`. Still a Text module, so a missing bundle still fails the
     deploy, which is why Workers static assets were passed over: no CSP or hosting config
     change. The showcase still inlines it.
+- **Second review fixes** (PR #7):
+  - Saving a new timezone in Global Settings updates the page's `APP_SETTINGS`, so core's
+    page globals use it without a reload, as `core-entry.ts` intended. If the settings
+    didn't load, Save refuses instead of skipping the duty-log warning
+    (`test/settings-save.test.mjs`, on a stub DOM).
+  - The bundle's URL hash is 64 bits of SHA-256, computed by `build-core.mjs`
+    (`build/core-bundle-hash.txt`) rather than a 32-bit hash at Worker load: a collision
+    would pin browsers to old code for the year the URL is cached.
+  - CI builds the bundle and runs `npm test`, reversing the first review's won't-fix on
+    finding 1. `wrangler dev` also rebuilds on changes to `packages/core/package.json` and
+    `scripts/`.
 - **Hosting**: the `[build]` command is also in `wingbeat-hosting`'s
-  `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), as a local
-  commit not yet pushed. It must be pushed before or with the first tag that has the bundle.
+  `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), pushed
+  2026-11-03.
 
 **Left in phase 1** (checked 2026-11-03, after the spec tests moved off the harness),
 against its "Done when" under "Phases". Step 9 took Settings' device time and the timezone
