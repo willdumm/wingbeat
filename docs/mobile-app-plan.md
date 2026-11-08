@@ -1,6 +1,7 @@
 # Plan: Wingbeat mobile app (Expo)
 
-**Status: phase 1 started.** Done: the foundation (`packages/core`, the browser bundle as a
+**Status: phase 1 done**, released as wingbeat v0.3.0 (2026-11-08). Next: phase 2, Web Push.
+Done in phase 1: the foundation (`packages/core`, the browser bundle as a
 Text module, the nonce test, the theme tokens), step 1, `time` (core time with zone
 abbreviations, operator days in the flight list, the device-time scan test with its list of
 uses still to remove), step 2, `flight-edits` (with `record-limits`), step 3,
@@ -13,9 +14,8 @@ step 7, `regions` (merged with `src/geo.ts`), `accounting` and `analytics`, step
 `elevation`, step 9, the settings route group (with operator-time dates in Settings and
 the timezone-change warning), and step 10, the regions and named-points route groups. Every
 API call the pages make now goes through the core client, and the spec tests call core
-directly. Phase 1 isn't done: what's left is the prod release, on hold (see "Left in
-phase 1" at the end of "Phase 1 progress and conventions"). All open questions are
-answered.
+directly. The web client still parses responses warn-only; it goes strict in phase 4, once
+the v0.3.0 releases have logged no mismatches. All open questions are answered.
 
 ## Settled so far
 
@@ -713,14 +713,15 @@ How it's built, for the steps that follow:
   `wrangler.template.toml` (skipped for tags without `scripts/build-core.mjs`), pushed
   2026-11-03.
 
-**Left in phase 1** (checked 2026-11-03, after the spec tests moved off the harness),
-against its "Done when" under "Phases". Step 9 took Settings' device time and the timezone
-warning, steps 9 and 10 moved every remaining route onto the core client, and the spec
-tests now call core directly:
+**Released** as wingbeat v0.3.0 (PR #7, 2026-11-08): deployed to staging, where both pages
+load signed in with no page errors, response-shape warnings or failed requests, then to
+production. No migrations. Left over from phase 1:
 
-1. **Prod** (on hold): release the stack (push `wingbeat-hosting`'s `[build]` commit
-   first), then watch for `[wingbeat api] unexpected response` warnings before the web
-   client goes strict.
+- Watch production for `[wingbeat api] unexpected response` warnings. The web client goes
+  strict in phase 4, once they've stayed quiet.
+- Issue #8: the JSON routes the pages don't call (`/api/analytics/*`, `/api/refresh`,
+  `/api/flights`, `/api/flights/:id/points`) have no response schemas. Remove or give them
+  schemas before the client goes strict.
 
 ### Times and the operator's timezone
 
