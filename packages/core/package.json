@@ -15,6 +15,7 @@
     "./api/app-requests": "./src/api/app-requests.ts",
     "./api/bootstrap": "./src/api/bootstrap.ts",
     "./api/client": "./src/api/client.ts",
+    "./api/compat/1": "./src/api/compat/1.ts",
     "./api/corrections": "./src/api/corrections.ts",
     "./api/corrections-requests": "./src/api/corrections-requests.ts",
     "./api/duty": "./src/api/duty.ts",

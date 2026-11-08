@@ -4,7 +4,8 @@
 // (base_history_id), plus route validation around them, and GET /api/flights/complete's
 // ground trail, the response shapes of the flights, duty, bootstrap, trackers, aircraft and
 // pilots reads, the writes exactly as the web sends them (through @wingbeat/core's client,
-// which checks their responses too), and the request validation (the core request schemas).
+// which checks their responses too), the request validation (the core request schemas),
+// and the app routes' responses against every compat snapshot (core's api/compat/<level>.ts).
 // test/worker.mjs runs src/index.ts in Miniflare on a fresh D1 database with every
 // migration applied (Miniflare's SQLite may differ slightly from production D1's).
 //
@@ -14,6 +15,9 @@
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import * as z from 'zod/mini';
+import { readdirSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { startWorker } from './worker.mjs';
 import { importCore } from './core.mjs';
 
@@ -1210,5 +1214,79 @@ describe('the app’s requests, through the core client', async () => {
     }
     await me.getMe(client({ kind: 'bearer', token }, { [version.APP_VERSION_HEADER]: 'x'.repeat(150) }));
     assert.equal(await settled('x'.repeat(version.MAX_APP_VERSION_LENGTH)), 'x'.repeat(version.MAX_APP_VERSION_LENGTH));
+  });
+});
+
+// Every compat snapshot (packages/core/src/api/compat/<level>.ts, one per supported client
+// API level), against the routes' real responses: a server change that would break an app
+// still on an older level fails here. A level's new file joins by itself; a route it lists
+// that nothing below calls fails until a call is added.
+describe('compat snapshots: the app’s routes, against every supported level', async () => {
+  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../packages/core/src/api/compat');
+  const levels = readdirSync(dir).filter(f => /^\d+\.ts$/.test(f)).map(f => f.replace('.ts', '')).sort((a, b) => a - b);
+  const snapshots = await Promise.all(levels.map(level => importCore('api/compat/' + level)));
+
+  test('each listed route’s responses parse with each level’s schema', async () => {
+    assert.ok(levels.length > 0);
+    /** Real responses by '<METHOD> <route>', as the snapshots key them. */
+    const seen = new Map();
+    const call = async (route, url, body, opts) => {
+      const r = await w.request(route.split(' ')[0], url, body, opts);
+      assert.equal(r.status, 200, route + ' ' + JSON.stringify(r.body));
+      seen.set(route, [...(seen.get(route) ?? []), r.body]);
+      return r.body;
+    };
+
+    // Pairing, and the account a bearer deletes.
+    const link = (await w.request('POST', '/api/me/device-link')).body.url.replace('/join/', '');
+    await call('POST /api/app/pair', '/api/app/pair', { token: link, device_name: 'Compat phone' }, { as: null });
+    const { token: invite } = (await w.request('POST', '/api/invites', { name: 'Compat Stay', role: 'viewer' })).body;
+    const { token } = await call('POST /api/app/pair', '/api/app/pair', { token: invite }, { as: null });
+    await call('DELETE /api/me', '/api/me', undefined, { as: null, headers: { authorization: 'Bearer ' + token } });
+    await call('GET /api/bootstrap', '/api/bootstrap');
+    await call('GET /api/bootstrap', '/api/bootstrap', undefined, { as: 'viewer' });
+    await call('GET /api/me', '/api/me');
+    await call('GET /api/me/sessions', '/api/me/sessions');
+    await call('POST /api/me/ping', '/api/me/ping');
+
+    // Live and Flights: a tracked flight with its points, a correction and a manual flight.
+    const t = next();
+    const fid = await trackerFlight(t, t + 1800);
+    for (const [time, v] of [[t, 60], [t + 1800, 10]]) {
+      const pid = (await w.run('INSERT INTO points (garmin_time, lat, lon, velocity_kmh, tracker_id) VALUES (?, 58, -154, ?, 1) RETURNING id', time, v)).results[0].id;
+      await w.run('INSERT INTO point_flights (point_id, flight_id) VALUES (?, ?)', pid, fid);
+    }
+    const complete = await call('GET /api/flights/complete', '/api/flights/complete?tracker=1');
+    await call('GET /api/flights/complete', '/api/flights/complete?tracker=1&since=' + complete.last_modified_at);
+    await call('GET /api/flights/complete', '/api/flights/complete?tracker=999');
+    const m = await mark();
+    await call('POST /api/flight-corrections', '/api/flight-corrections', { tracker_id: 1, flight_start_time: t, remark: 'Compat' });
+    const { entry: manual } = await call('POST /api/flight-corrections', '/api/flight-corrections',
+      { pilot_id: 1, start_time: next(), end_time: clock + 600 });
+    await call('PUT /api/flight-corrections/:id', '/api/flight-corrections/' + manual.id,
+      { pilot_id: 2, start_time: manual.start_time, end_time: manual.end_time + 600 });
+    await call('POST /api/flight-corrections/bulk', '/api/flight-corrections/bulk',
+      { flights: [{ tracker_id: 1, flight_start_time: t }, { entry_id: manual.id }], set: { part91: true } });
+    await call('PUT /api/flights/assignment', '/api/flights/assignment', { flight_ids: [fid], entry_ids: [manual.id], pilot_id: 2 });
+    await call('GET /api/flight-corrections', '/api/flight-corrections');
+    await call('GET /api/flight-corrections', '/api/flight-corrections?since=' + m);
+    await call('DELETE /api/flight-corrections/:id', '/api/flight-corrections/' + manual.id);
+
+    // The duty log.
+    await call('PUT /api/duty-days/:pilot', '/api/duty-days/1', { dates: ['2028-03-01'], duty_start: '07:00', duty_end: '15:00', note: 'Compat' });
+    await call('PUT /api/duty-days/:pilot', '/api/duty-days/1', { dates: ['2028-03-02'], rest: true });
+    await call('PUT /api/pilots/:id/default-duty', '/api/pilots/1/default-duty', { effective_date: '2028-03-01', duty_start: '08:00', duty_end: '17:00' });
+    await call('GET /api/duty-days', '/api/duty-days?pilot=1');
+    await call('GET /api/duty-days', '/api/duty-days?pilot=999');
+    await call('GET /api/duty-methods', '/api/duty-methods');
+    await call('POST /api/duty-days/:pilot/clear', '/api/duty-days/1/clear', { dates: ['2028-03-01', '2028-03-02'] });
+    await call('DELETE /api/pilots/:id/default-duty/:date', '/api/pilots/1/default-duty/2028-03-01');
+
+    levels.forEach((level, i) => {
+      for (const [route, schema] of Object.entries(snapshots[i].responses)) {
+        assert.ok(seen.has(route), `level ${level} lists ${route}, which this test doesn’t call`);
+        for (const body of seen.get(route)) assertShape(schema, body);
+      }
+    });
   });
 });
