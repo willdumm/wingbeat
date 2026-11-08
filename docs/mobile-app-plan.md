@@ -1706,6 +1706,41 @@ in `sessions.app_version`.
 - **Encryption export:** only standard HTTPS, so set `ITSAppUsesNonExemptEncryption` to
   `false` in `app.json`.
 
+### Phase 4 progress
+
+Phase 4 is server work for the app; none of it needs the app to exist, and it's tested
+through the real Worker (`test/worker*.test.mjs`). It's built on the `app-api` branch, one
+commit per step, in this order:
+
+1. **Bearer sessions** (its own staging deploy, then its own production deploy, ahead of the
+   rest; see "Auth and pairing"). The session middleware takes `Authorization: Bearer
+   <session token>` on every non-admin path. A request with the header is judged by the
+   bearer alone (any cookie is ignored), and a failed bearer is a `401` JSON on any path,
+   pages included, never the `/login` redirect. A session bearer never satisfies
+   `/api/admin/*`, and the `POLLER_SECRET` bearer never works as a session. Requests
+   without the header behave as today. Tests in `test/worker-auth.test.mjs`.
+2. **`POST /api/app/pair`**: exchanges a device-link or invite token for a session, with
+   the same consumption logic as `POST /join/:token` (one shared function, so the two
+   can't drift), but returns `{ token, me }` as JSON instead of setting a cookie, and names
+   the session from the app's `device_name`. Outside the session middleware like
+   `/join/*`. Request schema in `api/app-requests.ts`, response schema in `api/app.ts`,
+   shape test in `test/worker-sql.test.mjs`. The web's "Add phone" QR code (Settings →
+   Devices) comes with the app's scanner in phase 5.
+3. **Version handshake**: `CLIENT_API_LEVEL`, `API_VERSION` and `MIN_CLIENT_LEVEL` in core
+   (`api/version.ts`); `api_version` and `min_client_level` in `GET /api/bootstrap`; the
+   `X-Wingbeat-App` header recorded in `sessions.app_version` (migration `0004_`, the
+   phase's one migration), written at most when it changes.
+4. **`DELETE /api/me`** and the web's "Delete my account" in Settings (see "Account
+   deletion"): refuses the env admin and the last admin, deletes the `users` row and
+   relies on the cascades. `push_subscriptions`, `presence_events` and `users.pilot_id`
+   don't exist yet; the phases that add them extend the route.
+5. **The first compat snapshot**: `packages/core/src/api/compat/1.ts` freezes the response
+   schemas of the routes the app calls at level 1, and `test/worker-sql.test.mjs` checks
+   each of those routes' real responses against every snapshot.
+
+Strict parsing in the web client isn't a step here: it waits on production staying quiet
+(phase 1's leftovers), and issue #8 comes before it.
+
 ## Rollout and risk to the web dashboard
 
 Phases 1, 2, 4, 6 and 8 change code the web dashboard runs, and the dashboard is what operators
