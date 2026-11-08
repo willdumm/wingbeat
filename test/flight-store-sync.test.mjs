@@ -1,12 +1,17 @@
-// The flight store's refresh (flightStore.refresh() → _fsFetchMerge() in flight-store.ts):
+// The flight store's refresh (flightStore.refresh(), @wingbeat/core/flight-store, wired as
+// the core bundle wires it on the page: localStorage, the page's API client over fetch, and
+// the storage event):
 // merging a corrections response into the cached copy, dropping one that another tab's
 // save overtook, the cursor the flight form saves with (historyId()), and queueing a
 // refresh asked for while one is in flight.
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import vm from 'node:vm';
-import { loadEngine, plain } from './harness.mjs';
+import { importCore, plain } from './core.mjs';
+
+const { createFlightStore, FLIGHT_STORE_KEY } = await importCore('flight-store');
+const { createApiClient } = await importCore('api/client');
+const { SPEED_THRESHOLD_KMH } = await importCore('regions');
 
 const STORAGE_KEY = 'ft_flights_v2';
 
@@ -31,15 +36,37 @@ const entry = (id, fst, fields = {}) => ({
 const cached = (entries, entriesLastHistoryId) =>
   JSON.stringify({ last_modified_at_by_tracker: {}, flights: [], entries, entries_last_history_id: entriesLastHistoryId });
 
-/** An engine whose store starts from the cached copy (entries, cursor). */
+/**
+ * The page's store over this fetch (src/client/core-entry.ts): storage is the Map behind
+ * its localStorage, and dispatchStorage(event) is the storage event another tab's save fires.
+ */
+function pageStore(fetch) {
+  const storage = new Map();
+  const listeners = [];
+  const store = createFlightStore({
+    storage: {
+      getItem: (k) => storage.has(k) ? storage.get(k) : null,
+      setItem: (k, v) => { storage.set(k, String(v)); },
+    },
+    client: createApiClient({ mismatch: 'warn', fetch: () => fetch }),
+    flightThresholdKmh: SPEED_THRESHOLD_KMH,
+    watchExternalChanges: (onChange) => listeners.push((e) => {
+      if (e.key === FLIGHT_STORE_KEY) onChange();
+    }),
+  });
+  const dispatchStorage = (event) => { for (const fn of listeners) fn(event); };
+  return { store, storage, dispatchStorage };
+}
+
+/** A page store that starts from the cached copy (entries, cursor). */
 function storeWith(entries, cursor) {
   const { calls, fetch } = deferredFetch();
-  const engine = loadEngine({ fetch });
-  engine.storage.set(STORAGE_KEY, cached(entries, cursor));
-  engine.flightStore.init();
-  const mem = () => plain(vm.runInContext('_mem', engine.context));
-  const saved = () => JSON.parse(engine.storage.get(STORAGE_KEY));
-  return { engine, calls, mem, saved };
+  const { store, storage, dispatchStorage } = pageStore(fetch);
+  storage.set(STORAGE_KEY, cached(entries, cursor));
+  store.init();
+  const mem = () => plain(store.snapshot());
+  const saved = () => JSON.parse(storage.get(STORAGE_KEY));
+  return { store, storage, dispatchStorage, calls, mem, saved };
 }
 
 // Lets the store's awaits run (the fetch stub's json(), Promise.all, then the merge).
@@ -50,8 +77,8 @@ const sinceOf = (c) => Number(new URL(c.url, 'http://x').searchParams.get('since
 
 describe('flightStore.refresh: corrections', () => {
   test('a delta is merged and advances the cursor', async () => {
-    const { engine, calls, mem, saved } = storeWith([entry(1, 100, { remark: 'A' })], 5);
-    const done = engine.flightStore.refresh([1]);
+    const { store, calls, mem, saved } = storeWith([entry(1, 100, { remark: 'A' })], 5);
+    const done = store.refresh([1]);
     await settle();
     const corr = calls.find(isCorrections);
     assert.equal(sinceOf(corr), 5);
@@ -65,14 +92,14 @@ describe('flightStore.refresh: corrections', () => {
   });
 
   test("a delta is dropped when another tab's save moved the cursor during the fetch", async () => {
-    const { engine, calls, mem } = storeWith([entry(1, 100, { remark: 'A' })], 5);
-    const done = engine.flightStore.refresh([1]);
+    const { store, storage, dispatchStorage, calls, mem } = storeWith([entry(1, 100, { remark: 'A' })], 5);
+    const done = store.refresh([1]);
     await settle();
     // Another tab saved a newer copy (cursor 8) while this fetch (since 5) was out: the
     // storage listener reloads it.
     const other = cached([entry(1, 100, { remark: 'B' }), entry(3, 300)], 8);
-    engine.storage.set(STORAGE_KEY, other);
-    engine.dispatch('storage', { key: STORAGE_KEY });
+    storage.set(STORAGE_KEY, other);
+    dispatchStorage({ key: STORAGE_KEY });
     calls.find(c => !isCorrections(c)).respond(noFlights);
     calls.find(isCorrections).respond({ entries: [entry(1, 100, { remark: 'stale' })], deleted: ['1/300'], last_history_id: 6 });
     await done;
@@ -80,7 +107,7 @@ describe('flightStore.refresh: corrections', () => {
     assert.equal(mem().entries_last_history_id, 8);
 
     // The next refresh continues from the other tab's cursor.
-    const again = engine.flightStore.refresh([1]);
+    const again = store.refresh([1]);
     await settle();
     assert.equal(sinceOf(calls.filter(isCorrections)[1]), 8);
     for (const c of calls.slice(2)) c.respond(isCorrections(c) ? { entries: [], deleted: [], last_history_id: 8 } : noFlights);
@@ -88,8 +115,8 @@ describe('flightStore.refresh: corrections', () => {
   });
 
   test('a full response replaces the cached rows, even with an older cursor', async () => {
-    const { engine, calls, mem, saved } = storeWith([entry(1, 100), entry(2, 200)], 50);
-    const done = engine.flightStore.refresh([1]);
+    const { store, calls, mem, saved } = storeWith([entry(1, 100), entry(2, 200)], 50);
+    const done = store.refresh([1]);
     await settle();
     calls.find(c => !isCorrections(c)).respond(noFlights);
     // A recreated database: its history ids restart.
@@ -102,11 +129,11 @@ describe('flightStore.refresh: corrections', () => {
   });
 
   test("historyId() is the cursor; one moved by another entity's change is saved without notifying", async () => {
-    const { engine, calls, saved } = storeWith([entry(1, 100)], 5);
-    assert.equal(engine.flightStore.historyId(), 5);
+    const { store, calls, saved } = storeWith([entry(1, 100)], 5);
+    assert.equal(store.historyId(), 5);
     let notified = 0;
-    engine.flightStore.onChange(() => notified++);
-    const done = engine.flightStore.refresh([1]);
+    store.onChange(() => notified++);
+    const done = store.refresh([1]);
     await settle();
     calls.find(c => !isCorrections(c)).respond(noFlights);
     // A duty day was changed: the newest history id moved, no correction did.
@@ -114,29 +141,26 @@ describe('flightStore.refresh: corrections', () => {
     const result = await done;
     assert.equal(result.changed, false);
     assert.equal(notified, 0);
-    assert.equal(engine.flightStore.historyId(), 12);
+    assert.equal(store.historyId(), 12);
     assert.equal(saved().entries_last_history_id, 12);
   });
 
   test('a failed corrections fetch keeps the cached copy', async () => {
-    const engine = loadEngine({
-      fetch: async (url) => url.startsWith('/api/flight-corrections')
-        ? { ok: false, status: 500, json: async () => ({}) }
-        : { ok: true, status: 200, json: async () => noFlights },
-    });
-    engine.storage.set(STORAGE_KEY, cached([entry(1, 100)], 5));
-    engine.flightStore.init();
-    const result = await engine.flightStore.refresh([1]);
+    const { store, storage } = pageStore(async (url) => url.startsWith('/api/flight-corrections')
+      ? { ok: false, status: 500, json: async () => ({}) }
+      : { ok: true, status: 200, json: async () => noFlights });
+    storage.set(STORAGE_KEY, cached([entry(1, 100)], 5));
+    store.init();
+    const result = await store.refresh([1]);
     assert.equal(result.changed, false);
-    const mem = plain(vm.runInContext('_mem', engine.context));
+    const mem = plain(store.snapshot());
     assert.deepEqual([mem.entries.map(e => e.id), mem.entries_last_history_id], [[1], 5]);
   });
 });
 
 describe('flightStore.refresh: overlapping calls', () => {
   test('a refresh asked for during one runs once more afterwards, shared by every caller meanwhile', async () => {
-    const { engine, calls } = storeWith([], 5);
-    const store = engine.flightStore;
+    const { store, calls } = storeWith([], 5);
     const rounds = () => calls.filter(isCorrections).length;
     const answer = (from) => {
       for (const c of calls.slice(from)) c.respond(isCorrections(c) ? { entries: [], deleted: [], last_history_id: 5 } : noFlights);
@@ -171,10 +195,10 @@ describe('flightStore.refresh: overlapping calls', () => {
   });
 
   test('the follow-up still runs when the refresh in flight fails', async () => {
-    const { engine, calls } = storeWith([], 5);
-    const first = engine.flightStore.refresh([1]);
+    const { store, calls } = storeWith([], 5);
+    const first = store.refresh([1]);
     await settle();
-    const second = engine.flightStore.refresh();
+    const second = store.refresh();
     // A malformed flights response (no flights array) fails the whole refresh.
     calls.find(c => !isCorrections(c)).respond({});
     calls.find(isCorrections).respond({ entries: [], deleted: [], last_history_id: 5 });

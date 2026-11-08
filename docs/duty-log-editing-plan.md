@@ -303,7 +303,7 @@ history"), so a request's writes land together or not at all.
 - `PUT /api/duty-days/:pilot`: `{ dates: [YYYY-MM-DD, …], duty_start, duty_end, rest,
   note, base_history_id? }` sets every date in one statement (`json_each`), all or none. The day form uses it
   for one day as well as for a Through range. At most `MAX_DUTY_DAYS_PER_REQUEST` (366)
-  dates, a limit the form shares (`src/shared/record-limits.ts`). A day left with nothing
+  dates, a limit the form shares (`packages/core/src/record-limits.ts`). A day left with nothing
   (no times, not rest, no note) is deleted. `rest_designated_at` is set the first time
   `rest` goes 0→1, kept on later edits, and cleared when rest is unset.
 - `POST /api/duty-days/:pilot/clear`: `{ dates, base_history_id? }`, the same cap,
@@ -402,6 +402,9 @@ Formatting and severity:
 - Over a limit means a warning colour (`var(--danger)`); nothing is blocked.
 
 ### 4. Duty log UI — `src/shared/pilot-duty.ts`
+
+(The computation, warnings and totals have since moved to `packages/core/src/duty.ts`; see
+`docs/mobile-app-plan.md`.)
 
 A full-screen Settings view, opened from a pilot's "Duty log" button. It uses
 `buttons.ts`, `segmented-control.ts`, `status.ts`, `icon()`, the shared form modal
@@ -778,7 +781,7 @@ client's cursor are the rows to send:
   re-render. The migration's `(entity, id)` index on `edit_history` serves the scan.
 - With no cursor (or 0), or one past the newest id (a reset or recreated database), it
   returns every row and `full: true`, and the client replaces its copy.
-- The client (`flight-store.ts`) keeps the cursor in `_mem` as `entries_last_history_id`,
+- The client (`packages/core/src/flight-store.ts`) keeps the cursor in its cached copy as `entries_last_history_id`,
   saved to localStorage next to the flights' per-tracker cursors, and fetches corrections
   alongside the trackers' flights on the same fetch/merge/save/notify path
   (`_fsFetchSince`, `_fsAdvance`). `mergeFlightCorrections` merges on the key, not the id,
@@ -821,9 +824,13 @@ months) through this month. `_buildTypstSource` takes one month's row model or s
 
 ### Tests
 
-`npm test` (`node --test`, in the nix shell) runs `test/`: `test/harness.mjs` evaluates the
-real script strings of `pilot-duty.ts`, `flight-edits.ts`, `time.ts`, `html.ts` and
-`flight-store.ts` in a `node:vm` context with a settable clock. The suites cover the rules in this doc: the
+`npm test` (`node --test`, in the nix shell) runs `test/`. The compliance logic is
+`packages/core/src/duty.ts`, and the suites call it directly (`test/core.mjs`, with the
+fixtures in `test/duty-fixtures.mjs`), passing the operator's timezone and the clock.
+`test/harness.mjs` evaluates the shipped `@wingbeat/core` bundle and the real script strings
+of `pilot-duty.ts`, `flight-edits.ts` and `html.ts` in a `node:vm` context with a settable
+clock, for the PDF builder, the flight chips and the bundle's page globals. The suites
+cover the rules in this doc: the
 (b), (c), (d) and (e) checks, rest days, the quarter and year totals, DST days, the dated
 default duty and method (`dated-defaults.test.mjs`), `applyFlightEdits`, the corrections
 delta merge, and the flight form's times. `test/worker.mjs` runs the real Worker in

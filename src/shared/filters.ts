@@ -176,7 +176,11 @@ export function filterMarkup(): string {
   `;
 }
 
-/** Needs tzCalendarScript() (shared/time.ts) in the same script. */
+/**
+ * Needs the core bundle's filters globals (shared/core-bundle.ts) on the page: the state's
+ * normalization and the test of a flight against it are @wingbeat/core/filters; this keeps
+ * the state in localStorage.
+ */
 export function filterScript(): string {
   const markupJson = JSON.stringify(filterMarkup());
   return `
@@ -187,18 +191,9 @@ export function filterScript(): string {
       load() {
         try {
           const raw = localStorage.getItem(_FILTER_KEY);
-          if (raw) {
-            const s = JSON.parse(raw);
-            return {
-              dateFrom:      s.dateFrom      ?? null,
-              dateTo:        s.dateTo        ?? null,
-              trackerIds:    s.trackerIds    ?? [],
-              pilotIds:      s.pilotIds      ?? [],
-              aircraftTails: s.aircraftTails ?? [],
-            };
-          }
+          if (raw) return normalizeFilterState(JSON.parse(raw));
         } catch (_) {}
-        return { dateFrom: null, dateTo: null, trackerIds: [], pilotIds: [], aircraftTails: [] };
+        return emptyFilterState();
       },
 
       save(state) {
@@ -206,27 +201,7 @@ export function filterScript(): string {
       },
 
       matchesFlight(flight, state) {
-        if (state.dateFrom) {
-          if (flight.start_time < tzDayStartUnix(...state.dateFrom.split('-').map(Number))) return false;
-        }
-        if (state.dateTo) {
-          if (flight.start_time > tzDayEndUnix(...state.dateTo.split('-').map(Number))) return false;
-        }
-        // Manual flights (no tracker) show unless a tracker filter is set; '__manual__'
-        // in trackerIds ("Manual entries") selects them.
-        if (state.trackerIds.length > 0) {
-          const tid = flight.tracker_id == null ? '__manual__' : flight.tracker_id;
-          if (!state.trackerIds.includes(tid)) return false;
-        }
-        if (state.pilotIds.length > 0) {
-          const pid = flight.pilot_id === null ? '__null__' : flight.pilot_id;
-          if (!state.pilotIds.includes(pid)) return false;
-        }
-        if (state.aircraftTails.length > 0) {
-          const tail = flight.aircraft_tail === null ? '__null__' : flight.aircraft_tail;
-          if (!state.aircraftTails.includes(tail)) return false;
-        }
-        return true;
+        return flightMatchesFilters(flight, state);
       },
     };
 

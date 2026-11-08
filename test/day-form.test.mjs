@@ -3,11 +3,12 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadEngine, fixtures } from './harness.mjs';
+import { importCore, TZ } from './core.mjs';
+import { fixtures } from './duty-fixtures.mjs';
 
-const engine = loadEngine({ now: '2026-10-15 12:00' });
-const { duty, rest } = fixtures(engine);
-const ask = (records, keys, values) => engine.dutySaveConfirmText(records, keys, values);
+const { dutySaveConfirmText } = await importCore('duty');
+const { duty, rest } = fixtures();
+const ask = (records, keys, values) => dutySaveConfirmText(TZ, records, keys, values);
 
 const DUTY = { duty_start: '08:00', duty_end: '17:00', rest: false, note: '' };
 const REST = { duty_start: null, duty_end: null, rest: true, note: '' };

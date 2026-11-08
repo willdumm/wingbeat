@@ -1,14 +1,15 @@
 // What the flight form and the day form say when a save is refused because the record
-// changed since they loaded it (editConflictText() in edit-history.ts; the server's side
-// is in worker-sql.test.mjs, "edit conflicts").
+// changed since they loaded it (editConflictText(), @wingbeat/core/edit-history; the
+// server's side is in worker-sql.test.mjs, "edit conflicts").
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadEngine, fixtures } from './harness.mjs';
+import { importCore, TZ } from './core.mjs';
+import { fixtures } from './duty-fixtures.mjs';
 
-const engine = loadEngine({ now: '2026-10-15 12:00' });
-const { at } = fixtures(engine);
-const { editConflictText } = engine;
+const editHistory = await importCore('edit-history');
+const { at } = fixtures();
+const editConflictText = (conflict) => editHistory.editConflictText(TZ, conflict);
 
 describe('editConflictText', () => {
   test("names who changed it and when, in the operator's timezone", () => {

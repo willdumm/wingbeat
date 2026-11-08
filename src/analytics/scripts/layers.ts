@@ -2,8 +2,9 @@
  * Analytics map layers: endpoint heatmap, route heatmap, flight lines and region
  * boundaries, each built from flights (or regions) passed in, plus the legend wiring that
  * toggles them. Leaves adding/removing layers to the caller, so the docs-site showcase
- * (src/showcase/) draws the same layers from sample data. Needs leaflet.heat,
- * computeWeightedEndpoints (accounting.ts) and haversineKm (region.ts).
+ * (src/showcase/) draws the same layers from sample data. Needs leaflet.heat and REGIONS
+ * (region.ts); the points come from @wingbeat/core/analytics (endpointHeatPointsIn,
+ * interpolateRoutePoints).
  */
 export function analyticsScriptsLayers(): string {
   return `
@@ -13,48 +14,13 @@ export function analyticsScriptsLayers(): string {
     // stop count (mode 'stops'). The intensity ceiling scales with zoom so the heat reads
     // the same at every level. Returns null when there is nothing to draw.
     function buildEndpointHeatLayer(flights, mode, zoom) {
-      const pts = [];
-      if (mode === 'stops') {
-        for (const f of flights) {
-          pts.push([f.start_lat, f.start_lon, 1]);
-          pts.push([f.end_lat,   f.end_lon,   1]);
-        }
-      } else {
-        for (const f of flights) {
-          for (const ep of computeWeightedEndpoints(f)) pts.push([ep.lat, ep.lon, ep.weight]);
-        }
-      }
-      // Manual flights' endpoints without coordinates count in the totals, not on the map.
-      const placed = pts.filter(p => p[0] != null && p[1] != null);
+      const placed = endpointHeatPointsIn(REGIONS, flights, mode);
       if (placed.length === 0) return null;
       const max = Math.max(0.01, Math.pow(0.5, 14 - zoom) * 0.05);
       return L.heatLayer(placed, {
         radius: 30, blur: 35, max,
         gradient: { 0.4: '#6b21a8', 0.65: '#9333ea', 1.0: '#e9d5ff' },
       });
-    }
-
-    function interpolateRoutePoints(flights) {
-      const STEP_KM = 0.3;
-      const MAX_GAP_KM = 20;
-      const result = [];
-      for (const f of flights) {
-        const pts = f.points ?? [];
-        for (let i = 0; i < pts.length; i++) {
-          result.push([pts[i].lat, pts[i].lon]);
-          if (i < pts.length - 1) {
-            const a = pts[i], b = pts[i + 1];
-            const dist = haversineKm(a.lat, a.lon, b.lat, b.lon);
-            if (dist > MAX_GAP_KM) continue;
-            const n = Math.ceil(dist / STEP_KM);
-            for (let j = 1; j < n; j++) {
-              const t = j / n;
-              result.push([a.lat + (b.lat - a.lat) * t, a.lon + (b.lon - a.lon) * t]);
-            }
-          }
-        }
-      }
-      return result;
     }
 
     function buildRouteHeatLayer(flights) {

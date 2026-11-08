@@ -7,14 +7,32 @@ import { checkPublicHttpsUrl } from './safe-fetch';
 import { mapshareUrl } from './notifications';
 import { resegment } from './segmentation';
 import { geocodePendingPoints, geocodeLivePoint, invalidateNamedPointsCache, computeLiveLabel, resolveRefPoint } from './geocoding';
-import { haversineMiles, SPEED_THRESHOLD_KMH } from './geo';
+import { haversineMiles, SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
+import { flightCorrectionKey } from '@wingbeat/core/flight-store';
+import { coreBundle, coreBundlePath } from './shared/core-bundle';
 import { dashboardHTML } from './dashboard';
 import { analyticsHTML } from './analytics';
 import { generateToken, sha256Hex, deviceNameFromUA, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
 import { loadSettings, invalidateSettingsCache } from './settings';
 import { keyedBasemapPreset, readEnvSecret, substituteTileUrl } from './shared/map-controls';
 import { lookupTileMetadata, sanitizeAttribution } from './tile-metadata';
-import { MAX_DUTY_DAYS_PER_REQUEST, MAX_FLIGHT_TEXT_LENGTH, MAX_DUTY_NOTE_LENGTH, MAX_FLIGHT_SECS } from './shared/record-limits';
+import { MAX_DUTY_DAYS_PER_REQUEST, MAX_FLIGHT_TEXT_LENGTH, MAX_DUTY_NOTE_LENGTH, MAX_FLIGHT_SECS } from '@wingbeat/core/record-limits';
+import { BaseHistoryQuery } from '@wingbeat/core/api/requests';
+import { AssignmentRequest, BulkFlagsRequest, CorrectionRequest } from '@wingbeat/core/api/corrections-requests';
+import { DefaultDutyRequest, DutyDaysClearRequest, DutyDaysRequest, DutyMethodRequest } from '@wingbeat/core/api/duty-requests';
+import { SessionRenameRequest } from '@wingbeat/core/api/me-requests';
+import { InviteRequest } from '@wingbeat/core/api/users-requests';
+import { ApplyAssignmentRequest, TestFeedRequest, TrackerCreateRequest, TrackerUpdateRequest } from '@wingbeat/core/api/trackers-requests';
+import { OverlayRequest } from '@wingbeat/core/api/overlays-requests';
+import { AircraftCreateRequest, AircraftUpdateRequest } from '@wingbeat/core/api/aircraft-requests';
+import { PilotCreateRequest, PilotUpdateRequest } from '@wingbeat/core/api/pilots-requests';
+import { SettingsRequest } from '@wingbeat/core/api/settings-requests';
+import { WebhookCreateRequest, WebhookUpdateRequest } from '@wingbeat/core/api/webhooks-requests';
+import { FeatureCollectionImportRequest, RegionRequest } from '@wingbeat/core/api/regions-requests';
+import { NamedPointCreateRequest, NamedPointUpdateRequest } from '@wingbeat/core/api/named-points-requests';
+import { zValidator } from '@hono/zod-validator';
+import * as z from 'zod/mini';
+import { en as zodEnglish } from 'zod/locales';
 
 const SESSION_COOKIE = 'session';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 365;
@@ -28,6 +46,39 @@ type AuthUser = { id: number; name: string; role: string; sessionId: number; dev
 type Variables = { user: AuthUser; db: D1Database; tenant: Tenant; cspNonce: string };
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// ── Request validation ────────────────────────────────────────────────────────
+// The write routes the web and the app call validate their JSON body (and a delete its
+// query) with the request schemas in @wingbeat/core/api, which strip unknown keys and check
+// each field's type (docs/mobile-app-plan.md, "The API contract"). A request that doesn't
+// match gets a 400 { error } naming the first field that's wrong; the handlers keep their
+// own checks of what the values mean.
+
+// zod/mini has no messages of its own.
+z.config(zodEnglish());
+
+// zod/mini schemas have no methods (the validator's default calls schema.safeParseAsync), so
+// it gets z.safeParseAsync; the cast is only because TypeScript can't resolve the validator's
+// result type for a generic S. TODO: drop the validationFunction and the cast once
+// @hono/zod-validator (0.9.1 here) calls zod/mini schemas itself.
+function valid<T extends 'json' | 'query', S extends z.ZodMiniType>(target: T, schema: S) {
+  return zValidator(target, schema, (result, c) => {
+    if (result.success) return;
+    const issue = result.error.issues[0];
+    return c.json({ error: (issue.path.length ? issue.path.join('.') + ': ' : '') + issue.message }, 400);
+  }, { validationFunction: (sch, value) => z.safeParseAsync(sch, value) as never });
+}
+
+// A JSON body that doesn't parse (the validator's 400) gets a JSON error like any other bad
+// request; every other error is handled as Hono does by default.
+app.onError((err, c) => {
+  if (err instanceof HTTPException) {
+    if (err.status === 400 && !err.res) return c.json({ error: err.message }, 400);
+    return err.getResponse();
+  }
+  console.error(err);
+  return c.text('Internal Server Error', 500);
+});
 
 type SessionLookup = { id: number; user_id: number; name: string; role: string; device_name: string | null; last_seen_at: number; token_hashed: number };
 
@@ -230,6 +281,13 @@ app.use('*', async (c, next) => {
 // Ahead of tenant routing and auth, so crawlers get the rules on any host while signed out.
 app.get('/robots.txt', (c) => c.text('User-agent: *\nDisallow: /\n'));
 
+// Also ahead of them: it's the same public code for every tenant, and a page's script tag
+// has no use for a login redirect. The path changes with the content, hence `immutable`.
+app.get(coreBundlePath, (c) => c.body(coreBundle, 200, {
+  'Content-Type': 'text/javascript; charset=utf-8',
+  'Cache-Control': 'public, max-age=31536000, immutable',
+}));
+
 app.use('*', async (c, next) => {
   const routing = parseRouting(c.env);
   if (!routing) return c.text('CUSTOMER_ROUTING is not valid JSON', 500);
@@ -299,6 +357,11 @@ app.use('*', async (c, next) => {
     }
   }
 
+  // A fetch would follow the redirect and get the login page's HTML with a 200; a client
+  // needs to see that its session is gone. Pages still go to /login.
+  if (path === '/api' || path.startsWith('/api/')) {
+    return c.json({ error: 'Your session has expired. Reload the page to sign in again.' }, 401);
+  }
   return c.redirect('/login');
 });
 
@@ -533,20 +596,15 @@ app.get('/api/me/sessions', async (c) => {
   return c.json({ sessions: results });
 });
 
-app.patch('/api/me/sessions/:id', async (c) => {
+app.patch('/api/me/sessions/:id', valid('json', SessionRenameRequest), async (c) => {
   const u = c.get('user');
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid session id' }, 400);
 
-  const body = await c.req.json<{ device_name?: unknown }>().catch(() => null);
-  if (!body || typeof body !== 'object') return c.json({ error: 'Invalid JSON body' }, 400);
+  const body = c.req.valid('json');
   // null or an empty name clears it (the settings UI sends '' to clear).
-  let deviceName: string | null;
-  if (body.device_name === null) deviceName = null;
-  else if (typeof body.device_name === 'string') {
-    deviceName = body.device_name.trim() || null;
-    if (deviceName && deviceName.length > 60) return c.json({ error: 'device_name must be 1-60 characters' }, 400);
-  } else return c.json({ error: 'device_name must be a string or null' }, 400);
+  const deviceName = body.device_name?.trim() || null;
+  if (deviceName && deviceName.length > 60) return c.json({ error: 'device_name must be 1-60 characters' }, 400);
 
   const existing = await c.var.db.prepare('SELECT id FROM sessions WHERE id = ? AND user_id = ?')
     .bind(id, u.id).first();
@@ -633,16 +691,15 @@ app.get('/api/invites', requireAdmin, async (c) => {
   return c.json({ invites: results });
 });
 
-app.post('/api/invites', requireAdmin, async (c) => {
-  const body = await c.req.json<{ name?: unknown; role?: unknown; expires_in_hours?: unknown }>().catch(() => null);
-  if (!body || typeof body !== 'object') return c.json({ error: 'Invalid JSON body' }, 400);
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
+app.post('/api/invites', requireAdmin, valid('json', InviteRequest), async (c) => {
+  const body = c.req.valid('json');
+  const name = body.name?.trim() ?? '';
   if (name.length < 1 || name.length > 100) return c.json({ error: 'name must be 1-100 characters' }, 400);
-  if (typeof body.role !== 'string' || !['admin', 'viewer'].includes(body.role)) {
+  if (body.role !== 'admin' && body.role !== 'viewer') {
     return c.json({ error: 'role must be admin or viewer' }, 400);
   }
-  const expiresInHours = body.expires_in_hours === undefined ? 7 * 24 : body.expires_in_hours;
-  if (typeof expiresInHours !== 'number' || !Number.isFinite(expiresInHours) || expiresInHours < 1 || expiresInHours > 720) {
+  const expiresInHours = body.expires_in_hours ?? 7 * 24;
+  if (!Number.isFinite(expiresInHours) || expiresInHours < 1 || expiresInHours > 720) {
     return c.json({ error: 'expires_in_hours must be a number from 1 to 720' }, 400);
   }
   const expiresAt = Math.floor(Date.now() / 1000) + Math.floor(expiresInHours * 3600);
@@ -870,13 +927,8 @@ app.get('/api/trackers', async (c) => {
   return c.json({ trackers: await queryTrackers(c.var.db, c.get('user').role === 'admin') });
 });
 
-app.post('/api/trackers', requireAdmin, async (c) => {
-  const body = await c.req.json<{
-    name?: string; type?: string; source_url?: string;
-    credentials?: Record<string, string> | null;
-    assigned_aircraft?: string | null;
-    assigned_pilot?: number | null;
-  }>();
+app.post('/api/trackers', requireAdmin, valid('json', TrackerCreateRequest), async (c) => {
+  const body = c.req.valid('json');
   const { name, type, source_url } = body;
 
   if (!name || !type || !source_url) {
@@ -909,7 +961,7 @@ app.post('/api/trackers', requireAdmin, async (c) => {
   return c.json({ ok: true, id, mapshare_url: type === 'inreach' ? mapshareUrl(source_url.trim()) : null });
 });
 
-app.put('/api/trackers/:id', requireAdmin, async (c) => {
+app.put('/api/trackers/:id', requireAdmin, valid('json', TrackerUpdateRequest), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid tracker id' }, 400);
 
@@ -917,11 +969,7 @@ app.put('/api/trackers/:id', requireAdmin, async (c) => {
     .bind(id).first<{ id: number; type: string; source_url: string }>();
   if (!existing) return c.json({ error: 'Tracker not found' }, 404);
 
-  const body = await c.req.json<{
-    name?: string; source_url?: string; active?: boolean;
-    assigned_aircraft?: string | null; assigned_pilot?: number | null;
-    credentials?: Record<string, string> | null;
-  }>();
+  const body = c.req.valid('json');
 
   const sets: string[] = [];
   const vals: (string | number | null)[] = [];
@@ -979,9 +1027,8 @@ app.delete('/api/trackers/:id', requireAdmin, async (c) => {
 });
 
 // Fetches a feed without storing anything, for the tracker form's "Test feed" button.
-app.post('/api/trackers/test-feed', requireAdmin, async (c) => {
-  type Body = { source_url?: string; credentials?: Record<string, string> | null };
-  const body = await c.req.json<Body>().catch(() => ({} as Body));
+app.post('/api/trackers/test-feed', requireAdmin, valid('json', TestFeedRequest), async (c) => {
+  const body = c.req.valid('json');
   if (!body.source_url) return c.json({ error: 'source_url is required' }, 400);
   const urlCheck = checkPublicHttpsUrl(body.source_url, { ownHost: c.var.tenant.host });
   if (!urlCheck.ok) return c.json({ error: `source_url: ${urlCheck.error}` }, 400);
@@ -1041,7 +1088,7 @@ app.get('/api/trackers/:id/unassigned', requireAdmin, async (c) => {
   return c.json({ without_aircraft: row?.without_aircraft ?? 0, without_pilot: row?.without_pilot ?? 0 });
 });
 
-app.post('/api/trackers/:id/apply-assignment', requireAdmin, async (c) => {
+app.post('/api/trackers/:id/apply-assignment', requireAdmin, valid('json', ApplyAssignmentRequest), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid tracker id' }, 400);
   const tracker = await c.var.db.prepare(
@@ -1049,11 +1096,11 @@ app.post('/api/trackers/:id/apply-assignment', requireAdmin, async (c) => {
   ).bind(id).first<{ assigned_aircraft: string | null; assigned_pilot: number | null }>();
   if (!tracker) return c.json({ error: 'Tracker not found' }, 404);
 
-  const body = await c.req.json<{ aircraft?: boolean; pilot?: boolean }>().catch(() => ({} as { aircraft?: boolean; pilot?: boolean }));
+  const body = c.req.valid('json');
   const stmts: D1PreparedStatement[] = [];
   if (body.aircraft && tracker.assigned_aircraft) {
     stmts.push(
-      c.var.db.prepare('UPDATE flights SET aircraft_tail = ?, modified_at = unixepoch() WHERE tracker_id = ? AND aircraft_tail IS NULL')
+      c.var.db.prepare('UPDATE flights SET aircraft_tail = ?, modified_at = unixepoch() WHERE tracker_id = ? AND aircraft_tail IS NULL RETURNING id')
         .bind(tracker.assigned_aircraft, id),
       c.var.db.prepare('UPDATE points SET aircraft_tail = ? WHERE tracker_id = ? AND aircraft_tail IS NULL')
         .bind(tracker.assigned_aircraft, id),
@@ -1061,7 +1108,7 @@ app.post('/api/trackers/:id/apply-assignment', requireAdmin, async (c) => {
   }
   if (body.pilot && tracker.assigned_pilot != null) {
     stmts.push(
-      c.var.db.prepare('UPDATE flights SET pilot_id = ?, modified_at = unixepoch() WHERE tracker_id = ? AND pilot_id IS NULL')
+      c.var.db.prepare('UPDATE flights SET pilot_id = ?, modified_at = unixepoch() WHERE tracker_id = ? AND pilot_id IS NULL RETURNING id')
         .bind(tracker.assigned_pilot, id),
       c.var.db.prepare('UPDATE points SET pilot_id = ? WHERE tracker_id = ? AND pilot_id IS NULL')
         .bind(tracker.assigned_pilot, id),
@@ -1070,10 +1117,11 @@ app.post('/api/trackers/:id/apply-assignment', requireAdmin, async (c) => {
   if (stmts.length === 0) return c.json({ error: 'Nothing to apply' }, 400);
   // Recorded: each flight given an aircraft or pilot gets an edit_history row (migration 0002).
   const results = await recordedBatch(c, stmts);
-  // Flight UPDATEs are at even indices (each is followed by its points UPDATE); a flight
-  // missing both fields is counted by both, so report the larger count.
-  const flights = Math.max(...results.filter((_, i) => i % 2 === 0).map((r) => r.meta.changes ?? 0));
-  return c.json({ ok: true, flights });
+  // Flight UPDATEs are at even indices (each is followed by its points UPDATE). Count their
+  // ids: meta.changes includes the trigger's edit_history rows, and a flight missing both
+  // fields is returned by both.
+  const ids = results.filter((_, i) => i % 2 === 0).flatMap((r) => r.results as { id: number }[]);
+  return c.json({ ok: true, flights: new Set(ids.map((r) => r.id)).size });
 });
 
 // ── Tile overlay endpoints ─────────────────────────────────────────────────────
@@ -1089,15 +1137,6 @@ function validOverlayUrl(url: unknown): url is string {
   if (typeof url !== 'string' || !url) return false;
   try { new URL(url); } catch { return false; }
   return /\{x\}/i.test(url) && /\{y\}/i.test(url) && /\{z\}/i.test(url);
-}
-
-// Per-basemap-preset-id override of default_enabled (e.g. {"topo": true, "satellite":
-// false}) — undefined/null is valid (no overrides, just use default_enabled), but if
-// present every value must be a plain boolean map, not e.g. an array or nested object.
-function validBasemapDefaults(v: unknown): v is Record<string, boolean> | null | undefined {
-  if (v === undefined || v === null) return true;
-  if (typeof v !== 'object' || Array.isArray(v)) return false;
-  return Object.values(v as Record<string, unknown>).every((x) => typeof x === 'boolean');
 }
 
 // Backs the "Look up details" button in the add-layer and overlay forms (see
@@ -1117,14 +1156,13 @@ app.get('/api/overlays', async (c) => {
   return c.json({ overlays: await queryTileOverlays(c.var.db) });
 });
 
-app.post('/api/overlays', requireAdmin, async (c) => {
-  const body = await c.req.json<{
-    label?: string; url?: string; attribution?: string | null; max_zoom?: number | null;
-    default_enabled?: boolean; default_enabled_by_basemap?: Record<string, boolean> | null;
-  }>();
+// default_enabled_by_basemap overrides default_enabled per basemap preset id (e.g.
+// {"topo": true, "satellite": false}); null is no overrides (OverlayRequest checks it's a
+// map of booleans).
+app.post('/api/overlays', requireAdmin, valid('json', OverlayRequest), async (c) => {
+  const body = c.req.valid('json');
   if (!body.label) return c.json({ error: 'label is required' }, 400);
   if (!validOverlayUrl(body.url)) return c.json({ error: 'url must include {z}, {x}, and {y} placeholders' }, 400);
-  if (!validBasemapDefaults(body.default_enabled_by_basemap)) return c.json({ error: 'default_enabled_by_basemap must be a map of basemap id to boolean' }, 400);
 
   const result = await c.var.db.prepare(
     'INSERT INTO tile_overlays (label, url, attribution, max_zoom, default_enabled, default_enabled_by_basemap) VALUES (?, ?, ?, ?, ?, ?)'
@@ -1136,17 +1174,14 @@ app.post('/api/overlays', requireAdmin, async (c) => {
   return c.json({ ok: true, id: result.meta.last_row_id as number });
 });
 
-app.put('/api/overlays/:id', requireAdmin, async (c) => {
+app.put('/api/overlays/:id', requireAdmin, valid('json', OverlayRequest), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid overlay id' }, 400);
 
   const existing = await c.var.db.prepare('SELECT id FROM tile_overlays WHERE id = ?').bind(id).first();
   if (!existing) return c.json({ error: 'Overlay not found' }, 404);
 
-  const body = await c.req.json<{
-    label?: string; url?: string; attribution?: string | null; max_zoom?: number | null;
-    default_enabled?: boolean; default_enabled_by_basemap?: Record<string, boolean> | null;
-  }>();
+  const body = c.req.valid('json');
   const sets: string[] = [];
   const vals: (string | number | null)[] = [];
 
@@ -1162,7 +1197,6 @@ app.put('/api/overlays/:id', requireAdmin, async (c) => {
   if (Object.prototype.hasOwnProperty.call(body, 'max_zoom')) { sets.push('max_zoom = ?'); vals.push(body.max_zoom ?? null); }
   if (body.default_enabled !== undefined) { sets.push('default_enabled = ?'); vals.push(body.default_enabled ? 1 : 0); }
   if (Object.prototype.hasOwnProperty.call(body, 'default_enabled_by_basemap')) {
-    if (!validBasemapDefaults(body.default_enabled_by_basemap)) return c.json({ error: 'default_enabled_by_basemap must be a map of basemap id to boolean' }, 400);
     sets.push('default_enabled_by_basemap = ?');
     vals.push(body.default_enabled_by_basemap ? JSON.stringify(body.default_enabled_by_basemap) : null);
   }
@@ -1360,15 +1394,11 @@ function assignmentStatements(db: D1Database, { ids, entryIds, trackerId = null,
 
 // Sets aircraft and/or pilot on tracked flights (flight_ids, written to flights and their
 // points) and manual flights (entry_ids, flight_corrections rows with no tracker).
-app.put('/api/flights/assignment', requireAdmin, async (c) => {
-  const body = await c.req.json<{ flight_ids?: unknown; entry_ids?: unknown; aircraft_tail?: string | null; pilot_id?: number | null }>();
+app.put('/api/flights/assignment', requireAdmin, valid('json', AssignmentRequest), async (c) => {
+  const body = c.req.valid('json');
 
-  const intList = (v: unknown) => Array.isArray(v)
-    ? (v as unknown[]).filter((id): id is number => typeof id === 'number' && Number.isInteger(id))
-    : null;
-  const ids = intList(body.flight_ids ?? []);
-  const entryIds = intList(body.entry_ids ?? []);
-  if (ids === null || entryIds === null) return c.json({ error: 'flight_ids and entry_ids must be arrays' }, 400);
+  const ids = body.flight_ids ?? [];
+  const entryIds = body.entry_ids ?? [];
   if (ids.length === 0 && entryIds.length === 0) return c.json({ error: 'No valid flight IDs' }, 400);
 
   const hasAircraft = Object.prototype.hasOwnProperty.call(body, 'aircraft_tail');
@@ -1635,9 +1665,8 @@ app.get('/api/duty-days', async (c) => {
   });
 });
 
-app.post('/api/flight-corrections', requireAdmin, async (c) => {
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+app.post('/api/flight-corrections', requireAdmin, valid('json', CorrectionRequest), async (c) => {
+  const body: Record<string, unknown> = c.req.valid('json');
   const tracked = body.tracker_id != null || body.flight_start_time != null;
   if (tracked && !(Number.isInteger(body.tracker_id) && Number.isInteger(body.flight_start_time))) {
     return c.json({ error: 'tracker_id and flight_start_time must both be integers' }, 400);
@@ -1702,7 +1731,7 @@ app.post('/api/flight-corrections', requireAdmin, async (c) => {
 
 // Updates a manual flight (the body is the form's full state, with base_history_id: see
 // "Edit conflicts").
-app.put('/api/flight-corrections/:id', requireAdmin, async (c) => {
+app.put('/api/flight-corrections/:id', requireAdmin, valid('json', CorrectionRequest), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (Number.isNaN(id)) return c.json({ error: 'Invalid id' }, 400);
   const existing = await c.var.db.prepare('SELECT tracker_id FROM flight_corrections WHERE id = ?')
@@ -1713,8 +1742,7 @@ app.put('/api/flight-corrections/:id', requireAdmin, async (c) => {
   if (existing.tracker_id != null) {
     return c.json({ error: 'Tracked-flight corrections are saved with POST /api/flight-corrections' }, 400);
   }
-  let body: Record<string, unknown>;
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const body: Record<string, unknown> = c.req.valid('json');
   const fields = await parseEntryFields(c.var.db, body, false);
   if (typeof fields === 'string') return c.json({ error: fields }, 400);
   const baseId = parseBaseHistoryId(body.base_history_id);
@@ -1723,7 +1751,7 @@ app.put('/api/flight-corrections/:id', requireAdmin, async (c) => {
     `UPDATE flight_corrections SET ${ENTRY_COLUMNS.map(k => `${k} = ?`).join(', ')}, updated_at = unixepoch()
      WHERE id = ? RETURNING *`
   ).bind(...ENTRY_COLUMNS.map(k => fields[k]), id)],
-  baseId === undefined ? undefined : { id: baseId, refs: [['flight_corrections', `manual/${id}`]] });
+  baseId === undefined ? undefined : { id: baseId, refs: [['flight_corrections', flightCorrectionKey({ tracker_id: null, id, flight_start_time: null })]] });
   return c.json({ entry: (update.results[0] as FlightCorrection | undefined) ?? null });
 });
 
@@ -1731,10 +1759,9 @@ app.put('/api/flight-corrections/:id', requireAdmin, async (c) => {
 // in one batch. Tracked flights are upserted keeping their other corrections; manual
 // flights are updated by id. Setting Part 135 clears unpaid (only Part 91 can be unpaid).
 // Tracked rows left with nothing in them are deleted.
-app.post('/api/flight-corrections/bulk', requireAdmin, async (c) => {
-  let body: { flights?: unknown; set?: { part91?: unknown; excluded?: unknown } };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
-  if (!Array.isArray(body.flights) || body.flights.length === 0) return c.json({ error: 'flights must be a non-empty array' }, 400);
+app.post('/api/flight-corrections/bulk', requireAdmin, valid('json', BulkFlagsRequest), async (c) => {
+  const body = c.req.valid('json');
+  if (body.flights.length === 0) return c.json({ error: 'flights must be a non-empty array' }, 400);
   if (body.flights.length > 5000) return c.json({ error: 'At most 5000 flights at a time' }, 400);
   const set = body.set ?? {};
   const flag = (v: unknown): number | null => v === undefined ? null : (v ? 1 : 0);
@@ -1743,13 +1770,9 @@ app.post('/api/flight-corrections/bulk', requireAdmin, async (c) => {
 
   const tracked: { tracker_id: number; flight_start_time: number }[] = [];
   const entryIds: number[] = [];
-  for (const f of body.flights as Record<string, unknown>[]) {
-    if (f && Number.isInteger(f.entry_id)) entryIds.push(f.entry_id as number);
-    else if (f && Number.isInteger(f.tracker_id) && Number.isInteger(f.flight_start_time)) {
-      tracked.push({ tracker_id: f.tracker_id as number, flight_start_time: f.flight_start_time as number });
-    } else {
-      return c.json({ error: 'Each flight needs tracker_id and flight_start_time, or entry_id' }, 400);
-    }
+  for (const f of body.flights) {
+    if ('entry_id' in f) entryIds.push(f.entry_id);
+    else tracked.push({ tracker_id: f.tracker_id, flight_start_time: f.flight_start_time });
   }
   const trackerIds = [...new Set(tracked.map(f => f.tracker_id))];
   if (trackerIds.length) {
@@ -1804,18 +1827,17 @@ app.post('/api/flight-corrections/bulk', requireAdmin, async (c) => {
 // The flight form's Revert to tracker and Delete send ?base_history_id= (see "Edit
 // conflicts"), checked against the row's corrections only: a revert leaves the flight's
 // aircraft/pilot as they are.
-app.delete('/api/flight-corrections/:id', requireAdmin, async (c) => {
+app.delete('/api/flight-corrections/:id', requireAdmin, valid('query', BaseHistoryQuery), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (Number.isNaN(id)) return c.json({ error: 'Invalid id' }, 400);
-  const baseId = parseBaseHistoryId(c.req.query('base_history_id'));
+  const baseId = parseBaseHistoryId(c.req.valid('query').base_history_id);
   if (typeof baseId === 'string') return c.json({ error: baseId }, 400);
   let base: SaveBase | undefined;
   if (baseId !== undefined) {
     const row = await c.var.db.prepare('SELECT id, tracker_id, flight_start_time FROM flight_corrections WHERE id = ?')
       .bind(id).first<Pick<FlightCorrection, 'id' | 'tracker_id' | 'flight_start_time'>>();
     if (!row) return c.json({ error: 'Not found' }, 404);
-    const key = row.tracker_id == null ? `manual/${row.id}` : `${row.tracker_id}/${row.flight_start_time}`;
-    base = { id: baseId, refs: [['flight_corrections', key]] };
+    base = { id: baseId, refs: [['flight_corrections', flightCorrectionKey(row)]] };
   }
   const [result] = await recordedBatch(c, [c.var.db.prepare('DELETE FROM flight_corrections WHERE id = ?').bind(id)], base);
   if (result.meta.changes === 0) return c.json({ error: 'Not found' }, 404);
@@ -1885,11 +1907,10 @@ function dutyDaysBase(pilotId: number, dates: string[], v: unknown): SaveBase | 
 // Sets one pilot's dates ({ dates, duty_start, duty_end, rest, note, base_history_id }) in
 // one statement: the day form, for one day or a Through range. All the days are written,
 // or none.
-app.put('/api/duty-days/:pilot', requireAdmin, async (c) => {
+app.put('/api/duty-days/:pilot', requireAdmin, valid('json', DutyDaysRequest), async (c) => {
   const pilotId = parseInt(c.req.param('pilot') ?? '', 10);
   if (Number.isNaN(pilotId)) return c.json({ error: 'Invalid pilot id' }, 400);
-  let body: { dates?: unknown; duty_start?: unknown; duty_end?: unknown; rest?: unknown; note?: unknown; base_history_id?: unknown };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const body = c.req.valid('json');
   const dates = parseDutyDates(body.dates);
   if (typeof dates === 'string') return c.json({ error: dates }, 400);
   const fields = parseDutyDayFields(body);
@@ -1902,11 +1923,10 @@ app.put('/api/duty-days/:pilot', requireAdmin, async (c) => {
 });
 
 // Clears many dates at once ({ dates, base_history_id }), in one statement.
-app.post('/api/duty-days/:pilot/clear', requireAdmin, async (c) => {
+app.post('/api/duty-days/:pilot/clear', requireAdmin, valid('json', DutyDaysClearRequest), async (c) => {
   const pilotId = parseInt(c.req.param('pilot') ?? '', 10);
   if (Number.isNaN(pilotId)) return c.json({ error: 'Invalid pilot id' }, 400);
-  let body: { dates?: unknown; base_history_id?: unknown };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const body = c.req.valid('json');
   const dates = parseDutyDates(body.dates);
   if (typeof dates === 'string') return c.json({ error: dates }, 400);
   const base = dutyDaysBase(pilotId, dates, body.base_history_id);
@@ -1943,11 +1963,10 @@ function savedBase(id: number | undefined, ref: HistoryRef): SaveBase | undefine
 // replaces?, base_history_id? }. Times are both HH:MM (not equal) or both null (no default
 // from that date); an entry already on that date is replaced, and so is the one dated
 // replaces (moved to effective_date), in the same batch. Returns { default_duties }.
-app.put('/api/pilots/:id/default-duty', requireAdmin, async (c) => {
+app.put('/api/pilots/:id/default-duty', requireAdmin, valid('json', DefaultDutyRequest), async (c) => {
   const pilotId = parseInt(c.req.param('id'), 10);
   if (Number.isNaN(pilotId)) return c.json({ error: 'Invalid pilot id' }, 400);
-  let body: { effective_date?: unknown; duty_start?: unknown; duty_end?: unknown; replaces?: unknown; base_history_id?: unknown };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const body = c.req.valid('json');
   const entry = parseDatedEntry(body);
   if (typeof entry === 'string') return c.json({ error: entry }, 400);
   const start = hhmm(body.duty_start), end = hhmm(body.duty_end);
@@ -1971,12 +1990,12 @@ app.put('/api/pilots/:id/default-duty', requireAdmin, async (c) => {
 
 // Removes the entry dated :date (?base_history_id=): its days fall back to the entry before
 // it (or, for the earliest, the next one). Returns { default_duties }.
-app.delete('/api/pilots/:id/default-duty/:date', requireAdmin, async (c) => {
+app.delete('/api/pilots/:id/default-duty/:date', requireAdmin, valid('query', BaseHistoryQuery), async (c) => {
   const pilotId = parseInt(c.req.param('id'), 10);
   if (Number.isNaN(pilotId)) return c.json({ error: 'Invalid pilot id' }, 400);
   const date = c.req.param('date');
   if (!isDateKey(date)) return c.json({ error: 'date must be YYYY-MM-DD' }, 400);
-  const baseId = parseBaseHistoryId(c.req.query('base_history_id'));
+  const baseId = parseBaseHistoryId(c.req.valid('query').base_history_id);
   if (typeof baseId === 'string') return c.json({ error: baseId }, 400);
   const db = c.var.db;
   const [del, list] = await recordedBatch(c, [
@@ -1997,9 +2016,8 @@ app.get('/api/duty-methods', async (c) => {
 
 // The method from a date: { effective_date, method: 'b' | 'c', replaces?, base_history_id? },
 // like a default duty entry. Returns { methods }.
-app.put('/api/duty-methods', requireAdmin, async (c) => {
-  let body: { effective_date?: unknown; method?: unknown; replaces?: unknown; base_history_id?: unknown };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+app.put('/api/duty-methods', requireAdmin, valid('json', DutyMethodRequest), async (c) => {
+  const body = c.req.valid('json');
   const entry = parseDatedEntry(body);
   if (typeof entry === 'string') return c.json({ error: entry }, 400);
   if (body.method !== 'b' && body.method !== 'c') return c.json({ error: 'method must be b or c' }, 400);
@@ -2017,10 +2035,10 @@ app.put('/api/duty-methods', requireAdmin, async (c) => {
   return c.json({ methods: results[results.length - 1].results as DutyMethodEntry[] });
 });
 
-app.delete('/api/duty-methods/:date', requireAdmin, async (c) => {
+app.delete('/api/duty-methods/:date', requireAdmin, valid('query', BaseHistoryQuery), async (c) => {
   const date = c.req.param('date');
   if (!isDateKey(date)) return c.json({ error: 'date must be YYYY-MM-DD' }, 400);
-  const baseId = parseBaseHistoryId(c.req.query('base_history_id'));
+  const baseId = parseBaseHistoryId(c.req.valid('query').base_history_id);
   if (typeof baseId === 'string') return c.json({ error: baseId }, 400);
   const [del, list] = await recordedBatch(c, [
     c.var.db.prepare('DELETE FROM duty_method_history WHERE effective_date = ?').bind(date),
@@ -2036,32 +2054,21 @@ app.get('/api/aircraft', async (c) => {
   return c.json({ aircraft: await queryAircraft(c.var.db, c.req.query('active') === '1') });
 });
 
-app.post('/api/aircraft', requireAdmin, async (c) => {
-  const body = await c.req.json<{ tail_number?: string; name?: string }>();
+app.post('/api/aircraft', requireAdmin, valid('json', AircraftCreateRequest), async (c) => {
+  const body = c.req.valid('json');
   if (!body.tail_number) return c.json({ error: 'tail_number is required' }, 400);
   await c.var.db.prepare('INSERT INTO aircraft (tail_number, name) VALUES (?, ?)')
     .bind(body.tail_number.toUpperCase(), body.name ?? null).run();
   return c.json({ ok: true });
 });
 
-app.put('/api/aircraft/:tail', requireAdmin, async (c) => {
+app.put('/api/aircraft/:tail', requireAdmin, valid('json', AircraftUpdateRequest), async (c) => {
   const tail = c.req.param('tail');
   const existing = await c.var.db.prepare('SELECT tail_number FROM aircraft WHERE tail_number = ?')
     .bind(tail).first();
   if (!existing) return c.json({ error: 'Aircraft not found' }, 404);
 
-  type AircraftUpdateBody = {
-    name?: string | null;
-    active?: boolean;
-    hobbs_time?: number | null;
-    hobbs_recorded_at?: number | null;
-    hobbs_correction?: number;
-    tach_time?: number | null;
-    tach_recorded_at?: number | null;
-    tach_correction?: number;
-    maintenance_schedule?: unknown[] | null;
-  };
-  const body = await c.req.json<AircraftUpdateBody>();
+  const body = c.req.valid('json');
   const sets: string[] = [];
   const vals: (string | number | null)[] = [];
   const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k);
@@ -2097,20 +2104,20 @@ app.get('/api/pilots', async (c) => {
   return c.json({ pilots: await queryPilots(c.var.db, c.req.query('active') === '1') });
 });
 
-app.post('/api/pilots', requireAdmin, async (c) => {
-  const body = await c.req.json<{ name?: string }>();
+app.post('/api/pilots', requireAdmin, valid('json', PilotCreateRequest), async (c) => {
+  const body = c.req.valid('json');
   if (!body.name) return c.json({ error: 'name is required' }, 400);
   const result = await c.var.db.prepare('INSERT INTO pilots (name) VALUES (?)').bind(body.name).run();
   return c.json({ ok: true, id: result.meta.last_row_id as number });
 });
 
-app.put('/api/pilots/:id', requireAdmin, async (c) => {
+app.put('/api/pilots/:id', requireAdmin, valid('json', PilotUpdateRequest), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid pilot id' }, 400);
   const existing = await c.var.db.prepare('SELECT id FROM pilots WHERE id = ?').bind(id).first();
   if (!existing) return c.json({ error: 'Pilot not found' }, 404);
 
-  const body = await c.req.json<{ name?: string; active?: boolean; default_duty_start?: unknown; default_duty_end?: unknown }>();
+  const body = c.req.valid('json');
   // The default duty is dated now, so it's no longer a field of the pilot.
   if (body.default_duty_start !== undefined || body.default_duty_end !== undefined) {
     return c.json({ error: 'Set the default duty with PUT /api/pilots/:id/default-duty' }, 400);
@@ -2346,13 +2353,12 @@ app.get('/api/named-points', async (c) => {
   return c.json(geojson);
 });
 
-app.post('/api/named-points', requireAdmin, async (c) => {
-  let body: { name?: string; lat?: number; lon?: number; max_km?: number | null };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+app.post('/api/named-points', requireAdmin, valid('json', NamedPointCreateRequest), async (c) => {
+  const body = c.req.valid('json');
   const { name, lat, lon } = body;
-  if (typeof name !== 'string' || !name) return c.json({ error: 'name is required' }, 400);
-  if (typeof lat !== 'number' || typeof lon !== 'number') return c.json({ error: 'lat and lon are required' }, 400);
-  const maxKm = typeof body.max_km === 'number' ? body.max_km : null;
+  if (!name) return c.json({ error: 'name is required' }, 400);
+  if (lat === undefined || lon === undefined) return c.json({ error: 'lat and lon are required' }, 400);
+  const maxKm = body.max_km ?? null;
   const result = await c.var.db.prepare(
     'INSERT INTO named_points (name, lat, lon, max_km) VALUES (?, ?, ?, ?)'
   ).bind(name, lat, lon, maxKm).run();
@@ -2360,14 +2366,13 @@ app.post('/api/named-points', requireAdmin, async (c) => {
   return c.json({ id: result.meta.last_row_id, name, lat, lon, max_km: maxKm }, 201);
 });
 
-app.put('/api/named-points/:id', requireAdmin, async (c) => {
+app.put('/api/named-points/:id', requireAdmin, valid('json', NamedPointUpdateRequest), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid id' }, 400);
-  let body: { name?: string; max_km?: number | null };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const body = c.req.valid('json');
   const updates: string[] = [];
   const binds: unknown[] = [];
-  if (typeof body.name === 'string' && body.name) { updates.push('name = ?'); binds.push(body.name); }
+  if (body.name) { updates.push('name = ?'); binds.push(body.name); }
   if ('max_km' in body) { updates.push('max_km = ?'); binds.push(body.max_km ?? null); }
   if (updates.length === 0) return c.json({ error: 'Nothing to update' }, 400);
   binds.push(id);
@@ -2406,10 +2411,9 @@ app.get('/api/regions', async (c) => {
   return c.json(geojson);
 });
 
-app.post('/api/regions', requireAdmin, async (c) => {
-  let body: { name?: string; geojson?: unknown };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
-  if (typeof body.name !== 'string' || !body.name) return c.json({ error: 'name required' }, 400);
+app.post('/api/regions', requireAdmin, valid('json', RegionRequest), async (c) => {
+  const body = c.req.valid('json');
+  if (!body.name) return c.json({ error: 'name required' }, 400);
   if (!body.geojson) return c.json({ error: 'geojson required' }, 400);
   const result = await c.var.db.prepare(
     'INSERT INTO regions (name, geojson) VALUES (?, ?)'
@@ -2417,14 +2421,13 @@ app.post('/api/regions', requireAdmin, async (c) => {
   return c.json({ id: result.meta.last_row_id, ok: true });
 });
 
-app.put('/api/regions/:id', requireAdmin, async (c) => {
+app.put('/api/regions/:id', requireAdmin, valid('json', RegionRequest), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid id' }, 400);
-  let body: { name?: string; geojson?: unknown };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const body = c.req.valid('json');
   const updates: string[] = [];
   const binds: unknown[] = [];
-  if (typeof body.name === 'string' && body.name) { updates.push('name = ?'); binds.push(body.name); }
+  if (body.name) { updates.push('name = ?'); binds.push(body.name); }
   if (body.geojson != null) { updates.push('geojson = ?'); binds.push(JSON.stringify(body.geojson)); }
   if (updates.length === 0) return c.json({ error: 'Nothing to update' }, 400);
   binds.push(id);
@@ -2445,10 +2448,9 @@ app.delete('/api/regions/:id', requireAdmin, async (c) => {
 
 // ── Regions import (admin only) ───────────────────────────────────────────────
 
-app.post('/api/regions/import', requireAdmin, async (c) => {
-  let body: { type?: string; features?: Array<{ properties: Record<string, unknown>; geometry: unknown }> };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
-  if (body.type !== 'FeatureCollection' || !Array.isArray(body.features)) {
+app.post('/api/regions/import', requireAdmin, valid('json', FeatureCollectionImportRequest), async (c) => {
+  const body = c.req.valid('json');
+  if (body.type !== 'FeatureCollection' || !body.features) {
     return c.json({ error: 'Expected a GeoJSON FeatureCollection' }, 400);
   }
   const stmts: D1PreparedStatement[] = [c.var.db.prepare('DELETE FROM regions')];
@@ -2463,17 +2465,16 @@ app.post('/api/regions/import', requireAdmin, async (c) => {
 
 // ── Named points import (admin only) ─────────────────────────────────────────
 
-app.post('/api/named-points/import', requireAdmin, async (c) => {
-  let body: { type?: string; features?: Array<{ properties: Record<string, unknown>; geometry: { type: string; coordinates: [number, number] } }> };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
-  if (body.type !== 'FeatureCollection' || !Array.isArray(body.features)) {
+app.post('/api/named-points/import', requireAdmin, valid('json', FeatureCollectionImportRequest), async (c) => {
+  const body = c.req.valid('json');
+  if (body.type !== 'FeatureCollection' || !body.features) {
     return c.json({ error: 'Expected a GeoJSON FeatureCollection' }, 400);
   }
   const stmts: D1PreparedStatement[] = [c.var.db.prepare('DELETE FROM named_points')];
   for (const f of body.features) {
     const name = f.properties?.name as string | undefined;
     if (typeof name !== 'string' || !name) continue;
-    const coords = f.geometry?.coordinates;
+    const coords = (f.geometry as { coordinates?: unknown } | null | undefined)?.coordinates;
     if (!Array.isArray(coords) || typeof coords[0] !== 'number' || typeof coords[1] !== 'number') continue;
     const maxKm = typeof f.properties?.maxKm === 'number' ? f.properties.maxKm : null;
     stmts.push(c.var.db.prepare('INSERT INTO named_points (name, lat, lon, max_km) VALUES (?, ?, ?, ?)').bind(name, coords[1], coords[0], maxKm));
@@ -2488,6 +2489,16 @@ app.post('/api/named-points/import', requireAdmin, async (c) => {
 app.get('/api/settings', requireAdmin, async (c) => {
   const { results } = await c.var.db.prepare('SELECT key, value FROM settings').all<{ key: string; value: string }>();
   return c.json(Object.fromEntries(results.map(r => [r.key, r.value])));
+});
+
+// What a change of the timezone setting would move: the duty days and default duty entries,
+// stored as dates and wall-clock times in it (docs/mobile-app-plan.md, "Times and the
+// operator's timezone"). Global Settings asks before saving a new timezone when there are any.
+app.get('/api/settings/duty-records', requireAdmin, async (c) => {
+  const row = await c.var.db.prepare(
+    'SELECT (SELECT COUNT(*) FROM duty_days) AS duty_days, (SELECT COUNT(*) FROM pilot_default_duty) AS default_duties'
+  ).first<{ duty_days: number; default_duties: number }>();
+  return c.json({ duty_days: row?.duty_days ?? 0, default_duties: row?.default_duties ?? 0 });
 });
 
 // Per-key checks for PATCH /api/settings; returns the value to store, or an error message.
@@ -2529,17 +2540,14 @@ function validateSetting(key: string, value: string | number): { value: string }
   return { value: String(value) };
 }
 
-app.patch('/api/settings', requireAdmin, async (c) => {
+app.patch('/api/settings', requireAdmin, valid('json', SettingsRequest), async (c) => {
   const ALLOWED_KEYS = new Set(['app_name', 'timezone', 'map_default_lat', 'map_default_lng', 'map_default_zoom', 'gap_alert_minutes', 'gap_alert_stop_minutes', 'pushover_api_token', 'setup_dismissed']);
-  let body: Record<string, string | number>;
-  try { body = await c.req.json<Record<string, string | number>>(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
-  if (!body || typeof body !== 'object' || Array.isArray(body)) return c.json({ error: 'Expected a JSON object' }, 400);
+  const body = c.req.valid('json');
   const stmts: D1PreparedStatement[] = [];
   for (const [key, value] of Object.entries(body)) {
     // Dated now (migration 0002), so not a plain setting.
     if (key === 'duty_method') return c.json({ error: 'Set the duty method with PUT /api/duty-methods' }, 400);
     if (!ALLOWED_KEYS.has(key)) return c.json({ error: `Unknown setting key: ${key}` }, 400);
-    if (typeof value !== 'string' && typeof value !== 'number') return c.json({ error: `Value for ${key} must be a string or number` }, 400);
     const checked = validateSetting(key, value);
     if ('error' in checked) return c.json({ error: checked.error }, 400);
     stmts.push(c.var.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').bind(key, checked.value));
@@ -2576,19 +2584,16 @@ app.get('/api/webhooks', requireAdmin, async (c) => {
   return c.json({ webhooks: results });
 });
 
-app.post('/api/webhooks', requireAdmin, async (c) => {
-  let body: { type?: string; url?: string; pushover_user_key?: string; label?: string | null; events?: unknown };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+app.post('/api/webhooks', requireAdmin, valid('json', WebhookCreateRequest), async (c) => {
+  const body = c.req.valid('json');
 
   const type = body.type === 'pushover' ? 'pushover' : 'webhook';
   if (type === 'webhook') {
-    if (typeof body.url !== 'string' || !body.url) return c.json({ error: 'url is required' }, 400);
+    if (!body.url) return c.json({ error: 'url is required' }, 400);
     const urlCheck = checkPublicHttpsUrl(body.url, { ownHost: c.var.tenant.host });
     if (!urlCheck.ok) return c.json({ error: `url: ${urlCheck.error}` }, 400);
   } else {
-    if (typeof body.pushover_user_key !== 'string' || !body.pushover_user_key) {
-      return c.json({ error: 'pushover_user_key is required' }, 400);
-    }
+    if (!body.pushover_user_key) return c.json({ error: 'pushover_user_key is required' }, 400);
   }
 
   const events = body.events === undefined
@@ -2608,7 +2613,7 @@ app.post('/api/webhooks', requireAdmin, async (c) => {
   return c.json({ ok: true, id: result.meta.last_row_id }, 201);
 });
 
-app.put('/api/webhooks/:id', requireAdmin, async (c) => {
+app.put('/api/webhooks/:id', requireAdmin, valid('json', WebhookUpdateRequest), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid webhook id' }, 400);
 
@@ -2617,8 +2622,7 @@ app.put('/api/webhooks/:id', requireAdmin, async (c) => {
   ).bind(id).first<{ type: string; url: string; pushover_user_key: string | null; label: string | null; events: string; active: number }>();
   if (!existing) return c.json({ error: 'Webhook not found' }, 404);
 
-  let body: { type?: string; url?: string; pushover_user_key?: string | null; label?: string | null; events?: unknown; active?: boolean };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const body = c.req.valid('json');
 
   // Merge onto the existing row first so url/pushover_user_key/type are always written
   // together as a consistent triple, never left half-updated by a partial SET list.

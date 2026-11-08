@@ -49,13 +49,13 @@ export function namedPointsEditorScript(): string {
     // ── Named points export / import ──────────────────────────────────────────
 
     document.getElementById('settings-named-points-export').addEventListener('click', () => {
-      _downloadGeoJSON('/api/named-points', 'named-points.geojson');
+      _downloadGeoJSON(fetchNamedPoints, 'named-points.geojson');
     });
 
     document.getElementById('settings-named-points-import').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      await _importGeoJSON(file, 'settings-named-points-status', '/api/named-points/import');
+      await _importGeoJSON(file, 'settings-named-points-status', importNamedPoints);
       e.target.value = '';
     });
 
@@ -143,9 +143,7 @@ export function namedPointsEditorScript(): string {
       }
       _npPointLayers.clear();
       try {
-        const resp = await fetch('/api/named-points', { cache: 'no-store' });
-        if (!resp.ok) { _setEditorStatus('np-editor-status', 'Failed to load points.', true); return; }
-        const geojson = await resp.json();
+        const geojson = await fetchNamedPoints();
         for (const f of geojson.features) _npRenderPoint(f);
         _setEditorStatus('np-editor-status', '', false);
       } catch (_) {
@@ -215,12 +213,12 @@ export function namedPointsEditorScript(): string {
       saveBtn.disabled = true;
       try {
         if (_npSelectedId !== null) {
-          const resp = await fetch('/api/named-points/' + _npSelectedId, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, max_km: maxKm }),
+          const saved = await updateNamedPoint(_npSelectedId, { name, max_km: maxKm }).then(() => true, (err) => {
+            msgEl.textContent = apiErrorMessage(err, 'Failed to save.');
+            msgEl.style.display = '';
+            return false;
           });
-          if (resp.ok) {
+          if (saved) {
             const savedId = _npSelectedId;
             const layers = _npPointLayers.get(savedId);
             const latlng = layers ? layers.marker.getLatLng() : null;
@@ -236,19 +234,14 @@ export function namedPointsEditorScript(): string {
             }
             _setEditorStatus('np-editor-status', 'Saved.', false);
             setTimeout(() => _setEditorStatus('np-editor-status', '', false), 2000);
-          } else {
-            const d = await resp.json().catch(() => ({}));
-            msgEl.textContent = d.error ?? 'Failed to save.';
-            msgEl.style.display = '';
           }
         } else if (_npAddLatLng) {
-          const resp = await fetch('/api/named-points', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, lat: _npAddLatLng.lat, lon: _npAddLatLng.lng, max_km: maxKm }),
+          const data = await createNamedPoint({ name, lat: _npAddLatLng.lat, lon: _npAddLatLng.lng, max_km: maxKm }).catch((err) => {
+            msgEl.textContent = apiErrorMessage(err, 'Failed to add.');
+            msgEl.style.display = '';
+            return null;
           });
-          if (resp.ok) {
-            const data = await resp.json();
+          if (data) {
             if (_npAddMarker) { _npAddMarker.remove(); _npAddMarker = null; }
             _npRenderPoint({
               type: 'Feature',
@@ -259,10 +252,6 @@ export function namedPointsEditorScript(): string {
             _npHidePanel();
             _setEditorStatus('np-editor-status', 'Added.', false);
             setTimeout(() => _setEditorStatus('np-editor-status', _npEditorMode === 'add' ? 'Click map to place point.' : '', false), 2000);
-          } else {
-            const d = await resp.json().catch(() => ({}));
-            msgEl.textContent = d.error ?? 'Failed to add.';
-            msgEl.style.display = '';
           }
         }
       } catch (_) {
@@ -279,18 +268,18 @@ export function namedPointsEditorScript(): string {
       deleteBtn.disabled = true;
       const msgEl = document.getElementById('np-editor-msg');
       try {
-        const resp = await fetch('/api/named-points/' + _npSelectedId, { method: 'DELETE' });
-        if (resp.ok) {
+        const deleted = await deleteNamedPoint(_npSelectedId).then(() => true, (err) => {
+          msgEl.textContent = apiErrorMessage(err, 'Failed to delete.');
+          msgEl.style.display = '';
+          deleteBtn.disabled = false;
+          return false;
+        });
+        if (deleted) {
           const layers = _npPointLayers.get(_npSelectedId);
           if (layers) { layers.marker.remove(); if (layers.circle) layers.circle.remove(); _npPointLayers.delete(_npSelectedId); }
           _npHidePanel();
           _setEditorStatus('np-editor-status', 'Deleted.', false);
           setTimeout(() => _setEditorStatus('np-editor-status', '', false), 2000);
-        } else {
-          const d = await resp.json().catch(() => ({}));
-          msgEl.textContent = d.error ?? 'Failed to delete.';
-          msgEl.style.display = '';
-          deleteBtn.disabled = false;
         }
       } catch (_) {
         msgEl.textContent = 'Error deleting.';

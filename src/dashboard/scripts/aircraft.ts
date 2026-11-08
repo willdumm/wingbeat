@@ -9,16 +9,11 @@ export function dashboardScriptsAircraft(): string {
     settingsAfterTrackerChange = async () => {
       const wasEmpty = trackerList.filter(t => t.active && !t.deleted).length === 0;
       // Re-fetch lists so filter dropdowns and status cards stay current.
-      try {
-        const [trackerResp, aircraftResp, pilotResp] = await Promise.all([
-          fetch('/api/trackers'),
-          fetch('/api/aircraft'),
-          fetch('/api/pilots'),
-        ]);
-        if (trackerResp.ok) { const d = await trackerResp.json(); trackerList = d.trackers; }
-        if (aircraftResp.ok) { const d = await aircraftResp.json(); aircraftList = d.aircraft; }
-        if (pilotResp.ok) { const d = await pilotResp.json(); pilotList = d.pilots; flightStore.setPilots(pilotList); }
-      } catch (_) {}
+      // Each list on its own: one that fails to load keeps its old value.
+      const [trackers, aircraft, pilots] = await Promise.allSettled([fetchTrackers(), fetchAircraft(), fetchPilots()]);
+      if (trackers.status === 'fulfilled') trackerList = trackers.value.trackers;
+      if (aircraft.status === 'fulfilled') aircraftList = aircraft.value.aircraft;
+      if (pilots.status === 'fulfilled') { pilotList = pilots.value.pilots; flightStore.setPilots(pilotList); }
       if (wasEmpty && trackerList.filter(t => t.active && !t.deleted).length > 0) {
         location.reload();
         return;

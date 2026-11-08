@@ -1119,10 +1119,7 @@ export function settingsModalScript(): string {
 
     async function _loadSettingsUser() {
       if (_settingsUser) return _settingsUser;
-      try {
-        const resp = await fetch('/api/me');
-        if (resp.ok) _settingsUser = await resp.json();
-      } catch (_) {}
+      try { _settingsUser = await fetchMe(); } catch (_) {}
       return _settingsUser;
     }
 
@@ -1235,12 +1232,10 @@ export function settingsModalScript(): string {
       if (isAdmin) renderSettingsUsersList();
 
       // Refresh lists in case they changed since last load.
-      try {
-        const [ar, pr] = await Promise.all([fetch('/api/aircraft'), fetch('/api/pilots')]);
-        if (ar.ok) { const d = await ar.json(); aircraftList = d.aircraft; renderSettingsAircraftList(); }
-        if (pr.ok) { const d = await pr.json(); pilotList = d.pilots; flightStore.setPilots(pilotList); renderSettingsPilotList(); }
-        settingsResetAddForm();
-      } catch (_) {}
+      const [ar, pr] = await Promise.allSettled([fetchAircraft(), fetchPilots()]);
+      if (ar.status === 'fulfilled') { aircraftList = ar.value.aircraft; renderSettingsAircraftList(); }
+      if (pr.status === 'fulfilled') { pilotList = pr.value.pilots; flightStore.setPilots(pilotList); renderSettingsPilotList(); }
+      settingsResetAddForm();
       if (isAdmin) renderSetupGuide(false);
       else document.getElementById('settings-section-setup').style.display = 'none';
     }
@@ -1517,20 +1512,13 @@ export function settingsModalScript(): string {
           default_enabled_by_basemap: _readBasemapDefaultsFields(basemapDefaultsEl),
         };
         try {
-          const resp = await fetch('/api/overlays/' + ov.id, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          });
-          if (resp.ok) {
-            Object.assign(ov, body);
-            renderSettingsOverlaysList();
-            _ftRenderOverlayLegend();
-          } else {
-            const data = await resp.json().catch(() => ({}));
-            alert(data.error ?? 'Failed to save overlay.');
-          }
-        } catch (_) {}
+          await updateOverlay(ov.id, body);
+          Object.assign(ov, body);
+          renderSettingsOverlaysList();
+          _ftRenderOverlayLegend();
+        } catch (err) {
+          alert(apiErrorMessage(err, 'Failed to save overlay.'));
+        }
       });
 
       cancelBtn.addEventListener('click', () => {
@@ -1544,16 +1532,13 @@ export function settingsModalScript(): string {
     async function settingsDeleteOverlay(ov) {
       if (!confirm('Delete "' + ov.label + '"? This removes it from every viewer\\'s map.')) return;
       try {
-        const resp = await fetch('/api/overlays/' + ov.id, { method: 'DELETE' });
-        if (resp.ok) {
-          overlayList = overlayList.filter(o => o.id !== ov.id);
-          renderSettingsOverlaysList();
-          _ftRenderOverlayLegend();
-        } else {
-          const data = await resp.json().catch(() => ({}));
-          alert(data.error ?? 'Failed to delete overlay.');
-        }
-      } catch (_) {}
+        await deleteOverlay(ov.id);
+        overlayList = overlayList.filter(o => o.id !== ov.id);
+        renderSettingsOverlaysList();
+        _ftRenderOverlayLegend();
+      } catch (err) {
+        alert(apiErrorMessage(err, 'Failed to delete overlay.'));
+      }
     }
 
     const _addOverlayBasemapDefaults = document.getElementById('settings-add-overlay-basemap-defaults');
@@ -1577,29 +1562,21 @@ export function settingsModalScript(): string {
           default_enabled_by_basemap: _addOverlayBasemapDefaults ? _readBasemapDefaultsFields(_addOverlayBasemapDefaults) : null,
         };
         try {
-          const resp = await fetch('/api/overlays', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            overlayList.push({ id: data.id, ...body });
-            renderSettingsOverlaysList();
-            _ftRenderOverlayLegend();
-            document.getElementById('settings-add-overlay-label').value = '';
-            document.getElementById('settings-add-overlay-url').value = '';
-            document.getElementById('settings-add-overlay-attribution').value = '';
-            document.getElementById('settings-add-overlay-maxzoom').value = '';
-            document.getElementById('settings-add-overlay-default').checked = false;
-            if (_addOverlayBasemapDefaults) _buildBasemapDefaultsFields(_addOverlayBasemapDefaults, null);
-            document.getElementById('settings-add-overlay-lookup-status').textContent = '';
-            document.getElementById('settings-add-overlay').open = false;
-          } else {
-            const data = await resp.json().catch(() => ({}));
-            alert(data.error ?? 'Failed to add overlay.');
-          }
-        } catch (_) {}
+          const data = await createOverlay(body);
+          overlayList.push({ id: data.id, ...body });
+          renderSettingsOverlaysList();
+          _ftRenderOverlayLegend();
+          document.getElementById('settings-add-overlay-label').value = '';
+          document.getElementById('settings-add-overlay-url').value = '';
+          document.getElementById('settings-add-overlay-attribution').value = '';
+          document.getElementById('settings-add-overlay-maxzoom').value = '';
+          document.getElementById('settings-add-overlay-default').checked = false;
+          if (_addOverlayBasemapDefaults) _buildBasemapDefaultsFields(_addOverlayBasemapDefaults, null);
+          document.getElementById('settings-add-overlay-lookup-status').textContent = '';
+          document.getElementById('settings-add-overlay').open = false;
+        } catch (err) {
+          alert(apiErrorMessage(err, 'Failed to add overlay.'));
+        }
       });
     }
     const _addOverlayLookup = document.getElementById('settings-add-overlay-lookup');
@@ -1813,29 +1790,21 @@ export function settingsModalScript(): string {
           body.credentials = { password: credState.getValue() };
         }
         try {
-          const resp = await fetch('/api/trackers/' + tracker.id, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          });
-          if (resp.ok) {
-            const aircraftAdded = aircraftSel && body.assigned_aircraft && body.assigned_aircraft !== tracker.assigned_aircraft;
-            const pilotAdded = pilotSel && body.assigned_pilot != null && body.assigned_pilot !== tracker.assigned_pilot;
-            tracker.name = name;
-            tracker.source_url = source_url;
-            const saved = await resp.json().catch(() => ({}));
-            tracker.mapshare_url = saved.mapshare_url ?? null;
-            if (saved.credentials_cleared) alert('The feed moved to a different site, so its saved access code was removed. Edit the tracker again and re-enter the access code if it needs one.');
-            if (aircraftSel) tracker.assigned_aircraft = body.assigned_aircraft;
-            if (pilotSel) tracker.assigned_pilot = body.assigned_pilot;
-            renderSettingsTrackerList();
-            settingsAfterTrackerChange();
-            if (aircraftAdded || pilotAdded) await settingsOfferApplyAssignment(tracker, !!aircraftAdded, !!pilotAdded);
-          } else {
-            const err = await resp.json().catch(() => ({}));
-            alert(err.error ?? 'Failed to save tracker.');
-          }
-        } catch (_) {}
+          const saved = await updateTracker(tracker.id, body);
+          const aircraftAdded = aircraftSel && body.assigned_aircraft && body.assigned_aircraft !== tracker.assigned_aircraft;
+          const pilotAdded = pilotSel && body.assigned_pilot != null && body.assigned_pilot !== tracker.assigned_pilot;
+          tracker.name = name;
+          tracker.source_url = source_url;
+          tracker.mapshare_url = saved.mapshare_url ?? null;
+          if (saved.credentials_cleared) alert('The feed moved to a different site, so its saved access code was removed. Edit the tracker again and re-enter the access code if it needs one.');
+          if (aircraftSel) tracker.assigned_aircraft = body.assigned_aircraft;
+          if (pilotSel) tracker.assigned_pilot = body.assigned_pilot;
+          renderSettingsTrackerList();
+          settingsAfterTrackerChange();
+          if (aircraftAdded || pilotAdded) await settingsOfferApplyAssignment(tracker, !!aircraftAdded, !!pilotAdded);
+        } catch (err) {
+          alert(apiErrorMessage(err, 'Failed to save tracker.'));
+        }
       });
 
       cancelBtn.addEventListener('click', () => {
@@ -1851,20 +1820,7 @@ export function settingsModalScript(): string {
     // in one-month windows (oldest first; the feed returns everything after d1 otherwise),
     // then labels flight origins/destinations a dozen boundary points at a time, paced for
     // the public Overpass API. Both loops run in this tab and stop if the form is closed.
-
-    const _importIsoDate = (d) => d.toISOString().slice(0, 10);
-
-    function _importWindows(fromIso) {
-      const windows = [];
-      let start = new Date(fromIso + 'T00:00:00Z');
-      const now = new Date();
-      while (start < now) {
-        const next = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
-        windows.push({ d1: _importIsoDate(start), d2: next < now ? _importIsoDate(next) : null, label: start });
-        start = next;
-      }
-      return windows;
-    }
+    // The dates are operator days (trackerImportWindows, core settings).
 
     function settingsToggleImportForm(row, tracker) {
       const close = (el) => {
@@ -1898,10 +1854,8 @@ export function settingsModalScript(): string {
 
       const fromInput = document.createElement('input');
       fromInput.type = 'date';
-      const yearAgo = new Date();
-      yearAgo.setUTCFullYear(yearAgo.getUTCFullYear() - 1);
-      fromInput.value = _importIsoDate(yearAgo);
-      fromInput.max = _importIsoDate(new Date());
+      fromInput.value = trackerImportDefaultFrom();
+      fromInput.max = unixToTzDateStr(Math.floor(Date.now() / 1000));
       form.appendChild(_lbl('Import from', fromInput));
 
       const status = document.createElement('p');
@@ -1929,18 +1883,14 @@ export function settingsModalScript(): string {
         startBtn.disabled = true;
         fromInput.disabled = true;
         let total = 0;
-        const monthFmt = new Intl.DateTimeFormat(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' });
-        for (const w of _importWindows(fromInput.value)) {
+        for (const w of trackerImportWindows(fromInput.value)) {
           if (cancelled || !form.isConnected) return;
-          status.textContent = 'Importing ' + monthFmt.format(w.label) + '… ' + total.toLocaleString() + ' positions so far';
+          status.textContent = 'Importing ' + w.label + '… ' + total.toLocaleString() + ' positions so far';
           try {
-            const qs = 'd1=' + w.d1 + (w.d2 ? '&d2=' + w.d2 : '');
-            const resp = await fetch('/api/trackers/' + tracker.id + '/import?' + qs, { method: 'POST' });
-            const data = await resp.json().catch(() => ({}));
-            if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+            const data = await importTrackerHistory(tracker.id, w.d1, w.d2);
             total += data.inserted || 0;
           } catch (err) {
-            status.textContent = 'Import stopped at ' + monthFmt.format(w.label) + ': ' + err.message + '. ' + total.toLocaleString() + ' positions imported; run it again from that month to continue.';
+            status.textContent = 'Import stopped at ' + w.label + ': ' + err.message + '. ' + total.toLocaleString() + ' positions imported; run it again from that month to continue.';
             startBtn.disabled = false;
             fromInput.disabled = false;
             fromInput.value = w.d1;
@@ -1966,9 +1916,7 @@ export function settingsModalScript(): string {
       while (!isCancelled()) {
         let remaining;
         try {
-          const resp = await fetch('/api/trackers/' + tracker.id + '/geocode', { method: 'POST' });
-          if (!resp.ok) break;
-          remaining = (await resp.json()).remaining;
+          remaining = (await geocodeTracker(tracker.id)).remaining;
         } catch (_) { break; }
         if (remaining === 0) { status.textContent = done + 'All flights are labeled.'; return; }
         stalled = last !== null && remaining >= last ? stalled + 1 : 0;
@@ -1986,10 +1934,9 @@ export function settingsModalScript(): string {
     // so after assigning an aircraft/pilot, offer to fill it in on the tracker's existing
     // flights that have none (deliberate per-flight assignments are left alone).
     async function settingsOfferApplyAssignment(tracker, aircraft, pilot) {
+      let counts;
+      try { counts = await fetchTrackerUnassigned(tracker.id); } catch (_) { return; }
       try {
-        const resp = await fetch('/api/trackers/' + tracker.id + '/unassigned');
-        if (!resp.ok) return;
-        const counts = await resp.json();
         const n = Math.max(aircraft ? counts.without_aircraft : 0, pilot ? counts.without_pilot : 0);
         if (n === 0) return;
         const parts = [];
@@ -2001,31 +1948,22 @@ export function settingsModalScript(): string {
         const msg = n + ' existing flight' + (n === 1 ? '' : 's') + ' from ' + tracker.name
           + ' have no aircraft or pilot. Assign them to ' + parts.join(' / ') + ' too?';
         if (!confirm(msg)) return;
-        const apply = await fetch('/api/trackers/' + tracker.id + '/apply-assignment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            aircraft: aircraft && counts.without_aircraft > 0,
-            pilot: pilot && counts.without_pilot > 0,
-          }),
+        await applyTrackerAssignment(tracker.id, {
+          aircraft: aircraft && counts.without_aircraft > 0,
+          pilot: pilot && counts.without_pilot > 0,
         });
-        if (!apply.ok) alert('Failed to update existing flights.');
-      } catch (_) {}
+      } catch (err) {
+        alert(apiErrorMessage(err, 'Failed to update existing flights.'));
+      }
     }
 
     async function settingsToggleActive(tracker, btn) {
       btn.disabled = true;
       try {
-        const resp = await fetch('/api/trackers/' + tracker.id, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ active: !tracker.active }),
-        });
-        if (resp.ok) {
-          tracker.active = !tracker.active;
-          renderSettingsTrackerList();
-          settingsAfterTrackerChange();
-        }
+        await updateTracker(tracker.id, { active: !tracker.active });
+        tracker.active = !tracker.active;
+        renderSettingsTrackerList();
+        settingsAfterTrackerChange();
       } catch (_) {}
       btn.disabled = false;
     }
@@ -2033,17 +1971,14 @@ export function settingsModalScript(): string {
     async function settingsDeleteTracker(tracker) {
       if (!confirm('Delete ' + tracker.name + '? Historical data is preserved but the tracker will be hidden.')) return;
       try {
-        const resp = await fetch('/api/trackers/' + tracker.id, { method: 'DELETE' });
-        if (resp.ok) {
-          const idx = trackerList.findIndex(t => t.id === tracker.id);
-          if (idx !== -1) trackerList[idx] = { ...trackerList[idx], deleted: true, active: false };
-          renderSettingsTrackerList();
-          settingsAfterTrackerChange();
-        } else {
-          const data = await resp.json().catch(() => ({}));
-          alert(data.error ?? 'Failed to delete tracker.');
-        }
-      } catch (_) {}
+        await deleteTracker(tracker.id);
+        const idx = trackerList.findIndex(t => t.id === tracker.id);
+        if (idx !== -1) trackerList[idx] = { ...trackerList[idx], deleted: true, active: false };
+        renderSettingsTrackerList();
+        settingsAfterTrackerChange();
+      } catch (err) {
+        alert(apiErrorMessage(err, 'Failed to delete tracker.'));
+      }
     }
 
     document.getElementById('settings-add-type').addEventListener('change', () => {
@@ -2080,27 +2015,19 @@ export function settingsModalScript(): string {
       if (pilotSel && body.assigned_pilot == null) missing.push('pilot');
       if (missing.length > 0 && !confirm('No ' + missing.join(' or ') + ' selected. Flights from this tracker will be saved without one until you assign it. Add anyway?')) return;
       try {
-        const resp = await fetch('/api/trackers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+        const data = await createTracker(body);
+        trackerList.push({
+          id: data.id, name, type, source_url: sourceUrl, mapshare_url: data.mapshare_url ?? null, active: true, deleted: false,
+          assigned_aircraft: body.assigned_aircraft ?? null,
+          assigned_pilot: body.assigned_pilot ?? null,
         });
-        if (resp.ok) {
-          const data = await resp.json();
-          trackerList.push({
-            id: data.id, name, type, source_url: sourceUrl, mapshare_url: data.mapshare_url ?? null, active: true, deleted: false,
-            assigned_aircraft: body.assigned_aircraft ?? null,
-            assigned_pilot: body.assigned_pilot ?? null,
-          });
-          settingsResetAddForm();
-          document.getElementById('settings-add-tracker').open = false;
-          renderSettingsTrackerList();
-          settingsAfterTrackerChange();
-        } else {
-          const data = await resp.json().catch(() => ({}));
-          alert(data.error ?? 'Failed to add tracker.');
-        }
-      } catch (_) {}
+        settingsResetAddForm();
+        document.getElementById('settings-add-tracker').open = false;
+        renderSettingsTrackerList();
+        settingsAfterTrackerChange();
+      } catch (err) {
+        alert(apiErrorMessage(err, 'Failed to add tracker.'));
+      }
     });
 
     document.getElementById('settings-clear-cache').addEventListener('click', async () => {
@@ -2171,23 +2098,20 @@ export function settingsModalScript(): string {
       const body = { source_url: sourceUrl };
       const credVal = _addCredState.getValue();
       if (credVal) body.credentials = { password: credVal };
+      // A feed that fails is a 200 with ok false; a refused request (no URL, …) is an error.
+      const didntWork = (why) => 'The feed didn\\'t work: ' + why + '. Check the URL and, if the MapShare page has one, the password.';
       try {
-        const resp = await fetch('/api/trackers/test-feed', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok || !data.ok) {
-          status.textContent = 'The feed didn\\'t work: ' + (data.error || ('HTTP ' + resp.status)) + '. Check the URL and, if the MapShare page has one, the password.';
+        const data = await testTrackerFeed(body);
+        if (!data.ok) {
+          status.textContent = didntWork(data.error);
         } else if (data.points === 0) {
           status.textContent = 'The feed works, but it has no positions from the last 30 days.';
         } else {
           status.textContent = 'The feed works: ' + data.points.toLocaleString() + ' positions in the last 30 days, latest '
-            + new Date(data.latest * 1000).toLocaleString() + '.';
+            + fmtTzDateTime(data.latest) + '.';
         }
-      } catch (_) {
-        status.textContent = 'Couldn\\'t reach the server.';
+      } catch (err) {
+        status.textContent = err.status ? didntWork(err.message) : 'Couldn\\'t reach the server.';
       }
       btn.disabled = false;
     });
@@ -2237,22 +2161,15 @@ export function settingsModalScript(): string {
       const name = document.getElementById('settings-add-aircraft-name').value.trim() || null;
       if (!tail) return;
       try {
-        const resp = await fetch('/api/aircraft', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tail_number: tail, name }),
-        });
-        if (resp.ok) {
-          aircraftList.push({ tail_number: tail, name, active: true });
-          document.getElementById('settings-add-aircraft-tail').value = '';
-          document.getElementById('settings-add-aircraft-name').value = '';
-          document.getElementById('settings-add-aircraft').open = false;
-          renderSettingsAircraftList();
-        } else {
-          const d = await resp.json().catch(() => ({}));
-          alert(d.error ?? 'Failed to add aircraft.');
-        }
-      } catch (_) {}
+        await createAircraft({ tail_number: tail, name });
+        aircraftList.push({ tail_number: tail, name, active: true });
+        document.getElementById('settings-add-aircraft-tail').value = '';
+        document.getElementById('settings-add-aircraft-name').value = '';
+        document.getElementById('settings-add-aircraft').open = false;
+        renderSettingsAircraftList();
+      } catch (err) {
+        alert(apiErrorMessage(err, 'Failed to add aircraft.'));
+      }
     });
 
     document.getElementById('settings-add-aircraft-cancel').addEventListener('click', () => {
@@ -2310,12 +2227,9 @@ export function settingsModalScript(): string {
           toggleBtn.addEventListener('click', async () => {
             toggleBtn.disabled = true;
             try {
-              const resp = await fetch('/api/pilots/' + p.id, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ active: !p.active }),
-              });
-              if (resp.ok) { p.active = !p.active; renderSettingsPilotList(); }
+              await updatePilot(p.id, { active: !p.active });
+              p.active = !p.active;
+              renderSettingsPilotList();
             } catch (_) {}
             toggleBtn.disabled = false;
           });
@@ -2354,20 +2268,14 @@ export function settingsModalScript(): string {
         if (!name) return;
         const errorEl = form.querySelector('.edit-pilot-error');
         try {
-          const resp = await fetch('/api/pilots/' + pilot.id, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name }),
-          });
-          if (resp.ok) {
-            pilot.name = name;
-            // Manual flights show the pilot by name.
-            flightStore.setPilots(pilotList);
-            renderSettingsPilotList();
-          } else {
-            errorEl.textContent = (await resp.json().catch(() => ({}))).error || 'Save failed.';
-          }
-        } catch (_) {}
+          await updatePilot(pilot.id, { name });
+          pilot.name = name;
+          // Manual flights show the pilot by name.
+          flightStore.setPilots(pilotList);
+          renderSettingsPilotList();
+        } catch (err) {
+          errorEl.textContent = apiErrorMessage(err, 'Save failed.');
+        }
       });
       form.querySelector('.settings-cancel-btn').addEventListener('click', () => {
         form.remove();
@@ -2381,23 +2289,15 @@ export function settingsModalScript(): string {
       const name = document.getElementById('settings-add-pilot-name').value.trim();
       if (!name) return;
       try {
-        const resp = await fetch('/api/pilots', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name }),
-        });
-        if (resp.ok) {
-          const d = await resp.json();
-          pilotList.push({ id: d.id, name, active: true, default_duties: [] });
-          flightStore.setPilots(pilotList);
-          document.getElementById('settings-add-pilot-name').value = '';
-          document.getElementById('settings-add-pilot').open = false;
-          renderSettingsPilotList();
-        } else {
-          const d = await resp.json().catch(() => ({}));
-          alert(d.error ?? 'Failed to add pilot.');
-        }
-      } catch (_) {}
+        const d = await createPilot({ name });
+        pilotList.push({ id: d.id, name, active: true, default_duties: [] });
+        flightStore.setPilots(pilotList);
+        document.getElementById('settings-add-pilot-name').value = '';
+        document.getElementById('settings-add-pilot').open = false;
+        renderSettingsPilotList();
+      } catch (err) {
+        alert(apiErrorMessage(err, 'Failed to add pilot.'));
+      }
     });
 
     document.getElementById('settings-add-pilot-cancel').addEventListener('click', () => {
@@ -2470,9 +2370,7 @@ export function settingsModalScript(): string {
       if (!container) return;
       container.innerHTML = '<p class="settings-msg">Loading&hellip;</p>';
       try {
-        const resp = await fetch('/api/me/sessions');
-        if (!resp.ok) { container.innerHTML = '<p class="settings-msg">Failed to load devices.</p>'; return; }
-        const data = await resp.json();
+        const data = await fetchSessions();
         container.innerHTML = '';
         // Account heading
         const acctHeader = document.createElement('div');
@@ -2501,8 +2399,7 @@ export function settingsModalScript(): string {
           nameEl.textContent = session.device_name ?? 'Unnamed device';
           const subEl = document.createElement('span');
           subEl.className = 'settings-aircraft-sub';
-          const lastSeen = new Date(session.last_seen_at * 1000);
-          subEl.textContent = 'Last seen ' + lastSeen.toLocaleDateString();
+          subEl.textContent = 'Last seen ' + fmtTzDate(session.last_seen_at);
           if (session.id === _settingsUser?.session_id) {
             subEl.textContent += ' · This device';
           }
@@ -2585,12 +2482,9 @@ export function settingsModalScript(): string {
       form.querySelector('.save-edit-btn').addEventListener('click', async () => {
         const name = form.querySelector('.edit-device-name').value.trim();
         try {
-          const resp = await fetch('/api/me/sessions/' + session.id, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ device_name: name }),
-          });
-          if (resp.ok) { session.device_name = name || null; renderSettingsDevicesList(); }
+          await renameSession(session.id, { device_name: name });
+          session.device_name = name || null;
+          renderSettingsDevicesList();
         } catch (_) {}
       });
       form.querySelector('.settings-cancel-btn').addEventListener('click', () => {
@@ -2605,9 +2499,8 @@ export function settingsModalScript(): string {
       if (!confirm('Revoke access for "' + (session.device_name ?? 'this device') + '"? It will be signed out.')) return;
       btn.disabled = true;
       try {
-        const resp = await fetch('/api/me/sessions/' + session.id, { method: 'DELETE' });
-        if (resp.ok) renderSettingsDevicesList();
-        else btn.disabled = false;
+        await deleteSession(session.id);
+        renderSettingsDevicesList();
       } catch (_) { btn.disabled = false; }
     }
 
@@ -2615,26 +2508,20 @@ export function settingsModalScript(): string {
       btn.disabled = true;
       btn.textContent = 'Loading…';
       try {
-        const resp = await fetch('/api/me/device-link', { method: 'POST' });
-        if (resp.ok) {
-          const data = await resp.json();
-          const url = window.location.origin + data.url;
-          const row = btn.closest('.settings-aircraft-row');
-          const actions = row.querySelector('.settings-aircraft-actions');
-          actions.style.display = 'none';
-          row.classList.add('editing');
-          const card = settingsCreateLinkPanel(url, 'Sign-in link — valid for 15 minutes', () => {
-            card.remove();
-            actions.style.display = '';
-            row.classList.remove('editing');
-            btn.textContent = 'Get link';
-            btn.disabled = false;
-          });
-          row.appendChild(card);
-        } else {
+        const data = await createDeviceLink();
+        const url = window.location.origin + data.url;
+        const row = btn.closest('.settings-aircraft-row');
+        const actions = row.querySelector('.settings-aircraft-actions');
+        actions.style.display = 'none';
+        row.classList.add('editing');
+        const card = settingsCreateLinkPanel(url, 'Sign-in link — valid for 15 minutes', () => {
+          card.remove();
+          actions.style.display = '';
+          row.classList.remove('editing');
           btn.textContent = 'Get link';
           btn.disabled = false;
-        }
+        });
+        row.appendChild(card);
       } catch (_) {
         btn.textContent = 'Get link';
         btn.disabled = false;
@@ -2647,15 +2534,16 @@ export function settingsModalScript(): string {
       const container = document.getElementById('settings-users-list');
       if (!container) return;
       container.innerHTML = '<p class="settings-msg">Loading&hellip;</p>';
+      // Each list on its own: one the server refuses is left out; if neither loads, say so.
+      const [usersRes, invitesRes] = await Promise.allSettled([fetchUsers(), fetchInvites()]);
+      if (usersRes.status === 'rejected' && invitesRes.status === 'rejected') {
+        container.innerHTML = '<p class="settings-msg">Failed to load users.</p>';
+        return;
+      }
       try {
-        const [usersResp, invitesResp] = await Promise.all([
-          fetch('/api/users'),
-          fetch('/api/invites'),
-        ]);
         container.innerHTML = '';
-        if (usersResp.ok) {
-          const data = await usersResp.json();
-          for (const user of data.users) {
+        if (usersRes.status === 'fulfilled') {
+          for (const user of usersRes.value.users) {
             const row = document.createElement('div');
             row.className = 'settings-aircraft-row';
             const info = document.createElement('div');
@@ -2684,9 +2572,8 @@ export function settingsModalScript(): string {
             container.appendChild(row);
           }
         }
-        if (invitesResp.ok) {
-          const data = await invitesResp.json();
-          for (const invite of data.invites) {
+        if (invitesRes.status === 'fulfilled') {
+          for (const invite of invitesRes.value.invites) {
             const row = document.createElement('div');
             row.className = 'settings-aircraft-row settings-aircraft-inactive';
             const info = document.createElement('div');
@@ -2696,8 +2583,7 @@ export function settingsModalScript(): string {
             nameEl.textContent = invite.invited_name + ' (invite pending)';
             const subEl = document.createElement('span');
             subEl.className = 'settings-aircraft-sub';
-            const exp = new Date(invite.expires_at * 1000);
-            subEl.textContent = (invite.invited_role === 'admin' ? 'Admin' : 'Viewer') + ' · Expires ' + exp.toLocaleDateString();
+            subEl.textContent = (invite.invited_role === 'admin' ? 'Admin' : 'Viewer') + ' · Expires ' + fmtTzDate(invite.expires_at);
             info.appendChild(nameEl);
             info.appendChild(subEl);
             const actions = document.createElement('div');
@@ -2737,18 +2623,19 @@ export function settingsModalScript(): string {
       if (!confirm('Remove ' + user.name + '? All their sessions will be deleted.')) return;
       btn.disabled = true;
       try {
-        const resp = await fetch('/api/users/' + user.id, { method: 'DELETE' });
-        if (resp.ok) renderSettingsUsersList();
-        else { const d = await resp.json().catch(() => ({})); alert(d.error ?? 'Failed to remove user.'); btn.disabled = false; }
-      } catch (_) { btn.disabled = false; }
+        await deleteUser(user.id);
+        renderSettingsUsersList();
+      } catch (err) {
+        alert(apiErrorMessage(err, 'Failed to remove user.'));
+        btn.disabled = false;
+      }
     }
 
     async function settingsRevokeInvite(invite, btn) {
       btn.disabled = true;
       try {
-        const resp = await fetch('/api/invites/' + invite.id, { method: 'DELETE' });
-        if (resp.ok) renderSettingsUsersList();
-        else btn.disabled = false;
+        await deleteInvite(invite.id);
+        renderSettingsUsersList();
       } catch (_) { btn.disabled = false; }
     }
 
@@ -2759,34 +2646,26 @@ export function settingsModalScript(): string {
       const submitBtn = document.getElementById('settings-invite-submit');
       submitBtn.disabled = true;
       try {
-        const resp = await fetch('/api/invites', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, role }),
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          const url = window.location.origin + data.url;
-          const inner = document.getElementById('settings-invite-form').querySelector('.settings-add-inner');
-          const nameInput = document.getElementById('settings-invite-name');
-          const roleSelect = document.getElementById('settings-invite-role');
-          const actionsDiv = inner.querySelector('.settings-add-actions');
-          [nameInput, roleSelect, actionsDiv].forEach(el => { el.style.display = 'none'; });
-          const card = settingsCreateLinkPanel(url, 'Invite link for ' + name, () => {
-            nameInput.value = '';
-            [nameInput, roleSelect, actionsDiv].forEach(el => { el.style.display = ''; });
-            card.remove();
-            document.getElementById('settings-invite-form').open = false;
-            submitBtn.disabled = false;
-            renderSettingsUsersList();
-          });
-          inner.appendChild(card);
-        } else {
-          const d = await resp.json().catch(() => ({}));
-          alert(d.error ?? 'Failed to create invite.');
+        const data = await createInvite({ name, role });
+        const url = window.location.origin + data.url;
+        const inner = document.getElementById('settings-invite-form').querySelector('.settings-add-inner');
+        const nameInput = document.getElementById('settings-invite-name');
+        const roleSelect = document.getElementById('settings-invite-role');
+        const actionsDiv = inner.querySelector('.settings-add-actions');
+        [nameInput, roleSelect, actionsDiv].forEach(el => { el.style.display = 'none'; });
+        const card = settingsCreateLinkPanel(url, 'Invite link for ' + name, () => {
+          nameInput.value = '';
+          [nameInput, roleSelect, actionsDiv].forEach(el => { el.style.display = ''; });
+          card.remove();
+          document.getElementById('settings-invite-form').open = false;
           submitBtn.disabled = false;
-        }
-      } catch (_) { submitBtn.disabled = false; }
+          renderSettingsUsersList();
+        });
+        inner.appendChild(card);
+      } catch (err) {
+        alert(apiErrorMessage(err, 'Failed to create invite.'));
+        submitBtn.disabled = false;
+      }
     });
 
     document.getElementById('settings-invite-cancel').addEventListener('click', () => {
@@ -2810,11 +2689,13 @@ export function settingsModalScript(): string {
       _tenantTzPopulated = true;
     }
 
+    // The timezone as loaded, so a save can tell when it changes (the warning below).
+    let _tenantTimezone = null;
+
     async function _loadTenantSettingsForm() {
       try {
-        const resp = await fetch('/api/settings');
-        if (!resp.ok) return;
-        const d = await resp.json();
+        const d = await fetchSettings();
+        _tenantTimezone = d.timezone ?? null;
         document.getElementById('settings-tenant-name').value = d.app_name ?? '';
         document.getElementById('settings-tenant-timezone').value = d.timezone ?? '';
         document.getElementById('settings-tenant-lat').value = d.map_default_lat ?? '';
@@ -2851,19 +2732,38 @@ export function settingsModalScript(): string {
       // server default (shown as the placeholder) in place rather than sending null.
       if (Number.isNaN(body.gap_alert_stop_minutes)) delete body.gap_alert_stop_minutes;
       if (!body.app_name || !body.timezone) return;
+      const showStatus = (text) => {
+        statusEl.style.display = '';
+        statusEl.textContent = text;
+        setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+      };
+      // Without the timezone as loaded, a save can't tell whether it changes it, so it can't
+      // warn about the duty log below: refuse rather than save unwarned.
+      if (!_tenantTimezone) {
+        showStatus('Couldn\\'t load the current settings. Reload the page and try again.');
+        return;
+      }
       try {
-        const resp = await fetch('/api/settings', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+        // The duty log's dates and times are stored in the operator's timezone, so a new one
+        // re-reads them: ask first when there are any (timezoneChangeWarning, core settings).
+        if (body.timezone !== _tenantTimezone) {
+          const ask = timezoneChangeWarning(_tenantTimezone, body.timezone, await fetchDutyRecordCounts());
+          if (ask && !confirm(ask)) return;
+        }
+        await patchSettings(body);
+        _tenantTimezone = body.timezone;
+        // The page's copy (settingsAsClientObject): core reads the timezone from it on every
+        // call (core-entry.ts), so times render in the new zone from here on without a reload.
+        Object.assign(window.APP_SETTINGS, {
+          appName: body.app_name,
+          timezone: body.timezone,
+          mapDefaultLat: body.map_default_lat,
+          mapDefaultLng: body.map_default_lng,
+          mapDefaultZoom: body.map_default_zoom,
         });
-        statusEl.style.display = '';
-        statusEl.textContent = resp.ok ? 'Saved.' : 'Failed to save.';
-        setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+        showStatus('Saved.');
       } catch (_) {
-        statusEl.style.display = '';
-        statusEl.textContent = 'Failed to save.';
-        setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+        showStatus('Failed to save.');
       }
     });
 
@@ -2883,9 +2783,7 @@ export function settingsModalScript(): string {
     async function _loadDutyMethods() {
       const errorEl = document.getElementById('settings-duty-method-error');
       try {
-        const resp = await fetch('/api/duty-methods');
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        _dutyMethods = await resp.json();
+        _dutyMethods = await fetchDutyMethods();
         errorEl.textContent = '';
       } catch (_) {
         errorEl.textContent = 'Couldn’t load the duty method. Reopen Global Settings to try again.';
@@ -2922,7 +2820,7 @@ export function settingsModalScript(): string {
       showEditConflict(document.getElementById('settings-duty-method-error'), conflict, { reload: _loadDutyMethods });
     }
 
-    // Runs a write of the method list (apiWrite), then shows the list it returns.
+    // Runs a write of the method list (putDutyMethod, deleteDutyMethod), then shows the list again.
     async function _writeDutyMethods(fn) {
       const controls = [...document.querySelectorAll('#settings-duty-method-save, #settings-duty-method-cancel, #settings-duty-methods button')];
       const errorEl = document.getElementById('settings-duty-method-error');
@@ -2936,8 +2834,7 @@ export function settingsModalScript(): string {
     function _removeDutyMethod(entries, entry) {
       if (!confirm('Remove the duty method entry “' + _dutyDatedWhen(entries, entry) + ': ' + _DUTY_METHOD_NAMES[entry.method] +
         '”? The days it covered then follow the other entries.')) return;
-      _writeDutyMethods(() => apiWrite('DELETE', '/api/duty-methods/' + entry.effective_date +
-        '?base_history_id=' + _dutyMethods.last_history_id));
+      _writeDutyMethods(() => deleteDutyMethod(entry.effective_date, _dutyMethods.last_history_id));
     }
 
     document.getElementById('settings-duty-method-cancel').addEventListener('click', () => _editDutyMethod(null));
@@ -2952,26 +2849,17 @@ export function settingsModalScript(): string {
         _DUTY_METHOD_NAMES[other.method] + '). Replace it?')) return;
       const body = { effective_date: from, method, base_history_id: _dutyMethods.last_history_id };
       if (edit) body.replaces = edit.effective_date;
-      _writeDutyMethods(() => apiWrite('PUT', '/api/duty-methods', body));
+      _writeDutyMethods(() => putDutyMethod(body));
     });
 
     document.getElementById('settings-pushover-token-save').addEventListener('click', async () => {
       const statusEl = document.getElementById('settings-pushover-token-status');
       const value = document.getElementById('settings-tenant-pushover-token').value.trim();
-      try {
-        const resp = await fetch('/api/settings', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pushover_api_token: value }),
-        });
-        statusEl.style.display = '';
-        statusEl.textContent = resp.ok ? 'Saved.' : 'Failed to save.';
-        setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
-      } catch (_) {
-        statusEl.style.display = '';
-        statusEl.textContent = 'Failed to save.';
-        setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
-      }
+      let saved = true;
+      try { await patchSettings({ pushover_api_token: value }); } catch (_) { saved = false; }
+      statusEl.style.display = '';
+      statusEl.textContent = saved ? 'Saved.' : 'Failed to save.';
+      setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
     });
 
     // ── Webhooks (admin only) ─────────────────────────────────────────────────
@@ -2991,9 +2879,7 @@ export function settingsModalScript(): string {
       if (!container) return;
       container.innerHTML = '<p class="settings-msg">Loading&hellip;</p>';
       try {
-        const resp = await fetch('/api/webhooks');
-        if (!resp.ok) { container.innerHTML = '<p class="settings-msg">Failed to load webhooks.</p>'; return; }
-        const data = await resp.json();
+        const data = await fetchWebhooks();
         container.innerHTML = '';
         if (data.webhooks.length === 0) {
           container.innerHTML = '<p class="settings-msg">No webhooks configured.</p>';
@@ -3014,7 +2900,7 @@ export function settingsModalScript(): string {
           const eventsText = events.map((e) => WEBHOOK_EVENT_LABELS[e] || e).join(', ');
           const typeText = hook.type === 'pushover' ? 'Pushover' : 'Webhook';
           let statusText = hook.last_triggered_at
-            ? 'Last: ' + (hook.last_status != null ? 'HTTP ' + hook.last_status : 'failed') + ' at ' + new Date(hook.last_triggered_at * 1000).toLocaleString()
+            ? 'Last: ' + (hook.last_status != null ? 'HTTP ' + hook.last_status : 'failed') + ' at ' + fmtTzDateTime(hook.last_triggered_at)
             : 'Never triggered';
           subEl.textContent = typeText + ' · ' + eventsText + ' · ' + statusText;
           if (hook.last_error) subEl.title = hook.last_error;
@@ -3044,13 +2930,8 @@ export function settingsModalScript(): string {
     async function settingsToggleWebhook(hook, btn) {
       btn.disabled = true;
       try {
-        const resp = await fetch('/api/webhooks/' + hook.id, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ active: !hook.active }),
-        });
-        if (resp.ok) renderSettingsWebhooksList();
-        else btn.disabled = false;
+        await updateWebhook(hook.id, { active: !hook.active });
+        renderSettingsWebhooksList();
       } catch (_) { btn.disabled = false; }
     }
 
@@ -3058,9 +2939,8 @@ export function settingsModalScript(): string {
       if (!confirm('Delete this webhook?')) return;
       btn.disabled = true;
       try {
-        const resp = await fetch('/api/webhooks/' + hook.id, { method: 'DELETE' });
-        if (resp.ok) renderSettingsWebhooksList();
-        else btn.disabled = false;
+        await deleteWebhook(hook.id);
+        renderSettingsWebhooksList();
       } catch (_) { btn.disabled = false; }
     }
 
@@ -3082,26 +2962,15 @@ export function settingsModalScript(): string {
         : { type, url, label: label || null, events };
 
       try {
-        const resp = await fetch('/api/webhooks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        if (resp.ok) {
-          document.getElementById('settings-add-webhook-url').value = '';
-          document.getElementById('settings-add-webhook-pushover-key').value = '';
-          document.getElementById('settings-add-webhook-label').value = '';
-          document.getElementById('settings-add-webhook').open = false;
-          renderSettingsWebhooksList();
-        } else {
-          const d = await resp.json().catch(() => ({}));
-          statusEl.style.display = '';
-          statusEl.textContent = d.error ?? 'Failed to add notification target.';
-          setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
-        }
-      } catch (_) {
+        await createWebhook(body);
+        document.getElementById('settings-add-webhook-url').value = '';
+        document.getElementById('settings-add-webhook-pushover-key').value = '';
+        document.getElementById('settings-add-webhook-label').value = '';
+        document.getElementById('settings-add-webhook').open = false;
+        renderSettingsWebhooksList();
+      } catch (err) {
         statusEl.style.display = '';
-        statusEl.textContent = 'Failed to add notification target.';
+        statusEl.textContent = err.serverError ?? 'Failed to add notification target.';
         setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
       }
     });
@@ -3113,13 +2982,13 @@ export function settingsModalScript(): string {
     // ── Regions export / import ───────────────────────────────────────────────
 
     document.getElementById('settings-regions-export').addEventListener('click', () => {
-      _downloadGeoJSON('/api/regions', 'regions.geojson');
+      _downloadGeoJSON(fetchRegions, 'regions.geojson');
     });
 
     document.getElementById('settings-regions-import').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      await _importGeoJSON(file, 'settings-regions-status', '/api/regions/import');
+      await _importGeoJSON(file, 'settings-regions-status', importRegions);
       e.target.value = '';
     });
 
@@ -3131,11 +3000,10 @@ export function settingsModalScript(): string {
       el.style.color = isError ? 'var(--danger-fg)' : '';
     }
 
-    async function _downloadGeoJSON(apiUrl, filename) {
+    // read: fetchRegions or fetchNamedPoints. A failed read downloads nothing.
+    async function _downloadGeoJSON(read, filename) {
       try {
-        const resp = await fetch(apiUrl);
-        if (!resp.ok) return;
-        const blob = new Blob([await resp.text()], { type: 'application/json' });
+        const blob = new Blob([JSON.stringify(await read())], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -3145,23 +3013,17 @@ export function settingsModalScript(): string {
       } catch (_) {}
     }
 
-    async function _importGeoJSON(file, statusElId, apiUrl) {
+    // write: importRegions or importNamedPoints. A file that isn't JSON fails like a refused one.
+    async function _importGeoJSON(file, statusElId, write) {
       const statusEl = document.getElementById(statusElId);
       try {
-        const text = await file.text();
-        const resp = await fetch(apiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: text,
-        });
-        statusEl.style.display = '';
-        statusEl.textContent = resp.ok ? 'Imported.' : 'Import failed.';
-        setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
-      } catch (_) {
-        statusEl.style.display = '';
-        statusEl.textContent = 'Import failed.';
-        setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+        await write(JSON.parse(await file.text()));
+        statusEl.textContent = 'Imported.';
+      } catch (err) {
+        statusEl.textContent = apiErrorMessage(err, 'Import failed.');
       }
+      statusEl.style.display = '';
+      setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
     }
 
     ${namedPointsEditorScript()}

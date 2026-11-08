@@ -6,32 +6,12 @@ export function dashboardScriptsLive(): string {
   return `
     // ── Live point ────────────────────────────────────────────────────────────
 
-    // Builds per-tracker live data from store's latest flight points. Two fields come from
-    // the tracker's ground points as well: last_point_time (its newest point of any kind,
-    // the card's GPS time) and ground_trail (its points since that flight, drawn by
-    // renderGroundTrails). Both are missing until the first refresh.
+    // Each active tracker's live data (core's trackerLiveData): its latest flight's last
+    // point, plus last_point_time (its newest point of any kind, the card's GPS time) and
+    // ground_trail (its points since that flight, drawn by renderGroundTrails) from the
+    // refresh result. Both are missing until the first refresh.
     function buildLiveDataByTracker(refreshResult) {
-      const result = {};
-      const activeTrackers = trackerList.filter(t => t.active && !t.deleted);
-      for (const tracker of activeTrackers) {
-        // The tracker's own records: positions don't depend on corrections.
-        const sorted = flightStore.getRaw([tracker.id]);
-        if (!sorted.length) continue;
-        const latest = sorted[sorted.length - 1];
-        const lp = latest.points[latest.points.length - 1];
-        if (!lp) continue;
-        result[tracker.id] = {
-          lat: lp.lat, lon: lp.lon,
-          velocity_kmh: lp.v, elevation_m: lp.e, course_deg: lp.c,
-          garmin_time: lp.t,
-          last_point_time: refreshResult?.lastPointTimeByTracker?.[tracker.id] ?? null,
-          ground_trail: refreshResult?.groundTrailsByTracker?.[tracker.id] ?? [],
-          // Use refreshResult label/polled if this is the only tracker, or search by tracker
-          location_label: refreshResult?.liveLabelsByTracker?.[tracker.id] ?? null,
-          last_polled: refreshResult?.lastPolled ?? null,
-        };
-      }
-      return result;
+      return trackerLiveData(trackerList.filter(t => t.active && !t.deleted), ids => flightStore.getRaw(ids), refreshResult);
     }
 
     // Applies a store refresh result to shared state and re-renders the flight list and status cards.
@@ -88,37 +68,10 @@ export function dashboardScriptsLive(): string {
     function scheduleNextLivePoll() {
       if (livePollTimer) { clearTimeout(livePollTimer); livePollTimer = null; }
 
-      const anyInFlight = Object.values(liveDataByTracker).some(d => (d.velocity_kmh ?? 0) >= FLIGHT_THRESHOLD_KMH);
-      let delayMs;
-
-      if (anyInFlight) {
-        // Track both max (for detecting new data) and min (for scheduling) garmin_time
-        // across all in-flight trackers. Using max for change detection, but min for
-        // scheduling ensures we don't miss any tracker's next expected fix.
-        let latestGarminTime = 0;
-        let earliestGarminTime = 0;
-        let firstInFlight = true;
-        for (const d of Object.values(liveDataByTracker)) {
-          if ((d.velocity_kmh ?? 0) >= FLIGHT_THRESHOLD_KMH && d.garmin_time) {
-            if (d.garmin_time > latestGarminTime) latestGarminTime = d.garmin_time;
-            if (firstInFlight || d.garmin_time < earliestGarminTime) {
-              earliestGarminTime = d.garmin_time;
-              firstInFlight = false;
-            }
-          }
-        }
-        if (latestGarminTime && latestGarminTime !== lastKnownGarminTime) {
-          lastKnownGarminTime = latestGarminTime;
-          const nextExpectedSec = (earliestGarminTime || latestGarminTime) + 150;
-          delayMs = Math.max(30_000, (nextExpectedSec - Math.floor(Date.now() / 1000)) * 1000);
-        } else {
-          delayMs = 30_000;
-        }
-      } else {
-        delayMs = 60_000;
-      }
-
-      livePollTimer = setTimeout(adaptiveLivePoll, delayMs);
+      // In flight: just after the next expected fix (core's nextLivePoll); otherwise a minute.
+      const next = nextLivePoll(liveDataByTracker, lastKnownGarminTime);
+      lastKnownGarminTime = next.lastKnownGarminTime;
+      livePollTimer = setTimeout(adaptiveLivePoll, next.delayMs);
     }
 
     // ── Aircraft status cards ─────────────────────────────────────────────────
@@ -150,7 +103,7 @@ export function dashboardScriptsLive(): string {
           trackerId: tracker.id,
           label: tracker.assigned_aircraft || tracker.name,
           live: d,
-          inFlight: !!d && (d.velocity_kmh ?? 0) >= FLIGHT_THRESHOLD_KMH,
+          inFlight: isInFlight(d),
           color: _trackerColor(tracker.id),
           // With a single card there's room for the current altitude and speed too.
           showMetrics: activeTrackers.length === 1,
@@ -209,7 +162,7 @@ export function dashboardScriptsLive(): string {
       for (const tid of Object.keys(planeMarkers)) {
         const d = liveDataByTracker[tid];
         // None at all while the tracker is in flight.
-        if (!d || (d.velocity_kmh ?? 0) >= FLIGHT_THRESHOLD_KMH) continue;
+        if (!d || isInFlight(d)) continue;
         const drawn = drawGroundTrail(map, {
           from: [d.lat, d.lon],
           points: d.ground_trail ?? [],
@@ -239,8 +192,7 @@ export function dashboardScriptsLive(): string {
 
       for (const tracker of activeTrackers) {
         const d = liveDataByTracker[tracker.id];
-        const inFlight = d && (d.velocity_kmh ?? 0) >= FLIGHT_THRESHOLD_KMH;
-        const visible = d && d.lat != null && (filteredTrackerIds.has(tracker.id) || filteredFlights.length === 0);
+                const visible = d && d.lat != null && (filteredTrackerIds.has(tracker.id) || filteredFlights.length === 0);
         const color = _trackerColor(tracker.id);
 
         if (visible) {

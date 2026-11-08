@@ -3,10 +3,12 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadEngine, fixtures, plain } from './harness.mjs';
+import { importCore, plain, TZ } from './core.mjs';
+import { fixtures } from './duty-fixtures.mjs';
 
-const engine = loadEngine({ now: '2026-10-15 12:00' });
-const { flight, at, dutyMonth } = fixtures(engine);
+const duty = await importCore('duty');
+const time = await importCore('time');
+const { flight, at, dutyMonth } = fixtures({ now: '2026-10-15 12:00' });
 const H = 3600;
 
 const hoursOf = (t) => plain(t.hours).map(r => [r.label, r.secs / H]);
@@ -22,7 +24,7 @@ describe('calendar quarter / two quarters / calendar year', () => {
   ];
 
   test('as of mid-May 2026', () => {
-    assert.deepEqual(hoursOf(engine.dutyTotals(flights, 1, at('2026-05-15 12:00'))), [
+    assert.deepEqual(hoursOf(duty.dutyTotals(TZ, flights, 1, at('2026-05-15 12:00'))), [
       ['Q2 2026', 4],
       ['Q1 2026 + Q2 2026', 10],
       ['Calendar year 2026', 10],
@@ -30,7 +32,7 @@ describe('calendar quarter / two quarters / calendar year', () => {
   });
 
   test('as of February 2026: two quarters reach into the previous year, the year doesn’t', () => {
-    assert.deepEqual(hoursOf(engine.dutyTotals(flights, 1, at('2026-02-01 00:00'))), [
+    assert.deepEqual(hoursOf(duty.dutyTotals(TZ, flights, 1, at('2026-02-01 00:00'))), [
       ['Q1 2026', 3],
       ['Q4 2025 + Q1 2026', 5],
       ['Calendar year 2026', 3],
@@ -39,7 +41,7 @@ describe('calendar quarter / two quarters / calendar year', () => {
 
   test('as of the first instant of a quarter, the totals are the previous quarter’s', () => {
     // asOf is exclusive: midnight Apr 1 is "as of Mar 31".
-    assert.deepEqual(hoursOf(engine.dutyTotals(flights, 1, at('2026-04-01 00:00'))), [
+    assert.deepEqual(hoursOf(duty.dutyTotals(TZ, flights, 1, at('2026-04-01 00:00'))), [
       ['Q1 2026', 6],
       ['Q4 2025 + Q1 2026', 8],
       ['Calendar year 2026', 6],
@@ -53,21 +55,21 @@ describe('calendar quarter / two quarters / calendar year', () => {
       flight('2026-05-03 08:00', '15:00', { unpaid: true }),
       flight('2026-05-04 08:00', '15:00', { pilot: 2 }),
     ];
-    assert.deepEqual(hoursOf(engine.dutyTotals(fl, 1, at('2026-05-15 12:00'))).map(r => r[1]), [5, 5, 5]);
+    assert.deepEqual(hoursOf(duty.dutyTotals(TZ, fl, 1, at('2026-05-15 12:00'))).map(r => r[1]), [5, 5, 5]);
   });
 
   test('removed flights and flights still in progress are excluded', () => {
     const removed = flight('2026-05-01 08:00', '10:00');
     removed.edit = { manual: false, part91: false, unpaid: false, excluded: true, original: {} };
     const open = { ...flight('2026-05-02 08:00', '10:00'), end_time: null };
-    assert.equal(engine.dutyTotals([removed, open], 1, at('2026-05-15 12:00')).hours[0].secs, 0);
+    assert.equal(duty.dutyTotals(TZ, [removed, open], 1, at('2026-05-15 12:00')).hours[0].secs, 0);
   });
 
   test('over is strictly greater than the limit', () => {
     const big = (secs) => {
       const f = flight('2026-01-02 00:00', '01:00');
       f.end_time = f.start_time + secs;
-      return engine.dutyTotals([f], 1, at('2026-03-31 00:00')).hours[0];
+      return duty.dutyTotals(TZ, [f], 1, at('2026-03-31 00:00')).hours[0];
     };
     assert.equal(big(500 * H).over, false);
     assert.equal(big(500 * H + 1).over, true);
@@ -84,7 +86,7 @@ describe('last 24 h (the next assignment’s window)', () => {
       flight('2026-05-15 09:30', '10:30', { unpaid: true }),  // not commercial
       flight('2026-05-15 11:00', '13:00'),                    // 1 h before asOf
     ];
-    const t = engine.dutyTotals(fl, 1, asOf);
+    const t = duty.dutyTotals(TZ, fl, 1, asOf);
     assert.equal(t.flight24.secs, 5 * H);
     assert.equal(t.flight24.over, false);
     assert.equal(t.flight24.limit, 8 * H);
@@ -107,8 +109,7 @@ describe('as of now / as of month end', () => {
   });
 
   test('the current month’s totals are as of now', () => {
-    const e = loadEngine({ now: '2026-04-01 09:30' });
-    const fx = fixtures(e);
+    const fx = fixtures({ now: '2026-04-01 09:30' });
     const data = fx.dutyMonth(fl.map(f => ({ ...f })), '2026-04');
     assert.equal(data.isCurrentMonth, true);
     assert.equal(data.totals.asOfLabel, 'now');
@@ -119,27 +120,25 @@ describe('as of now / as of month end', () => {
   });
 
   test('moving the clock moves "today"', () => {
-    const e = loadEngine({ now: '2026-07-31 23:59' });
-    assert.deepEqual([...e.currentDutyMonth()], [2026, 7]);
-    e.setNow('2026-08-01 00:00');
-    assert.deepEqual([...e.currentDutyMonth()], [2026, 8]);
+    assert.deepEqual(duty.currentDutyMonth(TZ, at('2026-07-31 23:59')), [2026, 7]);
+    assert.deepEqual(duty.currentDutyMonth(TZ, at('2026-08-01 00:00')), [2026, 8]);
   });
 });
 
 describe('fmtDuration', () => {
   test('rounds down by default', () => {
-    assert.equal(engine.fmtDuration(0), '0:00');
-    assert.equal(engine.fmtDuration(59), '0:00');
-    assert.equal(engine.fmtDuration(8 * H + 40), '8:00');
-    assert.equal(engine.fmtDuration(9 * H + 59 * 60 + 30), '9:59');
-    assert.equal(engine.fmtDuration(125 * H + 5 * 60), '125:05');
+    assert.equal(time.fmtDuration(0), '0:00');
+    assert.equal(time.fmtDuration(59), '0:00');
+    assert.equal(time.fmtDuration(8 * H + 40), '8:00');
+    assert.equal(time.fmtDuration(9 * H + 59 * 60 + 30), '9:59');
+    assert.equal(time.fmtDuration(125 * H + 5 * 60), '125:05');
   });
 
   test('up rounds up, so an amount over a limit never prints equal to it', () => {
-    assert.equal(engine.fmtDuration(8 * H + 40, true), '8:01');
-    assert.equal(engine.fmtDuration(8 * H + 1, true), '8:01');
-    assert.equal(engine.fmtDuration(8 * H, true), '8:00');
-    assert.equal(engine.fmtDuration(59 * 60 + 1, true), '1:00');
+    assert.equal(time.fmtDuration(8 * H + 40, true), '8:01');
+    assert.equal(time.fmtDuration(8 * H + 1, true), '8:01');
+    assert.equal(time.fmtDuration(8 * H, true), '8:00');
+    assert.equal(time.fmtDuration(59 * 60 + 1, true), '1:00');
   });
 });
 
@@ -155,8 +154,8 @@ describe('hoursOnly (the dashboard alert)', () => {
   const days = [{ date: '2026-05-10', rest: 1, rest_designated_at: at('2026-05-01 00:00') }];
 
   test('gives the same hours and last 24 h as the full totals, without rest', () => {
-    const full = engine.dutyTotals(fl, 1, asOf, { days });
-    const cheap = engine.dutyTotals(fl, 1, asOf, { hoursOnly: true });
+    const full = duty.dutyTotals(TZ, fl, 1, asOf, { days });
+    const cheap = duty.dutyTotals(TZ, fl, 1, asOf, { hoursOnly: true });
     assert.deepEqual(plain(cheap.hours), plain(full.hours));
     assert.deepEqual(plain(cheap.flight24), plain(full.flight24));
     assert.equal(cheap.rest, null);
@@ -165,7 +164,7 @@ describe('hoursOnly (the dashboard alert)', () => {
 
   test('the alert’s per-pilot grouping changes nothing', () => {
     const own = fl.filter(f => f.pilot_id === 1);
-    assert.deepEqual(plain(engine.dutyTotals(own, 1, asOf, { hoursOnly: true })),
-      plain(engine.dutyTotals(fl, 1, asOf, { hoursOnly: true })));
+    assert.deepEqual(plain(duty.dutyTotals(TZ, own, 1, asOf, { hoursOnly: true })),
+      plain(duty.dutyTotals(TZ, fl, 1, asOf, { hoursOnly: true })));
   });
 });

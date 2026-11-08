@@ -30,3 +30,10 @@ jobs:
 
       - name: Showcase output is up to date
         run: npm run docs:showcase -- --check
+
+      # What Wrangler's [build] runs before every deploy: a failure here fails the deploy.
+      - name: Core bundle builds
+        run: npm run build:core
+
+      - name: Tests
+        run: npm test

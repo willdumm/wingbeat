@@ -48,11 +48,9 @@ export function dashboardScriptsDayView(): string {
       if (currentDayEndInfos) renderEndMarkers(currentDayEndInfos);
     });
 
-    // In-progress: this flight is the most-recent for its tracker and the tracker is airborne.
+    // In progress: this flight is the most recent for its tracker and the tracker is airborne.
     function _isFlightInProgress(flight) {
-      const latestForTracker = allFlights.find(f => f.tracker_id === flight.tracker_id);
-      const trackerLive = liveDataByTracker[flight.tracker_id] ?? null;
-      return latestForTracker?.id === flight.id && !!trackerLive && (trackerLive.velocity_kmh ?? 0) >= FLIGHT_THRESHOLD_KMH;
+      return isFlightInProgress(flight, allFlights, liveDataByTracker);
     }
 
     // Draws flights (chronological) all at once in per-tracker colors, with plane markers

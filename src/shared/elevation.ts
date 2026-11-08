@@ -9,8 +9,11 @@
  * this codebase (e.g. shared/pilot-duty.ts, shared/settings.ts):
  *   elevationToolMarkup()  — the cursor-readout + reference-readout + sliders panel
  *   elevationToolStyles()  — CSS for the panel and the toggle button
- *   elevationToolScript()  — DEM decode/cache, the tint GridLayer, cursor-readout
+ *   elevationToolScript()  — DEM fetch/cache, the tint GridLayer, cursor-readout
  *                            wiring, reference-click handling, slider wiring
+ *
+ * The tile and pixel math, Terrarium decoding and the color ramp are @wingbeat/core's
+ * (packages/core/src/elevation.ts), globals from the core bundle.
  *
  * The toggle button lives in dashboard/markup.ts's mapToolButtonsMarkup() (with
  * point-picker's), passed to sharedMapControlsMarkup()'s extraButtons slot.
@@ -24,20 +27,9 @@
  * active at once — the one addition this doc's Touch points list didn't spell out.
  */
 
+import { DEM_TILE_SIZE } from '@wingbeat/core/elevation';
+
 const DEM_PMTILES_URL = 'https://download.mapterhorn.com/planet.pmtiles';
-const DEM_MAX_ZOOM = 12;
-// Mapterhorn's planet.pmtiles WebP tiles decode to 512x512 px, not the 256x256 most
-// raster tile schemes use — verified directly against a fetched tile, not assumed.
-// Getting this wrong silently crops every decoded tile to its top-left quadrant
-// (canvas/getImageData/Float32Array all sized off this constant), which is what
-// caused the tint overlay to render zoomed in ~2x and offset southeast from the
-// basemap, with seams between adjacent tiles.
-const DEM_TILE_SIZE = 512;
-
-// 5 ft — masks water (ocean, bays, lakes), which sits at/near 0 m and would
-// otherwise show as a meaningless solid band of "reference-relative" color.
-const DEM_TINT_MASK_ELEVATION_M = 5 / 3.28084;
-
 const ELEV_RANGE_KEY = 'ft_elev_range_m';
 const ELEV_OPACITY_KEY = 'ft_elev_opacity';
 const ELEV_DEFAULT_RANGE_M = 300;
@@ -152,22 +144,6 @@ export function elevationToolScript(rootExpr = 'document'): string {
     const _ftDemInflight = new Map();  // "z/x/y" -> in-flight Promise, so concurrent
                                         // callers (mousemove + tile paint) share one fetch
 
-    function demZoomFor(mapZoom) { return Math.min(Math.round(mapZoom), ${DEM_MAX_ZOOM}); }
-
-    // Standard slippy-tile math: which tile at z contains (lat,lng), and the pixel
-    // row/column within that ${DEM_TILE_SIZE}x${DEM_TILE_SIZE} tile.
-    function latLngToTilePixel(lat, lng, z) {
-      const n = Math.pow(2, z);
-      const latRad = lat * Math.PI / 180;
-      const xTile = (lng + 180) / 360 * n;
-      const yTile = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n;
-      const x = Math.floor(xTile);
-      const y = Math.floor(yTile);
-      const px = Math.min(${DEM_TILE_SIZE - 1}, Math.max(0, Math.floor((xTile - x) * ${DEM_TILE_SIZE})));
-      const py = Math.min(${DEM_TILE_SIZE - 1}, Math.max(0, Math.floor((yTile - y) * ${DEM_TILE_SIZE})));
-      return { x, y, px, py };
-    }
-
     // Fetches+decodes DEM tile (z,x,y) into a cached Float32Array of elevation
     // meters, one entry per pixel (row-major). Returns null if the archive has no
     // data there (outside coverage) or the fetch/decode fails.
@@ -186,11 +162,7 @@ export function elevationToolScript(rootExpr = 'document'): string {
           const ctx = canvas.getContext('2d');
           ctx.drawImage(bitmap, 0, 0);
           const rgba = ctx.getImageData(0, 0, ${DEM_TILE_SIZE}, ${DEM_TILE_SIZE}).data;
-          const out = new Float32Array(${DEM_TILE_SIZE} * ${DEM_TILE_SIZE});
-          for (let i = 0; i < out.length; i++) {
-            const r = rgba[i * 4], g = rgba[i * 4 + 1], b = rgba[i * 4 + 2];
-            out[i] = (r * 256 + g + b / 256) - 32768;
-          }
+          const out = decodeTerrarium(rgba);
           _ftDemCache.set(key, out);
           return out;
         } catch (_) {
@@ -221,20 +193,7 @@ export function elevationToolScript(rootExpr = 'document'): string {
     let elevationOpacity = parseInt(localStorage.getItem('${ELEV_OPACITY_KEY}'), 10);
     if (isNaN(elevationOpacity)) elevationOpacity = ${ELEV_DEFAULT_OPACITY};
 
-    function _ftLerp(a, b, t) { return Math.round(a + (b - a) * t); }
-
-    // null return means "leave this pixel fully transparent" — either no reference
-    // yet, no DEM data, or the low-elevation water mask (§3 of the design doc).
-    function elevationColorFor(elevM, refM, rangeM) {
-      if (refM == null || elevM == null || elevM <= ${DEM_TINT_MASK_ELEVATION_M}) return null;
-      const t = Math.max(-1, Math.min(1, (elevM - refM) / rangeM));
-      const from = t < 0 ? [22, 163, 74] : [255, 255, 255];   // green -> white
-      const to   = t < 0 ? [255, 255, 255] : [220, 38, 38];   // white -> red
-      const k = t < 0 ? t + 1 : t;
-      return [_ftLerp(from[0], to[0], k), _ftLerp(from[1], to[1], k), _ftLerp(from[2], to[2], k)];
-    }
-
-    // canvas -> { elevArr, subSize, offX, offY, scale } for currently-mounted tiles,
+    // canvas -> { elevArr, sub } (sub: demSubTile()) for currently-mounted tiles,
     // so a slider change can re-run just the color pass with no refetch/re-decode.
     // Cleaned up in ElevationTintLayer's _removeTile override.
     const _ftElevTileRegistry = new Map();
@@ -242,21 +201,8 @@ export function elevationToolScript(rootExpr = 'document'): string {
     function _ftPaintElevationTile(canvas, params) {
       const ctx = canvas.getContext('2d');
       const imgData = ctx.createImageData(${DEM_TILE_SIZE}, ${DEM_TILE_SIZE});
-      const { elevArr, subSize, offX, offY, scale } = params;
       const alpha = Math.round(elevationOpacity / 100 * 255);
-      for (let py = 0; py < ${DEM_TILE_SIZE}; py++) {
-        const srcY = Math.min(${DEM_TILE_SIZE - 1}, Math.floor(offY + py / scale));
-        for (let px = 0; px < ${DEM_TILE_SIZE}; px++) {
-          const srcX = Math.min(${DEM_TILE_SIZE - 1}, Math.floor(offX + px / scale));
-          const color = elevationColorFor(elevArr[srcY * ${DEM_TILE_SIZE} + srcX], elevationReferenceElevM, elevationRangeM);
-          if (!color) continue; // imgData starts fully transparent
-          const di = (py * ${DEM_TILE_SIZE} + px) * 4;
-          imgData.data[di] = color[0];
-          imgData.data[di + 1] = color[1];
-          imgData.data[di + 2] = color[2];
-          imgData.data[di + 3] = alpha;
-        }
-      }
+      paintElevationTint(imgData.data, params.elevArr, params.sub, elevationReferenceElevM, elevationRangeM, alpha);
       ctx.putImageData(imgData, 0, 0);
     }
 
@@ -270,28 +216,17 @@ export function elevationToolScript(rootExpr = 'document'): string {
     }
 
     // GridLayer (not TileLayer) subclass, modeled on pmtiles.js's own
-    // leafletRasterLayer createTile shape. DEM native data stops at z12, so every
-    // tile request maps down to its z12 parent tile plus the sub-rectangle this
-    // tile's coords address within it (§5 of the design doc).
+    // leafletRasterLayer createTile shape. Each tile paints its sub-rectangle of its
+    // z12 DEM parent (demSubTile(), §5 of the design doc).
     const ElevationTintLayer = L.GridLayer.extend({
       createTile: function(coords, done) {
         const canvas = document.createElement('canvas');
         canvas.width = ${DEM_TILE_SIZE};
         canvas.height = ${DEM_TILE_SIZE};
-        const demZ = demZoomFor(coords.z);
-        const scale = Math.pow(2, coords.z - demZ);
-        const parentX = Math.floor(coords.x / scale);
-        const parentY = Math.floor(coords.y / scale);
-        ensureDemTile(demZ, parentX, parentY).then((arr) => {
+        const sub = demSubTile(coords);
+        ensureDemTile(sub.demZ, sub.parentX, sub.parentY).then((arr) => {
           if (!arr) { done(undefined, canvas); return; }
-          const subSize = ${DEM_TILE_SIZE} / scale;
-          const params = {
-            elevArr: arr,
-            subSize,
-            offX: (coords.x - parentX * scale) * subSize,
-            offY: (coords.y - parentY * scale) * subSize,
-            scale,
-          };
+          const params = { elevArr: arr, sub };
           _ftElevTileRegistry.set(canvas, params);
           _ftPaintElevationTile(canvas, params);
           done(undefined, canvas);

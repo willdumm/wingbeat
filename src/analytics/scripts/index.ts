@@ -2,7 +2,6 @@ import { Env } from '../../types';
 import { themeRuntimeScript } from '../../shared/theme';
 import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, overlayLegendRuntimeScript } from '../../shared/map-controls';
 import { toggleScript } from '../../shared/toggle';
-import { flightStoreScript } from '../../shared/flight-store';
 import { flightEditsScript } from '../../shared/flight-edits';
 import { filterScript } from '../../shared/filters';
 import { settingsModalScript } from '../../shared/settings';
@@ -13,7 +12,6 @@ import { flightEditorScript } from '../../shared/flight-editor';
 import { aircraftInfoScript } from '../../shared/aircraft-info';
 import { analyticsScriptsRegion } from './region';
 import { analyticsScriptsAccounting } from './accounting';
-import { tzCalendarScript } from '../../shared/time';
 import { htmlEscapeScript } from '../../shared/html';
 import { editHistoryScript } from '../../shared/edit-history';
 import { analyticsScriptsStreamgraphRender, analyticsScriptsStreamgraph } from './streamgraph';
@@ -28,10 +26,8 @@ export function analyticsScripts(env: Env): string {
     mapLayersRuntimeScript(env),
     overlayLegendRuntimeScript(),
     toggleScript(),
-    tzCalendarScript(),
     htmlEscapeScript(),
     flightEditsScript(),
-    flightStoreScript(),
     filterScript(),
     formModalScript(),
     editHistoryScript(),

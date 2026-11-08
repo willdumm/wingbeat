@@ -1,9 +1,7 @@
-import { SPEED_THRESHOLD_KMH } from '../../geo';
 import { Env } from '../../types';
 import { themeRuntimeScript } from '../../shared/theme';
 import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, overlayLegendRuntimeScript } from '../../shared/map-controls';
 import { toggleScript } from '../../shared/toggle';
-import { flightStoreScript } from '../../shared/flight-store';
 import { flightEditsScript } from '../../shared/flight-edits';
 import { filterScript } from '../../shared/filters';
 import { dashboardScriptsState } from './state';
@@ -22,7 +20,6 @@ import { dashboardScriptsRefresh } from './refresh';
 import { settingsModalScript } from '../../shared/settings';
 import { formModalScript } from '../../shared/form-modal';
 import { segmentedControlScript } from '../../shared/segmented-control';
-import { tzCalendarScript } from '../../shared/time';
 import { htmlEscapeScript } from '../../shared/html';
 import { editHistoryScript } from '../../shared/edit-history';
 import { pilotDutyScript } from '../../shared/pilot-duty';
@@ -46,12 +43,10 @@ export function dashboardScripts(env: Env): string {
     mapLayerColorRuntimeScript(),
     mapLayersRuntimeScript(env),
     toggleScript(),
-    tzCalendarScript(),
     htmlEscapeScript(),
-    dashboardScriptsState(SPEED_THRESHOLD_KMH),
+    dashboardScriptsState(),
     overlayLegendRuntimeScript(),
     flightEditsScript(),
-    flightStoreScript(),
     filterScript(),
     dashboardScriptsHelpers(),
     dashboardScriptsIcons(),

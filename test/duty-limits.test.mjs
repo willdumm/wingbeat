@@ -4,10 +4,11 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadEngine, fixtures } from './harness.mjs';
+import { importCore, TZ } from './core.mjs';
+import { fixtures } from './duty-fixtures.mjs';
 
-const engine = loadEngine({ now: '2026-10-15 12:00' });   // March 2026 is a past month
-const { flight, duty, warningsOn, matching, dutyMonth, dayOf } = fixtures(engine);
+const core = { duty: await importCore('duty'), time: await importCore('time') };
+const { flight, duty, warningsOn, matching, dutyMonth, dayOf } = fixtures({ now: '2026-10-15 12:00' });   // March 2026 is a past month
 
 const D1 = '2026-03-10', D2 = '2026-03-11';
 const FLIGHT_24 = /flight time in the 24 h/;
@@ -255,7 +256,7 @@ describe('duty times', () => {
     assert.equal(day.defaultDuty, true);
     assert.equal(day.duty.isDefault, true);
     assert.equal(day.duty.secs, 9 * 3600);
-    assert.equal(engine.dutyDayText(day, 2026), '08:00–17:00 (default)');
+    assert.equal(core.duty.dutyDayText(TZ, day, 2026), '08:00–17:00 (default)');
     assert.deepEqual([...day.warnings], []);
     assert.equal(dayOf(data, D2).duty, null, 'not on a day without flights');
   });
@@ -265,7 +266,7 @@ describe('duty times', () => {
     const data = dutyMonth([flight(`${D1} 09:00`, '10:00')], D1, { defaultDuty, days: [duty(D1, '07:00', '15:00')] });
     const day = dayOf(data, D1);
     assert.equal(day.defaultDuty, false);
-    assert.equal(engine.dutyDayText(day, 2026), '07:00–15:00');
+    assert.equal(core.duty.dutyDayText(TZ, day, 2026), '07:00–15:00');
   });
 
   test('flights outside the duty period warn, marked (default) for the default', () => {
@@ -281,6 +282,6 @@ describe('duty times', () => {
   test('a duty end at or before its start runs past midnight', () => {
     const day = dayOf(dutyMonth([], D1, { days: [duty(D1, '18:00', '02:00')] }), D1);
     assert.equal(day.duty.secs, 8 * 3600);
-    assert.equal(engine.unixToTzDateStr(day.duty.end), D2);
+    assert.equal(core.time.unixToTzDateStr(TZ, day.duty.end), D2);
   });
 });

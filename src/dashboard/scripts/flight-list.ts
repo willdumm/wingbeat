@@ -19,10 +19,9 @@ export function dashboardScriptsFlightListRender(): string {
       let lastDayKey = null;
       let currentGroup = null;
       for (const f of flights) {
-        const start = new Date(f.start_time * 1000);
-        const dk = dayKey(start);
+        const dk = dayKey(f.start_time);
         if (dk !== lastDayKey) {
-          currentGroup = { label: fmtDay(start), dayKey: dk, flights: [] };
+          currentGroup = { label: fmtDay(f.start_time), dayKey: dk, flights: [] };
           dayGroups.push(currentGroup);
           lastDayKey = dk;
         }
@@ -89,7 +88,6 @@ export function dashboardScriptsFlightListRender(): string {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
       });
 
-      const start = new Date(f.start_time * 1000);
       const dur = f.end_time ? ((f.end_time - f.start_time) / 3600).toFixed(1) : null;
 
       const manual = !!(f.edit && f.edit.manual);
@@ -114,7 +112,7 @@ export function dashboardScriptsFlightListRender(): string {
 
       el.innerHTML =
         '<div class="flight-item-header">' +
-          '<div class="flight-date">' + fmtTime(start) + flightEditedMark(f, ['start_time', 'end_time']) +
+          '<div class="flight-date">' + fmtTime(f.start_time) + flightEditedMark(f, ['start_time', 'end_time']) +
             (dur != null ? ' <span class="flight-dur">(' + dur + ' hr)</span>' : '') + '</div>' +
           (onEdit ? '<button type="button" class="flight-edit-btn btn-icon" aria-label="Edit flight" title="Edit flight">' + FLIGHT_LIST_EDIT_HTML + '</button>' : '') +
         '</div>' +
@@ -250,7 +248,7 @@ export function dashboardScriptsFlightList(): string {
       const latestForTracker = allFlights.find(f => f.tracker_id === flight.tracker_id);
       const isLatestForTracker = latestForTracker?.id === flight.id;
       const trackerLive = liveDataByTracker[flight.tracker_id] ?? null;
-      const inProgress = isLatestForTracker && (trackerLive == null || (trackerLive.velocity_kmh ?? 0) >= FLIGHT_THRESHOLD_KMH);
+      const inProgress = isLatestForTracker && (trackerLive == null || isInFlight(trackerLive));
 
       const drawn = drawFlightTrack(map, flight, {
         inProgress,

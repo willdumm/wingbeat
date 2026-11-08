@@ -13,6 +13,7 @@ import { flightEditsStyles } from './shared/flight-edits';
 import { flightEditorStyles } from './shared/flight-editor';
 import { AppSettings, settingsAsClientObject } from './settings';
 import { escapeHtml } from './shared/html';
+import { coreBundleScript } from './shared/core-bundle';
 import { Env } from './types';
 
 /** The dashboard's stylesheet after the font import and theme tokens. The docs-site
@@ -43,6 +44,7 @@ export function dashboardHTML(settings: AppSettings, env: Env, nonce: string): s
 <body>
 <script nonce="${nonce}">window.APP_SETTINGS=${settingsAsClientObject(settings)};</script>
 ${dashboardMarkup(settings.app_name)}
+  ${coreBundleScript(nonce)}
   <script nonce="${nonce}">${iconRuntimeScript()}${dashboardScripts(env)}</script>
 </body>
 </html>`;

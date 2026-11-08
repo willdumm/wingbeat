@@ -3,10 +3,11 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadEngine, fixtures } from './harness.mjs';
+import { importCore, TZ } from './core.mjs';
+import { fixtures } from './duty-fixtures.mjs';
 
-const engine = loadEngine({ now: '2026-10-15 12:00' });
-const { flight, duty, rest, warningsOn, dutyMonth, dayOf, at } = fixtures(engine);
+const core = { duty: await importCore('duty') };
+const { flight, duty, rest, warningsOn, dutyMonth, dayOf, at } = fixtures({ now: '2026-10-15 12:00' });
 
 const PREV = '2026-03-11', REST = '2026-03-12';
 
@@ -17,7 +18,7 @@ describe('rest day warnings', () => {
     assert.equal(day.rest, true);
     assert.equal(day.duty, null);
     assert.deepEqual([...day.warnings], []);
-    assert.equal(engine.dutyDayText(day, 2026), 'Rest · designated Mar 5');
+    assert.equal(core.duty.dutyDayText(TZ, day, 2026), 'Rest · designated Mar 5');
   });
 
   test('flights on a rest day', () => {
@@ -82,7 +83,7 @@ describe('rest day warnings', () => {
 describe('rest days in the totals', () => {
   // Q1 2026, as of Mar 20 noon: 10 rest days in March.
   const asOf = at('2026-03-20 12:00');
-  const restOf = (days, flights = []) => engine.dutyTotals(flights, 1, asOf, { days }).rest;
+  const restOf = (days, flights = []) => core.duty.dutyTotals(TZ, flights, 1, asOf, { days }).rest;
 
   test('counts valid rest days taken in the quarter', () => {
     const r = restOf([rest('2026-01-04'), rest('2026-02-01'), rest('2026-03-01'), rest('2026-03-20')]);
@@ -126,8 +127,7 @@ describe('rest days in the totals', () => {
   });
 
   test('the row model’s totals use the same rule (current month, as of now)', () => {
-    const e = loadEngine({ now: '2026-03-20 12:00' });
-    const fx = fixtures(e);
+    const fx = fixtures({ now: '2026-03-20 12:00' });
     const data = fx.dutyMonth([fx.flight('2026-03-03 10:00', '11:00')], '2026-03',
       { days: [fx.rest('2026-03-02'), fx.rest('2026-03-03'), fx.rest('2026-03-25')] });
     assert.equal(data.isCurrentMonth, true);

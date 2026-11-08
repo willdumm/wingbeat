@@ -101,21 +101,19 @@ export function setupGuideScript(): string {
       return document.getElementById(id).closest('.settings-section');
     }
 
-    async function _sgFetchJson(url) {
-      try { const r = await fetch(url); return r.ok ? await r.json() : null; } catch (_) { return null; }
-    }
-
     async function renderSetupGuide(force) {
       const section = document.getElementById('settings-section-setup');
       if (_settingsUser?.role !== 'admin') { section.style.display = 'none'; return; }
 
+      // Each read on its own: one that fails counts as nothing there.
+      const orNull = (p) => p.catch(() => null);
       const [settings, regions, namedPoints, users, invites, webhooks] = await Promise.all([
-        _sgFetchJson('/api/settings'),
-        _sgFetchJson('/api/regions'),
-        _sgFetchJson('/api/named-points'),
-        _sgFetchJson('/api/users'),
-        _sgFetchJson('/api/invites'),
-        _sgFetchJson('/api/webhooks'),
+        orNull(fetchSettings()),
+        orNull(fetchRegions()),
+        orNull(fetchNamedPoints()),
+        orNull(fetchUsers()),
+        orNull(fetchInvites()),
+        orNull(fetchWebhooks()),
       ]);
       if (!force && settings?.setup_dismissed === '1') { section.style.display = 'none'; return; }
 
@@ -187,13 +185,7 @@ export function setupGuideScript(): string {
     }
 
     async function _sgSetDismissed(value) {
-      try {
-        await fetch('/api/settings', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ setup_dismissed: value }),
-        });
-      } catch (_) {}
+      try { await patchSettings({ setup_dismissed: value }); } catch (_) {}
     }
 
     document.getElementById('settings-setup-dismiss').addEventListener('click', async () => {

@@ -8,11 +8,11 @@ for what's in it) — tokens, type scale, color, spacing, elevation, and compone
 specs all come from there. Before writing new UI:
 
 1. **Reach for a token before a literal.** All colors, radii, shadows, fonts,
-   weights, tracking, and motion values are CSS custom properties defined in
-   `src/shared/theme.ts` (`themeVars()`), e.g. `var(--accent)`, `var(--radius-md)`,
-   `var(--font-ui)`, `var(--duration-fast)`. Never hand-write a hex color, `px`
-   radius, or `system-ui` font stack that already has a token — grep `theme.ts`
-   first.
+   weights, tracking, and motion values are CSS custom properties, e.g. `var(--accent)`,
+   `var(--radius-md)`, `var(--font-ui)`, `var(--duration-fast)`. Their values are in
+   `packages/core/src/tokens.ts`, and `themeVars()` in `src/shared/theme.ts` generates the
+   properties from them. Never hand-write a hex color, `px` radius, or `system-ui` font
+   stack that already has a token — grep `tokens.ts` and `theme.ts` first.
    - A Leaflet layer can't consume `var(--x)` directly (canvas-rendered markers,
      some style objects) — use `getAccentColor()` / `getSuccessColor()` /
      `getDangerColor()` / `getCssVar(name, fallback)` from `themeRuntimeScript()`
@@ -53,6 +53,22 @@ something new, add it to `src/shared/` (following the existing `*Styles()` /
 `*Markup()` / `*Script()` export pattern) rather than inlining it in a
 page-specific file, so the next UI change has it to reuse too.
 
+## Core — `@wingbeat/core`
+
+Logic the web and the mobile app share lives in `packages/core/src/`, not in the page
+script strings. `docs/mobile-app-plan.md` ("Phase 1 progress and conventions") has the full
+conventions. The ones a change is most likely to miss:
+
+- **New core logic** goes in `packages/core/src/<name>.ts`, listed in `exports` in
+  `packages/core/package.json`. What's left in `src/` as a script string is the HTML built
+  from core's results.
+- **Page globals**: a function the page scripts call is bound by hand in
+  `src/client/core-entry.ts`, which also binds page state at call time.
+- **Parameters, not page state**: core takes `tz` first and then `now` (Unix seconds)
+  rather than reading the settings or the clock.
+- **A new route** gets a response schema in `packages/core/src/api/<group>.ts` and a
+  response-shape test in `test/worker-sql.test.mjs` in the same change.
+
 ## Doc screenshots — `data-doc-shot` tags
 
 Some elements in `src/shared/*.ts` / `src/dashboard/markup.ts` / `src/analytics/markup.ts`
@@ -78,12 +94,17 @@ and commit the regenerated output. `--check` fails if it's stale. See `site/READ
 
 ## Tests — `npm test`
 
-Run `nix develop path:./nix --command npm test` after changing `pilot-duty.ts`, `flight-edits.ts`,
-`time.ts` or `flight-store.ts`: `test/` runs their script strings in a `node:vm` context (see
-`test/harness.mjs`) against the duty-log compliance spec in `docs/duty-log-editing-plan.md`.
+Run `nix develop path:./nix --command npm test` after changing `packages/core/src/` (`duty`,
+`flight-edits`, `time`, `flight-store`, …), `pilot-duty.ts` or `flight-edits.ts`: `test/` runs core,
+imported directly (`test/core.mjs`, `test/duty-fixtures.mjs`), against the duty-log compliance spec
+in `docs/duty-log-editing-plan.md`, and the shipped core bundle and the script strings in a
+`node:vm` context (see `test/harness.mjs`).
 Run it too after changing the flight-correction or duty-day routes in `src/index.ts`, or adding a
 migration: `test/worker-sql.test.mjs` runs the real Worker in Miniflare against a fresh D1 with
 every migration applied (see `test/worker.mjs`).
+Every route group's write routes validate their bodies with the request schemas in
+`packages/core/src/api/<group>-requests.ts`, which strip unknown keys: a new field a form
+sends must be added there too, or the handler never sees it.
 
 ## Migrations
 

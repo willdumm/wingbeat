@@ -1,35 +1,43 @@
 // Test harness for the client-side scripts that live inside TypeScript template strings
-// (tzCalendarScript(), htmlEscapeScript(), flightEditsScript(), pilotDutyRenderScript(),
-// flightStoreScript(), editHistoryScript()).
+// (htmlEscapeScript(), flightEditsScript(), pilotDutyRenderScript(),
+// editHistoryScript(), filterScript()).
 // tsc can't see into those strings, so the tests run the real script text instead:
 //
 //   1. esbuild bundles a tiny in-memory entry that re-exports the script-string functions
-//      (nothing is written to disk), the same way site/scripts/build-showcase.mjs does;
-//   2. the scripts' text is concatenated and evaluated in a node:vm context with a stub
+//      and the @wingbeat/core browser bundle (nothing is written to disk), the same way
+//      site/scripts/build-showcase.mjs does;
+//   2. the core bundle runs first, as on the pages, then the scripts' text is concatenated and evaluated in a node:vm context with a stub
 //      window (APP_SETTINGS) and no DOM, the same order the pages ship them;
 //   3. the context's Date.now() reads a settable clock, so "today", the current month and
 //      the "as of now" totals are deterministic.
 //
 // Values created inside the vm context belong to another realm (their Array/Object
-// prototypes differ), so compare structures through plain() rather than deepStrictEqual
-// on them directly.
+// prototypes differ), so compare structures through plain() (test/core.mjs) rather than
+// deepStrictEqual on them directly.
+//
+// Core's own logic is tested by importing it directly (test/core.mjs, and the duty spec
+// tests' test/duty-fixtures.mjs). What runs here is what's still a script string, and each
+// core-* test's check that the bundle's page globals bind the timezone and the clock.
 
 import { build } from 'esbuild';
+import { coreBundlePlugin } from '../scripts/build-core.mjs';
 import vm from 'node:vm';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TZ } from './core.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const bundle = await build({
   stdin: {
     contents: `
-      export { tzCalendarScript } from './src/shared/time';
+      export { coreBundle } from './src/shared/core-bundle';
       export { htmlEscapeScript } from './src/shared/html';
       export { flightEditsScript } from './src/shared/flight-edits';
       export { pilotDutyRenderScript } from './src/shared/pilot-duty';
-      export { flightStoreScript } from './src/shared/flight-store';
       export { editHistoryScript } from './src/shared/edit-history';
+      export { filterScript } from './src/shared/filters';
+      export { settingsModalScript } from './src/shared/settings';
     `,
     resolveDir: ROOT,
     loader: 'ts',
@@ -39,66 +47,75 @@ const bundle = await build({
   format: 'esm',
   write: false,
   loader: { '.svg': 'text' },
+  plugins: [coreBundlePlugin()],
   logLevel: 'warning',
 });
 const scripts = await import(
   'data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64')
 );
 
+export const { coreBundle, editHistoryScript, settingsModalScript } = scripts;
+
 // Everything the tests reach for, by name. Top-level const/let in the scripts aren't
 // properties of the context's global object, so they're collected by a script evaluated
 // in the same context.
 const EXPORTS = [
-  // time.ts
-  'tzLocalToEpoch', 'unixToTzDateStr', 'unixToTzTime', 'unixToTzMonthKey', 'tzDayStartUnix', 'tzDayEndUnix',
-  'tzAddDays', 'fmtDuration',
+  // the core bundle (@wingbeat/core/time)
+  'tzLocalToEpoch', 'unixToTzDateStr', 'unixToTzTime', 'tzAddDays', 'fmtTzTime',
+  // the core bundle (@wingbeat/core/flight-edits)
+  'applyFlightEdits', 'flightRemarks', 'flightEntrySummary', 'flightFormTimes',
   // flight-edits.ts
-  'applyFlightEdits', 'flightRemarks', 'flightEntrySummary', 'flightFormTimes', 'flightTrackedTimes',
+  'flightEditedMark', 'flightRemarksHtml',
+  // the core bundle (@wingbeat/core/duty)
+  'computeDutyData',
   // pilot-duty.ts
-  'computeDutyData', '_buildTypstSource', 'dutyExportPresets', 'dutyTotals', 'dutyDayText', 'currentDutyMonth', '_DUTY_LIMITS',
-  'dutySaveConfirmText', 'dutyEntryOn', 'dutyDefaultOn', 'dutyMethodOn',
-  // flight-store.ts
-  'flightCorrectionKey', 'mergeFlightCorrections', 'flightStore',
-  // edit-history.ts
-  'editConflictText',
+  '_buildTypstSource',
+  // the core bundle (@wingbeat/core/corrections, edit-history)
+  'readFlightForm', 'flightFormTimesOf', 'lastEditText',
+  // filters.ts
+  'filterStore',
+  // the core bundle (@wingbeat/core/live, maintenance, alerts)
+  'isInFlight', 'isGpsFresh', 'nextLivePoll', '_maintenanceStatus', '_estimatedMeter', 'computeAlertsFor',
+  // the core bundle (@wingbeat/core/regions, accounting, analytics)
+  'haversineKm', 'homeBaseNamesIn', 'computeRegionHoursIn', 'computeMonthlyAccountingIn', 'tzLongMonthLabel',
+  'sgGenerateBuckets', 'sgComputeDataIn', 'interpolateRoutePoints', 'endpointHeatPointsIn',
+  // the core bundle (@wingbeat/core/elevation)
+  'latLngToTilePixel', 'decodeTerrarium', 'demSubTile', 'paintElevationTint',
+  // the core bundle (@wingbeat/core/settings, time's date formats)
+  'trackerImportWindows', 'trackerImportDefaultFrom', 'timezoneChangeWarning', 'fmtTzDate', 'fmtTzDateTime',
 ];
-
-export const TZ = 'America/Anchorage';
 
 /**
  * A fresh vm context with the scripts loaded. settings are merged into APP_SETTINGS;
  * now is the clock's start (a Date, epoch ms, or 'YYYY-MM-DD HH:MM' local to the
- * timezone); fetch, if given, is the context's fetch (the flight store's requests).
- * Returns the exported functions plus setNow(), storage (the Map behind localStorage) and
- * dispatch(type, event), which calls the listeners added with window.addEventListener.
+ * timezone). Returns the exported functions plus setNow() and storage (the Map behind
+ * localStorage).
  */
-export function loadEngine({ settings = {}, now = '2026-10-15 12:00', fetch } = {}) {
+export function loadEngine({ settings = {}, now = '2026-10-15 12:00' } = {}) {
   const clock = { ms: 0 };
   const storage = new Map();
-  const listeners = new Map();
   const context = vm.createContext({
     window: {
       APP_SETTINGS: { timezone: TZ, appName: 'Test', ...settings },
-      addEventListener: (type, fn) => listeners.set(type, [...(listeners.get(type) ?? []), fn]),
+      addEventListener: () => {},
     },
     localStorage: {
       getItem: (k) => storage.has(k) ? storage.get(k) : null,
       setItem: (k, v) => { storage.set(k, String(v)); },
       removeItem: (k) => { storage.delete(k); },
     },
-    fetch: fetch ?? (() => Promise.reject(new Error('no fetch in this engine'))),
+    fetch: () => Promise.reject(new Error('no fetch in this engine')),
     console,
     __clock: clock,
   });
-  const dispatch = (type, event) => { for (const fn of listeners.get(type) ?? []) fn(event); };
   vm.runInContext('Date.now = () => __clock.ms;', context);
   const source = [
-    scripts.tzCalendarScript(),
+    scripts.coreBundle,
     scripts.htmlEscapeScript(),
     scripts.flightEditsScript(),
     scripts.pilotDutyRenderScript(),
-    scripts.flightStoreScript(),
     scripts.editHistoryScript(),
+    scripts.filterScript(),
   ].join('\n');
   vm.runInContext(source, context, { filename: 'engine.js' });
   const api = vm.runInContext(`({ ${EXPORTS.join(', ')} })`, context);
@@ -108,89 +125,10 @@ export function loadEngine({ settings = {}, now = '2026-10-15 12:00', fetch } = 
       : when instanceof Date ? when.getTime() : when;
   }
   setNow(now);
-  return { ...api, setNow, context, storage, dispatch };
-}
-
-/** A deep copy in this realm (JSON round trip), for deepStrictEqual. */
-export function plain(x) {
-  return x === undefined ? undefined : JSON.parse(JSON.stringify(x));
+  return { ...api, setNow, context, storage };
 }
 
 function splitLocal(s) {
   const [date, time = '00:00'] = s.trim().split(/\s+/);
   return [date, time];
-}
-
-/**
- * Fixture builders bound to an engine: local times are 'YYYY-MM-DD HH:MM' in TZ.
- *
- *   flight('2026-03-10 09:00', '11:30', { pilot: 1, part91, unpaid, manual })
- *
- * An arrival given as 'HH:MM' is on the departure's date, or the next day when it isn't
- * after the departure. The result is an effective flight, as applyFlightEdits() returns
- * it: a part91/unpaid/manual flight carries an edit.
- */
-export function fixtures(engine) {
-  let nextId = 1;
-  const at = (s) => engine.tzLocalToEpoch(...splitLocal(s));
-
-  function arrival(dep, arr) {
-    if (/^\d{4}-/.test(arr)) return at(arr);
-    const [date, depTime] = splitLocal(dep);
-    return arr > depTime ? at(date + ' ' + arr) : at(engine.tzAddDays(date, 1) + ' ' + arr);
-  }
-
-  function flight(dep, arr, { pilot = 1, part91 = false, unpaid = false, manual = false, tracker = 1, id } = {}) {
-    const f = {
-      id: id ?? nextId++,
-      tracker_id: manual ? null : tracker,
-      start_time: at(dep),
-      end_time: arrival(dep, arr),
-      pilot_id: pilot,
-      aircraft_tail: 'N123',
-      origin_label: 'A',
-      destination_label: 'B',
-    };
-    if (part91 || unpaid || manual) {
-      f.edit = { entry: null, manual, part91: part91 || unpaid, unpaid, remark: null, excluded: false, original: {} };
-    }
-    return f;
-  }
-
-  /** A duty_days row with duty times. */
-  function duty(date, start, end, { note = null } = {}) {
-    return { date, duty_start: start, duty_end: end, rest: 0, rest_designated_at: null, note };
-  }
-
-  /** A duty_days rest row, designated at a local time (default: a week before). */
-  function rest(date, { designated = engine.tzAddDays(date, -7) + ' 12:00', note = null } = {}) {
-    return { date, duty_start: null, duty_end: null, rest: 1, rest_designated_at: designated == null ? null : at(designated), note };
-  }
-
-  /**
-   * computeDutyData for pilot 1 and the month of dateKey (any 'YYYY-MM…'), with the
-   * opts computeDutyData takes (days, defaultDuty, method, unmatched; defaultDuty and
-   * method either one value or a dated list).
-   */
-  function dutyMonth(flights, ym, opts = {}) {
-    const [y, m] = ym.split('-').map(Number);
-    return engine.computeDutyData(flights, 1, 'Pilot', y, m, opts);
-  }
-
-  /** The row for dateKey in a computeDutyData result (or its prevDay). */
-  function dayOf(data, dateKey) {
-    const d = data.prevDay.dateKey === dateKey ? data.prevDay : data.days.find(x => x.dateKey === dateKey);
-    if (!d) throw new Error('no day ' + dateKey + ' in ' + data.year + '-' + data.month);
-    return d;
-  }
-
-  /** dateKey's warnings for these flights and opts (in the month of dateKey). */
-  function warningsOn(flights, dateKey, opts) {
-    return [...dayOf(dutyMonth(flights, dateKey, opts), dateKey).warnings];
-  }
-
-  /** The warnings in list that match re. */
-  const matching = (list, re) => [...list].filter(w => re.test(w));
-
-  return { at, flight, duty, rest, dutyMonth, dayOf, warningsOn, matching };
 }

@@ -61,8 +61,7 @@ export function dashboardScriptsAircraftCards(): string {
 
       const gpsTime = d ? (d.last_point_time ?? d.garmin_time) : null;
       if (gpsTime) {
-        const now = Math.floor(Date.now() / 1000);
-        const gpsRecent = (now - gpsTime) < 240;
+        const gpsRecent = isGpsFresh(gpsTime);
         const gpsEl = document.createElement('div');
         gpsEl.className = 'ac-card-gps';
         gpsEl.innerHTML = (gpsRecent ? AC_GPS_FRESH_DOT_HTML : AC_GPS_STALE_DOT_HTML);
