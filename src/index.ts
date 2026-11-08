@@ -59,7 +59,8 @@ z.config(zodEnglish());
 
 // zod/mini schemas have no methods (the validator's default calls schema.safeParseAsync), so
 // it gets z.safeParseAsync; the cast is only because TypeScript can't resolve the validator's
-// result type for a generic S.
+// result type for a generic S. TODO: drop the validationFunction and the cast once
+// @hono/zod-validator (0.9.1 here) calls zod/mini schemas itself.
 function valid<T extends 'json' | 'query', S extends z.ZodMiniType>(target: T, schema: S) {
   return zValidator(target, schema, (result, c) => {
     if (result.success) return;
