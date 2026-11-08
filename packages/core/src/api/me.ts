@@ -1,9 +1,9 @@
 /**
  * The me route group: the signed-in user (GET /api/me), their devices (the sessions they're
  * signed in on, which Settings lists, renames and revokes), a sign-in link for another
- * device, and the dashboard's heartbeat ping. The request schema is in me-requests.ts.
- * Response objects allow unknown keys, so an instance may add fields without breaking older
- * clients.
+ * device, the dashboard's heartbeat ping, and deleting the account. The request schema is
+ * in me-requests.ts. Response objects allow unknown keys, so an instance may add fields
+ * without breaking older clients.
  */
 import * as z from 'zod/mini';
 import { OkResponse, type ApiClient } from './client';
@@ -58,4 +58,12 @@ export function createDeviceLink(client: ApiClient): Promise<DeviceLinkResponse>
 /** Marks this session as seen now. */
 export function pingSession(client: ApiClient): Promise<OkResponse> {
   return client.write('POST', '/api/me/ping', undefined, OkResponse);
+}
+
+/**
+ * Deletes the signed-in user's account and signs out all their devices. Refused (409) for
+ * the last admin and (400) for the shared env-configured account.
+ */
+export function deleteMe(client: ApiClient): Promise<OkResponse> {
+  return client.write('DELETE', '/api/me', undefined, OkResponse);
 }

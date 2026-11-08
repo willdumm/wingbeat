@@ -143,6 +143,16 @@ export function settingsModalMarkup(): string {
                 <button id="settings-clear-cache" class="btn-danger">Clear</button>
               </div>
             </div>
+            <div class="settings-section">
+              <div class="settings-section-label">Account</div>
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <div class="settings-row-title">Delete my account</div>
+                  <div class="settings-row-desc">Signs out all your devices. Flights, duty days and edit history stay with the operator.</div>
+                </div>
+                <button id="settings-delete-account" class="btn-danger">Delete</button>
+              </div>
+            </div>
             <div class="settings-section" id="settings-section-app" style="display:none">
               <div class="settings-section-label">Admin</div>
               <div class="settings-row">
@@ -2037,6 +2047,19 @@ export function settingsModalScript(): string {
         closeSettings();
         await settingsOnClearCache();
       } catch (_) {}
+    });
+
+    document.getElementById('settings-delete-account').addEventListener('click', async (e) => {
+      if (!confirm('Delete your account? All your devices will be signed out, and you’ll need a new invite to come back. Flights, duty days and edit history stay with the operator.')) return;
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        await deleteMe();
+        window.location.href = '/login';
+      } catch (err) {
+        alert(apiErrorMessage(err, 'Failed to delete your account.'));
+        btn.disabled = false;
+      }
     });
 
     function settingsResetAddForm() {

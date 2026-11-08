@@ -183,13 +183,14 @@ Object.assign(globalThis, {
   fetchAircraft: () => aircraftApi.getAircraft(api),
   fetchPilots: () => pilotsApi.getPilots(api),
   fetchOverlays: () => overlaysApi.getOverlays(api),
-  // The signed-in user and their devices (Settings; the dashboard's heartbeat).
+  // The signed-in user, their devices and their account (Settings; the dashboard's heartbeat).
   fetchMe: () => meApi.getMe(api),
   fetchSessions: () => meApi.getSessions(api),
   renameSession: (id: number, body: meApi.SessionRenameRequest) => meApi.renameSession(api, id, body),
   deleteSession: (id: number) => meApi.deleteSession(api, id),
   createDeviceLink: () => meApi.createDeviceLink(api),
   pingSession: () => meApi.pingSession(api),
+  deleteMe: () => meApi.deleteMe(api),
   // Settings' writes and admin reads (the trackers, aircraft, pilots, users, overlays,
   // settings and webhooks route groups).
   createTracker: (body: trackersApi.TrackerCreateRequest) => trackersApi.createTracker(api, body),

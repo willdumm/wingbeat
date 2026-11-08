@@ -1,6 +1,6 @@
 // Session and invite handling through the real Worker (test/worker.mjs): hashed session
 // tokens, idle expiry, single-use short-lived device links, atomic invite redemption, the
-// app's pairing, and validation of the invite / session / user-delete routes.
+// app's pairing, account deletion, and validation of the invite / session / user-delete routes.
 
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -223,6 +223,62 @@ describe('app pairing (POST /api/app/pair)', () => {
     assert.deepEqual(rs.map(r => r.status).sort(), [200, 410, 410]);
     assert.equal((await w.first("SELECT COUNT(*) AS n FROM users WHERE name = 'Pair Racer'")).n, 1);
     assert.equal((await w.first("SELECT COUNT(*) AS n FROM sessions WHERE device_name = 'Racer phone'")).n, 1);
+  });
+});
+
+// Account deletion started by the user (Settings, web and app): the account and everything
+// that signs it in go; the operator's records stay; the env admin and the last admin can't.
+describe('DELETE /api/me', () => {
+  const pairAs = async (name, role = 'viewer') =>
+    (await w.request('POST', '/api/app/pair', { token: await invite(name, role), device_name: name + ' phone' }, { as: null })).body;
+  const bearer = (token) => ({ as: null, headers: { authorization: 'Bearer ' + token } });
+  const deleteMe = (token) => w.request('DELETE', '/api/me', undefined, bearer(token));
+  const userCount = async (name) => (await w.first('SELECT COUNT(*) AS n FROM users WHERE name = ?', name)).n;
+
+  test('deletes the account, every session and device link of it, and nothing of the operator’s', async () => {
+    const { token, me } = await pairAs('Departing Dee');
+    const webCookie = cookieOf(await join((await w.request('POST', '/api/me/device-link', undefined, bearer(token))).body.url.replace('/join/', '')));
+    await w.request('POST', '/api/me/device-link', undefined, bearer(token));
+    await w.run('INSERT INTO pilots (id, name) VALUES (40, ?)', 'Departing Dee');
+    await w.run("INSERT INTO trackers (id, name, type, source_url) VALUES (40, 'Dee’s', 'spot', 'https://example.com/40')");
+    const s = now() - 86400;
+    await w.run('INSERT INTO flights (tracker_id, start_time, end_time, pilot_id) VALUES (40, ?, ?, 40)', s, s + 600);
+
+    const r = await deleteMe(token);
+    assert.deepEqual([r.status, r.body], [200, { ok: true }]);
+    assert.match(r.headers.get('set-cookie'), /^session=; .*Max-Age=0/);
+    assert.equal(await userCount('Departing Dee'), 0);
+    assert.equal((await w.first('SELECT COUNT(*) AS n FROM sessions WHERE user_id = ?', me.id)).n, 0);
+    assert.equal((await w.first('SELECT COUNT(*) AS n FROM invite_tokens WHERE user_id = ?', me.id)).n, 0);
+    assert.equal((await deleteMe(token)).status, 401);
+    assert.equal((await w.request('GET', '/api/me', undefined, withCookie(webCookie))).status, 401);
+    assert.equal((await w.first('SELECT COUNT(*) AS n FROM flights WHERE pilot_id = 40')).n, 1);
+    assert.equal((await w.first('SELECT name FROM pilots WHERE id = 40')).name, 'Departing Dee');
+  });
+
+  test('refuses the shared env-configured account', async () => {
+    await w.run("INSERT INTO users (id, name, role, is_env_admin) VALUES (41, 'Shared', 'admin', 1)");
+    await w.run("INSERT INTO sessions (user_id, token, token_hashed) VALUES (41, 'shared-raw', 0)");
+    const r = await deleteMe('shared-raw');
+    assert.deepEqual([r.status, r.body], [400, { error: 'The shared account cannot be deleted' }]);
+    assert.equal(await userCount('Shared'), 1);
+    await w.run('DELETE FROM users WHERE id = 41');
+  });
+
+  test('refuses the last admin, and two admins leaving at once leave one', async () => {
+    const a = await pairAs('Admin A', 'admin');
+    const b = await pairAs('Admin B', 'admin');
+    const admins = await w.all("SELECT id FROM users WHERE role = 'admin' AND id NOT IN (?, ?)", a.me.id, b.me.id);
+    await w.run("UPDATE users SET role = 'viewer' WHERE role = 'admin' AND id NOT IN (?, ?)", a.me.id, b.me.id);
+    try {
+      const rs = await Promise.all([deleteMe(a.token), deleteMe(b.token)]);
+      assert.deepEqual(rs.map(r => r.status).sort(), [200, 409]);
+      assert.equal(rs.find(r => r.status === 409).body.error, 'Cannot delete the last admin. Make another user an admin first.');
+      assert.equal((await w.first("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'")).n, 1);
+      await w.run("DELETE FROM users WHERE name IN ('Admin A', 'Admin B')");
+    } finally {
+      for (const { id } of admins) await w.run("UPDATE users SET role = 'admin' WHERE id = ?", id);
+    }
   });
 });
 

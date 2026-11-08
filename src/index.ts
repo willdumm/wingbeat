@@ -651,6 +651,16 @@ app.get('/api/bootstrap', async (c) => {
   });
 });
 
+// Account deletion, started by the user (Settings, in the web and the app; App Review needs
+// it in the app because redeeming an invite there creates an account). This signs out every
+// device of theirs, this one included.
+app.delete('/api/me', async (c) => {
+  const refusal = await deleteUserAccount(c.var.db, c.get('user').id);
+  if (refusal) return c.json({ error: refusal.error }, refusal.status);
+  c.header('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/`);
+  return c.json({ ok: true });
+});
+
 app.get('/api/me/sessions', async (c) => {
   const u = c.get('user');
   const { results } = await c.var.db.prepare(
@@ -723,21 +733,32 @@ app.get('/api/users', requireAdmin, async (c) => {
   return c.json({ users: results });
 });
 
+/**
+ * Deletes a user, which cascades to their sessions and device links; their flights, duty
+ * days and corrections are the operator's and stay, and edit_history keeps their name.
+ * Refuses the env-configured admin and the last admin. The last-admin check is part of the
+ * DELETE, so two admins removed at once (by each other, or by themselves) can't leave none.
+ * Shared by DELETE /api/users/:id and DELETE /api/me.
+ */
+async function deleteUserAccount(db: D1Database, id: number): Promise<{ error: string; status: 400 | 404 | 409 } | null> {
+  const target = await db.prepare('SELECT is_env_admin FROM users WHERE id = ?').bind(id).first<{ is_env_admin: number }>();
+  if (!target) return { error: 'User not found', status: 404 };
+  if (target.is_env_admin) return { error: 'The shared account cannot be deleted', status: 400 };
+  const { meta } = await db.prepare(
+    `DELETE FROM users WHERE id = ?1
+       AND (role != 'admin' OR (SELECT COUNT(*) FROM users WHERE role = 'admin' AND id != ?1) > 0)`
+  ).bind(id).run();
+  if (meta.changes === 0) return { error: 'Cannot delete the last admin. Make another user an admin first.', status: 409 };
+  return null;
+}
+
 app.delete('/api/users/:id', requireAdmin, async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid user id' }, 400);
-
-  const target = await c.var.db.prepare('SELECT id, role, is_env_admin FROM users WHERE id = ?')
-    .bind(id).first<{ id: number; role: string; is_env_admin: number }>();
-  if (!target) return c.json({ error: 'User not found' }, 404);
   if (id === c.get('user').id) return c.json({ error: 'You cannot delete your own account' }, 400);
-  if (target.is_env_admin) return c.json({ error: 'The shared account cannot be deleted' }, 400);
-  if (target.role === 'admin') {
-    const admins = await c.var.db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").first<{ n: number }>();
-    if ((admins?.n ?? 0) <= 1) return c.json({ error: 'Cannot delete the last admin' }, 409);
-  }
 
-  await c.var.db.prepare('DELETE FROM users WHERE id = ?').bind(id).run();
+  const refusal = await deleteUserAccount(c.var.db, id);
+  if (refusal) return c.json({ error: refusal.error }, refusal.status);
   return c.json({ ok: true });
 });
 

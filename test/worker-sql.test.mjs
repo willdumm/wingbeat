@@ -1166,6 +1166,14 @@ describe('the app’s requests, through the core client', async () => {
       (e) => e instanceof ApiHttpError && e.status === 410 && e.serverError === 'This sign-in link has already been used.');
   });
 
+  test('deleteMe: an invited account deletes itself, and its bearer is signed out', async () => {
+    const { token: invite } = (await w.request('POST', '/api/invites', { name: 'Short Stay', role: 'viewer' })).body;
+    const { token } = await app.pair(client(), { token: invite });
+    const asApp = client({ kind: 'bearer', token });
+    assert.deepEqual(await me.deleteMe(asApp), { ok: true });
+    await assert.rejects(me.getMe(asApp), (e) => e instanceof ApiHttpError && e.status === 401);
+  });
+
   test('the version handshake: bootstrap’s levels, and X-Wingbeat-App recorded only when it changes', async () => {
     const { token, me: { session_id } } = await app.pair(client(), { token: await deviceLink() });
     const appVersion = async () => (await w.first('SELECT app_version FROM sessions WHERE id = ?', session_id)).app_version;
