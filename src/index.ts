@@ -13,14 +13,14 @@ import { coreBundle, coreBundlePath } from './shared/core-bundle';
 import { dashboardHTML } from './dashboard';
 import { analyticsHTML } from './analytics';
 import { generateToken, sha256Hex, deviceNameFromUA, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
-import { loadSettings, invalidateSettingsCache } from './settings';
+import { loadSettings, invalidateSettingsCache, settingsAsInstance } from './settings';
 import { keyedBasemapPreset, readEnvSecret, substituteTileUrl } from './shared/map-controls';
 import { lookupTileMetadata, sanitizeAttribution } from './tile-metadata';
 import { MAX_DUTY_DAYS_PER_REQUEST, MAX_FLIGHT_TEXT_LENGTH, MAX_DUTY_NOTE_LENGTH, MAX_FLIGHT_SECS } from '@wingbeat/core/record-limits';
 import { BaseHistoryQuery } from '@wingbeat/core/api/requests';
 import { AssignmentRequest, BulkFlagsRequest, CorrectionRequest } from '@wingbeat/core/api/corrections-requests';
 import { DefaultDutyRequest, DutyDaysClearRequest, DutyDaysRequest, DutyMethodRequest } from '@wingbeat/core/api/duty-requests';
-import { SessionRenameRequest } from '@wingbeat/core/api/me-requests';
+import { MAX_DEVICE_NAME_LENGTH, SessionRenameRequest } from '@wingbeat/core/api/me-requests';
 import { PairRequest } from '@wingbeat/core/api/app-requests';
 import { API_VERSION, APP_VERSION_HEADER, MAX_APP_VERSION_LENGTH, MIN_CLIENT_LEVEL } from '@wingbeat/core/api/version';
 import { InviteRequest } from '@wingbeat/core/api/users-requests';
@@ -457,13 +457,15 @@ function joinRefusal(row: InviteToken): JoinRefusal | null {
   return null;
 }
 
+type Redeemed = { sessionToken: string; sessionId: number; userId: number };
+
 /**
  * Redeems a join token for a new session named deviceName: the web's POST /join/:token
  * and the app's POST /api/app/pair both sign in through here, so the two can't drift. An
- * invite also creates its account. Returns the session's raw token, or null when another
- * request redeemed the token first (or it expired since joinRefusal looked).
+ * invite also creates its account. Returns the new session, or the refusal when another
+ * request redeemed the token first or it expired since joinRefusal looked.
  */
-async function redeemJoinToken(db: D1Database, row: InviteToken, deviceName: string): Promise<string | null> {
+async function redeemJoinToken(db: D1Database, row: InviteToken, deviceName: string): Promise<Redeemed | { refusal: JoinRefusal }> {
   const sessionToken = generateToken();
   const sessionHash = await sha256Hex(sessionToken);
   const now = Math.floor(Date.now() / 1000);
@@ -476,15 +478,18 @@ async function redeemJoinToken(db: D1Database, row: InviteToken, deviceName: str
     ? await db.batch([
       consume,
       db.prepare('INSERT INTO users (name, role) SELECT ?, ? WHERE changes() = 1').bind(row.invited_name!, row.invited_role!),
-      db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT last_insert_rowid(), ?, 1, ? WHERE changes() = 1')
+      db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT last_insert_rowid(), ?, 1, ? WHERE changes() = 1 RETURNING id, user_id')
         .bind(sessionHash, deviceName),
     ])
     : await db.batch([
       consume,
-      db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT ?, ?, 1, ? WHERE changes() = 1')
+      db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT ?, ?, 1, ? WHERE changes() = 1 RETURNING id, user_id')
         .bind(row.user_id!, sessionHash, deviceName),
     ]);
-  return batch[0].meta.changes === 1 ? sessionToken : null;
+  const session = batch.at(-1)!.results[0] as { id: number; user_id: number } | undefined;
+  // Lost: joinRefusal looks at the clock again, so a link that expired meanwhile says so.
+  if (!session) return { refusal: joinRefusal(row) ?? usedRefusal(row) };
+  return { sessionToken, sessionId: session.id, userId: session.user_id };
 }
 
 app.get('/join/:token', async (c) => {
@@ -516,13 +521,10 @@ app.post('/join/:token', async (c) => {
   const refusal = joinRefusal(row);
   if (refusal) return c.html(joinErrorHTML(refusal.message, appName), refusal.status);
 
-  const sessionToken = await redeemJoinToken(c.var.db, row, deviceNameFromUA(c.req.header('User-Agent') ?? ''));
-  if (!sessionToken) {
-    const used = usedRefusal(row);
-    return c.html(joinErrorHTML(used.message, appName), used.status);
-  }
+  const redeemed = await redeemJoinToken(c.var.db, row, deviceNameFromUA(c.req.header('User-Agent') ?? ''));
+  if ('refusal' in redeemed) return c.html(joinErrorHTML(redeemed.refusal.message, appName), redeemed.refusal.status);
 
-  c.header('Set-Cookie', `${SESSION_COOKIE}=${sessionToken}; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_MAX_AGE}; Path=/`);
+  c.header('Set-Cookie', `${SESSION_COOKIE}=${redeemed.sessionToken}; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_MAX_AGE}; Path=/`);
   return c.redirect('/');
 });
 
@@ -536,15 +538,17 @@ app.post('/api/app/pair', valid('json', PairRequest), async (c) => {
   const refusal = joinRefusal(row);
   if (refusal) return c.json({ error: refusal.message }, refusal.status);
 
-  const deviceName = body.device_name?.trim().slice(0, 60) || deviceNameFromUA(c.req.header('User-Agent') ?? '');
-  const token = await redeemJoinToken(c.var.db, row, deviceName);
-  if (!token) {
-    const used = usedRefusal(row);
-    return c.json({ error: used.message }, used.status);
-  }
-  const session = await lookupSession(c, token);
-  if (!session) throw new Error('A session just created by pairing was not found');
-  return c.json({ token, me: meJson(sessionUser(session)) });
+  const deviceName = body.device_name?.trim().slice(0, MAX_DEVICE_NAME_LENGTH) || deviceNameFromUA(c.req.header('User-Agent') ?? '');
+  const redeemed = await redeemJoinToken(c.var.db, row, deviceName);
+  if ('refusal' in redeemed) return c.json({ error: redeemed.refusal.message }, redeemed.refusal.status);
+  // The app's X-Wingbeat-App header is recorded from its next request, not this one.
+  const user = await c.var.db.prepare('SELECT name, role FROM users WHERE id = ?')
+    .bind(redeemed.userId).first<{ name: string; role: string }>();
+  if (!user) throw new Error('The user of a session just created by pairing was not found');
+  return c.json({
+    token: redeemed.sessionToken,
+    me: meJson({ id: redeemed.userId, name: user.name, role: user.role, sessionId: redeemed.sessionId, device_name: deviceName }),
+  });
 });
 
 // ── Page routes ───────────────────────────────────────────────────────────────
@@ -646,13 +650,8 @@ app.get('/api/bootstrap', async (c) => {
     queryTileOverlays(c.var.db),
     loadSettings(c.var.tenant),
   ]);
-  // The settings every page gets (settingsAsClientObject), for the app; never the secrets.
-  const instance = {
-    app_name: settings.app_name, timezone: settings.timezone,
-    map_default_lat: settings.map_default_lat, map_default_lng: settings.map_default_lng, map_default_zoom: settings.map_default_zoom,
-  };
   return c.json({
-    me: meJson(c.get('user')), trackers, aircraft, pilots, overlays, instance,
+    me: meJson(c.get('user')), trackers, aircraft, pilots, overlays, instance: settingsAsInstance(settings),
     api_version: API_VERSION, min_client_level: MIN_CLIENT_LEVEL,
   });
 });
@@ -683,7 +682,7 @@ app.patch('/api/me/sessions/:id', valid('json', SessionRenameRequest), async (c)
   const body = c.req.valid('json');
   // null or an empty name clears it (the settings UI sends '' to clear).
   const deviceName = body.device_name?.trim() || null;
-  if (deviceName && deviceName.length > 60) return c.json({ error: 'device_name must be 1-60 characters' }, 400);
+  if (deviceName && deviceName.length > MAX_DEVICE_NAME_LENGTH) return c.json({ error: `device_name must be 1-${MAX_DEVICE_NAME_LENGTH} characters` }, 400);
 
   const existing = await c.var.db.prepare('SELECT id FROM sessions WHERE id = ? AND user_id = ?')
     .bind(id, u.id).first();

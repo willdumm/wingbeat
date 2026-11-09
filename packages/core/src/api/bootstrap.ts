@@ -1,8 +1,8 @@
 /**
- * GET /api/bootstrap: what the dashboard loads first, in one request (the signed-in user,
- * the trackers, aircraft, pilots and tile overlays, and the instance's settings), and the version handshake
- * (api/version.ts). Response objects allow unknown keys, so an instance may add fields
- * without breaking older clients.
+ * GET /api/bootstrap: what the dashboard and the app load first, in one request: the
+ * signed-in user, the trackers, aircraft, pilots and tile overlays, the instance's
+ * settings, and the version handshake (api/version.ts). Response objects allow unknown
+ * keys, so an instance may add fields without breaking older clients.
  */
 import * as z from 'zod/mini';
 import type { ApiClient } from './client';

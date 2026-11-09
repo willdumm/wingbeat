@@ -25,6 +25,9 @@ import { setupGuideMarkup, setupGuideAdminRowMarkup, setupGuideStyles, setupGuid
  *   settingsOnClearCache(result) — e.g. re-render the flight list
  */
 
+// What "Delete my account" leaves behind, in its row and its confirm.
+const DELETE_ACCOUNT_KEEPS = 'Flights, duty days and edit history stay with the operator.';
+
 export function settingsModalMarkup(): string {
   return `
   <div id="settings-modal" class="settings-modal hidden" role="dialog" aria-modal="true">
@@ -148,7 +151,7 @@ export function settingsModalMarkup(): string {
               <div class="settings-row">
                 <div class="settings-row-info">
                   <div class="settings-row-title">Delete my account</div>
-                  <div class="settings-row-desc">Signs out all your devices. Flights, duty days and edit history stay with the operator.</div>
+                  <div class="settings-row-desc">Signs out all your devices. ${DELETE_ACCOUNT_KEEPS}</div>
                 </div>
                 <button id="settings-delete-account" class="btn-danger">Delete</button>
               </div>
@@ -2050,7 +2053,7 @@ export function settingsModalScript(): string {
     });
 
     document.getElementById('settings-delete-account').addEventListener('click', async (e) => {
-      if (!confirm('Delete your account? All your devices will be signed out, and you’ll need a new invite to come back. Flights, duty days and edit history stay with the operator.')) return;
+      if (!confirm('Delete your account? All your devices will be signed out, and you’ll need a new invite to come back. ${DELETE_ACCOUNT_KEEPS}')) return;
       const btn = e.currentTarget;
       btn.disabled = true;
       try {

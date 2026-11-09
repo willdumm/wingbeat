@@ -29,8 +29,9 @@ export const MAX_APP_VERSION_LENGTH = 100;
 
 /**
  * The X-Wingbeat-App value for this bundle on a given runtime (the binary's fingerprint
- * runtimeVersion), e.g. 'level=1; runtime=abc123'. The level comes first so a query can
- * pick sessions by level with a prefix match.
+ * runtimeVersion), e.g. 'level=1; runtime=abc123'. The level comes first, ended by ';', so a
+ * query can pick sessions by level with a prefix match that includes the ';'
+ * (`app_version LIKE 'level=1;%'`, which `level=10; …` doesn't match).
  */
 export function appVersionHeaderValue(runtime: string): string {
   return `level=${CLIENT_API_LEVEL}; runtime=${runtime}`;

@@ -1207,10 +1207,9 @@ describe('the app’s requests, through the core client', async () => {
       await me.getMe(asApp('r2'));
       await me.getMe(client({ kind: 'bearer', token }));
       await me.getMe(client({ kind: 'bearer', token }, { [version.APP_VERSION_HEADER]: '  ' }));
-      await new Promise(res => setTimeout(res, 150));
       assert.equal(await appVersion(), 'level=1; runtime=r2');
-      assert.equal((await w.first('SELECT COUNT(*) AS n FROM app_version_writes')).n, 0);
-      // The trigger does see a change.
+      // A change after them, rather than a sleep, gives their writes (if any) time to land:
+      // the trigger's count is then this change's one write.
       await me.getMe(asApp('r3'));
       await settled('level=1; runtime=r3');
       assert.equal((await w.first('SELECT COUNT(*) AS n FROM app_version_writes')).n, 1);
@@ -1231,6 +1230,13 @@ describe('compat snapshots: the app’s routes, against every supported level', 
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../packages/core/src/api/compat');
   const levels = readdirSync(dir).filter(f => /^\d+\.ts$/.test(f)).map(f => f.replace('.ts', '')).sort((a, b) => a - b);
   const snapshots = await Promise.all(levels.map(level => importCore('api/compat/' + level)));
+
+  test('the version constants agree with the levels that have snapshots', async () => {
+    const version = await importCore('api/version');
+    assert.equal(version.MIN_CLIENT_LEVEL, Number(levels[0]));
+    assert.equal(version.API_VERSION, Number(levels.at(-1)));
+    assert.ok(version.CLIENT_API_LEVEL >= version.MIN_CLIENT_LEVEL && version.CLIENT_API_LEVEL <= version.API_VERSION);
+  });
 
   test('each listed route’s responses parse with each level’s schema', async () => {
     assert.ok(levels.length > 0);

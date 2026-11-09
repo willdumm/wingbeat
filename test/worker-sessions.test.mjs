@@ -258,11 +258,14 @@ describe('DELETE /api/me', () => {
 
   test('refuses the shared env-configured account', async () => {
     await w.run("INSERT INTO users (id, name, role, is_env_admin) VALUES (41, 'Shared', 'admin', 1)");
-    await w.run("INSERT INTO sessions (user_id, token, token_hashed) VALUES (41, 'shared-raw', 0)");
-    const r = await deleteMe('shared-raw');
-    assert.deepEqual([r.status, r.body], [400, { error: 'The shared account cannot be deleted' }]);
-    assert.equal(await userCount('Shared'), 1);
-    await w.run('DELETE FROM users WHERE id = 41');
+    try {
+      await w.run("INSERT INTO sessions (user_id, token, token_hashed) VALUES (41, 'shared-raw', 0)");
+      const r = await deleteMe('shared-raw');
+      assert.deepEqual([r.status, r.body], [400, { error: 'The shared account cannot be deleted' }]);
+      assert.equal(await userCount('Shared'), 1);
+    } finally {
+      await w.run('DELETE FROM users WHERE id = 41');
+    }
   });
 
   test('refuses the last admin, and two admins leaving at once leave one', async () => {

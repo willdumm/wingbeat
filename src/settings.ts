@@ -1,5 +1,6 @@
 import { Tenant } from './types';
 import { jsonForScript } from './shared/html';
+import type { InstanceSettings } from '@wingbeat/core/api/bootstrap';
 
 export interface AppSettings {
   app_name: string;
@@ -65,11 +66,23 @@ export async function loadSettings(tenant: Tenant): Promise<AppSettings> {
 }
 
 export function settingsAsClientObject(s: AppSettings): string {
+  const i = settingsAsInstance(s);
   return jsonForScript({
-    appName:        s.app_name,
-    timezone:       s.timezone,
-    mapDefaultLat:  s.map_default_lat,
-    mapDefaultLng:  s.map_default_lng,
-    mapDefaultZoom: s.map_default_zoom,
+    appName:        i.app_name,
+    timezone:       i.timezone,
+    mapDefaultLat:  i.map_default_lat,
+    mapDefaultLng:  i.map_default_lng,
+    mapDefaultZoom: i.map_default_zoom,
   });
+}
+
+/** The same settings for the app (GET /api/bootstrap's `instance`); never the secrets. */
+export function settingsAsInstance(s: AppSettings): InstanceSettings {
+  return {
+    app_name:         s.app_name,
+    timezone:         s.timezone,
+    map_default_lat:  s.map_default_lat,
+    map_default_lng:  s.map_default_lng,
+    map_default_zoom: s.map_default_zoom,
+  };
 }

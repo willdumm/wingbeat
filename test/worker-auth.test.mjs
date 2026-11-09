@@ -241,12 +241,12 @@ describe('session bearer (the app)', () => {
     ['no token', 'Bearer'],
     ['another scheme', 'Basic ' + btoa('ada:pw')],
     ['two tokens', `Bearer ${ADMIN_TOKEN} ${ADMIN_TOKEN}`],
-    ["the session's stored hash", 'Bearer '],
+    ["the session's stored hash", async () => 'Bearer ' + await sha256Hex(ADMIN_TOKEN)],
     ['POLLER_SECRET', `Bearer ${SECRET}`],
   ]) {
     for (const path of ['/api/me', '/analytics', '/', '/api/nothing-here']) {
       test(`${label}: GET ${path} is a 401 JSON, not a redirect`, async () => {
-        const header = label === "the session's stored hash" ? 'Bearer ' + await sha256Hex(ADMIN_TOKEN) : auth;
+        const header = typeof auth === 'function' ? await auth() : auth;
         const r = await w.request('GET', path, undefined, { as: null, headers: { authorization: header } });
         assert.equal(r.status, 401);
         assert.deepEqual(r.body, SIGNED_OUT);

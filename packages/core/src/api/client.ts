@@ -120,7 +120,8 @@ export function createApiClient({
   timeoutMs = DEFAULT_TIMEOUT_MS,
   warn = (message, detail) => console.warn(message, detail),
 }: ApiClientOptions = {}): ApiClient {
-  const authHeaders = (): Record<string, string> =>
+  // The caller's headers (the app's X-Wingbeat-App) and, for a bearer, Authorization.
+  const requestHeaders = (): Record<string, string> =>
     auth.kind === 'bearer' ? { ...headers, Authorization: 'Bearer ' + auth.token } : headers;
 
   function parse<S extends z.ZodMiniType>(path: string, schema: S, body: unknown): z.infer<S> {
@@ -176,13 +177,13 @@ export function createApiClient({
 
   return {
     get(path, schema) {
-      return request(path, { headers: authHeaders() }, schema);
+      return request(path, { headers: requestHeaders() }, schema);
     },
 
     write(method, path, body, schema) {
       return request(path, {
         method,
-        headers: body === undefined ? authHeaders() : { ...authHeaders(), 'Content-Type': 'application/json' },
+        headers: body === undefined ? requestHeaders() : { ...requestHeaders(), 'Content-Type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
       }, schema);
     },
