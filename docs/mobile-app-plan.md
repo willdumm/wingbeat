@@ -1724,6 +1724,9 @@ staging since 2026-11-08, with migration 0004 applied first. Production waits on
 Added after step 5: `GET /api/bootstrap` returns `instance` (the app name, the operator's
 timezone and the map's default view, the settings every web page gets), since the app has
 no other way to read the timezone (`GET /api/settings` is admins only); level 1 includes it.
+Then three review rounds (pairing builds its response from the redeem batch, one device-name
+rule counted in code points, `deleteUserAccount` deletes first and reads why only on a
+refusal). The reviewed branch is on staging since 2026-11-08.
 
 1. **Bearer sessions** (its own staging deploy, then its own production deploy, ahead of the
    rest; see "Auth and pairing"). The session middleware takes `Authorization: Bearer
