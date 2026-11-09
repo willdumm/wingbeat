@@ -639,14 +639,20 @@ app.get('/api/me', (c) => {
 });
 
 app.get('/api/bootstrap', async (c) => {
-  const [trackers, aircraft, pilots, overlays] = await Promise.all([
+  const [trackers, aircraft, pilots, overlays, settings] = await Promise.all([
     queryTrackers(c.var.db, c.get('user').role === 'admin'),
     queryAircraft(c.var.db),
     queryPilots(c.var.db),
     queryTileOverlays(c.var.db),
+    loadSettings(c.var.tenant),
   ]);
+  // The settings every page gets (settingsAsClientObject), for the app; never the secrets.
+  const instance = {
+    app_name: settings.app_name, timezone: settings.timezone,
+    map_default_lat: settings.map_default_lat, map_default_lng: settings.map_default_lng, map_default_zoom: settings.map_default_zoom,
+  };
   return c.json({
-    me: meJson(c.get('user')), trackers, aircraft, pilots, overlays,
+    me: meJson(c.get('user')), trackers, aircraft, pilots, overlays, instance,
     api_version: API_VERSION, min_client_level: MIN_CLIENT_LEVEL,
   });
 });

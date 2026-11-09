@@ -1719,6 +1719,9 @@ is shared with `DELETE /api/users/:id`, and its last-admin check is part of the 
 statement, so two admins leaving at once can't leave none); step 5 (`api/compat/1.ts` covers
 19 routes, listed in its header; the test also fails when a snapshot lists a route it doesn't call). Steps 2–5 are on
 staging since 2026-11-08, with migration 0004 applied first. Production waits on the user.
+Added after step 5: `GET /api/bootstrap` returns `instance` (the app name, the operator's
+timezone and the map's default view, the settings every web page gets), since the app has
+no other way to read the timezone (`GET /api/settings` is admins only); level 1 includes it.
 
 1. **Bearer sessions** (its own staging deploy, then its own production deploy, ahead of the
    rest; see "Auth and pairing"). The session middleware takes `Authorization: Bearer

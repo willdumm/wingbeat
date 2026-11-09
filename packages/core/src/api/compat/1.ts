@@ -106,6 +106,13 @@ const BootstrapResponse = z.looseObject({
   aircraft: z.array(Aircraft),
   pilots: z.array(Pilot),
   overlays: z.array(TileOverlay),
+  instance: z.optional(z.looseObject({
+    app_name: z.string(),
+    timezone: z.string(),
+    map_default_lat: num,
+    map_default_lng: num,
+    map_default_zoom: num,
+  })),
   api_version: z.optional(num),
   min_client_level: z.optional(num),
 });

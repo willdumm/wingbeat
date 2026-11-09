@@ -1189,6 +1189,12 @@ describe('the app’s requests, through the core client', async () => {
 
     const boot = await getBootstrap(asApp('r1'));
     assert.deepEqual([boot.api_version, boot.min_client_level], [version.API_VERSION, version.MIN_CLIENT_LEVEL]);
+    // The settings every page gets (as Global Settings saved them earlier in this file), and
+    // none of the others.
+    const saved = Object.fromEntries((await w.all('SELECT key, value FROM settings')).map(r => [r.key, r.value]));
+    assert.deepEqual(Object.keys(boot.instance).sort(), ['app_name', 'map_default_lat', 'map_default_lng', 'map_default_zoom', 'timezone']);
+    assert.equal(boot.instance.timezone, saved.timezone ?? 'UTC');
+    assert.equal(boot.instance.app_name, saved.app_name ?? 'Wingbeat');
     assert.equal(await settled('level=1; runtime=r1'), 'level=1; runtime=r1');
     await me.getMe(asApp('r2'));
     assert.equal(await settled('level=1; runtime=r2'), 'level=1; runtime=r2');

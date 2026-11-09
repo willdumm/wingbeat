@@ -1,6 +1,6 @@
 /**
  * GET /api/bootstrap: what the dashboard loads first, in one request (the signed-in user,
- * and the trackers, aircraft, pilots and tile overlays), and the version handshake
+ * the trackers, aircraft, pilots and tile overlays, and the instance's settings), and the version handshake
  * (api/version.ts). Response objects allow unknown keys, so an instance may add fields
  * without breaking older clients.
  */
@@ -24,6 +24,18 @@ export const Me = z.looseObject({
   session_id: z.number(),
 });
 
+/**
+ * The instance's non-secret settings, the ones every web page gets: its name, the
+ * operator's timezone (every date and time is read in it) and the map's default view.
+ */
+export const InstanceSettings = z.looseObject({
+  app_name: z.string(),
+  timezone: z.string(),
+  map_default_lat: z.number(),
+  map_default_lng: z.number(),
+  map_default_zoom: z.number(),
+});
+
 /** GET /api/bootstrap */
 export const BootstrapResponse = z.looseObject({
   me: Me,
@@ -31,6 +43,8 @@ export const BootstrapResponse = z.looseObject({
   aircraft: z.array(Aircraft),
   pilots: z.array(Pilot),
   overlays: z.array(TileOverlay),
+  /** Absent from servers older than the handshake, like api_version. */
+  instance: z.optional(InstanceSettings),
   /** The server's API level (absent from servers older than the handshake). */
   api_version: z.optional(z.number()),
   /** The oldest client level the server serves (absent like api_version). */
@@ -38,6 +52,7 @@ export const BootstrapResponse = z.looseObject({
 });
 
 export type Me = z.infer<typeof Me>;
+export type InstanceSettings = z.infer<typeof InstanceSettings>;
 export type BootstrapResponse = z.infer<typeof BootstrapResponse>;
 
 /** The dashboard's first load. */
