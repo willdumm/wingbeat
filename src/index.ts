@@ -12,7 +12,7 @@ import { flightCorrectionKey } from '@wingbeat/core/flight-store';
 import { coreBundle, coreBundlePath } from './shared/core-bundle';
 import { dashboardHTML } from './dashboard';
 import { analyticsHTML } from './analytics';
-import { generateToken, sha256Hex, deviceNameFromUA, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
+import { generateToken, sha256Hex, deviceNameFromUA, deviceNameLength, pairedDeviceName, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
 import { loadSettings, invalidateSettingsCache, settingsAsInstance } from './settings';
 import { keyedBasemapPreset, readEnvSecret, substituteTileUrl } from './shared/map-controls';
 import { lookupTileMetadata, sanitizeAttribution } from './tile-metadata';
@@ -465,7 +465,7 @@ type Redeemed = { sessionToken: string; sessionId: number; userId: number; name:
  * invite also creates its account. Returns the new session, or the refusal when another
  * request redeemed the token first or it expired since joinRefusal looked.
  */
-async function redeemJoinToken(db: D1Database, row: InviteToken, deviceName: string): Promise<Redeemed | { refusal: JoinRefusal }> {
+async function redeemJoinToken(db: D1Database, row: InviteToken, deviceName: string): Promise<{ ok: true; session: Redeemed } | { ok: false; refusal: JoinRefusal }> {
   const sessionToken = generateToken();
   const sessionHash = await sha256Hex(sessionToken);
   const now = Math.floor(Date.now() / 1000);
@@ -495,8 +495,8 @@ async function redeemJoinToken(db: D1Database, row: InviteToken, deviceName: str
     ]);
   const session = batch.at(-1)!.results[0] as { id: number; user_id: number; name: string; role: string } | undefined;
   // Lost: joinRefusal looks at the clock again, so a link that expired meanwhile says so.
-  if (!session) return { refusal: joinRefusal(row) ?? usedRefusal(row) };
-  return { sessionToken, sessionId: session.id, userId: session.user_id, name: session.name, role: session.role };
+  if (!session) return { ok: false, refusal: joinRefusal(row) ?? usedRefusal(row) };
+  return { ok: true, session: { sessionToken, sessionId: session.id, userId: session.user_id, name: session.name, role: session.role } };
 }
 
 app.get('/join/:token', async (c) => {
@@ -529,9 +529,9 @@ app.post('/join/:token', async (c) => {
   if (refusal) return c.html(joinErrorHTML(refusal.message, appName), refusal.status);
 
   const redeemed = await redeemJoinToken(c.var.db, row, deviceNameFromUA(c.req.header('User-Agent') ?? ''));
-  if ('refusal' in redeemed) return c.html(joinErrorHTML(redeemed.refusal.message, appName), redeemed.refusal.status);
+  if (!redeemed.ok) return c.html(joinErrorHTML(redeemed.refusal.message, appName), redeemed.refusal.status);
 
-  c.header('Set-Cookie', `${SESSION_COOKIE}=${redeemed.sessionToken}; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_MAX_AGE}; Path=/`);
+  c.header('Set-Cookie', `${SESSION_COOKIE}=${redeemed.session.sessionToken}; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_MAX_AGE}; Path=/`);
   return c.redirect('/');
 });
 
@@ -545,12 +545,11 @@ app.post('/api/app/pair', valid('json', PairRequest), async (c) => {
   const refusal = joinRefusal(row);
   if (refusal) return c.json({ error: refusal.message }, refusal.status);
 
-  // Cut by code point, so an emoji at the cut isn't split into a lone surrogate.
-  const deviceName = Array.from(body.device_name?.trim() ?? '').slice(0, MAX_DEVICE_NAME_LENGTH).join('') || deviceNameFromUA(c.req.header('User-Agent') ?? '');
+  const deviceName = pairedDeviceName(body.device_name, c.req.header('User-Agent') ?? '');
   const redeemed = await redeemJoinToken(c.var.db, row, deviceName);
-  if ('refusal' in redeemed) return c.json({ error: redeemed.refusal.message }, redeemed.refusal.status);
+  if (!redeemed.ok) return c.json({ error: redeemed.refusal.message }, redeemed.refusal.status);
   // The app's X-Wingbeat-App header is recorded from its next request, not this one.
-  const { sessionToken, sessionId, userId, name, role } = redeemed;
+  const { sessionToken, sessionId, userId, name, role } = redeemed.session;
   return c.json({ token: sessionToken, me: meJson({ id: userId, name, role, sessionId, device_name: deviceName }) });
 });
 
@@ -685,7 +684,7 @@ app.patch('/api/me/sessions/:id', valid('json', SessionRenameRequest), async (c)
   const body = c.req.valid('json');
   // null or an empty name clears it (the settings UI sends '' to clear).
   const deviceName = body.device_name?.trim() || null;
-  if (deviceName && deviceName.length > MAX_DEVICE_NAME_LENGTH) return c.json({ error: `device_name must be 1-${MAX_DEVICE_NAME_LENGTH} characters` }, 400);
+  if (deviceName && deviceNameLength(deviceName) > MAX_DEVICE_NAME_LENGTH) return c.json({ error: `device_name must be 1-${MAX_DEVICE_NAME_LENGTH} characters` }, 400);
 
   const existing = await c.var.db.prepare('SELECT id FROM sessions WHERE id = ? AND user_id = ?')
     .bind(id, u.id).first();
@@ -749,15 +748,17 @@ app.get('/api/users', requireAdmin, async (c) => {
  * Shared by DELETE /api/users/:id and DELETE /api/me.
  */
 async function deleteUserAccount(db: D1Database, id: number): Promise<{ error: string; status: 400 | 404 | 409 } | null> {
+  const { meta } = await db.prepare(
+    `DELETE FROM users WHERE id = ?1 AND is_env_admin = 0
+       AND (role != 'admin' OR (SELECT COUNT(*) FROM users WHERE role = 'admin' AND id != ?1) > 0)`
+  ).bind(id).run();
+  // D1 counts the rows the delete cascades to as well.
+  if (meta.changes > 0) return null;
+  // Refused, or already gone (another device's DELETE /api/me, say): read which.
   const target = await db.prepare('SELECT is_env_admin FROM users WHERE id = ?').bind(id).first<{ is_env_admin: number }>();
   if (!target) return { error: 'User not found', status: 404 };
   if (target.is_env_admin) return { error: 'The shared account cannot be deleted', status: 400 };
-  const { meta } = await db.prepare(
-    `DELETE FROM users WHERE id = ?1
-       AND (role != 'admin' OR (SELECT COUNT(*) FROM users WHERE role = 'admin' AND id != ?1) > 0)`
-  ).bind(id).run();
-  if (meta.changes === 0) return { error: 'Cannot delete the last admin. Make another user an admin first.', status: 409 };
-  return null;
+  return { error: 'Cannot delete the last admin. Make another user an admin first.', status: 409 };
 }
 
 app.delete('/api/users/:id', requireAdmin, async (c) => {

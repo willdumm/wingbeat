@@ -196,6 +196,7 @@ describe('app pairing (POST /api/app/pair)', () => {
     assert.equal((await pair({ token: await deviceLink(), device_name: null })).body.me.device_name, 'Device');
     assert.equal((await pair({ token: await deviceLink(), device_name: 'x'.repeat(80) })).body.me.device_name, 'x'.repeat(60));
     assert.equal((await pair({ token: await deviceLink(), device_name: 'x'.repeat(59) + '🛩🛩' })).body.me.device_name, 'x'.repeat(59) + '🛩');
+    assert.equal((await pair({ token: await deviceLink(), device_name: 'x'.repeat(59) + ' y' })).body.me.device_name, 'x'.repeat(59));
   });
 
   test('refusals are JSON: unknown, expired (not burned into an account), malformed', async () => {

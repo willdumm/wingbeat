@@ -6,8 +6,8 @@
 import * as z from 'zod/mini';
 
 /**
- * The longest session (device) name, after trimming: renaming to a longer one is refused,
- * and pairing (api/app-requests.ts) cuts the phone's name to it.
+ * The longest session (device) name in code points, after trimming: renaming to a longer
+ * one is refused, and pairing (api/app-requests.ts) cuts the phone's name to it.
  */
 export const MAX_DEVICE_NAME_LENGTH = 60;
 

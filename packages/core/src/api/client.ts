@@ -122,7 +122,7 @@ export function createApiClient({
 }: ApiClientOptions = {}): ApiClient {
   // The caller's headers (the app's X-Wingbeat-App) and, for a bearer, Authorization.
   const requestHeaders = (): Record<string, string> =>
-    auth.kind === 'bearer' ? { ...headers, Authorization: 'Bearer ' + auth.token } : headers;
+    auth.kind === 'bearer' ? { ...headers, Authorization: 'Bearer ' + auth.token } : { ...headers };
 
   function parse<S extends z.ZodMiniType>(path: string, schema: S, body: unknown): z.infer<S> {
     const parsed = z.safeParse(schema, body);
