@@ -195,6 +195,7 @@ describe('app pairing (POST /api/app/pair)', () => {
     assert.equal((await pair({ token: await deviceLink(), device_name: '   ' }, { headers: iphone })).body.me.device_name, 'iPhone');
     assert.equal((await pair({ token: await deviceLink(), device_name: null })).body.me.device_name, 'Device');
     assert.equal((await pair({ token: await deviceLink(), device_name: 'x'.repeat(80) })).body.me.device_name, 'x'.repeat(60));
+    assert.equal((await pair({ token: await deviceLink(), device_name: 'x'.repeat(59) + '🛩🛩' })).body.me.device_name, 'x'.repeat(59) + '🛩');
   });
 
   test('refusals are JSON: unknown, expired (not burned into an account), malformed', async () => {
@@ -278,8 +279,8 @@ describe('DELETE /api/me', () => {
       assert.deepEqual(rs.map(r => r.status).sort(), [200, 409]);
       assert.equal(rs.find(r => r.status === 409).body.error, 'Cannot delete the last admin. Make another user an admin first.');
       assert.equal((await w.first("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'")).n, 1);
-      await w.run("DELETE FROM users WHERE name IN ('Admin A', 'Admin B')");
     } finally {
+      await w.run("DELETE FROM users WHERE name IN ('Admin A', 'Admin B')");
       for (const { id } of admins) await w.run("UPDATE users SET role = 'admin' WHERE id = ?", id);
     }
   });

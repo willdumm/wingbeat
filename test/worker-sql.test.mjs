@@ -1182,19 +1182,17 @@ describe('the app’s requests, through the core client', async () => {
     const { token, me: { session_id } } = await app.pair(client(), { token: await deviceLink() });
     const appVersion = async () => (await w.first('SELECT app_version FROM sessions WHERE id = ?', session_id)).app_version;
     const settled = async (want) => {
-      for (let i = 0; i < 20 && await appVersion() !== want; i++) await new Promise(res => setTimeout(res, 50));
+      for (const deadline = Date.now() + 5000; await appVersion() !== want && Date.now() < deadline;) await new Promise(res => setTimeout(res, 50));
       return appVersion();
     };
     const asApp = (runtime) => client({ kind: 'bearer', token }, { [version.APP_VERSION_HEADER]: version.appVersionHeaderValue(runtime) });
 
+    // The settings every page gets, and none of the others (gap alerts, the Pushover token).
+    const instance = { app_name: 'Handshake Air', timezone: 'America/Denver', map_default_lat: 40.5, map_default_lng: -105.25, map_default_zoom: 9 };
+    assert.equal((await w.request('PATCH', '/api/settings', { ...instance, pushover_api_token: 'secret-token' })).status, 200);
     const boot = await getBootstrap(asApp('r1'));
     assert.deepEqual([boot.api_version, boot.min_client_level], [version.API_VERSION, version.MIN_CLIENT_LEVEL]);
-    // The settings every page gets (as Global Settings saved them earlier in this file), and
-    // none of the others.
-    const saved = Object.fromEntries((await w.all('SELECT key, value FROM settings')).map(r => [r.key, r.value]));
-    assert.deepEqual(Object.keys(boot.instance).sort(), ['app_name', 'map_default_lat', 'map_default_lng', 'map_default_zoom', 'timezone']);
-    assert.equal(boot.instance.timezone, saved.timezone ?? 'UTC');
-    assert.equal(boot.instance.app_name, saved.app_name ?? 'Wingbeat');
+    assert.deepEqual(boot.instance, instance);
     assert.equal(await settled('level=1; runtime=r1'), 'level=1; runtime=r1');
     await me.getMe(asApp('r2'));
     assert.equal(await settled('level=1; runtime=r2'), 'level=1; runtime=r2');

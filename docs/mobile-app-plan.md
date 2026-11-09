@@ -1562,7 +1562,9 @@ account whose operator is in another zone, that's the only correct reading of a 
   cookie request's behavior can't change. A request with the header is judged by the bearer
   alone, and any cookie it also carries is ignored. Test a request with a valid cookie and an
   invalid bearer (`401`), a cookie-only request to an API path without a valid session (`401`,
-  as today), and one to a page (the redirect, as today).
+  as today), and one to a page (the redirect, as today). So nothing in front of an instance
+  may add an `Authorization` header (HTTP basic auth on staging, say): every browser request
+  would then be a `401`. Neither staging nor the hosting layer adds one.
 - The middleware change ships as **its own deploy**, ahead of `/api/app/pair` and
   `DELETE /api/me`, so if web sign-in breaks, the cause is obvious and the revert is small.
 - **Session lifetime:** app sessions use the existing sliding expiry unchanged (90 days idle,
@@ -1915,6 +1917,7 @@ not only what the app needs, and every route the web calls gets schemas. Times a
 shown in the operator's timezone with its abbreviation, whatever the device's zone. Instants
 stay stored as UTC epochs, and duty records stay local dates and wall-clock times on
 purpose.
+
 Answered 2026-11-08, after phase 1's release: the app is built whether or not the beacon
 probe passes, so the gate after phase 3 is gone and only phase 8 waits on the probe. Web Push
 in the dashboard (phase 2) is deferred because Pushover works; app push (phase 7) replaces

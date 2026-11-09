@@ -110,7 +110,7 @@ async function lookupSession(c: Context<{ Bindings: Env; Variables: Variables }>
   if (now - row.last_seen_at > SESSION_TOUCH_SECS) {
     writes.push(db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?').bind(now, row.id).run());
   }
-  const appVersion = c.req.header(APP_VERSION_HEADER)?.trim().slice(0, MAX_APP_VERSION_LENGTH);
+  const appVersion = c.req.header(APP_VERSION_HEADER)?.slice(0, MAX_APP_VERSION_LENGTH).trim();
   if (appVersion && appVersion !== row.app_version) {
     writes.push(db.prepare('UPDATE sessions SET app_version = ? WHERE id = ?').bind(appVersion, row.id).run());
   }
@@ -457,7 +457,7 @@ function joinRefusal(row: InviteToken): JoinRefusal | null {
   return null;
 }
 
-type Redeemed = { sessionToken: string; sessionId: number; userId: number };
+type Redeemed = { sessionToken: string; sessionId: number; userId: number; name: string; role: string };
 
 /**
  * Redeems a join token for a new session named deviceName: the web's POST /join/:token
@@ -474,22 +474,29 @@ async function redeemJoinToken(db: D1Database, row: InviteToken, deviceName: str
   // later statement is guarded by changes() = 1, so a lost race inserts nothing and a
   // failure can't burn the link without creating the session (or the account).
   const consume = db.prepare('UPDATE invite_tokens SET used = 1 WHERE id = ? AND used = 0 AND expires_at >= ?').bind(row.id, now);
+  // Last, in the same transaction: the new session and its user, for the caller's response.
+  const created = db.prepare(
+    `SELECT s.id, s.user_id, u.name, u.role FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token = ? AND s.token_hashed = 1`
+  ).bind(sessionHash);
   const batch = row.type === 'invite'
     ? await db.batch([
       consume,
       db.prepare('INSERT INTO users (name, role) SELECT ?, ? WHERE changes() = 1').bind(row.invited_name!, row.invited_role!),
-      db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT last_insert_rowid(), ?, 1, ? WHERE changes() = 1 RETURNING id, user_id')
+      db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT last_insert_rowid(), ?, 1, ? WHERE changes() = 1')
         .bind(sessionHash, deviceName),
+      created,
     ])
     : await db.batch([
       consume,
-      db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT ?, ?, 1, ? WHERE changes() = 1 RETURNING id, user_id')
+      db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT ?, ?, 1, ? WHERE changes() = 1')
         .bind(row.user_id!, sessionHash, deviceName),
+      created,
     ]);
-  const session = batch.at(-1)!.results[0] as { id: number; user_id: number } | undefined;
+  const session = batch.at(-1)!.results[0] as { id: number; user_id: number; name: string; role: string } | undefined;
   // Lost: joinRefusal looks at the clock again, so a link that expired meanwhile says so.
   if (!session) return { refusal: joinRefusal(row) ?? usedRefusal(row) };
-  return { sessionToken, sessionId: session.id, userId: session.user_id };
+  return { sessionToken, sessionId: session.id, userId: session.user_id, name: session.name, role: session.role };
 }
 
 app.get('/join/:token', async (c) => {
@@ -538,17 +545,13 @@ app.post('/api/app/pair', valid('json', PairRequest), async (c) => {
   const refusal = joinRefusal(row);
   if (refusal) return c.json({ error: refusal.message }, refusal.status);
 
-  const deviceName = body.device_name?.trim().slice(0, MAX_DEVICE_NAME_LENGTH) || deviceNameFromUA(c.req.header('User-Agent') ?? '');
+  // Cut by code point, so an emoji at the cut isn't split into a lone surrogate.
+  const deviceName = Array.from(body.device_name?.trim() ?? '').slice(0, MAX_DEVICE_NAME_LENGTH).join('') || deviceNameFromUA(c.req.header('User-Agent') ?? '');
   const redeemed = await redeemJoinToken(c.var.db, row, deviceName);
   if ('refusal' in redeemed) return c.json({ error: redeemed.refusal.message }, redeemed.refusal.status);
   // The app's X-Wingbeat-App header is recorded from its next request, not this one.
-  const user = await c.var.db.prepare('SELECT name, role FROM users WHERE id = ?')
-    .bind(redeemed.userId).first<{ name: string; role: string }>();
-  if (!user) throw new Error('The user of a session just created by pairing was not found');
-  return c.json({
-    token: redeemed.sessionToken,
-    me: meJson({ id: redeemed.userId, name: user.name, role: user.role, sessionId: redeemed.sessionId, device_name: deviceName }),
-  });
+  const { sessionToken, sessionId, userId, name, role } = redeemed;
+  return c.json({ token: sessionToken, me: meJson({ id: userId, name, role, sessionId, device_name: deviceName }) });
 });
 
 // ── Page routes ───────────────────────────────────────────────────────────────

@@ -8,7 +8,8 @@
  * The schemas are copies, not imports of the live ones in ../*.ts, so that changing a live
  * schema can't change what this snapshot accepts. **Never edit a snapshot once its level has
  * shipped**; a new level gets its own file (2.ts, …), and a level's file is deleted only when
- * the server stops serving that level (MIN_CLIENT_LEVEL above it).
+ * the server stops serving that level (MIN_CLIENT_LEVEL above it). Level 1 is editable until
+ * the first app release that sends level=1.
  *
  * Level 1 is phases 5 and 6 of the plan: pairing, the Live and Flights screens, the duty log
  * (its reads and the day, default-duty and flight-form writes) and account deletion:

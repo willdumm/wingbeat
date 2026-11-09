@@ -66,13 +66,14 @@ export async function loadSettings(tenant: Tenant): Promise<AppSettings> {
 }
 
 export function settingsAsClientObject(s: AppSettings): string {
-  const i = settingsAsInstance(s);
+  // The pages and the app get the same non-secret settings: settingsAsInstance picks them.
+  const instance = settingsAsInstance(s);
   return jsonForScript({
-    appName:        i.app_name,
-    timezone:       i.timezone,
-    mapDefaultLat:  i.map_default_lat,
-    mapDefaultLng:  i.map_default_lng,
-    mapDefaultZoom: i.map_default_zoom,
+    appName:        instance.app_name,
+    timezone:       instance.timezone,
+    mapDefaultLat:  instance.map_default_lat,
+    mapDefaultLng:  instance.map_default_lng,
+    mapDefaultZoom: instance.map_default_zoom,
   });
 }
 
