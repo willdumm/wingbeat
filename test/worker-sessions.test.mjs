@@ -270,6 +270,8 @@ describe('DELETE /api/me', () => {
     }
   });
 
+  // The end state, not the atomicity: Miniflare may well run the two requests one after the
+  // other. That comes from the guard being part of deleteUserAccount's DELETE statement.
   test('refuses the last admin, and two admins leaving at once leave one', async () => {
     const a = await pairAs('Admin A', 'admin');
     const b = await pairAs('Admin B', 'admin');
@@ -348,8 +350,9 @@ describe('DELETE /api/users/:id guards', () => {
   test('an admin may delete another admin while two exist', async () => {
     await w.run("INSERT INTO users (id, name, role) VALUES (51, 'Admin Two', 'admin')");
     await w.run("INSERT INTO sessions (user_id, token, token_hashed) VALUES (51, 'x-admin-two', 0)");
-    // The last-admin guard is defence in depth: the caller is always an admin other than the
-    // target, so it can only trip if the counts are inconsistent. Deleting admin 1 is fine.
+    // The caller is an admin other than the target, so the last-admin guard trips here only
+    // when two admins delete each other at once (the guard is in the DELETE statement, so one
+    // is refused). Deleting admin 1 is fine.
     assert.equal((await w.request('DELETE', '/api/users/1', undefined, withCookie('x-admin-two'))).status, 200);
     assert.equal((await w.request('DELETE', '/api/users/1', undefined, withCookie('x-admin-two'))).status, 404);
   });

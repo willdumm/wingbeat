@@ -167,7 +167,8 @@ legal name as the seller. That's fine for TestFlight and a first release. Everyt
 matters later survives the conversion: the bundle ID, the App Store record, ratings,
 TestFlight testers, the APNs key and the EAS credentials.
 
-**Later (start the D-U-N-S request now, since it can take weeks):** ask Apple Developer
+**Later (D-U-N-S number received 2026-11-10; Apple's lookup can take a few business days to
+up to ~2 weeks to show it):** once Apple's D-U-N-S lookup finds it, ask Apple Developer
 Support to **convert the membership from individual to organization**. The team ID, apps,
 certificates and App Store Connect records stay, and the seller becomes the LLC for every
 app on the team, **cud included**. You need:
@@ -1720,7 +1721,9 @@ in `src/index.ts` is the one redemption both routes use); step 3 (core's API cli
 is shared with `DELETE /api/users/:id`, and its last-admin check is part of the `DELETE`
 statement, so two admins leaving at once can't leave none); step 5 (`api/compat/1.ts` covers
 19 routes, listed in its header; the test also fails when a snapshot lists a route it doesn't call). Steps 2–5 are on
-staging since 2026-11-08, with migration 0004 applied first. Production waits on the user.
+staging since 2026-11-08, with migration 0004 applied first. Production waits on the user;
+there too, apply 0004 before deploying steps 2–5: every signed-in request reads
+`sessions.app_version`, so without the column each one fails.
 Added after step 5: `GET /api/bootstrap` returns `instance` (the app name, the operator's
 timezone and the map's default view, the settings every web page gets), since the app has
 no other way to read the timezone (`GET /api/settings` is admins only); level 1 includes it.

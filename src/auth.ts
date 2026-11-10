@@ -1,7 +1,7 @@
 import { themeVars, themeFontImport } from './shared/theme';
 import { escapeHtml } from './shared/html';
 import { logoLockupMarkup, brandStyles, logoFaviconHref } from './shared/brand';
-import { MAX_DEVICE_NAME_LENGTH } from '@wingbeat/core/api/me-requests';
+import { cutDeviceName } from '@wingbeat/core/api/me-requests';
 
 /**
  * Auth pages (login/join/error) are always dark — there's no theme toggle before
@@ -73,17 +73,12 @@ export async function sha256Hex(input: string): Promise<string> {
   return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** A device name's length as the limit counts it: in code points, not UTF-16 units. */
-export const deviceNameLength = (name: string): number => Array.from(name).length;
-
 /**
- * The name a paired phone's session gets: the phone's own name, trimmed and cut to
- * MAX_DEVICE_NAME_LENGTH code points (so an emoji at the cut isn't split), or the
- * User-Agent's platform when it's missing or blank.
+ * The name a paired phone's session gets: the phone's own name, cut to the limit
+ * (cutDeviceName in core), or the User-Agent's platform when it's missing or blank.
  */
 export function pairedDeviceName(name: string | null | undefined, ua: string): string {
-  const cut = Array.from(name?.trim() ?? '').slice(0, MAX_DEVICE_NAME_LENGTH).join('').trim();
-  return cut || deviceNameFromUA(ua);
+  return cutDeviceName(name ?? '') || deviceNameFromUA(ua);
 }
 
 export function deviceNameFromUA(ua: string): string {

@@ -1189,8 +1189,17 @@ describe('the app’s requests, through the core client', async () => {
 
     // The settings every page gets, and none of the others (gap alerts, the Pushover token).
     const instance = { app_name: 'Handshake Air', timezone: 'America/Denver', map_default_lat: 40.5, map_default_lng: -105.25, map_default_zoom: 9 };
+    const before = (await w.request('GET', '/api/settings')).body;
     assert.equal((await w.request('PATCH', '/api/settings', { ...instance, pushover_api_token: 'secret-token' })).status, 200);
-    const boot = await getBootstrap(asApp('r1'));
+    let boot;
+    try {
+      boot = await getBootstrap(asApp('r1'));
+    } finally {
+      // The later tests run in the settings they had before.
+      const defaults = { app_name: 'Wingbeat', timezone: 'UTC', map_default_lat: 30, map_default_lng: 0, map_default_zoom: 2, pushover_api_token: '' };
+      const restore = Object.fromEntries(Object.entries(defaults).map(([k, v]) => [k, before[k] ?? v]));
+      assert.equal((await w.request('PATCH', '/api/settings', restore)).status, 200);
+    }
     assert.deepEqual([boot.api_version, boot.min_client_level], [version.API_VERSION, version.MIN_CLIENT_LEVEL]);
     assert.deepEqual(boot.instance, instance);
     assert.equal(await settled('level=1; runtime=r1'), 'level=1; runtime=r1');

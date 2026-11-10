@@ -12,7 +12,7 @@ import { flightCorrectionKey } from '@wingbeat/core/flight-store';
 import { coreBundle, coreBundlePath } from './shared/core-bundle';
 import { dashboardHTML } from './dashboard';
 import { analyticsHTML } from './analytics';
-import { generateToken, sha256Hex, deviceNameFromUA, deviceNameLength, pairedDeviceName, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
+import { generateToken, sha256Hex, deviceNameFromUA, pairedDeviceName, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
 import { loadSettings, invalidateSettingsCache, settingsAsInstance } from './settings';
 import { keyedBasemapPreset, readEnvSecret, substituteTileUrl } from './shared/map-controls';
 import { lookupTileMetadata, sanitizeAttribution } from './tile-metadata';
@@ -20,7 +20,7 @@ import { MAX_DUTY_DAYS_PER_REQUEST, MAX_FLIGHT_TEXT_LENGTH, MAX_DUTY_NOTE_LENGTH
 import { BaseHistoryQuery } from '@wingbeat/core/api/requests';
 import { AssignmentRequest, BulkFlagsRequest, CorrectionRequest } from '@wingbeat/core/api/corrections-requests';
 import { DefaultDutyRequest, DutyDaysClearRequest, DutyDaysRequest, DutyMethodRequest } from '@wingbeat/core/api/duty-requests';
-import { MAX_DEVICE_NAME_LENGTH, SessionRenameRequest } from '@wingbeat/core/api/me-requests';
+import { MAX_DEVICE_NAME_LENGTH, SessionRenameRequest, deviceNameLength } from '@wingbeat/core/api/me-requests';
 import { PairRequest } from '@wingbeat/core/api/app-requests';
 import { API_VERSION, APP_VERSION_HEADER, MAX_APP_VERSION_LENGTH, MIN_CLIENT_LEVEL } from '@wingbeat/core/api/version';
 import { InviteRequest } from '@wingbeat/core/api/users-requests';

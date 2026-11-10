@@ -11,6 +11,18 @@ import * as z from 'zod/mini';
  */
 export const MAX_DEVICE_NAME_LENGTH = 60;
 
+/** A device name's length as the limit counts it: in code points, not UTF-16 units. */
+export const deviceNameLength = (name: string): number => Array.from(name).length;
+
+/**
+ * A device name trimmed and cut to MAX_DEVICE_NAME_LENGTH code points, so an emoji at the
+ * cut isn't split. Only the first 2 × the limit UTF-16 units are split into code points
+ * (enough for the limit), so a huge name costs no more than a short one.
+ */
+export function cutDeviceName(name: string): string {
+  return Array.from(name.trim().slice(0, 2 * MAX_DEVICE_NAME_LENGTH)).slice(0, MAX_DEVICE_NAME_LENGTH).join('').trim();
+}
+
 /** PATCH /api/me/sessions/:id: the device's name (null or '' clears it). */
 export const SessionRenameRequest = z.object({ device_name: z.nullable(z.string()) });
 
