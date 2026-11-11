@@ -1,5 +1,5 @@
 import { Env } from '../types';
-import { clientBasemapPresets, DEFAULT_ENABLED_BASEMAPS, type BasemapPreset } from '@wingbeat/core/basemaps';
+import { clientBasemapPresets, DEFAULT_ENABLED_BASEMAPS, overlayDefaultEnabled, type BasemapPreset } from '@wingbeat/core/basemaps';
 
 /**
  * Local (per-device) basemap layer configuration, stored in localStorage —
@@ -988,17 +988,11 @@ export function overlayLegendRuntimeScript(): string {
       return el ? el.getAttribute('data-basemap') : null;
     }
 
-    // An overlay's default on/off state can lean differently per basemap (e.g. on
-    // by default over "topo", off over "satellite") via default_enabled_by_basemap;
-    // default_enabled is the fallback for any basemap not named there, including a
-    // viewer's own per-device custom basemap, which an admin can't know about ahead
-    // of time.
+    // An overlay's default on/off state can lean differently per basemap (core's
+    // overlayDefaultEnabled()).
+    ${overlayDefaultEnabled.toString()}
     function _ftOverlayDefaultEnabled(ov) {
-      var basemapId = _ftCurrentBasemapId();
-      if (basemapId && ov.default_enabled_by_basemap && Object.prototype.hasOwnProperty.call(ov.default_enabled_by_basemap, basemapId)) {
-        return !!ov.default_enabled_by_basemap[basemapId];
-      }
-      return !!ov.default_enabled;
+      return overlayDefaultEnabled(ov, _ftCurrentBasemapId());
     }
 
     function _ftOverlayEnabled(ov) {

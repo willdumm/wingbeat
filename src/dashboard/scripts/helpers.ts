@@ -1,4 +1,5 @@
 import { toKnots, toFeet } from '../../shared/format';
+import { relativeTime } from '@wingbeat/core/time';
 
 /** Pure utility functions shared across multiple modules. */
 export function dashboardScriptsHelpers(): string {
@@ -36,13 +37,10 @@ export function dashboardScriptsHelpers(): string {
 
     ${toFeet.toString()}
 
+    ${relativeTime.toString()}
+
     function relTime(epoch) {
-      if (!epoch) return 'never';
-      const sec = Math.floor(Date.now() / 1000) - epoch;
-      if (sec < 60) return 'just now';
-      if (sec < 3600) return Math.floor(sec / 60) + ' min ago';
-      if (sec < 86400) return Math.floor(sec / 3600) + ' hr ago';
-      return Math.floor(sec / 86400) + ' days ago';
+      return relativeTime(Date.now() / 1000, epoch);
     }
 
     function copyToClipboard(text, btnEl, labelEl) {

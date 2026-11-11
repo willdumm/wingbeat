@@ -1821,6 +1821,19 @@ account list loads or changes. `FlightsProvider` refreshes the active trackers o
 when the handshake is `ok`. Jest resolves core's own imports from the app's `node_modules`
 (`moduleDirectories`), as Metro does.
 
+Done: step 6. The Live tab is the map over the status cards. `apps/mobile/src/lib/map-style.ts`
+builds the MapLibre style (one raster source per basemap and overlay that is on, `{s}`
+expanded into a `tiles` list, `{r}` as `@2x` on a high-density screen, a detectRetina
+basemap as 128 px tiles, proxy paths made absolute on the account's host), and `live.ts` the
+cards, the positions and the in-flight tracks from core's `live`. `tile-auth.ts` adds the
+bearer to requests matching `^https://<host>/api/tiles/` when the account's token is read.
+Pills over the map pick the basemap and toggle overlays (reset to the basemap's defaults, as
+on the web); the choice isn't kept yet (step 8). What both clients show moved to core:
+`TRACKER_COLORS`/`trackerColor()` (`live`), `relativeTime()` (`time`), `toKnots`/`toFeet`
+(new `format`) and `overlayDefaultEnabled()` (`basemaps`); the web embeds or binds them. Positions
+are circles in the tracker's color (no plane icon: it needs an image asset). The map waits for
+the bootstrap, so offline with no answer yet it shows "Loading…".
+
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with
    its config plugin (`expo-notifications`, `expo-location`, `expo-task-manager`,

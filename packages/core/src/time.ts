@@ -2,7 +2,7 @@
  * Calendar helpers in the operator's timezone (the tenant's `timezone` setting, an IANA
  * zone passed in as `tz`): local dates, months and times of an epoch, the epoch of a local
  * date and time, and the one way to show a time, with its zone abbreviation. Plus date-key
- * arithmetic and labels and H:MM durations, which involve no timezone.
+ * arithmetic and labels, H:MM durations and relative times, which involve no timezone.
  *
  * Epochs are Unix seconds. Date keys are 'YYYY-MM-DD' operator days.
  */
@@ -188,4 +188,14 @@ export function tzDaysInMonth(y: number, m: number): number {
 export function fmtDuration(secs: number, up?: boolean): string {
   const mins = up ? Math.ceil(secs / 60) : Math.floor(secs / 60);
   return Math.floor(mins / 60) + ':' + String(mins % 60).padStart(2, '0');
+}
+
+/** How long ago a Unix time was, roughly ("just now", "5 min ago", "2 hr ago", "3 days ago"). */
+export function relativeTime(now: number, epoch: number | null): string {
+  if (!epoch) return 'never';
+  const sec = Math.floor(now) - epoch;
+  if (sec < 60) return 'just now';
+  if (sec < 3600) return Math.floor(sec / 60) + ' min ago';
+  if (sec < 86400) return Math.floor(sec / 3600) + ' hr ago';
+  return Math.floor(sec / 86400) + ' days ago';
 }

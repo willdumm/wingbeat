@@ -21,6 +21,16 @@ const raw = {
 };
 const getRaw = ([id]) => raw[id] ?? [];
 
+describe('trackerColor', () => {
+  test("a tracker keeps its position's color, wrapping the palette; none when inactive", () => {
+    const active = Array.from({ length: 9 }, (_, i) => ({ id: 100 + i }));
+    assert.equal(live.trackerColor(active, 100), live.TRACKER_COLORS[0]);
+    assert.equal(live.trackerColor(active, 101), live.TRACKER_COLORS[1]);
+    assert.equal(live.trackerColor(active, 108), live.TRACKER_COLORS[0]);
+    assert.equal(live.trackerColor(active, 5), null);
+  });
+});
+
 describe('trackerLiveData', () => {
   test('each tracker’s latest flight’s last point, with what the refresh said about it', () => {
     const result = {

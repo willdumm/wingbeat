@@ -15,7 +15,8 @@ import type { PairingTarget } from './pairing-link';
 // A development build has no fingerprint runtime of its own.
 const appHeaders = { [APP_VERSION_HEADER]: appVersionHeaderValue(Updates.runtimeVersion ?? 'dev') };
 
-const origin = (host: string) => 'https://' + host;
+/** An instance's origin. */
+export const origin = (host: string) => 'https://' + host;
 
 export function accountClient(host: string, token: string, onSignedOut: () => void): ApiClient {
   const client = createApiClient({ baseUrl: origin(host), auth: { kind: 'bearer', token }, headers: appHeaders });

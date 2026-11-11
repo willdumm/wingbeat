@@ -48,6 +48,7 @@
     "./edit-history": "./src/edit-history.ts",
     "./elevation": "./src/elevation.ts",
     "./filters": "./src/filters.ts",
+    "./format": "./src/format.ts",
     "./flight-edits": "./src/flight-edits.ts",
     "./flight-store": "./src/flight-store.ts",
     "./live": "./src/live.ts",

@@ -17,14 +17,9 @@ export function dashboardScriptsAircraftCards(): string {
     const AC_GPS_FRESH_DOT_HTML = ${JSON.stringify(gpsFreshDotHtml)};
     const AC_GPS_STALE_DOT_HTML = ${JSON.stringify(gpsStaleDotHtml)};
 
-    // Stable per-tracker color assignment — ColorBrewer Dark2.
-    const TRACKER_COLORS = ['#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02', '#a6761d', '#666666'];
-
-    // A tracker's color: its position among activeTrackers, so colors stay put as long as
-    // the tracker list does.
+    // A tracker's color (core's trackerColor).
     function trackerColorFor(activeTrackers, trackerId) {
-      const idx = activeTrackers.findIndex(t => t.id === trackerId);
-      return idx >= 0 ? TRACKER_COLORS[idx % TRACKER_COLORS.length] : getCssVar('--text-faint', '#7C8A98');
+      return trackerColor(activeTrackers, trackerId) ?? getCssVar('--text-faint', '#7C8A98');
     }
 
     // One status card. live is the tracker's latest flight point ({ garmin_time,

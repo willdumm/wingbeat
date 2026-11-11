@@ -172,3 +172,15 @@ describe('core time, in zones around the world', () => {
     assert.equal(time.tzDayStartUnix('Europe/Berlin', 2026, 1, 32), time.tzDayStartUnix('Europe/Berlin', 2026, 2, 1));
   });
 });
+
+describe('core relativeTime', () => {
+  test('rounds down to minutes, hours, then days', () => {
+    const now = 1_793_739_600;
+    assert.equal(time.relativeTime(now, null), 'never');
+    assert.equal(time.relativeTime(now, now - 59), 'just now');
+    assert.equal(time.relativeTime(now, now - 60), '1 min ago');
+    assert.equal(time.relativeTime(now + 0.9, now - 3599), '59 min ago');
+    assert.equal(time.relativeTime(now, now - 7200), '2 hr ago');
+    assert.equal(time.relativeTime(now, now - 3 * 86400), '3 days ago');
+  });
+});

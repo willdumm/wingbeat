@@ -133,3 +133,18 @@ export function clientBasemapPresets(hasSecret: (name: string) => boolean): Base
     return [{ ...p, url: basemapProxyUrl(p.id) }];
   });
 }
+
+/**
+ * Whether a tile overlay is on by default over a basemap: its default_enabled_by_basemap
+ * entry for that basemap, else default_enabled (also for a basemap the admin couldn't
+ * name, like a viewer's own custom one). Self-contained: the web embeds it in its page
+ * script with toString() (overlayLegendRuntimeScript() in src/shared/map-controls.ts).
+ */
+export function overlayDefaultEnabled(
+  overlay: { default_enabled: number | boolean; default_enabled_by_basemap?: Record<string, boolean> | null },
+  basemapId: string | null,
+): boolean {
+  const byBasemap = overlay.default_enabled_by_basemap;
+  if (basemapId && byBasemap && Object.prototype.hasOwnProperty.call(byBasemap, basemapId)) return !!byBasemap[basemapId];
+  return !!overlay.default_enabled;
+}

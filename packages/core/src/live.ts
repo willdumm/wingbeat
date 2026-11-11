@@ -18,6 +18,18 @@ export const LIVE_FIX_INTERVAL_SECS = 150;
 export const LIVE_POLL_MIN_MS = 30_000;
 export const LIVE_POLL_IDLE_MS = 60_000;
 
+/** The trackers' colors on the map and the status cards (ColorBrewer Dark2), by position. */
+export const TRACKER_COLORS: readonly string[] = ['#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02', '#a6761d', '#666666'];
+
+/**
+ * A tracker's color: its position among the active trackers, so colors stay put as long as
+ * the tracker list does. null for a tracker not among them (the caller's faint text color).
+ */
+export function trackerColor(activeTrackers: { id: number }[], trackerId: number): string | null {
+  const idx = activeTrackers.findIndex(t => t.id === trackerId);
+  return idx >= 0 ? TRACKER_COLORS[idx % TRACKER_COLORS.length] : null;
+}
+
 /** A tracker's live position: its newest raw point, plus what the last refresh said about it. */
 export interface LiveData {
   lat: number;
