@@ -2,7 +2,10 @@ import { Stack } from 'expo-router';
 import { AccountsProvider } from '@/lib/accounts-context';
 import { BootstrapProvider } from '@/lib/bootstrap-context';
 import { FlightsProvider } from '@/lib/flights-context';
+import { applyStoredTheme } from '@/lib/theme';
 import { ClientUpdateGate, useBackgroundUpdates } from '@/lib/updates';
+
+applyStoredTheme();
 
 export default function RootLayout() {
   useBackgroundUpdates();

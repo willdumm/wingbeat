@@ -1847,6 +1847,25 @@ with the tracker's value under a correction. An admin's "Edit" sets the aircraft
 through `PUT /api/flights/assignment` (`flightAssignmentRequest()`, only what changed), then
 refreshes the store; times, labels, Part 91 and removal stay on the web.
 
+Done: step 8. Settings lists the accounts (tap to show one, touch and hold to sign out, "Add
+account"), then the active account's "Open web settings", "Sign out" and "Delete my account",
+then the theme (Light, Dark, System, as on the web). Signing out revokes the account's own
+session (`DELETE /api/me/sessions/<session_id>`, a 401 counting as done) before removing it
+from the phone; a signed-out account is only removed. The web has no cookie for the app's
+bearer, so "Open web settings" makes a device link (`POST /api/me/device-link`) and opens it
+in `expo-web-browser`: the first time, the user taps "Sign in" on the join page, which adds a
+browser session to their Devices list; later links take the signed-in browser straight to
+the dashboard, where Settings is a button (there's no URL that opens it). "Delete my account"
+confirms, calls `DELETE /api/me`, shows the server's refusal as it comes (the shared
+env-configured account, the last admin), and removes the account on success. The theme
+overrides the whole app's color scheme (`Appearance.setColorScheme`, native headers and tabs
+included) and is applied at launch before the first render. What steps 6 and 7 left in memory
+is now kept per account in `expo-sqlite/kv-store` (`apps/mobile/src/lib/prefs.ts`,
+`stored-state.ts`): the map's basemap and overlays (the Live tab and the flight detail share
+them) and the Flights tab's filter and date preset; the keys of removed accounts are dropped
+with their flight caches. Notification subscriptions, auto-logging and the opening tab come
+with phases 7 and 8.
+
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with
    its config plugin (`expo-notifications`, `expo-location`, `expo-task-manager`,

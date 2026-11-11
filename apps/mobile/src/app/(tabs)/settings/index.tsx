@@ -1,41 +1,101 @@
 /**
- * Settings. For now, the accounts: which one the tabs show, removing one, and adding one.
- * Step 8 of phase 5 builds the rest.
+ * Settings: the accounts (switch, add, sign out), the active account's web settings and
+ * deletion, and the theme. Deleting the account is App Review's requirement for an app
+ * where an account can be created (docs/mobile-app-plan.md, "Account deletion").
  */
+import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Alert, Button, Pressable, ScrollView, Text, View } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
+import { Alert, ScrollView } from 'react-native';
+import { apiErrorMessage } from '@wingbeat/core/api/client';
+import { createDeviceLink, deleteMe } from '@wingbeat/core/api/me';
 import { useAccounts } from '@/lib/accounts-context';
 import type { Account } from '@/lib/accounts';
-import { useTokens } from '@/lib/theme';
+import { origin } from '@/lib/api';
+import { ChoiceSection, ListRow, ListSection } from '@/lib/choice-list';
+import { THEME_CHOICES } from '@/lib/prefs';
+import { px, useThemeChoice, useTokens } from '@/lib/theme';
+
+const accountDetail = (a: Account) =>
+  a.host + (a.signedOut ? ' · signed out' : a.user.role === 'admin' ? ' · admin' : '');
 
 export default function SettingsScreen() {
   const t = useTokens();
   const router = useRouter();
-  const { accounts, activeId, setActive, remove } = useAccounts();
+  const { accounts, active, client, setActive, remove, signOut } = useAccounts();
+  const [theme, setTheme] = useThemeChoice();
+  const [busy, setBusy] = useState(false);
 
-  const confirmRemove = (a: Account) => Alert.alert(
-    'Remove this account?',
-    `${a.user.name} on ${a.host}. This phone stays in your Devices list on the web until you sign it out there.`,
-    [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => remove(a.id) }],
+  const run = async (failure: string, fn: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await fn();
+    } catch (err) {
+      Alert.alert(failure, apiErrorMessage(err, err instanceof Error ? err.message : String(err)));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // A signed-out account's session is already gone, so it's only removed from the phone.
+  const confirmSignOut = (a: Account) => a.signedOut
+    ? Alert.alert('Remove this account?', `${a.user.name} on ${a.host}.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => remove(a.id) },
+    ])
+    : Alert.alert('Sign out?', `${a.user.name} on ${a.host}. Adding it again takes a new device link from the web’s Settings.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: () => run('Couldn’t sign out', () => signOut(a.id)) },
+    ]);
+
+  // The web has no session cookie for the app's bearer, so a device link signs the browser
+  // in (once: the link takes a browser that's already signed in straight to the dashboard).
+  const openWeb = (host: string) => run('Couldn’t open the web dashboard', async () => {
+    const { url } = await createDeviceLink(client!);
+    await WebBrowser.openBrowserAsync(origin(host) + url);
+  });
+
+  const confirmDelete = (a: Account) => Alert.alert(
+    'Delete your account?',
+    `This deletes ${a.user.name} on ${a.host} and signs out all your devices. `
+      + 'The flights, duty days and pilot records stay with the operator.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive', onPress: () => run('Couldn’t delete your account', async () => {
+          await deleteMe(client!);
+          await remove(a.id);
+          Alert.alert('Account deleted', `${a.user.name} on ${a.host} is deleted.`);
+        }),
+      },
+    ],
   );
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" style={{ backgroundColor: t['bg-base'] }}
-      contentContainerStyle={{ padding: 16, gap: 8 }}>
-      <Text style={{ color: t['text-muted'], fontSize: 13, textTransform: 'uppercase' }}>Accounts</Text>
-      {accounts.map((a) => (
-        <Pressable key={a.id} onPress={() => setActive(a.id)} onLongPress={() => confirmRemove(a)}
-          style={{ padding: 12, borderRadius: 12, backgroundColor: t['surface-1'], borderWidth: 1,
-            borderColor: a.id === activeId ? t['accent'] : t['border-subtle'] }}>
-          <View style={{ gap: 2 }}>
-            <Text style={{ color: t['text-primary'], fontSize: 16 }}>{a.user.name}</Text>
-            <Text style={{ color: t['text-muted'] }}>
-              {a.host}{a.signedOut ? ' · signed out' : a.user.role === 'admin' ? ' · admin' : ''}
-            </Text>
-          </View>
-        </Pressable>
-      ))}
-      <Button title="Add account" color={t['accent']} onPress={() => router.push('/add-account')} />
+      contentContainerStyle={{ paddingVertical: px(t['space-4']), gap: px(t['space-6']) }}>
+      <ListSection title="Accounts" footer={accounts.length > 1 ? 'Tap an account to show it; touch and hold to sign out.' : undefined}>
+        {accounts.map((a) => (
+          <ListRow key={a.id} label={a.user.name} detail={accountDetail(a)} selected={a.id === active?.id} disabled={busy}
+            onPress={() => setActive(a.id)} onLongPress={() => confirmSignOut(a)} />
+        ))}
+        <ListRow label="Add account" disabled={busy} onPress={() => router.push('/add-account')} />
+      </ListSection>
+
+      {active && (
+        <ListSection title={active.host}
+          footer={active.signedOut ? undefined : 'Trackers, aircraft, pilots, users and notifications are set up in the web dashboard’s Settings.'}>
+          {!active.signedOut && (
+            <ListRow label="Open web settings" disabled={busy || !client} onPress={() => openWeb(active.host)} />
+          )}
+          <ListRow label={active.signedOut ? 'Remove from this phone' : 'Sign out'} disabled={busy} onPress={() => confirmSignOut(active)} />
+          {!active.signedOut && (
+            <ListRow label="Delete my account" destructive disabled={busy || !client} onPress={() => confirmDelete(active)} />
+          )}
+        </ListSection>
+      )}
+
+      <ChoiceSection title="Appearance" choices={THEME_CHOICES} isSelected={(v) => v === theme} onPress={setTheme} />
     </ScrollView>
   );
 }

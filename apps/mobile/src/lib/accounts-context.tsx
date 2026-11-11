@@ -3,7 +3,8 @@
  * (accounts.ts), pairing a new one, and an API client for the active one.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { ApiClient } from '@wingbeat/core/api/client';
+import { ApiHttpError, type ApiClient } from '@wingbeat/core/api/client';
+import { deleteSession, getMe } from '@wingbeat/core/api/me';
 import { createAccountStore, secureKeyValue, type Account, type AccountsState } from './accounts';
 import { accountClient, pairWith } from './api';
 import type { PairingTarget } from './pairing-link';
@@ -18,7 +19,13 @@ interface AccountsValue extends AccountsState {
   /** Pairs with the instance and makes the new account active. Rejects with the API error. */
   addAccount(target: PairingTarget): Promise<Account>;
   setActive(id: string): Promise<void>;
+  /** Removes the account from this phone only: its session stays in the web's Devices list. */
   remove(id: string): Promise<void>;
+  /**
+   * Signs the account's session out on its instance, then removes it. Rejects with the API
+   * error, keeping the account, when the instance can't be reached or refuses.
+   */
+  signOut(id: string): Promise<void>;
 }
 
 const store = createAccountStore(secureKeyValue());
@@ -60,6 +67,21 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
     return next.accounts.find((a) => a.id === next.activeId)!;
   }, []);
 
+  const signOut = useCallback(async (id: string) => {
+    const account = state.accounts.find((a) => a.id === id);
+    const token = account && !account.signedOut ? await store.token(id) : null;
+    if (account && token) {
+      const c = accountClient(account.host, token, () => {});
+      try {
+        await deleteSession(c, (await getMe(c)).session_id);
+      } catch (err) {
+        // A 401: the session is already gone.
+        if (!(err instanceof ApiHttpError && err.status === 401)) throw err;
+      }
+    }
+    setState(await store.remove(id));
+  }, [state.accounts]);
+
   const value = useMemo<AccountsValue>(() => ({
     ...state,
     loaded,
@@ -68,7 +90,8 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
     addAccount,
     setActive: async (id) => setState(await store.setActive(id)),
     remove: async (id) => setState(await store.remove(id)),
-  }), [state, loaded, active, client, addAccount]);
+    signOut,
+  }), [state, loaded, active, client, addAccount, signOut]);
 
   return <AccountsContext.Provider value={value}>{children}</AccountsContext.Provider>;
 }

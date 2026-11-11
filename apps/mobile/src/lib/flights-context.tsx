@@ -13,6 +13,7 @@ import { SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
 import { useAccounts } from './accounts-context';
 import { useBootstrap } from './bootstrap-context';
 import { accountFlightStore, staleFlightCacheKeys } from './flight-cache';
+import { staleAccountPrefKeys } from './prefs';
 
 interface FlightsValue {
   /** null without an active account, or until its cached copy has been read. */
@@ -32,11 +33,11 @@ export function FlightsProvider({ children }: { children: ReactNode }) {
   const [lastRefresh, setLastRefresh] = useState<RefreshResult | null>(null);
   const [generation, setGeneration] = useState(0);
 
-  // Drops the cached copies no account reads any more.
+  // Drops the cached copies and the settings (prefs.ts) no account reads any more.
   useEffect(() => {
     if (!loaded) return;
     Storage.getAllKeys()
-      .then((keys) => Storage.multiRemove(staleFlightCacheKeys(keys, accounts)))
+      .then((keys) => Storage.multiRemove([...staleFlightCacheKeys(keys, accounts), ...staleAccountPrefKeys(keys, accounts)]))
       .catch(() => {});
   }, [loaded, accounts]);
 

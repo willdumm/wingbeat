@@ -3,13 +3,17 @@
  * (map-style.ts), points in their colors (each tracker's position, or a flight's start and
  * end) and tracks (each flight in progress, or the one flight). The layer pills along
  * the top pick the basemap and toggle the overlays; picking a basemap resets the overlays
- * to that basemap's defaults, as on the web.
+ * to that basemap's defaults, as on the web. Each account keeps its choice, between launches
+ * too (prefs.ts), and the Live tab and the flight detail share it.
  */
-import { useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
+import { useImperativeHandle, useMemo, useRef, type Ref } from 'react';
 import { PixelRatio, Pressable, ScrollView, Text, View } from 'react-native';
 import { Camera, GeoJSONSource, Layer, Map, type CameraRef, type InitialViewState } from '@maplibre/maplibre-react-native';
 import type { TileOverlay } from '@wingbeat/core/api/bootstrap';
+import { useAccounts } from './accounts-context';
 import { defaultBasemapId, defaultOverlayIds, liveMapStyle, type MapBasemap } from './map-style';
+import { accountPrefKey, parseMapChoice } from './prefs';
+import { useStoredState } from './stored-state';
 import { px, useTokens } from './theme';
 
 export interface LiveMapRef {
@@ -45,10 +49,10 @@ function Pill({ label, on, onPress }: { label: string; on: boolean; onPress: () 
 export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, ref }: LiveMapProps) {
   const t = useTokens();
   const camera = useRef<CameraRef>(null);
-  const [picked, setPicked] = useState<string | null>(null);
-  const basemap = basemaps.find((b) => b.id === picked) ?? basemaps.find((b) => b.id === defaultBasemapId(basemaps)) ?? null;
-  const [overlayIds, setOverlayIds] = useState<number[] | null>(null);
-  const onIds = overlayIds ?? defaultOverlayIds(overlays, basemap?.id ?? null);
+  const { active } = useAccounts();
+  const [choice, setChoice] = useStoredState(active ? accountPrefKey(active.host, active.user.id, 'map') : null, parseMapChoice);
+  const basemap = basemaps.find((b) => b.id === choice.basemap) ?? basemaps.find((b) => b.id === defaultBasemapId(basemaps)) ?? null;
+  const onIds = choice.overlays ?? defaultOverlayIds(overlays, basemap?.id ?? null);
 
   useImperativeHandle(ref, () => ({
     flyTo: (center) => camera.current?.flyTo({ center, zoom: 10, duration: 800 }),
@@ -88,11 +92,11 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
           contentContainerStyle={{ gap: px(t['space-2']), paddingHorizontal: px(t['space-3']) }}
         >
           {basemaps.length > 1 && basemaps.map((b) => (
-            <Pill key={b.id} label={b.label} on={b.id === basemap?.id} onPress={() => { setPicked(b.id); setOverlayIds(null); }} />
+            <Pill key={b.id} label={b.label} on={b.id === basemap?.id} onPress={() => setChoice({ basemap: b.id, overlays: null })} />
           ))}
           {overlays.map((o) => (
             <Pill key={o.id} label={o.label} on={onIds.includes(o.id)}
-              onPress={() => setOverlayIds(onIds.includes(o.id) ? onIds.filter((id) => id !== o.id) : [...onIds, o.id])} />
+              onPress={() => setChoice({ basemap: basemap?.id ?? null, overlays: onIds.includes(o.id) ? onIds.filter((id) => id !== o.id) : [...onIds, o.id] })} />
           ))}
         </ScrollView>
       )}
