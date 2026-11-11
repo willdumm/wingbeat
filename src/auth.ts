@@ -1,6 +1,7 @@
 import { themeVars, themeFontImport } from './shared/theme';
 import { escapeHtml } from './shared/html';
 import { logoLockupMarkup, brandStyles, logoFaviconHref } from './shared/brand';
+import { cutDeviceName } from '@wingbeat/core/api/me-requests';
 
 /**
  * Auth pages (login/join/error) are always dark — there's no theme toggle before
@@ -70,6 +71,14 @@ export function generateToken(): string {
 export async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
   return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * The name a paired phone's session gets: the phone's own name, cut to the limit
+ * (cutDeviceName in core), or the User-Agent's platform when it's missing or blank.
+ */
+export function pairedDeviceName(name: string | null | undefined, ua: string): string {
+  return cutDeviceName(name ?? '') || deviceNameFromUA(ua);
 }
 
 export function deviceNameFromUA(ua: string): string {

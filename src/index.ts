@@ -12,15 +12,17 @@ import { flightCorrectionKey } from '@wingbeat/core/flight-store';
 import { coreBundle, coreBundlePath } from './shared/core-bundle';
 import { dashboardHTML } from './dashboard';
 import { analyticsHTML } from './analytics';
-import { generateToken, sha256Hex, deviceNameFromUA, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
-import { loadSettings, invalidateSettingsCache } from './settings';
+import { generateToken, sha256Hex, deviceNameFromUA, pairedDeviceName, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
+import { loadSettings, invalidateSettingsCache, settingsAsInstance } from './settings';
 import { keyedBasemapPreset, readEnvSecret, substituteTileUrl } from './shared/map-controls';
 import { lookupTileMetadata, sanitizeAttribution } from './tile-metadata';
 import { MAX_DUTY_DAYS_PER_REQUEST, MAX_FLIGHT_TEXT_LENGTH, MAX_DUTY_NOTE_LENGTH, MAX_FLIGHT_SECS } from '@wingbeat/core/record-limits';
 import { BaseHistoryQuery } from '@wingbeat/core/api/requests';
 import { AssignmentRequest, BulkFlagsRequest, CorrectionRequest } from '@wingbeat/core/api/corrections-requests';
 import { DefaultDutyRequest, DutyDaysClearRequest, DutyDaysRequest, DutyMethodRequest } from '@wingbeat/core/api/duty-requests';
-import { SessionRenameRequest } from '@wingbeat/core/api/me-requests';
+import { MAX_DEVICE_NAME_LENGTH, SessionRenameRequest, deviceNameLength } from '@wingbeat/core/api/me-requests';
+import { PairRequest } from '@wingbeat/core/api/app-requests';
+import { API_VERSION, APP_VERSION_HEADER, MAX_APP_VERSION_LENGTH, MIN_CLIENT_LEVEL } from '@wingbeat/core/api/version';
 import { InviteRequest } from '@wingbeat/core/api/users-requests';
 import { ApplyAssignmentRequest, TestFeedRequest, TrackerCreateRequest, TrackerUpdateRequest } from '@wingbeat/core/api/trackers-requests';
 import { OverlayRequest } from '@wingbeat/core/api/overlays-requests';
@@ -80,17 +82,18 @@ app.onError((err, c) => {
   return c.text('Internal Server Error', 500);
 });
 
-type SessionLookup = { id: number; user_id: number; name: string; role: string; device_name: string | null; last_seen_at: number; token_hashed: number };
+type SessionLookup = { id: number; user_id: number; name: string; role: string; device_name: string | null; last_seen_at: number; token_hashed: number; app_version: string | null };
 
 // Finds the live session for a cookie value. New rows store sha256(cookie) with
 // token_hashed = 1; legacy rows hold the raw cookie with token_hashed = 0. The token_hashed
 // condition keeps a hash read from the DB from working as a cookie. Idle-expired sessions
-// are deleted and reported as absent; legacy rows are upgraded in place.
+// are deleted and reported as absent; legacy rows are upgraded in place. The app's
+// X-Wingbeat-App header is recorded in app_version, written only when it changes.
 async function lookupSession(c: Context<{ Bindings: Env; Variables: Variables }>, raw: string): Promise<SessionLookup | null> {
   const hash = await sha256Hex(raw);
   const db = c.var.db;
   const row = await db.prepare(
-    `SELECT s.id, s.user_id, u.name, u.role, s.device_name, s.last_seen_at, s.token_hashed
+    `SELECT s.id, s.user_id, u.name, u.role, s.device_name, s.last_seen_at, s.token_hashed, s.app_version
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE (s.token = ?1 AND s.token_hashed = 1) OR (s.token = ?2 AND s.token_hashed = 0)`
   ).bind(hash, raw).first<SessionLookup>();
@@ -107,8 +110,16 @@ async function lookupSession(c: Context<{ Bindings: Env; Variables: Variables }>
   if (now - row.last_seen_at > SESSION_TOUCH_SECS) {
     writes.push(db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?').bind(now, row.id).run());
   }
+  const appVersion = c.req.header(APP_VERSION_HEADER)?.slice(0, MAX_APP_VERSION_LENGTH).trim();
+  if (appVersion && appVersion !== row.app_version) {
+    writes.push(db.prepare('UPDATE sessions SET app_version = ? WHERE id = ?').bind(appVersion, row.id).run());
+  }
   if (writes.length) c.executionCtx.waitUntil(Promise.all(writes));
   return row;
+}
+
+function sessionUser(row: SessionLookup): AuthUser {
+  return { id: row.user_id, name: row.name, role: row.role, sessionId: row.id, device_name: row.device_name };
 }
 
 const requireAdmin: MiddlewareHandler<{ Bindings: Env; Variables: Variables }> = async (c, next) => {
@@ -343,16 +354,30 @@ app.use('*', async (c, next) => {
   const path = c.req.path;
 
   if (path === '/login' || path === '/location') return next();
-  if (path.startsWith('/join/')) return next();
+  if (path.startsWith('/join/') || path === '/api/app/pair') return next();
 
   // Admin routes take the bearer token, never a session cookie.
   if (isAdminPath(path)) return requireBearer(c, next);
+
+  // The app sends its session token as a bearer (docs/mobile-app-plan.md, "Auth and
+  // pairing"). The header alone decides: a request that has one is judged by it, any cookie
+  // is ignored, and a failed bearer is a 401 on every path, pages included, which the app
+  // reads as "signed out" rather than following a redirect to /login. An empty header
+  // carries no credential and counts as none.
+  const authorization = c.req.header('Authorization');
+  if (authorization) {
+    const bearer = /^Bearer +(\S+)$/i.exec(authorization)?.[1];
+    const row = bearer ? await lookupSession(c, bearer) : null;
+    if (!row) return c.json({ error: 'This device was signed out. Pair it again to sign in.' }, 401);
+    c.set('user', sessionUser(row));
+    return next();
+  }
 
   const token = getCookie(c, SESSION_COOKIE);
   if (token) {
     const row = await lookupSession(c, token);
     if (row) {
-      c.set('user', { id: row.user_id, name: row.name, role: row.role, sessionId: row.id, device_name: row.device_name });
+      c.set('user', sessionUser(row));
       return next();
     }
   }
@@ -411,22 +436,78 @@ async function hasSession(c: Context<{ Bindings: Env; Variables: Variables }>): 
   return (await lookupSession(c, token)) !== null;
 }
 
+const findJoinToken = (db: D1Database, token: string) =>
+  db.prepare('SELECT * FROM invite_tokens WHERE token = ?').bind(token).first<InviteToken>();
+
+type JoinRefusal = { status: 404 | 410; message: string };
+
+const usedRefusal = (row: InviteToken): JoinRefusal => ({
+  status: 410,
+  message: row.type === 'invite' ? 'This invite link has already been used.' : 'This sign-in link has already been used.',
+});
+
+const INVALID_LINK: JoinRefusal = { status: 404, message: 'This link is invalid.' };
+
+/** Why a join token (an invite or a device link) can't be redeemed now, or null if it can. */
+function joinRefusal(row: InviteToken): JoinRefusal | null {
+  if (row.expires_at < Math.floor(Date.now() / 1000)) {
+    return { status: 410, message: 'This link has expired. Ask an admin for a new one.' };
+  }
+  if (row.used) return usedRefusal(row);
+  return null;
+}
+
+type Redeemed = { sessionToken: string; sessionId: number; userId: number; name: string; role: string };
+
+/**
+ * Redeems a join token for a new session named deviceName: the web's POST /join/:token
+ * and the app's POST /api/app/pair both sign in through here, so the two can't drift. An
+ * invite also creates its account. Returns the new session, or the refusal when another
+ * request redeemed the token first or it expired since joinRefusal looked.
+ */
+async function redeemJoinToken(db: D1Database, row: InviteToken, deviceName: string): Promise<{ ok: true; session: Redeemed } | { ok: false; refusal: JoinRefusal }> {
+  const sessionToken = generateToken();
+  const sessionHash = await sha256Hex(sessionToken);
+  const now = Math.floor(Date.now() / 1000);
+
+  // One D1 batch (a single transaction): the conditional consume goes first and every
+  // later statement is guarded by changes() = 1, so a lost race inserts nothing and a
+  // failure can't burn the link without creating the session (or the account).
+  const consume = db.prepare('UPDATE invite_tokens SET used = 1 WHERE id = ? AND used = 0 AND expires_at >= ?').bind(row.id, now);
+  // Last, in the same transaction: the new session and its user, for the caller's response.
+  const created = db.prepare(
+    `SELECT s.id, s.user_id, u.name, u.role FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token = ? AND s.token_hashed = 1`
+  ).bind(sessionHash);
+  const batch = row.type === 'invite'
+    ? await db.batch([
+      consume,
+      db.prepare('INSERT INTO users (name, role) SELECT ?, ? WHERE changes() = 1').bind(row.invited_name!, row.invited_role!),
+      db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT last_insert_rowid(), ?, 1, ? WHERE changes() = 1')
+        .bind(sessionHash, deviceName),
+      created,
+    ])
+    : await db.batch([
+      consume,
+      db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT ?, ?, 1, ? WHERE changes() = 1')
+        .bind(row.user_id!, sessionHash, deviceName),
+      created,
+    ]);
+  const session = batch.at(-1)!.results[0] as { id: number; user_id: number; name: string; role: string } | undefined;
+  // Lost: joinRefusal looks at the clock again, so a link that expired meanwhile says so.
+  if (!session) return { ok: false, refusal: joinRefusal(row) ?? usedRefusal(row) };
+  return { ok: true, session: { sessionToken, sessionId: session.id, userId: session.user_id, name: session.name, role: session.role } };
+}
+
 app.get('/join/:token', async (c) => {
   const token = c.req.param('token');
-  const [row, settings] = await Promise.all([
-    c.var.db.prepare('SELECT * FROM invite_tokens WHERE token = ?').bind(token).first<InviteToken>(),
-    loadSettings(c.var.tenant),
-  ]);
+  const [row, settings] = await Promise.all([findJoinToken(c.var.db, token), loadSettings(c.var.tenant)]);
 
   const appName = settings.app_name;
-  if (!row) return c.html(joinErrorHTML('This link is invalid.', appName), 404);
+  if (!row) return c.html(joinErrorHTML(INVALID_LINK.message, appName), INVALID_LINK.status);
   if (row.type === 'device_link' && await hasSession(c)) return c.redirect('/');
-  if (row.expires_at < Math.floor(Date.now() / 1000)) {
-    return c.html(joinErrorHTML('This link has expired. Ask an admin for a new one.', appName), 410);
-  }
-  if (row.used) {
-    return c.html(joinErrorHTML(row.type === 'invite' ? 'This invite link has already been used.' : 'This sign-in link has already been used.', appName), 410);
-  }
+  const refusal = joinRefusal(row);
+  if (refusal) return c.html(joinErrorHTML(refusal.message, appName), refusal.status);
 
   if (row.type === 'invite') {
     return c.html(joinHTML('invite', row.invited_name!, token, appName));
@@ -439,52 +520,37 @@ app.get('/join/:token', async (c) => {
 });
 
 app.post('/join/:token', async (c) => {
-  const token = c.req.param('token');
-  const [row, settings] = await Promise.all([
-    c.var.db.prepare('SELECT * FROM invite_tokens WHERE token = ?').bind(token).first<InviteToken>(),
-    loadSettings(c.var.tenant),
-  ]);
+  const [row, settings] = await Promise.all([findJoinToken(c.var.db, c.req.param('token')), loadSettings(c.var.tenant)]);
 
   const appName = settings.app_name;
-  if (!row) return c.html(joinErrorHTML('This link is invalid.', appName), 404);
+  if (!row) return c.html(joinErrorHTML(INVALID_LINK.message, appName), INVALID_LINK.status);
   if (row.type === 'device_link' && await hasSession(c)) return c.redirect('/');
-  if (row.expires_at < Math.floor(Date.now() / 1000)) {
-    return c.html(joinErrorHTML('This link has expired.', appName), 410);
-  }
-  if (row.used) {
-    return c.html(joinErrorHTML(row.type === 'invite' ? 'This invite link has already been used.' : 'This sign-in link has already been used.', appName), 410);
-  }
+  const refusal = joinRefusal(row);
+  if (refusal) return c.html(joinErrorHTML(refusal.message, appName), refusal.status);
 
-  const ua = c.req.header('User-Agent') ?? '';
-  const deviceName = deviceNameFromUA(ua);
-  const sessionToken = generateToken();
-  const sessionHash = await sha256Hex(sessionToken);
-  const now = Math.floor(Date.now() / 1000);
+  const redeemed = await redeemJoinToken(c.var.db, row, deviceNameFromUA(c.req.header('User-Agent') ?? ''));
+  if (!redeemed.ok) return c.html(joinErrorHTML(redeemed.refusal.message, appName), redeemed.refusal.status);
 
-  // One D1 batch (a single transaction): the conditional consume goes first and every
-  // later statement is guarded by changes() = 1, so a lost race inserts nothing and a
-  // failure can't burn the link without creating the session (or the account).
-  let batch;
-  if (row.type === 'invite') {
-    batch = await c.var.db.batch([
-      c.var.db.prepare('UPDATE invite_tokens SET used = 1 WHERE id = ? AND used = 0 AND expires_at >= ?').bind(row.id, now),
-      c.var.db.prepare('INSERT INTO users (name, role) SELECT ?, ? WHERE changes() = 1').bind(row.invited_name!, row.invited_role!),
-      c.var.db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT last_insert_rowid(), ?, 1, ? WHERE changes() = 1')
-        .bind(sessionHash, deviceName),
-    ]);
-  } else {
-    batch = await c.var.db.batch([
-      c.var.db.prepare('UPDATE invite_tokens SET used = 1 WHERE id = ? AND used = 0 AND expires_at >= ?').bind(row.id, now),
-      c.var.db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT ?, ?, 1, ? WHERE changes() = 1')
-        .bind(row.user_id!, sessionHash, deviceName),
-    ]);
-  }
-  if (batch[0].meta.changes !== 1) {
-    return c.html(joinErrorHTML(row.type === 'invite' ? 'This invite link has already been used.' : 'This sign-in link has already been used.', appName), 410);
-  }
-
-  c.header('Set-Cookie', `${SESSION_COOKIE}=${sessionToken}; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_MAX_AGE}; Path=/`);
+  c.header('Set-Cookie', `${SESSION_COOKIE}=${redeemed.session.sessionToken}; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_MAX_AGE}; Path=/`);
   return c.redirect('/');
+});
+
+// The app's pairing (docs/mobile-app-plan.md, "Auth and pairing"): the same redemption as
+// POST /join/:token, but the session token comes back as JSON for the app to send as a
+// bearer, and the session is named after the phone rather than its User-Agent.
+app.post('/api/app/pair', valid('json', PairRequest), async (c) => {
+  const body = c.req.valid('json');
+  const row = await findJoinToken(c.var.db, body.token);
+  if (!row) return c.json({ error: INVALID_LINK.message }, INVALID_LINK.status);
+  const refusal = joinRefusal(row);
+  if (refusal) return c.json({ error: refusal.message }, refusal.status);
+
+  const deviceName = pairedDeviceName(body.device_name, c.req.header('User-Agent') ?? '');
+  const redeemed = await redeemJoinToken(c.var.db, row, deviceName);
+  if (!redeemed.ok) return c.json({ error: redeemed.refusal.message }, redeemed.refusal.status);
+  // The app's X-Wingbeat-App header is recorded from its next request, not this one.
+  const { sessionToken, sessionId, userId, name, role } = redeemed.session;
+  return c.json({ token: sessionToken, me: meJson({ id: userId, name, role, sessionId, device_name: deviceName }) });
 });
 
 // ── Page routes ───────────────────────────────────────────────────────────────
@@ -579,13 +645,27 @@ app.get('/api/me', (c) => {
 });
 
 app.get('/api/bootstrap', async (c) => {
-  const [trackers, aircraft, pilots, overlays] = await Promise.all([
+  const [trackers, aircraft, pilots, overlays, settings] = await Promise.all([
     queryTrackers(c.var.db, c.get('user').role === 'admin'),
     queryAircraft(c.var.db),
     queryPilots(c.var.db),
     queryTileOverlays(c.var.db),
+    loadSettings(c.var.tenant),
   ]);
-  return c.json({ me: meJson(c.get('user')), trackers, aircraft, pilots, overlays });
+  return c.json({
+    me: meJson(c.get('user')), trackers, aircraft, pilots, overlays, instance: settingsAsInstance(settings),
+    api_version: API_VERSION, min_client_level: MIN_CLIENT_LEVEL,
+  });
+});
+
+// Account deletion, started by the user (Settings, in the web and the app; App Review needs
+// it in the app because redeeming an invite there creates an account). This signs out every
+// device of theirs, this one included.
+app.delete('/api/me', async (c) => {
+  const refusal = await deleteUserAccount(c.var.db, c.get('user').id);
+  if (refusal) return c.json({ error: refusal.error }, refusal.status);
+  c.header('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/`);
+  return c.json({ ok: true });
 });
 
 app.get('/api/me/sessions', async (c) => {
@@ -604,7 +684,7 @@ app.patch('/api/me/sessions/:id', valid('json', SessionRenameRequest), async (c)
   const body = c.req.valid('json');
   // null or an empty name clears it (the settings UI sends '' to clear).
   const deviceName = body.device_name?.trim() || null;
-  if (deviceName && deviceName.length > 60) return c.json({ error: 'device_name must be 1-60 characters' }, 400);
+  if (deviceName && deviceNameLength(deviceName) > MAX_DEVICE_NAME_LENGTH) return c.json({ error: `device_name must be 1-${MAX_DEVICE_NAME_LENGTH} characters` }, 400);
 
   const existing = await c.var.db.prepare('SELECT id FROM sessions WHERE id = ? AND user_id = ?')
     .bind(id, u.id).first();
@@ -660,21 +740,34 @@ app.get('/api/users', requireAdmin, async (c) => {
   return c.json({ users: results });
 });
 
+/**
+ * Deletes a user, which cascades to their sessions and device links; their flights, duty
+ * days and corrections are the operator's and stay, and edit_history keeps their name.
+ * Refuses the env-configured admin and the last admin. The last-admin check is part of the
+ * DELETE, so two admins removed at once (by each other, or by themselves) can't leave none.
+ * Shared by DELETE /api/users/:id and DELETE /api/me.
+ */
+async function deleteUserAccount(db: D1Database, id: number): Promise<{ error: string; status: 400 | 404 | 409 } | null> {
+  const { meta } = await db.prepare(
+    `DELETE FROM users WHERE id = ?1 AND is_env_admin = 0
+       AND (role != 'admin' OR (SELECT COUNT(*) FROM users WHERE role = 'admin' AND id != ?1) > 0)`
+  ).bind(id).run();
+  // D1 counts the rows the delete cascades to as well.
+  if (meta.changes > 0) return null;
+  // Refused, or already gone (another device's DELETE /api/me, say): read which.
+  const target = await db.prepare('SELECT is_env_admin FROM users WHERE id = ?').bind(id).first<{ is_env_admin: number }>();
+  if (!target) return { error: 'User not found', status: 404 };
+  if (target.is_env_admin) return { error: 'The shared account cannot be deleted', status: 400 };
+  return { error: 'Cannot delete the last admin. Make another user an admin first.', status: 409 };
+}
+
 app.delete('/api/users/:id', requireAdmin, async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid user id' }, 400);
-
-  const target = await c.var.db.prepare('SELECT id, role, is_env_admin FROM users WHERE id = ?')
-    .bind(id).first<{ id: number; role: string; is_env_admin: number }>();
-  if (!target) return c.json({ error: 'User not found' }, 404);
   if (id === c.get('user').id) return c.json({ error: 'You cannot delete your own account' }, 400);
-  if (target.is_env_admin) return c.json({ error: 'The shared account cannot be deleted' }, 400);
-  if (target.role === 'admin') {
-    const admins = await c.var.db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").first<{ n: number }>();
-    if ((admins?.n ?? 0) <= 1) return c.json({ error: 'Cannot delete the last admin' }, 409);
-  }
 
-  await c.var.db.prepare('DELETE FROM users WHERE id = ?').bind(id).run();
+  const refusal = await deleteUserAccount(c.var.db, id);
+  if (refusal) return c.json({ error: refusal.error }, refusal.status);
   return c.json({ ok: true });
 });
 

@@ -1,6 +1,8 @@
 # Plan: Wingbeat mobile app (Expo)
 
-**Status: phase 1 done**, released as wingbeat v0.3.0 (2026-11-08). Next: phase 2, Web Push.
+**Status: phase 1 done**, released as wingbeat v0.3.0 (2026-11-08). Next: phase 4, the API
+for the app. The app is built whether or not the beacon probe passes, and Web Push (phase 2)
+is deferred while Pushover works (both decided 2026-11-08; see "Phases").
 Done in phase 1: the foundation (`packages/core`, the browser bundle as a
 Text module, the nonce test, the theme tokens), step 1, `time` (core time with zone
 abbreviations, operator days in the flight list, the device-time scan test with its list of
@@ -21,16 +23,19 @@ the v0.3.0 releases have logged no mismatches. All open questions are answered.
 
 - **Audience:** pilots and dispatchers/owners both. The app opens on the screen that fits the
   signed-in user's role (Decision "The app itself").
-- **Order:** web work first (a general refactor of the web app into a typed core, and Web
-  Push to replace Pushover), and a beacon probe in parallel. The app is built only if the probe shows passive matching works.
-  Support for self-hosted instances waits until a self-hoster asks. See "Why this shape and
-  this order" and "Phases".
+- **Order:** web work first (a general refactor of the web app into a typed core), then the
+  app, with a beacon probe in parallel. The app is built whether or not the probe passes;
+  the probe decides only whether passive matching ships. Web Push in the dashboard is
+  deferred: Pushover works, and it's revisited if Pushover stops being good enough. Support
+  for self-hosted instances waits until a self-hoster asks. See "Why this shape and this
+  order" and "Phases".
 - **Pricing:** the app is free with instances Dumm Software hosts. That service is billed
   separately, for setup and infrastructure management, not through the app. Using the app with
   a **self-hosted** instance will be a **one-time $10 in-app purchase per user**, with its
   push notifications going through a push relay run by Dumm Software (Decisions 4 and 6).
   Both are built when the first self-hoster asks. Until then the app pairs only with hosted
-  instances, and self-hosted instances get Web Push in the dashboard, free.
+  instances, and self-hosted instances keep webhooks and Pushover (and Web Push in the
+  dashboard, free, if phase 2 is built).
 - **Apple:** ship first from the existing **individual** account to get going quickly. Get a
   D-U-N-S number and convert the account to an organization (Dumm Software LLC) later. The
   existing cud app on the same account moving to the LLC with it is fine.
@@ -44,8 +49,8 @@ the v0.3.0 releases have logged no mismatches. All open questions are answered.
 1. **Native look.** Use platform UI everywhere it exists (navigation, tabs, sheets, lists,
    menus, pickers, switches) so the app reads as an iOS app on iOS and an Android app on
    Android, not as a web page in a shell.
-2. **Replace Pushover**: first with Web Push from the dashboard, which works on every
-   instance before the app exists, and then with push from the app.
+2. **Replace Pushover** with push from the app. Web Push from the dashboard, which works on
+   every instance without the app, is deferred while Pushover works (phase 2).
 3. **Reuse the web dashboard's logic**, so a rule (duty limits, flight corrections, time
    zones, formatting) lives in one place and both clients agree.
 4. **A platform for passive features**, mainly matching pilots and aircraft to tracker
@@ -132,12 +137,13 @@ from the move, and in phase 1 it can sit on staging with no app release waiting 
   be done on the web, and the native look is nice to have. It's also the biggest piece: a
   Swift and Kotlin module, the Mac, "Always" location review, and matching rules that depend
   on how reliably two OSes report beacons. So it's **proven first, cheaply** (the phase 3
-  probe), and the app is built only if it passes.
+  probe), in parallel with the app's other phases. The app is wanted without it too (decided
+  2026-11-08), so the probe decides whether phase 8 ships, not whether the app is built.
 - **Pushover can be replaced without the app.** Web Push from the dashboard needs no store,
   relay or publisher credentials. Each instance signs with its own VAPID keys, so
   self-hosters get it free too. It lacks iOS Time Sensitive alerts and needs the dashboard
-  on the Home Screen, but it gets operators off Pushover months sooner, and the per-user
-  subscriptions it introduces are the ones the app uses later.
+  on the Home Screen. It would get operators off Pushover sooner, but Pushover works, so
+  it's deferred (phase 2) and app push (phase 7) replaces Pushover instead.
 - **Self-hosted support** (the relay's instance registry, entitlements and the in-app
   purchase) has no user yet, so it waits for one. Building the relay up front was meant to
   avoid re-registering every phone later, but with OTA updates that re-registration takes no
@@ -161,7 +167,8 @@ legal name as the seller. That's fine for TestFlight and a first release. Everyt
 matters later survives the conversion: the bundle ID, the App Store record, ratings,
 TestFlight testers, the APNs key and the EAS credentials.
 
-**Later (start the D-U-N-S request now, since it can take weeks):** ask Apple Developer
+**Later (D-U-N-S number received 2026-11-10; Apple's lookup can take a few business days to
+up to ~2 weeks to show it):** once Apple's D-U-N-S lookup finds it, ask Apple Developer
 Support to **convert the membership from individual to organization**. The team ID, apps,
 certificates and App Store Connect records stay, and the seller becomes the LLC for every
 app on the team, **cud included**. You need:
@@ -891,9 +898,10 @@ whenever it's worth it.
 
 Push comes in three steps. Each one is useful alone, and none of them waits on the next:
 
-1. **Web Push in the dashboard** (phase 2). It replaces Pushover now, months before the app
-   exists, for every instance including self-hosted ones, with no store, relay or publisher
-   credentials.
+1. **Web Push in the dashboard** (phase 2, **deferred** 2026-11-08: Pushover works). It
+   would replace Pushover before the app exists, for every instance including self-hosted
+   ones, with no store, relay or publisher credentials. Build it if Pushover stops being
+   good enough, or for self-hosters who want push without the app.
 2. **App push for hosted instances** (phase 7). The instances you host call Expo's push
    service directly.
 3. **The push relay** (phase 9, when the first self-hoster asks). Self-hosted instances can't
@@ -910,9 +918,10 @@ Subscriptions are per user, and every device a user has registered gets each pus
   device in Settings also stops its pushes), `kind` (`web` or `expo`), `endpoint` (the Web
   Push endpoint URL, or the Expo push token), `p256dh` and `auth` (Web Push only),
   `created_at`, `last_ok_at`, `last_error`. Phase 9 adds `relay_device_id`.
-- Phase 2's migration (`0004_…` or the next free number) adds both tables. Phase 4's adds
-  `sessions.app_version` (see "Versions and compatibility"). Neither table has `edit_history`
-  triggers.
+- Whichever push phase comes first adds both tables in one migration (the next free number):
+  phase 7 now that phase 2 is deferred, with `kind = 'expo'` only until Web Push exists.
+  Phase 4's migration adds `sessions.app_version` (see "Versions and compatibility").
+  Neither table has `edit_history` triggers.
 - `dispatchNotifications()` gains a delivery path for `push_subscriptions` next to the
   `webhooks` targets. It reuses `eventTitle`/`eventMessage`, and `subscriptionKey()` already
   maps `gap_resolved`/`gap_timeout` onto `gap`. Today the function returns early when there
@@ -964,7 +973,9 @@ access token. Without it, anyone holding a device's push token can send to it.
   the token is useless without the access token, and you run both sides.
 - Receipts: the instance keeps the ticket IDs from each send and checks them with Expo on the
   next cron run, deleting devices that come back `DeviceNotRegistered`.
-- The subscriptions UI is the same one as on the web, in native form.
+- Users subscribe in the app (per tracker, per event; `GET`/`PUT /api/me/push-subscriptions`).
+  With phase 2 deferred, this is the first subscriptions UI; if Web Push comes later, its
+  Settings → Notifications is the same controls in web form.
 
 ### Native details
 
@@ -1035,9 +1046,10 @@ hasn't enabled app push simply has no app push (Web Push and webhooks still work
 
 ### Retiring Pushover
 
-Web Push replaces it (phase 2). Keep the `pushover` target type working through a transition
-period. Once the operators you host have moved to Web Push or the app, hide it from new
-targets, then remove it in a later release. Generic webhooks stay for integrations.
+App push replaces it (phase 7), or Web Push (phase 2) if that's built first. Keep the
+`pushover` target type working through a transition period. Once the operators you host
+have moved to the app (or Web Push), hide it from new targets, then remove it in a later
+release. Generic webhooks stay for integrations.
 
 ## Decision 5: passive matching (the background platform)
 
@@ -1049,8 +1061,8 @@ already exists.
 
 Everything below assumes that iOS and Android report per-aircraft beacon enters and exits
 reliably enough, in the background, with the phone in a pocket or bag and the app not opened.
-That's the one assumption the plan can't check on paper, and the app is mostly worth building
-for this feature. So it's tested first, with no server change:
+That's the one assumption the plan can't check on paper. So it's tested before phase 8, with
+no server change, while the app's other phases go ahead:
 
 - **Build:** the real presence module (`apps/mobile/modules/wingbeat-presence`, as under
   "Native module"), so the code carries over to phase 8, inside a minimal `apps/mobile` with
@@ -1074,8 +1086,9 @@ for this feature. So it's tested first, with no server change:
   right aircraft for at least 90%, and **never the wrong one**. Rule 2 never fires against a
   correct assignment. The pilots don't notice a battery cost. Rule 3 (location) is checked
   the same way if any probe tracker has no fixed side.
-- **No-go:** stop after phases 1 and 2 (see "Phases"). If only one platform passes, decide
-  whether passive matching on that platform alone is enough to build the app for.
+- **No-go:** skip phase 8; the app ships without passive matching (see "Phases"). If only
+  one platform passes, decide whether passive matching on that platform alone is worth
+  phase 8.
 
 ### How assignment works today (and stays)
 
@@ -1550,7 +1563,9 @@ account whose operator is in another zone, that's the only correct reading of a 
   cookie request's behavior can't change. A request with the header is judged by the bearer
   alone, and any cookie it also carries is ignored. Test a request with a valid cookie and an
   invalid bearer (`401`), a cookie-only request to an API path without a valid session (`401`,
-  as today), and one to a page (the redirect, as today).
+  as today), and one to a page (the redirect, as today). So nothing in front of an instance
+  may add an `Authorization` header (HTTP basic auth on staging, say): every browser request
+  would then be a `401`. Neither staging nor the hosting layer adds one.
 - The middleware change ships as **its own deploy**, ahead of `/api/app/pair` and
   `DELETE /api/me`, so if web sign-in breaks, the cause is obvious and the revert is small.
 - **Session lifetime:** app sessions use the existing sliding expiry unchanged (90 days idle,
@@ -1614,8 +1629,9 @@ store update should be needed only for a planned native change.
   JS bundle. It goes up when the app's use of the API changes in a way the server needs to
   know about.
 
-The app sends both in an `X-Wingbeat-App` header on every request. The Worker records them
-in `sessions.app_version`.
+The app sends both in an `X-Wingbeat-App` header on every request, as
+`level=<CLIENT_API_LEVEL>; runtime=<runtimeVersion>` (`appVersionHeaderValue()` in core's
+`api/version.ts`). The Worker records it in `sessions.app_version`.
 
 **The handshake.** `GET /api/bootstrap` returns `api_version` (the server's level) and
 `min_client_level`.
@@ -1658,7 +1674,7 @@ in `sessions.app_version`.
   active session on a client level that reads it. The usual way to break the API is: ship the
   JS that stops using the old shape, raise `min_client_level` so stragglers update over the
   air, wait until no sessions show the old level, then remove it.
-- **Contract tests per supported level.** `packages/core/api/compat/` keeps a snapshot of
+- **Contract tests per supported level.** `packages/core/src/api/compat/` keeps a snapshot of
   the response schemas for each supported `CLIENT_API_LEVEL`. `test/worker-sql.test.mjs`
   checks every app route's real response against **every** snapshot, so a change that would
   break a phone in the field fails CI.
@@ -1694,6 +1710,56 @@ in `sessions.app_version`.
 - **Encryption export:** only standard HTTPS, so set `ITSAppUsesNonExemptEncryption` to
   `false` in `app.json`.
 
+### Phase 4 progress
+
+Phase 4 is server work for the app; none of it needs the app to exist, and it's tested
+through the real Worker (`test/worker*.test.mjs`). It's built on the `app-api` branch, one
+commit per step, in this order. Done: step 1, on staging since 2026-11-08 (a bad bearer gets
+the 401 JSON on API paths and pages; no bearer behaves as before); step 2 (`redeemJoinToken()`
+in `src/index.ts` is the one redemption both routes use); step 3 (core's API client takes
+`headers` for the app's `X-Wingbeat-App`); step 4 (`deleteUserAccount()` in `src/index.ts`
+is shared with `DELETE /api/users/:id`, and its last-admin check is part of the `DELETE`
+statement, so two admins leaving at once can't leave none); step 5 (`api/compat/1.ts` covers
+19 routes, listed in its header; the test also fails when a snapshot lists a route it doesn't call). Steps 2–5 are on
+staging since 2026-11-08, with migration 0004 applied first. Production waits on the user;
+there too, apply 0004 before deploying steps 2–5: every signed-in request reads
+`sessions.app_version`, so without the column each one fails.
+Added after step 5: `GET /api/bootstrap` returns `instance` (the app name, the operator's
+timezone and the map's default view, the settings every web page gets), since the app has
+no other way to read the timezone (`GET /api/settings` is admins only); level 1 includes it.
+Then three review rounds (pairing builds its response from the redeem batch, one device-name
+rule counted in code points, `deleteUserAccount` deletes first and reads why only on a
+refusal). The reviewed branch is on staging since 2026-11-08.
+
+1. **Bearer sessions** (its own staging deploy, then its own production deploy, ahead of the
+   rest; see "Auth and pairing"). The session middleware takes `Authorization: Bearer
+   <session token>` on every non-admin path. A request with the header is judged by the
+   bearer alone (any cookie is ignored), and a failed bearer is a `401` JSON on any path,
+   pages included, never the `/login` redirect. A session bearer never satisfies
+   `/api/admin/*`, and the `POLLER_SECRET` bearer never works as a session. Requests
+   without the header behave as today. Tests in `test/worker-auth.test.mjs`.
+2. **`POST /api/app/pair`**: exchanges a device-link or invite token for a session, with
+   the same consumption logic as `POST /join/:token` (one shared function, so the two
+   can't drift), but returns `{ token, me }` as JSON instead of setting a cookie, and names
+   the session from the app's `device_name`. Outside the session middleware like
+   `/join/*`. Request schema in `api/app-requests.ts`, response schema in `api/app.ts`,
+   shape test in `test/worker-sql.test.mjs`. The web's "Add phone" QR code (Settings →
+   Devices) comes with the app's scanner in phase 5.
+3. **Version handshake**: `CLIENT_API_LEVEL`, `API_VERSION` and `MIN_CLIENT_LEVEL` in core
+   (`api/version.ts`); `api_version` and `min_client_level` in `GET /api/bootstrap`; the
+   `X-Wingbeat-App` header recorded in `sessions.app_version` (migration `0004_`, the
+   phase's one migration), written at most when it changes.
+4. **`DELETE /api/me`** and the web's "Delete my account" in Settings (see "Account
+   deletion"): refuses the env admin and the last admin, deletes the `users` row and
+   relies on the cascades. `push_subscriptions`, `presence_events` and `users.pilot_id`
+   don't exist yet; the phases that add them extend the route.
+5. **The first compat snapshot**: `packages/core/src/api/compat/1.ts` freezes the response
+   schemas of the routes the app calls at level 1, and `test/worker-sql.test.mjs` checks
+   each of those routes' real responses against every snapshot.
+
+Strict parsing in the web client isn't a step here: it waits on production staying quiet
+(phase 1's leftovers), and issue #8 comes before it.
+
 ## Rollout and risk to the web dashboard
 
 Phases 1, 2, 4, 6 and 8 change code the web dashboard runs, and the dashboard is what operators
@@ -1721,10 +1787,13 @@ use every day. The app can slip. The dashboard can't break. So:
 ## Phases
 
 The order follows "Why this shape and this order": first the web work, which pays off without
-the app; then a probe to prove passive matching, the one goal that needs native code; and the
-app itself only once the probe passes.
+the app; then the app, with a probe in parallel to prove passive matching, the one goal that
+needs native code. Until 2026-11-08 the app's phases waited on the probe (a gate after phase
+3). That gate is gone: the app is wanted with or without passive matching, so only phase 8
+waits on the probe. Phase 2 is deferred while Pushover works. Phase numbers are kept as they
+were, so references elsewhere in this doc stay valid.
 
-**Before the gate (start now; phases 1–3 can run in parallel):**
+**Web work and the probe (phases 1–3; 1 is done, 2 is deferred):**
 
 0. **Accounts.** Create the Expo org and EAS project, and register the bundle ID on the
    individual Apple account (the probe's internal builds need both). Request the D-U-N-S
@@ -1752,7 +1821,9 @@ app itself only once the probe passes.
      what's still a script string (the PDF builder, flight-edits' chips) plus the bundle's
      smoke test. Worth doing even if the app never ships. Phases 2 and 3 don't
      wait for it.
-2. **Web Push in the dashboard; retire Pushover** (Decision 4, step 1). `push_subscriptions`
+2. **Deferred (2026-11-08): Web Push in the dashboard; retire Pushover** (Decision 4, step
+   1). Pushover works, so this waits until it doesn't, or until a self-hoster wants push
+   without the app. As planned: `push_subscriptions`
    and `push_devices` (one migration), per-instance VAPID keys in `settings`, Web Push sending
    with WebCrypto (tested against the RFC 8291 vector), `/sw.js` and the web app manifest,
    Settings → Notifications for every user, delivery in `dispatchNotifications()` ahead of
@@ -1761,14 +1832,11 @@ app itself only once the probe passes.
    desktop browser, Android Chrome, and an iPhone with the dashboard on its Home Screen.
 3. **Beacon probe** (Decision 5, "Before building it: the beacon probe"). The presence module
    in a minimal internal build, iBeacons in two or three aircraft, two or three weeks of real
-   flying, and the analysis script. **Ends in the go/no-go decision.** No server change.
+   flying, and the analysis script. **Ends in the go/no-go decision for phase 8 only.** No
+   server change. Runs alongside phases 4–7; it needs phase 0's accounts, the beacons and
+   the pilots.
 
-**The gate.** Phases 4–8 start only if the probe passes. If it doesn't, stop there: phases 1
-and 2 have already delivered the code-quality and Pushover wins. Then decide whether an app
-without passive matching is still worth it, or whether a better mobile web dashboard (it
-already has a manifest and Web Push from phase 2) covers the rest.
-
-**After a go:**
+**The app (phases 4–7 start now; phase 8 only after a go):**
 
 4. **API for the app:** bearer sessions with `401` responses (the middleware in its own
    deploy first), `/api/app/pair`, schemas for the app-only routes and their response-shape
@@ -1776,7 +1844,8 @@ already has a manifest and Web Push from phase 2) covers the rest.
    bootstrap, the `X-Wingbeat-App` header and `sessions.app_version` (one migration),
    `DELETE /api/me` (with the web button). The web client's schema parsing goes strict once
    phase 1's warn-only releases have logged no mismatches, if it hasn't already.
-5. **App shell:** Expo project in `apps/mobile` (around the probe's presence module) with
+5. **App shell:** Expo project in `apps/mobile` (the probe's app if it exists by then,
+   otherwise a new one the probe's presence module joins) with
    every planned Expo native module installed up front (see "Versions and compatibility"),
    Sentry, the in-app QR scanner and pairing (hosted instances only), Live and Flights
    screens with MapLibre and the shared basemap catalog and a flight store per account, the
@@ -1786,10 +1855,13 @@ already has a manifest and Web Push from phase 2) covers the rest.
 6. **Duty log in the app:** the app's duty log on `@wingbeat/core/duty` (extracted in phase
    1), and the role-based first tab (`users.pilot_id`).
 7. **App push and the first App Store release** (Decision 4, step 2): `EXPO_ACCESS_TOKEN` on
-   hosted instances, `POST /api/me/push-devices`, Expo delivery and receipt checks next to Web
-   Push, channels, categories, Time Sensitive gap alerts and deep links. First App Store
+   hosted instances, `push_subscriptions` and `push_devices` (one migration, since phase 2
+   is deferred), `POST /api/me/push-devices`, subscriptions in the app, Expo delivery in
+   `dispatchNotifications()` (ahead of its no-webhooks early return, isolated from the
+   webhook and Pushover sends) and receipt checks, channels, categories, Time Sensitive gap alerts and deep links. First App Store
    release (iOS, individual account). Android goes to Play once the Play organization account
-   exists; until then it stays on EAS internal distribution.
+   exists; until then it stays on EAS internal distribution. Then move the operators you
+   host off Pushover and retire it (see "Retiring Pushover").
 8. **Passive matching** (a planned native release): the presence module from the probe
    (CoreLocation on iOS, AltBeacon on Android), location fixes around beacons, the offline
    event queue and `POST /api/presence/events`, `trackers.current_*` and stamping from them
@@ -1851,3 +1923,8 @@ not only what the app needs, and every route the web calls gets schemas. Times a
 shown in the operator's timezone with its abbreviation, whatever the device's zone. Instants
 stay stored as UTC epochs, and duty records stay local dates and wall-clock times on
 purpose.
+
+Answered 2026-11-08, after phase 1's release: the app is built whether or not the beacon
+probe passes, so the gate after phase 3 is gone and only phase 8 waits on the probe. Web Push
+in the dashboard (phase 2) is deferred because Pushover works; app push (phase 7) replaces
+Pushover instead. Next is phase 4.

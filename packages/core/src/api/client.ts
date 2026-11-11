@@ -15,6 +15,8 @@ export interface ApiClientOptions {
   /** '' for the page's own origin. */
   baseUrl?: string;
   auth?: Auth;
+  /** Sent with every request (the app's X-Wingbeat-App, api/version.ts). */
+  headers?: Record<string, string>;
   /**
    * What a response that doesn't match its schema does: 'strict' throws an ApiShapeError,
    * 'warn' logs it and returns the data as it came (the web, until a release shows no
@@ -112,13 +114,15 @@ export interface ApiClient {
 export function createApiClient({
   baseUrl = '',
   auth = { kind: 'cookie' },
+  headers = {},
   mismatch = 'strict',
   fetch: getFetch = () => globalThis.fetch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   warn = (message, detail) => console.warn(message, detail),
 }: ApiClientOptions = {}): ApiClient {
-  const authHeaders = (): Record<string, string> =>
-    auth.kind === 'bearer' ? { Authorization: 'Bearer ' + auth.token } : {};
+  // The caller's headers (the app's X-Wingbeat-App) and, for a bearer, Authorization.
+  const requestHeaders = (): Record<string, string> =>
+    auth.kind === 'bearer' ? { ...headers, Authorization: 'Bearer ' + auth.token } : { ...headers };
 
   function parse<S extends z.ZodMiniType>(path: string, schema: S, body: unknown): z.infer<S> {
     const parsed = z.safeParse(schema, body);
@@ -173,13 +177,13 @@ export function createApiClient({
 
   return {
     get(path, schema) {
-      return request(path, { headers: authHeaders() }, schema);
+      return request(path, { headers: requestHeaders() }, schema);
     },
 
     write(method, path, body, schema) {
       return request(path, {
         method,
-        headers: body === undefined ? authHeaders() : { ...authHeaders(), 'Content-Type': 'application/json' },
+        headers: body === undefined ? requestHeaders() : { ...requestHeaders(), 'Content-Type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
       }, schema);
     },

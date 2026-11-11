@@ -4,7 +4,8 @@
 // (base_history_id), plus route validation around them, and GET /api/flights/complete's
 // ground trail, the response shapes of the flights, duty, bootstrap, trackers, aircraft and
 // pilots reads, the writes exactly as the web sends them (through @wingbeat/core's client,
-// which checks their responses too), and the request validation (the core request schemas).
+// which checks their responses too), the request validation (the core request schemas),
+// and the app routes' responses against every compat snapshot (core's api/compat/<level>.ts).
 // test/worker.mjs runs src/index.ts in Miniflare on a fresh D1 database with every
 // migration applied (Miniflare's SQLite may differ slightly from production D1's).
 //
@@ -14,6 +15,9 @@
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import * as z from 'zod/mini';
+import { readdirSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { startWorker } from './worker.mjs';
 import { importCore } from './core.mjs';
 
@@ -1142,5 +1146,166 @@ describe('request validation: the regions and named-points writes', () => {
       const r = await w.request(method, path, body);
       assert.deepEqual([r.status, r.body.error], [400, error], method + ' ' + path + ' ' + JSON.stringify(body));
     }
+  });
+});
+
+// The routes only the app calls, through core's strict client as the app will call them:
+// no cookie, and the paired session's token as a bearer afterwards.
+describe('the app’s requests, through the core client', async () => {
+  const { createApiClient, ApiHttpError } = await importCore('api/client');
+  const app = await importCore('api/app');
+  const me = await importCore('api/me');
+  const { getBootstrap } = await importCore('api/bootstrap');
+  const version = await importCore('api/version');
+  const client = (auth, headers) => createApiClient({ baseUrl: 'http://localhost', fetch: () => w.fetch, auth, headers });
+  const deviceLink = async () => (await w.request('POST', '/api/me/device-link')).body.url.replace('/join/', '');
+
+  test('pair: a device link for a session token that works as a bearer', async () => {
+    const link = await deviceLink();
+    const paired = await app.pair(client(), { token: link, device_name: 'Test phone' });
+    assert.deepEqual([paired.me.id, paired.me.device_name], [1, 'Test phone']);
+    const user = await me.getMe(client({ kind: 'bearer', token: paired.token }));
+    assert.equal(user.session_id, paired.me.session_id);
+    await assert.rejects(app.pair(client(), { token: link }),
+      (e) => e instanceof ApiHttpError && e.status === 410 && e.serverError === 'This sign-in link has already been used.');
+  });
+
+  test('deleteMe: an invited account deletes itself, and its bearer is signed out', async () => {
+    const { token: invite } = (await w.request('POST', '/api/invites', { name: 'Short Stay', role: 'viewer' })).body;
+    const { token } = await app.pair(client(), { token: invite });
+    const asApp = client({ kind: 'bearer', token });
+    assert.deepEqual(await me.deleteMe(asApp), { ok: true });
+    await assert.rejects(me.getMe(asApp), (e) => e instanceof ApiHttpError && e.status === 401);
+  });
+
+  test('the version handshake: bootstrap’s levels, and X-Wingbeat-App recorded only when it changes', async () => {
+    const { token, me: { session_id } } = await app.pair(client(), { token: await deviceLink() });
+    const appVersion = async () => (await w.first('SELECT app_version FROM sessions WHERE id = ?', session_id)).app_version;
+    const settled = async (want) => {
+      for (const deadline = Date.now() + 5000; await appVersion() !== want && Date.now() < deadline;) await new Promise(res => setTimeout(res, 50));
+      return appVersion();
+    };
+    const asApp = (runtime) => client({ kind: 'bearer', token }, { [version.APP_VERSION_HEADER]: version.appVersionHeaderValue(runtime) });
+
+    // The settings every page gets, and none of the others (gap alerts, the Pushover token).
+    const instance = { app_name: 'Handshake Air', timezone: 'America/Denver', map_default_lat: 40.5, map_default_lng: -105.25, map_default_zoom: 9 };
+    const before = (await w.request('GET', '/api/settings')).body;
+    assert.equal((await w.request('PATCH', '/api/settings', { ...instance, pushover_api_token: 'secret-token' })).status, 200);
+    let boot;
+    try {
+      boot = await getBootstrap(asApp('r1'));
+    } finally {
+      // The later tests run in the settings they had before.
+      const defaults = { app_name: 'Wingbeat', timezone: 'UTC', map_default_lat: 30, map_default_lng: 0, map_default_zoom: 2, pushover_api_token: '' };
+      const restore = Object.fromEntries(Object.entries(defaults).map(([k, v]) => [k, before[k] ?? v]));
+      assert.equal((await w.request('PATCH', '/api/settings', restore)).status, 200);
+    }
+    assert.deepEqual([boot.api_version, boot.min_client_level], [version.API_VERSION, version.MIN_CLIENT_LEVEL]);
+    assert.deepEqual(boot.instance, instance);
+    assert.equal(await settled('level=1; runtime=r1'), 'level=1; runtime=r1');
+    await me.getMe(asApp('r2'));
+    assert.equal(await settled('level=1; runtime=r2'), 'level=1; runtime=r2');
+    // Unchanged, it isn't rewritten (a trigger counts the writes); a request without it (or
+    // with a blank one) leaves the last one.
+    await w.run('CREATE TABLE app_version_writes (session_id INTEGER)');
+    await w.run(`CREATE TRIGGER app_version_writes_au AFTER UPDATE OF app_version ON sessions
+      BEGIN INSERT INTO app_version_writes VALUES (NEW.id); END`);
+    try {
+      await me.getMe(asApp('r2'));
+      await me.getMe(client({ kind: 'bearer', token }));
+      await me.getMe(client({ kind: 'bearer', token }, { [version.APP_VERSION_HEADER]: '  ' }));
+      assert.equal(await appVersion(), 'level=1; runtime=r2');
+      // A change after them, rather than a sleep, gives their writes (if any) time to land:
+      // the trigger's count is then this change's one write.
+      await me.getMe(asApp('r3'));
+      await settled('level=1; runtime=r3');
+      assert.equal((await w.first('SELECT COUNT(*) AS n FROM app_version_writes')).n, 1);
+    } finally {
+      await w.run('DROP TRIGGER app_version_writes_au');
+      await w.run('DROP TABLE app_version_writes');
+    }
+    await me.getMe(client({ kind: 'bearer', token }, { [version.APP_VERSION_HEADER]: 'x'.repeat(150) }));
+    assert.equal(await settled('x'.repeat(version.MAX_APP_VERSION_LENGTH)), 'x'.repeat(version.MAX_APP_VERSION_LENGTH));
+  });
+});
+
+// Every compat snapshot (packages/core/src/api/compat/<level>.ts, one per supported client
+// API level), against the routes' real responses: a server change that would break an app
+// still on an older level fails here. A level's new file joins by itself; a route it lists
+// that nothing below calls fails until a call is added.
+describe('compat snapshots: the app’s routes, against every supported level', async () => {
+  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../packages/core/src/api/compat');
+  const levels = readdirSync(dir).filter(f => /^\d+\.ts$/.test(f)).map(f => f.replace('.ts', '')).sort((a, b) => a - b);
+  const snapshots = await Promise.all(levels.map(level => importCore('api/compat/' + level)));
+
+  test('the version constants agree with the levels that have snapshots', async () => {
+    const version = await importCore('api/version');
+    assert.equal(version.MIN_CLIENT_LEVEL, Number(levels[0]));
+    assert.equal(version.API_VERSION, Number(levels.at(-1)));
+    assert.ok(version.CLIENT_API_LEVEL >= version.MIN_CLIENT_LEVEL && version.CLIENT_API_LEVEL <= version.API_VERSION);
+  });
+
+  test('each listed route’s responses parse with each level’s schema', async () => {
+    assert.ok(levels.length > 0);
+    /** Real responses by '<METHOD> <route>', as the snapshots key them. */
+    const seen = new Map();
+    const call = async (route, url, body, opts) => {
+      const r = await w.request(route.split(' ')[0], url, body, opts);
+      assert.equal(r.status, 200, route + ' ' + JSON.stringify(r.body));
+      seen.set(route, [...(seen.get(route) ?? []), r.body]);
+      return r.body;
+    };
+
+    // Pairing, and the account a bearer deletes.
+    const link = (await w.request('POST', '/api/me/device-link')).body.url.replace('/join/', '');
+    await call('POST /api/app/pair', '/api/app/pair', { token: link, device_name: 'Compat phone' }, { as: null });
+    const { token: invite } = (await w.request('POST', '/api/invites', { name: 'Compat Stay', role: 'viewer' })).body;
+    const { token } = await call('POST /api/app/pair', '/api/app/pair', { token: invite }, { as: null });
+    await call('DELETE /api/me', '/api/me', undefined, { as: null, headers: { authorization: 'Bearer ' + token } });
+    await call('GET /api/bootstrap', '/api/bootstrap');
+    await call('GET /api/bootstrap', '/api/bootstrap', undefined, { as: 'viewer' });
+    await call('GET /api/me', '/api/me');
+    await call('GET /api/me/sessions', '/api/me/sessions');
+    await call('POST /api/me/ping', '/api/me/ping');
+
+    // Live and Flights: a tracked flight with its points, a correction and a manual flight.
+    const t = next();
+    const fid = await trackerFlight(t, t + 1800);
+    for (const [time, v] of [[t, 60], [t + 1800, 10]]) {
+      const pid = (await w.run('INSERT INTO points (garmin_time, lat, lon, velocity_kmh, tracker_id) VALUES (?, 58, -154, ?, 1) RETURNING id', time, v)).results[0].id;
+      await w.run('INSERT INTO point_flights (point_id, flight_id) VALUES (?, ?)', pid, fid);
+    }
+    const complete = await call('GET /api/flights/complete', '/api/flights/complete?tracker=1');
+    await call('GET /api/flights/complete', '/api/flights/complete?tracker=1&since=' + complete.last_modified_at);
+    await call('GET /api/flights/complete', '/api/flights/complete?tracker=999');
+    const m = await mark();
+    await call('POST /api/flight-corrections', '/api/flight-corrections', { tracker_id: 1, flight_start_time: t, remark: 'Compat' });
+    const { entry: manual } = await call('POST /api/flight-corrections', '/api/flight-corrections',
+      { pilot_id: 1, start_time: next(), end_time: clock + 600 });
+    await call('PUT /api/flight-corrections/:id', '/api/flight-corrections/' + manual.id,
+      { pilot_id: 2, start_time: manual.start_time, end_time: manual.end_time + 600 });
+    await call('POST /api/flight-corrections/bulk', '/api/flight-corrections/bulk',
+      { flights: [{ tracker_id: 1, flight_start_time: t }, { entry_id: manual.id }], set: { part91: true } });
+    await call('PUT /api/flights/assignment', '/api/flights/assignment', { flight_ids: [fid], entry_ids: [manual.id], pilot_id: 2 });
+    await call('GET /api/flight-corrections', '/api/flight-corrections');
+    await call('GET /api/flight-corrections', '/api/flight-corrections?since=' + m);
+    await call('DELETE /api/flight-corrections/:id', '/api/flight-corrections/' + manual.id);
+
+    // The duty log.
+    await call('PUT /api/duty-days/:pilot', '/api/duty-days/1', { dates: ['2028-03-01'], duty_start: '07:00', duty_end: '15:00', note: 'Compat' });
+    await call('PUT /api/duty-days/:pilot', '/api/duty-days/1', { dates: ['2028-03-02'], rest: true });
+    await call('PUT /api/pilots/:id/default-duty', '/api/pilots/1/default-duty', { effective_date: '2028-03-01', duty_start: '08:00', duty_end: '17:00' });
+    await call('GET /api/duty-days', '/api/duty-days?pilot=1');
+    await call('GET /api/duty-days', '/api/duty-days?pilot=999');
+    await call('GET /api/duty-methods', '/api/duty-methods');
+    await call('POST /api/duty-days/:pilot/clear', '/api/duty-days/1/clear', { dates: ['2028-03-01', '2028-03-02'] });
+    await call('DELETE /api/pilots/:id/default-duty/:date', '/api/pilots/1/default-duty/2028-03-01');
+
+    levels.forEach((level, i) => {
+      for (const [route, schema] of Object.entries(snapshots[i].responses)) {
+        assert.ok(seen.has(route), `level ${level} lists ${route}, which this test doesn’t call`);
+        for (const body of seen.get(route)) assertShape(schema, body);
+      }
+    });
   });
 });

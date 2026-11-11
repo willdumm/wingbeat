@@ -24,8 +24,8 @@ const { Miniflare } = await import(process.env.WINGBEAT_MINIFLARE
   ? pathToFileURL(path.join(process.env.WINGBEAT_MINIFLARE, 'dist/src/index.js')).href
   : 'miniflare');
 
-const ADMIN_TOKEN = 'test-admin-session';
-const VIEWER_TOKEN = 'test-viewer-session';
+export const ADMIN_TOKEN = 'test-admin-session';
+export const VIEWER_TOKEN = 'test-viewer-session';
 
 export async function sha256Hex(s) {
   const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
@@ -70,6 +70,7 @@ export function splitSql(sql) {
  *                                         (as: null sends no session cookie; headers are added to the request; raw sends a
  *                                         string body as it is; the result also has the response `headers`)
  *   adminFetch(url, init)                 fetch as the signed-in admin, for @wingbeat/core's API client
+ *   fetch(url, init)                      fetch with no session cookie, for the app's client (bearer or none)
  * startWorker({ bindings }) overrides Worker bindings (a value of undefined leaves one unset).
  *   db                                    the D1 binding, for seeding and checking rows
  *   all(sql, ...params) / first(sql, ...params) / run(sql, ...params)  shorthands on it
@@ -137,6 +138,7 @@ export async function startWorker({ bindings: overrides = {} } = {}) {
       adminFetch: (url, init = {}) => mf.dispatchFetch(url, {
         ...init, headers: { ...init.headers, cookie: 'session=' + ADMIN_TOKEN }, redirect: 'manual',
       }),
+      fetch: (url, init = {}) => mf.dispatchFetch(url, { ...init, redirect: 'manual' }),
       all: async (sql, ...params) => (await stmt(sql, params).all()).results,
       first: (sql, ...params) => stmt(sql, params).first(),
       run: (sql, ...params) => stmt(sql, params).run(),
