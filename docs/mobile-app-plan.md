@@ -1803,6 +1803,16 @@ the background). A `wingbeat://pair` link asks before signing in, since any app 
 open it. Settings has a minimal account list (tap to switch, long-press to remove) until
 step 8.
 
+Done: step 4. `handshake()` in `apps/mobile/src/lib/handshake.ts` decides from the active
+account's bootstrap (loaded on account change and on return to the foreground); the oldest
+server level the app works with is the app's `MIN_SERVER_API_VERSION`, and a server without
+`api_version` counts as too old. A client too old doesn't read the update's level from its
+manifest (that would mean a level in the config's `extra`, which the fingerprint hashes): it
+fetches the newest update for its runtime and reloads, and if the handshake still fails with
+no newer update left, it shows "Update the app". expo-updates checks on launch by itself; the
+app adds the check on return to the foreground. The iOS store link waits for the App Store
+record (step 12).
+
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with
    its config plugin (`expo-notifications`, `expo-location`, `expo-task-manager`,
