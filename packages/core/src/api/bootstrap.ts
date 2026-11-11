@@ -1,6 +1,6 @@
 /**
  * GET /api/bootstrap: what the dashboard and the app load first, in one request: the
- * signed-in user, the trackers, aircraft, pilots and tile overlays, the instance's
+ * signed-in user, the trackers, aircraft, pilots, tile overlays and basemaps, the instance's
  * settings, and the version handshake (api/version.ts). Response objects allow unknown
  * keys, so an instance may add fields without breaking older clients.
  */
@@ -36,6 +36,21 @@ export const InstanceSettings = z.looseObject({
   map_default_zoom: z.number(),
 });
 
+/**
+ * A built-in basemap as the client sees it (clientBasemapPresets() in ../basemaps.ts):
+ * `url` is a tile template with `{z}`/`{x}`/`{y}`, and may have `{s}` (a subdomain,
+ * TILE_SUBDOMAINS) and `{r}` (`@2x` on a high-density screen, or nothing). A keyed one's
+ * `url` is a path on the instance (`/api/tiles/…`) that needs the session. attribution is HTML.
+ */
+export const Basemap = z.looseObject({
+  id: z.string(),
+  label: z.string(),
+  url: z.string(),
+  attribution: z.string(),
+  maxZoom: z.number(),
+  detectRetina: z.optional(z.boolean()),
+});
+
 /** GET /api/bootstrap */
 export const BootstrapResponse = z.looseObject({
   me: Me,
@@ -43,6 +58,8 @@ export const BootstrapResponse = z.looseObject({
   aircraft: z.array(Aircraft),
   pilots: z.array(Pilot),
   overlays: z.array(TileOverlay),
+  /** The built-in basemaps, in display order (absent from servers older than the app). */
+  basemaps: z.optional(z.array(Basemap)),
   /** Absent from servers older than the handshake, like api_version. */
   instance: z.optional(InstanceSettings),
   /** The server's API level (absent from servers older than the handshake). */
@@ -52,6 +69,7 @@ export const BootstrapResponse = z.looseObject({
 });
 
 export type Me = z.infer<typeof Me>;
+export type Basemap = z.infer<typeof Basemap>;
 export type InstanceSettings = z.infer<typeof InstanceSettings>;
 export type BootstrapResponse = z.infer<typeof BootstrapResponse>;
 

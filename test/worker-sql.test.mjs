@@ -708,9 +708,24 @@ describe('response shapes: bootstrap, trackers, aircraft and pilots', async () =
     assert.equal(boot.aircraft.find(a => a.tail_number === 'N2').maintenance_schedule.length, 3);
     assert.equal(boot.overlays.length, 2);
     assert.ok(boot.pilots.find(p => p.id === 1).default_duties.length >= 1);
+    // No CARTO_API_KEY here, so no Map (Carto) basemap; the keyless ones keep their upstream URL.
+    assert.deepEqual(boot.basemaps.map(b => b.id), ['topo', 'usgstopo', 'usgsimagerytopo', 'satellite']);
+    assert.ok(boot.basemaps.every(b => b.url.startsWith('https://')));
     assert.deepEqual((await getTrackers(client)).trackers, boot.trackers);
     assert.deepEqual((await getAircraft(client)).aircraft, boot.aircraft);
     assert.deepEqual((await getPilots(client)).pilots, boot.pilots);
+  });
+
+  test('with CARTO_API_KEY set: the Map basemap first, as the proxy path, without the key', async () => {
+    const w2 = await startWorker({ bindings: { CARTO_API_KEY: 'test-carto-key' } });
+    try {
+      const boot = (await w2.request('GET', '/api/bootstrap')).body;
+      assertShape(BootstrapResponse, boot);
+      assert.deepEqual(boot.basemaps[0], { ...boot.basemaps[0], id: 'map', url: '/api/tiles/map/{z}/{x}/{y}{r}.png' });
+      assert.ok(!JSON.stringify(boot).includes('test-carto-key'));
+    } finally {
+      await w2.dispose();
+    }
   });
 
   test('as a viewer: trackers without their feed URL', async () => {

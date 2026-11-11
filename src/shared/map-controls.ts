@@ -1,4 +1,5 @@
 import { Env } from '../types';
+import { clientBasemapPresets, DEFAULT_ENABLED_BASEMAPS, type BasemapPreset } from '@wingbeat/core/basemaps';
 
 /**
  * Local (per-device) basemap layer configuration, stored in localStorage —
@@ -11,89 +12,6 @@ const MAP_LAYERS_ENABLED_KEY = 'ft_map_layers_enabled';
 const MAP_LAYERS_CUSTOM_KEY = 'ft_map_layers_custom';
 const MAP_LAYER_COLORS_KEY = 'ft_map_layer_colors';
 
-interface BasemapPreset {
-  id: string;
-  label: string;
-  url: string;
-  attribution: string;
-  maxZoom: number;
-  /** Only set true when `url` actually contains `{r}` — otherwise Leaflet's retina
-   * fallback silently fetches tiles a zoom level deeper (4x the requests on retina
-   * screens) instead of real @2x tiles, which is what overloaded OpenTopoMap's
-   * server and caused gray tiles on iPad/iPhone. */
-  detectRetina?: boolean;
-  /**
-   * Set only for presets that require a hoster-held key (e.g. Carto). `url` is then
-   * the *upstream* template — fetched server-side by the `/api/tiles/:providerId`
-   * proxy, never by the browser directly — with `{KEY}` substituted for the secret
-   * named here (read from `env[secretEnvVar]`, a Worker secret, never per-tenant D1
-   * data).
-   */
-  secretEnvVar?: string;
-}
-
-/**
- * Built-in basemap choices. Order here is the default display order.
- *
- * This is also the server-side registry for the keyed-tile proxy (`/api/tiles/...`
- * in src/index.ts) — the *only* place allowed to construct an upstream tile URL. A
- * preset's `url` is the real upstream template regardless of whether it's keyed;
- * `clientBasemapPresets()` is what rewrites it to a same-origin proxy path for
- * presets that have a `secretEnvVar`.
- */
-const BASEMAP_PRESETS: BasemapPreset[] = [
-  {
-    id: 'map',
-    label: 'Map',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key={KEY}',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    maxZoom: 18,
-    secretEnvVar: 'CARTO_API_KEY',
-  },
-  {
-    id: 'topo',
-    label: 'Topo',
-    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; <a href="https://opentopomap.org" target="_blank">OpenTopoMap</a> (CC-BY-SA)',
-    maxZoom: 17,
-  },
-  {
-    id: 'usgstopo',
-    label: 'USGS Topo',
-    url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Tiles courtesy of the <a href="https://www.usgs.gov/" target="_blank">U.S. Geological Survey</a>',
-    maxZoom: 16,
-  },
-  {
-    id: 'usgsimagerytopo',
-    label: 'USGS Imagery Topo',
-    url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Tiles courtesy of the <a href="https://www.usgs.gov/" target="_blank">U.S. Geological Survey</a>',
-    maxZoom: 16,
-  },
-  {
-    id: 'satellite',
-    label: 'Satellite',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
-    maxZoom: 18,
-    detectRetina: true,
-  },
-];
-
-/**
- * The preset list for a page with no app Worker behind it (the docs site's showcase):
- * every preset, with keyed ones still carrying their `{KEY}` placeholder. The page
- * fills it in at runtime from a public, referrer-restricted key, or drops those presets
- * when it has none (see src/showcase/scripts.ts).
- */
-export function staticSiteBasemapPresets(): BasemapPreset[] {
-  return BASEMAP_PRESETS;
-}
-
-/** Layers enabled by default on a device that has never touched this setting. */
-const DEFAULT_ENABLED_PRESETS = ['map', 'topo', 'satellite'];
-
 /** Reads a hoster/deployment-level tile provider secret out of the Worker's `env`.
  * Never per-tenant — same dynamic-key cast pattern as `tenantDb()` in src/index.ts,
  * since the set of possible env var names is open-ended (one per keyed provider). */
@@ -101,43 +19,11 @@ export function readEnvSecret(env: Env, key: string): string | undefined {
   return (env as unknown as Record<string, string | undefined>)[key] || undefined;
 }
 
-/** Looks up a keyed preset by id for the tile proxy route. Returns undefined for an
- * unknown id or a preset that isn't keyed (proxying a keyless preset is undesirable, so
- * the route 404s on it same as an unknown id). */
-export function keyedBasemapPreset(id: string): BasemapPreset | undefined {
-  return BASEMAP_PRESETS.find((p) => p.id === id && p.secretEnvVar);
-}
-
-/** Substitutes `{s}`/`{z}`/`{x}`/`{y}`/`{r}`/`{KEY}` into a preset's upstream URL
- * template. The only place allowed to build an upstream tile-provider URL. */
-export function substituteTileUrl(
-  template: string,
-  params: { s: string; z: string; x: string; y: string; r: string; key: string },
-): string {
-  return template
-    .replace(/\{s\}/g, params.s)
-    .replace(/\{z\}/g, params.z)
-    .replace(/\{x\}/g, params.x)
-    .replace(/\{y\}/g, params.y)
-    .replace(/\{r\}/g, params.r)
-    .replace(/\{KEY\}/g, encodeURIComponent(params.key));
-}
-
-/**
- * The preset list as the *client* should see it, computed per-request from `env`:
- * keyless presets pass through unchanged; a keyed preset is only included when its
- * secret is configured, and its `url` is rewritten to the same-origin proxy path so
- * the key itself never reaches the browser. A preset whose secret is unset is simply
- * absent — no error state, no disabled/"fixed" entry. Consumed by
- * mapLayersRuntimeScript(); also the projection that determines what
- * `_ftRenderAddLayerPresetOptions()` can offer.
- */
-export function clientBasemapPresets(env: Env): BasemapPreset[] {
-  return BASEMAP_PRESETS.flatMap((p) => {
-    if (!p.secretEnvVar) return [p];
-    if (!readEnvSecret(env, p.secretEnvVar)) return [];
-    return [{ ...p, url: `/api/tiles/${p.id}/{z}/{x}/{y}{r}.png` }];
-  });
+/** The client preset list (clientBasemapPresets() in @wingbeat/core/basemaps) for the
+ * secrets this Worker has configured. The pages inline it; GET /api/bootstrap returns it
+ * as `basemaps` for the app. */
+export function envBasemapPresets(env: Env): BasemapPreset[] {
+  return clientBasemapPresets((name) => !!readEnvSecret(env, name));
 }
 
 /**
@@ -145,7 +31,7 @@ export function clientBasemapPresets(env: Env): BasemapPreset[] {
  * `sharedTileLayerDefs`/`sharedMapControlsScripts` call) — defines the shared plumbing
  * for the per-device layer set:
  *   _ftPresets                 — the built-in preset list, projected for the client via
- *                                 clientBasemapPresets(env) (parsed once, shared by every map)
+ *                                 envBasemapPresets(env) (parsed once, shared by every map)
  *   _ftGetEnabledIds/_ftSaveEnabledIds     — which preset/custom ids are currently active
  *   _ftGetCustomLayers/_ftSaveCustomLayers — user-added custom layer definitions
  *   _ftActiveLayerDefs()        — ordered list of layer defs (presets, then customs) that
@@ -155,9 +41,10 @@ export function clientBasemapPresets(env: Env): BasemapPreset[] {
  *                                  sharedMapControlsScripts); _ftNotifyLayersChanged()
  *                                  runs all of them so Settings edits apply live, with no
  *                                  page reload needed.
- * `presets` overrides the list for pages without a Worker (see staticSiteBasemapPresets).
+ * `presets` overrides the list for pages without a Worker (see staticSiteBasemapPresets()
+ * in @wingbeat/core/basemaps).
  */
-export function mapLayersRuntimeScript(env: Env, presets: BasemapPreset[] = clientBasemapPresets(env)): string {
+export function mapLayersRuntimeScript(env: Env, presets: BasemapPreset[] = envBasemapPresets(env)): string {
   return `
     var _ftPresets = ${JSON.stringify(presets)};
     var _ftMapRefreshers = [];
@@ -166,8 +53,8 @@ export function mapLayersRuntimeScript(env: Env, presets: BasemapPreset[] = clie
       try {
         var raw = localStorage.getItem('${MAP_LAYERS_ENABLED_KEY}');
         var ids = raw ? JSON.parse(raw) : null;
-        return (Array.isArray(ids) && ids.length > 0) ? ids : ${JSON.stringify(DEFAULT_ENABLED_PRESETS)}.slice();
-      } catch (_) { return ${JSON.stringify(DEFAULT_ENABLED_PRESETS)}.slice(); }
+        return (Array.isArray(ids) && ids.length > 0) ? ids : ${JSON.stringify(DEFAULT_ENABLED_BASEMAPS)}.slice();
+      } catch (_) { return ${JSON.stringify(DEFAULT_ENABLED_BASEMAPS)}.slice(); }
     }
     function _ftSaveEnabledIds(ids) { localStorage.setItem('${MAP_LAYERS_ENABLED_KEY}', JSON.stringify(ids)); }
     function _ftGetCustomLayers() {

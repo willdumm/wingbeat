@@ -1788,6 +1788,13 @@ repo; see `apps/mobile/AGENTS.md`). Background-location modes and the full-accur
 motion and Face ID strings are left out of the first binary: phase 8 adds what presence
 needs in its own native release.
 
+Done: step 2. The catalog is `@wingbeat/core/basemaps`; the Worker keeps `readEnvSecret()`
+and passes `clientBasemapPresets()` a has-secret lookup (`envBasemapPresets(env)` in
+`src/shared/map-controls.ts`). Bootstrap's `basemaps` is optional in the level 1 snapshot,
+since a v0.4.0 server can pair the app but doesn't send it: the app falls back to core's
+keyless presets there. A basemap `url` may have `{s}` (`TILE_SUBDOMAINS`) and `{r}`, which
+the app's MapLibre style expands itself (MapLibre takes `tiles` lists, not `{s}`).
+
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with
    its config plugin (`expo-notifications`, `expo-location`, `expo-task-manager`,

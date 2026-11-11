@@ -42,6 +42,7 @@
     "./api/version": "./src/api/version.ts",
     "./api/webhooks": "./src/api/webhooks.ts",
     "./api/webhooks-requests": "./src/api/webhooks-requests.ts",
+    "./basemaps": "./src/basemaps.ts",
     "./corrections": "./src/corrections.ts",
     "./duty": "./src/duty.ts",
     "./edit-history": "./src/edit-history.ts",

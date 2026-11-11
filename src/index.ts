@@ -14,7 +14,8 @@ import { dashboardHTML } from './dashboard';
 import { analyticsHTML } from './analytics';
 import { generateToken, sha256Hex, deviceNameFromUA, pairedDeviceName, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
 import { loadSettings, invalidateSettingsCache, settingsAsInstance } from './settings';
-import { keyedBasemapPreset, readEnvSecret, substituteTileUrl } from './shared/map-controls';
+import { envBasemapPresets, readEnvSecret } from './shared/map-controls';
+import { keyedBasemapPreset, substituteTileUrl, TILE_SUBDOMAINS } from '@wingbeat/core/basemaps';
 import { lookupTileMetadata, sanitizeAttribution } from './tile-metadata';
 import { MAX_DUTY_DAYS_PER_REQUEST, MAX_FLIGHT_TEXT_LENGTH, MAX_DUTY_NOTE_LENGTH, MAX_FLIGHT_SECS } from '@wingbeat/core/record-limits';
 import { BaseHistoryQuery } from '@wingbeat/core/api/requests';
@@ -577,12 +578,11 @@ app.get('/location', async (c) => {
 
 // ── Tile proxy route (keyed basemap providers) ───────────────────────────────
 //
-// Only presets with `secretEnvVar` set (see BASEMAP_PRESETS in shared/map-controls.ts)
+// Only presets with `secretEnvVar` set (see BASEMAP_PRESETS in @wingbeat/core/basemaps)
 // route through here — keyless presets are fetched by the browser directly from the
 // upstream CDN, unchanged. This is the only route allowed to build an upstream tile
 // URL or read a tile-provider secret.
 
-const TILE_SUBDOMAINS = ['a', 'b', 'c']; // matches Leaflet's default `subdomains` option
 const TILE_Y_FILE = /^(\d+)(@2x)?\.png$/;
 
 app.get('/api/tiles/:providerId/:z/:x/:yFile', async (c) => {
@@ -653,7 +653,8 @@ app.get('/api/bootstrap', async (c) => {
     loadSettings(c.var.tenant),
   ]);
   return c.json({
-    me: meJson(c.get('user')), trackers, aircraft, pilots, overlays, instance: settingsAsInstance(settings),
+    me: meJson(c.get('user')), trackers, aircraft, pilots, overlays, basemaps: envBasemapPresets(c.env),
+    instance: settingsAsInstance(settings),
     api_version: API_VERSION, min_client_level: MIN_CLIENT_LEVEL,
   });
 });

@@ -101,12 +101,22 @@ const TileOverlay = z.looseObject({
   default_enabled_by_basemap: z.nullable(z.record(z.string(), z.boolean())),
 });
 
+const Basemap = z.looseObject({
+  id: z.string(),
+  label: z.string(),
+  url: z.string(),
+  attribution: z.string(),
+  maxZoom: num,
+  detectRetina: z.optional(z.boolean()),
+});
+
 const BootstrapResponse = z.looseObject({
   me: Me,
   trackers: z.array(Tracker),
   aircraft: z.array(Aircraft),
   pilots: z.array(Pilot),
   overlays: z.array(TileOverlay),
+  basemaps: z.optional(z.array(Basemap)),
   instance: z.optional(z.looseObject({
     app_name: z.string(),
     timezone: z.string(),

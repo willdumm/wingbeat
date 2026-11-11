@@ -8,7 +8,8 @@
  */
 import { Env } from '../types';
 import { themeRuntimeScript } from '../shared/theme';
-import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, sharedTileLayerDefs, sharedMapControlsScripts, staticSiteBasemapPresets } from '../shared/map-controls';
+import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, sharedTileLayerDefs, sharedMapControlsScripts } from '../shared/map-controls';
+import { staticSiteBasemapPresets } from '@wingbeat/core/basemaps';
 import { filterScript } from '../shared/filters';
 import { sharedSidebarToggleScripts } from '../shared/sidebar';
 import { aircraftInfoRenderScript } from '../shared/aircraft-info';
