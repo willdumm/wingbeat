@@ -1813,6 +1813,14 @@ no newer update left, it shows "Update the app". expo-updates checks on launch b
 app adds the check on return to the foreground. The iOS store link waits for the App Store
 record (step 12).
 
+Done: step 5. `apps/mobile/src/lib/flight-cache.ts` keys each account's blob
+`flights.v<FLIGHT_CACHE_FORMAT>.<host>.<user id>` in `expo-sqlite/kv-store`: the format
+version is in the key, and blobs of other formats or of removed accounts are dropped when the
+account list loads or changes. `FlightsProvider` refreshes the active trackers on core's
+`nextLivePoll` schedule while the app is in the foreground, at once on return to it, and only
+when the handshake is `ok`. Jest resolves core's own imports from the app's `node_modules`
+(`moduleDirectories`), as Metro does.
+
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with
    its config plugin (`expo-notifications`, `expo-location`, `expo-task-manager`,

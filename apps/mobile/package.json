@@ -49,6 +49,10 @@
   "private": true,
   "license": "AGPL-3.0-or-later",
   "jest": {
-    "preset": "jest-expo"
+    "preset": "jest-expo",
+    "moduleDirectories": [
+      "node_modules",
+      "<rootDir>/node_modules"
+    ]
   }
 }

@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 import { AccountsProvider } from '@/lib/accounts-context';
 import { BootstrapProvider } from '@/lib/bootstrap-context';
+import { FlightsProvider } from '@/lib/flights-context';
 import { ClientUpdateGate, useBackgroundUpdates } from '@/lib/updates';
 
 export default function RootLayout() {
@@ -8,13 +9,15 @@ export default function RootLayout() {
   return (
     <AccountsProvider>
       <BootstrapProvider>
-        <ClientUpdateGate>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="add-account" options={{ presentation: 'modal', headerShown: true, title: 'Add account' }} />
-            <Stack.Screen name="pair" options={{ presentation: 'modal', headerShown: true, title: 'Add account' }} />
-          </Stack>
-        </ClientUpdateGate>
+        <FlightsProvider>
+          <ClientUpdateGate>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="add-account" options={{ presentation: 'modal', headerShown: true, title: 'Add account' }} />
+              <Stack.Screen name="pair" options={{ presentation: 'modal', headerShown: true, title: 'Add account' }} />
+            </Stack>
+          </ClientUpdateGate>
+        </FlightsProvider>
       </BootstrapProvider>
     </AccountsProvider>
   );
