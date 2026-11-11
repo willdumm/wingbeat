@@ -1782,6 +1782,12 @@ Settled at the start (2026-11-11):
   `/api/tiles`, which needs a session. MapLibre RN 11's `TransformRequestManager.addHeader()`
   adds `Authorization` to requests matching the account's host, and only those.
 
+Done: step 1 (EAS project `@dummsoftware/wingbeat`, id `ab9f03ef-…`; the app runs on the
+system Node 24, not the repo's `nix` shell, and EAS CLI needs `EAS_NO_VCS=1` in this jj
+repo; see `apps/mobile/AGENTS.md`). Background-location modes and the full-accuracy,
+motion and Face ID strings are left out of the first binary: phase 8 adds what presence
+needs in its own native release.
+
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with
    its config plugin (`expo-notifications`, `expo-location`, `expo-task-manager`,
