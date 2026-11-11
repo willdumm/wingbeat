@@ -32,7 +32,10 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/jest": "30.0.0",
     "@types/react": "~19.3.0",
+    "jest": "~30.5.2",
+    "jest-expo": "~58.0.14",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -40,8 +43,12 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "type-check": "tsc --noEmit",
-    "doctor": "expo-doctor"
+    "doctor": "expo-doctor",
+    "test": "jest"
   },
   "private": true,
-  "license": "AGPL-3.0-or-later"
+  "license": "AGPL-3.0-or-later",
+  "jest": {
+    "preset": "jest-expo"
+  }
 }

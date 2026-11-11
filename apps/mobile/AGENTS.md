@@ -19,6 +19,7 @@ Node 20 is too old for this SDK:
 ```bash
 npx expo install <package>   # never plain npm install for Expo packages: picks SDK-compatible versions
 npm run type-check
+npm test                     # Jest (jest-expo): __tests__/*-test.ts, for app logic in src/lib
 npx expo-doctor
 npx expo export --platform ios --platform android --output-dir <scratch dir>   # does it bundle?
 ```
