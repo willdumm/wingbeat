@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef } from 'react';
 import { View } from 'react-native';
 import { trackerLiveData } from '@wingbeat/core/live';
 import { useAccounts } from '@/lib/accounts-context';
@@ -11,16 +11,7 @@ import { availableBasemaps } from '@/lib/map-style';
 import { Placeholder } from '@/lib/placeholder';
 import { StatusCards } from '@/lib/status-cards';
 import { useTokens } from '@/lib/theme';
-
-/** The clock in Unix seconds, ticking every 30 s, for the cards' "GPS 5 min ago". */
-function useNow(): number {
-  const [now, setNow] = useState(() => Date.now() / 1000);
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now() / 1000), 30_000);
-    return () => clearInterval(id);
-  }, []);
-  return now;
-}
+import { useNow } from '@/lib/use-now';
 
 export default function LiveScreen() {
   const t = useTokens();
@@ -28,7 +19,7 @@ export default function LiveScreen() {
   const { bootstrap, handshake } = useBootstrap();
   const { store, lastRefresh, generation } = useFlights();
   const map = useRef<LiveMapRef>(null);
-  const now = useNow();
+  const now = useNow(30_000);  // the cards' "GPS 5 min ago"
 
   const trackers = useMemo(() => bootstrap?.trackers.filter((tr) => tr.active && !tr.deleted) ?? [], [bootstrap]);
   const live = useMemo(

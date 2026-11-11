@@ -1834,6 +1834,19 @@ on the web); the choice isn't kept yet (step 8). What both clients show moved to
 are circles in the tracker's color (no plane icon: it needs an image asset). The map waits for
 the bootstrap, so offline with no answer yet it shows "Loading…".
 
+Done: step 7. The Flights tab lists the active trackers' effective flights (the store's
+`getAll()`, removed flights left out, as on the dashboard) under sticky operator-day headings,
+newest first, each with its zoned time, duration, route, assignment and remarks, a † on a
+corrected time or label and a "Manual" chip (`apps/mobile/src/lib/flights.ts`). The filter
+sheet uses core's `FilterState` and `matchesFlight()`, with date presets (today, the last 7,
+30 or 90 operator days) instead of the web's from/to inputs, so it needs no date picker; it
+lasts while the app runs and resets on an account switch, and isn't kept yet. Days don't
+collapse and have no "Map all". The detail shows the track on the Live tab's map (now taking
+a bounds initial view), its start and end (a manual flight's named points), and each field
+with the tracker's value under a correction. An admin's "Edit" sets the aircraft and pilot
+through `PUT /api/flights/assignment` (`flightAssignmentRequest()`, only what changed), then
+refreshes the store; times, labels, Part 91 and removal stay on the web.
+
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with
    its config plugin (`expo-notifications`, `expo-location`, `expo-task-manager`,

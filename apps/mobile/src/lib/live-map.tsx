@@ -1,12 +1,13 @@
 /**
- * The Live map: the basemap and overlays the user picked (map-style.ts), each tracker's
- * position in its color, and the track of each flight in progress. The layer pills along
+ * The map of the Live tab and the flight detail: the basemap and overlays the user picked
+ * (map-style.ts), points in their colors (each tracker's position, or a flight's start and
+ * end) and tracks (each flight in progress, or the one flight). The layer pills along
  * the top pick the basemap and toggle the overlays; picking a basemap resets the overlays
  * to that basemap's defaults, as on the web.
  */
 import { useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
 import { PixelRatio, Pressable, ScrollView, Text, View } from 'react-native';
-import { Camera, GeoJSONSource, Layer, Map, type CameraRef } from '@maplibre/maplibre-react-native';
+import { Camera, GeoJSONSource, Layer, Map, type CameraRef, type InitialViewState } from '@maplibre/maplibre-react-native';
 import type { TileOverlay } from '@wingbeat/core/api/bootstrap';
 import { defaultBasemapId, defaultOverlayIds, liveMapStyle, type MapBasemap } from './map-style';
 import { px, useTokens } from './theme';
@@ -19,7 +20,7 @@ interface LiveMapProps {
   basemaps: MapBasemap[];
   overlays: TileOverlay[];
   origin: string;
-  initialView: { center: [number, number]; zoom: number };
+  initialView: InitialViewState;
   positions: GeoJSON.FeatureCollection;
   tracks: GeoJSON.FeatureCollection;
   ref?: Ref<LiveMapRef>;
