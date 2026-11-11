@@ -1763,6 +1763,72 @@ Released as v0.4.0 (PR #9) on 2026-11-11. Production got step 1 alone first, the
 Strict parsing in the web client isn't a step here: it waits on production staying quiet
 (phase 1's leftovers), and issue #8 comes before it.
 
+### Phase 5 progress
+
+Phase 5 builds the app on the `app-shell` branch, one commit per step, in this order. No
+probe app exists, so `apps/mobile` is new, and the presence module joins it in phase 8.
+Settled at the start (2026-11-11):
+
+- **Expo SDK 58** (current; cud-app is on 57), React Native's New Architecture, dev builds.
+- **Core without a workspace:** `apps/mobile/package.json` depends on
+  `"@wingbeat/core": "file:../../packages/core"`, and `metro.config.js` adds `packages/core`
+  to `watchFolders`, so Metro compiles core's TypeScript like the app's own. The app keeps its
+  own `package-lock.json`, and the root `npm test` doesn't install it.
+- **The scanner reads the web's existing QR codes.** Settings → Devices already shows a
+  device-link QR code of `https://<host>/join/<token>`, and invites are the same URL. The
+  scanner accepts that URL as well as `wingbeat://pair?host=…&token=…`, so every link the web
+  makes today pairs a phone, and the web change is only wording ("Add phone").
+- **Tiles through the proxy carry the bearer.** Keyed basemaps (Carto) come through
+  `/api/tiles`, which needs a session. MapLibre RN 11's `TransformRequestManager.addHeader()`
+  adds `Authorization` to requests matching the account's host, and only those.
+
+1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
+   native stack headers, TypeScript, and every native module the plan uses installed with
+   its config plugin (`expo-notifications`, `expo-location`, `expo-task-manager`,
+   `expo-background-task`, `expo-camera`, `expo-secure-store`, `expo-sqlite`,
+   `expo-web-browser`, `expo-updates`, `@expo/ui`, `@maplibre/maplibre-react-native`,
+   `@sentry/react-native`). `app.config.ts`: `dev.dummthings.wingbeat`, scheme `wingbeat`,
+   owner `dummsoftware`, `runtimeVersion: { policy: 'fingerprint' }`,
+   `ITSAppUsesNonExemptEncryption: false`, permission strings. `eas.json` with
+   `development`, `preview` and `production` profiles. `eas init` creates the EAS project.
+   Done when `tsc`, `expo-doctor` and `expo export` (iOS and Android) pass and
+   `expo prebuild` makes both native projects.
+2. **The basemap catalog in core.** `BASEMAP_PRESETS` and its client projection move from
+   `src/shared/map-controls.ts` to `packages/core/src/basemaps.ts`, and `GET /api/bootstrap`
+   gains `basemaps` (the client presets, keyed ones as proxy paths) for the app, which has no
+   page to inline them into. Level 1's snapshot gets the field (it's editable until the first
+   release). Done when `npm test`, `type-check` and `docs:showcase --check` pass.
+3. **Accounts and pairing.** An account list `{ host, token, user }` in
+   `expo-secure-store`, one core API client per account (bearer and `X-Wingbeat-App`), a
+   `401` marks the account signed out. The "Add account" screen: `expo-camera` scanner,
+   the hosted-instance check, `POST /api/app/pair`, and the `wingbeat://` fallback link.
+   Jest covers parsing what was scanned and the account store. Where the hosted-instance
+   list is published (the hosting repo knows the hosts) is settled at this step.
+4. **Version handshake and OTA.** The bootstrap check and its three outcomes (client too old:
+   fetch the update and reload, or "Update the app"; server too old; otherwise background
+   updates on launch and foreground). The decision is a pure function with Jest tests.
+5. **Flight store per account.** `createFlightStore` on `expo-sqlite/kv-store`, keyed by
+   host and user, with the cache's format version, refreshed on a foreground timer and on
+   return to the foreground. Jest with an in-memory store.
+6. **Live.** MapLibre with a style built from the bootstrap's basemaps and overlays, tracker
+   positions and in-flight tracks, and the status cards as a native list from core's `live`.
+7. **Flights.** The list with day grouping and filters, the flight detail with its track,
+   times, labels and assignment, and the assignment edit for admins.
+8. **Settings.** Accounts (add, sign out, switch), theme, a link to the web's settings, and
+   "Delete my account" (`DELETE /api/me`, with its refusals shown).
+9. **Sentry.** Init with the host, API level and update ID as tags and no flight or location
+   data; source maps uploaded by EAS Build and EAS Update.
+10. **Dev builds and Maestro.** The first `development` builds on an iPhone and an Android
+    phone (the user signs in to Apple at the first iOS build), then Maestro flows for pairing,
+    Live, flight detail and sign-out.
+11. **The `demo` tenant and the privacy policy.** A hosted `demo` customer seeded from the
+    showcase sample data with a scripted tracker, a review pairing code that doesn't expire
+    and works only there, and the privacy policy on the docs site. How the tracker moves and
+    how the review code is scoped are settled at this step.
+12. **TestFlight and Android internal distribution.** A `preview` build to TestFlight
+    (internal testers first) and to EAS internal distribution for Android, and the first
+    `eas update` to the preview channel.
+
 ## Rollout and risk to the web dashboard
 
 Phases 1, 2, 4, 6 and 8 change code the web dashboard runs, and the dashboard is what operators
