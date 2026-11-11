@@ -1,7 +1,8 @@
 # Plan: Wingbeat mobile app (Expo)
 
-**Status: phase 1 done**, released as wingbeat v0.3.0 (2026-11-08). Next: phase 4, the API
-for the app. The app is built whether or not the beacon probe passes, and Web Push (phase 2)
+**Status: phases 1 and 4 done.** Phase 1 was released as wingbeat v0.3.0 (2026-11-08), and
+phase 4, the API for the app, as v0.4.0 (in production since 2026-11-11; see "Phase 4
+progress"). Next: phase 5, the app shell. The app is built whether or not the beacon probe passes, and Web Push (phase 2)
 is deferred while Pushover works (both decided 2026-11-08; see "Phases").
 Done in phase 1: the foundation (`packages/core`, the browser bundle as a
 Text module, the nonce test, the theme tokens), step 1, `time` (core time with zone
@@ -1730,6 +1731,8 @@ no other way to read the timezone (`GET /api/settings` is admins only); level 1 
 Then three review rounds (pairing builds its response from the redeem batch, one device-name
 rule counted in code points, `deleteUserAccount` deletes first and reads why only on a
 refusal). The reviewed branch is on staging since 2026-11-08.
+Released as v0.4.0 (PR #9) on 2026-11-11. Production got step 1 alone first, then migration
+0004, then the rest, each checked with curl and `wrangler tail`.
 
 1. **Bearer sessions** (its own staging deploy, then its own production deploy, ahead of the
    rest; see "Auth and pairing"). The session middleware takes `Authorization: Bearer
