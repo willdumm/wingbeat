@@ -58,8 +58,17 @@ the v0.3.0 releases have logged no mismatches. All open questions are answered.
    flights automatically (phone location, Bluetooth iBeacons in aircraft) in the background,
    without the pilot opening the app.
 
-Non-goals for v1: admin configuration (trackers, users, regions, overlays, tile layers,
-global settings). The web stays the admin console, and the app links to it.
+5. **Eventually, everything the web does** (decided 2026-11-11): every flight edit, every
+   setting, and the other pages, with as much code shared as possible so a feature is
+   maintained once. Logic, validation and request shapes live in core, and only the UI is
+   written twice (goal 1). Each feature comes when it can be done well in the app, not all
+   in v1: see phase 11.
+
+Not in v1: admin configuration (trackers, users, regions, overlays, tile layers, global
+settings) and the flight edits other than assignment. Until phase 11 brings them, the app
+can't make them, and it doesn't link to the web for them (decided 2026-11-11: a link would
+add a browser session to the Devices list each time a phone signs one in, and land on the
+dashboard, not its Settings).
 
 ## What exists today
 
@@ -1548,8 +1557,8 @@ account whose operator is in another zone, that's the only correct reading of a 
 - **Duty log:** month view and totals from `@wingbeat/core/duty`, with day planning for the
   signed-in pilot. PDF opens the web export.
 - **Settings:** accounts (instances), notification subscriptions, auto-logging and
-  permissions, theme, a link to the web admin settings, and **Delete my account** (see
-  "Account deletion").
+  permissions, theme, and **Delete my account** (see "Account deletion"). The instance's
+  settings come later, natively (phase 11).
 
 ### Auth and pairing
 
@@ -1566,7 +1575,10 @@ account whose operator is in another zone, that's the only correct reading of a 
   invalid bearer (`401`), a cookie-only request to an API path without a valid session (`401`,
   as today), and one to a page (the redirect, as today). So nothing in front of an instance
   may add an `Authorization` header (HTTP basic auth on staging, say): every browser request
-  would then be a `401`. Neither staging nor the hosting layer adds one.
+  would then be a `401`. Neither staging nor the hosting layer adds one. (Considered and
+  declined 2026-11-11: letting a header that isn't `Bearer` fall back to the cookie. It would
+  only matter for basic auth in front of an instance, and one rule is simpler to reason about
+  and test.)
 - The middleware change ships as **its own deploy**, ahead of `/api/app/pair` and
   `DELETE /api/me`, so if web sign-in breaks, the cause is obvious and the revert is small.
 - **Session lifetime:** app sessions use the existing sliding expiry unchanged (90 days idle,
@@ -1845,17 +1857,14 @@ collapse and have no "Map all". The detail shows the track on the Live tab's map
 a bounds initial view), its start and end (a manual flight's named points), and each field
 with the tracker's value under a correction. An admin's "Edit" sets the aircraft and pilot
 through `PUT /api/flights/assignment` (`flightAssignmentRequest()`, only what changed), then
-refreshes the store; times, labels, Part 91 and removal stay on the web.
+refreshes the store; times, labels, Part 91 and removal stay on the web until phase 11.
 
 Done: step 8. Settings lists the accounts (tap to show one, touch and hold to sign out, "Add
-account"), then the active account's "Open web settings", "Sign out" and "Delete my account",
-then the theme (Light, Dark, System, as on the web). Signing out revokes the account's own
-session (`DELETE /api/me/sessions/<session_id>`, a 401 counting as done) before removing it
-from the phone; a signed-out account is only removed. The web has no cookie for the app's
-bearer, so "Open web settings" makes a device link (`POST /api/me/device-link`) and opens it
-in `expo-web-browser`: the first time, the user taps "Sign in" on the join page, which adds a
-browser session to their Devices list; later links take the signed-in browser straight to
-the dashboard, where Settings is a button (there's no URL that opens it). "Delete my account"
+account"), then the active account's "Sign out" and "Delete my account", then the theme
+(Light, Dark, System, as on the web). Signing out revokes the account's own session
+(`DELETE /api/me/sessions/<session_id>`, a 401 counting as done) before removing it from the
+phone; a signed-out account is only removed. There's no link to the web's settings (goal 5;
+it was built here first, opening a device link in `expo-web-browser`, and removed). "Delete my account"
 confirms, calls `DELETE /api/me`, shows the server's refusal as it comes (the shared
 env-configured account, the last admin), and removes the account on success. The theme
 overrides the whole app's color scheme (`Appearance.setColorScheme`, native headers and tabs
@@ -1898,8 +1907,9 @@ with phases 7 and 8.
    positions and in-flight tracks, and the status cards as a native list from core's `live`.
 7. **Flights.** The list with day grouping and filters, the flight detail with its track,
    times, labels and assignment, and the assignment edit for admins.
-8. **Settings.** Accounts (add, sign out, switch), theme, a link to the web's settings, and
-   "Delete my account" (`DELETE /api/me`, with its refusals shown).
+8. **Settings.** Accounts (add, sign out, switch), theme, and "Delete my account"
+   (`DELETE /api/me`, with its refusals shown). (A link to the web's settings was planned
+   here and dropped: see goal 5.)
 9. **Sentry.** Init with the host, API level and update ID as tags and no flight or location
    data; source maps uploaded by EAS Build and EAS Update.
 10. **Dev builds and Maestro.** The first `development` builds on an iPhone and an Android
@@ -2040,6 +2050,32 @@ were, so references elsewhere in this doc stay valid.
     token is held), self-hosted PMTiles basemaps, FAA sectionals and offline regions, an alerts
     screen in the app (`alerts` is in core from phase 1), and the web moving to MapLibre if it's worth it
     by then.
+
+**Web parity (goal 5; after phase 7's first release, one step at a time, interleaved with
+phases 8–10 as needed):**
+
+11. **Everything the web does, in the app.** Each step ships when it's done well on a phone,
+    and every step follows the same rule for sharing: whatever the web's version decides
+    (validation, defaults, conflict handling, what a form sends) moves to core first if it's
+    still in a script string, the web switches to it in the same change, and the app's
+    native UI calls the same functions and the same `api/<group>-requests.ts` schemas. Only
+    the UI is written twice. Proposed order:
+    - **Flight editing, full parity** (first): start and end times, origin and destination
+      labels (named points), Part 91, removing and restoring a flight, adding a manual
+      flight, the bulk edits the web's flight editor does, the edit history, and the 409
+      edit-conflict flow. Core already has `flight-edits` (`flightFormTimes`,
+      `flightTrackedTimes`, `applyFlightEdits`, …), `corrections` and `edit-history`; the
+      app needs native date and time pickers (`@expo/ui`) read in the operator's zone.
+    - **The Flights tab's remaining web features:** from/to dates (step 7's presets stay as
+      shortcuts), collapsing a day, and "Map all".
+    - **Settings, phone-first:** the user's own Devices list (rename, sign out), then users
+      and invites, aircraft (with hobbs and tach), pilots, and trackers.
+    - **Settings, the rest:** named points, regions, overlays and tile layers, webhooks, duty
+      methods, and the instance's settings (with the timezone-change warning).
+    - **The other pages:** maintenance, accounting, and analytics (heatmaps, the stream graph),
+      on core's `maintenance`, `accounting` and `analytics`.
+    The inventory of what the web does is taken again at the start of the phase, since the
+    web keeps growing; anything new on the web after that is planned with its app version.
 
 ## Open questions
 

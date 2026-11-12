@@ -1,17 +1,16 @@
 /**
- * Settings: the accounts (switch, add, sign out), the active account's web settings and
- * deletion, and the theme. Deleting the account is App Review's requirement for an app
+ * Settings: the accounts (switch, add, sign out), deleting the active account, and the
+ * theme. The instance's own settings are on the web until the app has them natively
+ * (docs/mobile-app-plan.md, phase 11); the app doesn't link there. Deleting the account is App Review's requirement for an app
  * where an account can be created (docs/mobile-app-plan.md, "Account deletion").
  */
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
 import { Alert, ScrollView } from 'react-native';
 import { apiErrorMessage } from '@wingbeat/core/api/client';
-import { createDeviceLink, deleteMe } from '@wingbeat/core/api/me';
+import { deleteMe } from '@wingbeat/core/api/me';
 import { useAccounts } from '@/lib/accounts-context';
 import type { Account } from '@/lib/accounts';
-import { origin } from '@/lib/api';
 import { ChoiceSection, ListRow, ListSection } from '@/lib/choice-list';
 import { THEME_CHOICES } from '@/lib/prefs';
 import { px, useThemeChoice, useTokens } from '@/lib/theme';
@@ -48,13 +47,6 @@ export default function SettingsScreen() {
       { text: 'Sign out', style: 'destructive', onPress: () => run('Couldn’t sign out', () => signOut(a.id)) },
     ]);
 
-  // The web has no session cookie for the app's bearer, so a device link signs the browser
-  // in (once: the link takes a browser that's already signed in straight to the dashboard).
-  const openWeb = (host: string) => run('Couldn’t open the web dashboard', async () => {
-    const { url } = await createDeviceLink(client!);
-    await WebBrowser.openBrowserAsync(origin(host) + url);
-  });
-
   const confirmDelete = (a: Account) => Alert.alert(
     'Delete your account?',
     `This deletes ${a.user.name} on ${a.host} and signs out all your devices. `
@@ -83,11 +75,7 @@ export default function SettingsScreen() {
       </ListSection>
 
       {active && (
-        <ListSection title={active.host}
-          footer={active.signedOut ? undefined : 'Trackers, aircraft, pilots, users and notifications are set up in the web dashboard’s Settings.'}>
-          {!active.signedOut && (
-            <ListRow label="Open web settings" disabled={busy || !client} onPress={() => openWeb(active.host)} />
-          )}
+        <ListSection title={active.host}>
           <ListRow label={active.signedOut ? 'Remove from this phone' : 'Sign out'} disabled={busy} onPress={() => confirmSignOut(active)} />
           {!active.signedOut && (
             <ListRow label="Delete my account" destructive disabled={busy || !client} onPress={() => confirmDelete(active)} />
