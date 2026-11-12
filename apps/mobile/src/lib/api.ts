@@ -2,7 +2,7 @@
  * The core API client for an account: its instance's origin, its session token as a bearer,
  * and the X-Wingbeat-App header on every request. A 401 means the session was revoked or
  * expired, so the account is marked signed out and nothing retries (docs/mobile-app-plan.md,
- * "Auth and pairing").
+ * "Auth and pairing"). A response the client can't read is reported to Sentry (sentry.ts).
  */
 import * as Device from 'expo-device';
 import * as Updates from 'expo-updates';
@@ -11,6 +11,7 @@ import { pair } from '@wingbeat/core/api/app';
 import { APP_VERSION_HEADER, appVersionHeaderValue } from '@wingbeat/core/api/version';
 import type { AccountUser } from './accounts';
 import type { PairingTarget } from './pairing-link';
+import { reportShapeError } from './sentry';
 
 // A development build has no fingerprint runtime of its own.
 const appHeaders = { [APP_VERSION_HEADER]: appVersionHeaderValue(Updates.runtimeVersion ?? 'dev') };
@@ -22,6 +23,7 @@ export function accountClient(host: string, token: string, onSignedOut: () => vo
   const client = createApiClient({ baseUrl: origin(host), auth: { kind: 'bearer', token }, headers: appHeaders });
   const signOutOn401 = (err: unknown): never => {
     if (err instanceof ApiHttpError && err.status === 401) onSignedOut();
+    reportShapeError(err);
     throw err;
   };
   return {

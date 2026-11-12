@@ -1875,6 +1875,24 @@ them) and the Flights tab's filter and date preset; the keys of removed accounts
 with their flight caches. Notification subscriptions, auto-logging and the opening tab come
 with phases 7 and 8.
 
+Done: step 9, except creating the Sentry project. `apps/mobile/src/lib/sentry.ts` initializes
+Sentry only when the bundle was built with `EXPO_PUBLIC_SENTRY_DSN` (an EAS environment
+variable, so local and development runs report nothing), with the channel as its environment.
+Events carry the tags `host` and `server_api_version` (the active account's) and
+`client_api_level`; the SDK's Expo context adds the update ID, channel and runtime version
+itself, and reports an emergency launch (an update that fell back). No flight or location
+data: no default PII, console breadcrumbs dropped (core's client warnings and any log can
+quote a response), request URLs without their query strings (`sentry-scrub.ts`), and no
+navigation integration (route params hold flight ids). A response the strict client can't
+read (`ApiShapeError`) is reported with its path and the schema's issues, never the
+response, since it's exactly the incompatibility an OTA update must fix. Metro uses
+`getSentryExpoConfig`, so each bundle has a debug ID matching its source map: EAS Build
+uploads them (`SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` as EAS environment
+variables; the `development` profile sets `SENTRY_DISABLE_AUTO_UPLOAD`), and an EAS Update is
+followed by `npx sentry-expo-upload-sourcemaps dist` (`apps/mobile/AGENTS.md`). The plugin
+takes org and project from those variables rather than `app.config.ts`, so they don't enter
+the fingerprint. In the Sentry project, turn on "Prevent storing of IP addresses".
+
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with
    its config plugin (`expo-notifications`, `expo-location`, `expo-task-manager`,

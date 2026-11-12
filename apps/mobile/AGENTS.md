@@ -27,6 +27,23 @@ npx expo export --platform ios --platform android --output-dir <scratch dir>   #
 The repo is a non-colocated jj repo, so EAS CLI commands need `EAS_NO_VCS=1`:
 `EAS_NO_VCS=1 npx eas-cli@latest <command>`.
 
+## Sentry
+
+Reporting is on only in a bundle built with `EXPO_PUBLIC_SENTRY_DSN` set (`src/lib/sentry.ts`).
+It and `SENTRY_ORG` / `SENTRY_PROJECT` (plain) and `SENTRY_AUTH_TOKEN` (secret) are EAS
+environment variables of the `preview` and `production` environments, so EAS Build reads them
+and its builds upload their source maps. The `development` profile sets
+`SENTRY_DISABLE_AUTO_UPLOAD` (a dev client loads its JS from Metro). An EAS Update uploads its
+own maps after publishing, with the same variables in the shell:
+
+```bash
+EAS_NO_VCS=1 npx eas-cli@latest update --channel preview --environment preview --message "..."
+npx sentry-expo-upload-sourcemaps dist
+```
+
+Never send flight or location data: anything new that could reach an event (a breadcrumb, a
+tag, an `extra`) goes through `src/lib/sentry-scrub.ts`'s rules.
+
 ## Rules
 
 - `@wingbeat/core` is a `file:` dependency, not a workspace: the app keeps its own
