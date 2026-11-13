@@ -39,3 +39,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Sentry auth token for uploading EAS Update source maps (AGENTS.md)
+.env.sentry-build-plugin

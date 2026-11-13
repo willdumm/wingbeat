@@ -44,12 +44,15 @@ It and `SENTRY_ORG` / `SENTRY_PROJECT` (plain) and `SENTRY_AUTH_TOKEN` (secret) 
 environment variables of the `preview` and `production` environments, so EAS Build reads them
 and its builds upload their source maps (the `testflight` profile sets `SENTRY_ALLOW_FAILURE`, so a
 failed upload doesn't fail the build: check its log for the upload). The `development` profile sets
-`SENTRY_DISABLE_AUTO_UPLOAD` (a dev client loads its JS from Metro). An EAS Update uploads its
-own maps after publishing, with the same variables in the shell:
+`SENTRY_DISABLE_AUTO_UPLOAD` (a dev client loads its JS from Metro). An EAS Update bundles on
+this machine, so EAS never uploads its maps and can't lend its secret token: upload them after
+publishing. The script reads the token from `.env.sentry-build-plugin` here (`SENTRY_AUTH_TOKEN=…`,
+gitignored, the user's own; never print it), and needs `SENTRY_URL` set as well, since the app
+config doesn't name the server:
 
 ```bash
 EAS_NO_VCS=1 npx eas-cli@latest update --channel preview --environment preview --platform ios --message "..."
-npx sentry-expo-upload-sourcemaps dist
+SENTRY_URL=https://sentry.io/ SENTRY_ORG=dumm-software-llc SENTRY_PROJECT=wingbeat-mobile npx sentry-expo-upload-sourcemaps dist
 ```
 
 `--platform ios` while the app is iOS only: without it the export also bundles web, which fails
