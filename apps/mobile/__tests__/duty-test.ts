@@ -86,13 +86,16 @@ test('a past month: totals as of its last day, nothing upcoming', () => {
   expect(view.days).toHaveLength(30);
 });
 
-test('the pilot shown: the one picked while it exists, else the first active one; the menu’s pilots', () => {
+test('the pilot shown: the one picked while it exists, else the user’s own, else the first active one; the menu’s pilots', () => {
   const pilots = [{ id: 1, name: 'Ann', active: 0 }, { id: 2, name: 'Bo', active: 1 }, { id: 3, name: 'Cy', active: 1 }];
-  expect(dutyPilotShown(pilots, 3)?.id).toBe(3);
-  expect(dutyPilotShown(pilots, 1)?.id).toBe(1);
-  expect(dutyPilotShown(pilots, 9)?.id).toBe(2);
-  expect(dutyPilotShown(pilots, null)?.id).toBe(2);
-  expect(dutyPilotShown([], null)).toBeNull();
+  expect(dutyPilotShown(pilots, 3, null)?.id).toBe(3);
+  expect(dutyPilotShown(pilots, 1, null)?.id).toBe(1);
+  expect(dutyPilotShown(pilots, 9, null)?.id).toBe(2);
+  expect(dutyPilotShown(pilots, null, null)?.id).toBe(2);
+  expect(dutyPilotShown(pilots, null, 3)?.id).toBe(3);
+  expect(dutyPilotShown(pilots, 2, 3)?.id).toBe(2);
+  expect(dutyPilotShown(pilots, null, 9)?.id).toBe(2);
+  expect(dutyPilotShown([], null, null)).toBeNull();
   expect(dutyPilots(pilots, 2).map((p) => p.id)).toEqual([2, 3]);
   expect(dutyPilots(pilots, 1).map((p) => p.id)).toEqual([1, 2, 3]);
 });

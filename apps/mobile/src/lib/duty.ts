@@ -71,9 +71,13 @@ export function dutyPilots(pilots: Pick<Pilot, 'id' | 'name' | 'active'>[], show
   return pilots.filter((p) => p.active || p.id === shown);
 }
 
-/** The pilot to show: the one picked, while there's such a pilot, else the first offered. */
-export function dutyPilotShown(pilots: Pick<Pilot, 'id' | 'name' | 'active'>[], picked: number | null): Pick<Pilot, 'id' | 'name'> | null {
-  return pilots.find((p) => p.id === picked) ?? pilots.find((p) => p.active) ?? null;
+/**
+ * The pilot to show: the one picked, while there's such a pilot, else the user's own
+ * (users.pilot_id), else the first offered.
+ */
+export function dutyPilotShown(pilots: Pick<Pilot, 'id' | 'name' | 'active'>[], picked: number | null,
+                               own: number | null): Pick<Pilot, 'id' | 'name'> | null {
+  return pilots.find((p) => p.id === picked) ?? pilots.find((p) => p.id === own) ?? pilots.find((p) => p.active) ?? null;
 }
 
 /** A month as one number (year * 12 + month - 1), to step through months. */

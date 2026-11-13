@@ -20,12 +20,22 @@ function SentryTags() {
   return null;
 }
 
+/** Keeps the active account's stored user (its pilot, for the first tab) on the server's. */
+function AccountUserSync() {
+  const { active, syncUser } = useAccounts();
+  const { bootstrap } = useBootstrap();
+  const me = bootstrap?.me;
+  useEffect(() => { if (active && me) syncUser(active.id, me); }, [active?.id, me]);
+  return null;
+}
+
 function RootLayout() {
   useBackgroundUpdates();
   return (
     <AccountsProvider>
       <BootstrapProvider>
         <SentryTags />
+        <AccountUserSync />
         <FlightsProvider>
           <ClientUpdateGate>
             <Stack screenOptions={{ headerShown: false }}>

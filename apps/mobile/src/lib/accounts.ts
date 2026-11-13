@@ -13,6 +13,9 @@ export interface AccountUser {
   id: number;
   name: string;
   role: 'admin' | 'viewer';
+  /** The pilot the user is (users.pilot_id): the app opens on their duty log. Absent from
+   * accounts stored before it and on servers older than it. */
+  pilot_id?: number | null;
 }
 
 export interface Account {
@@ -56,6 +59,8 @@ export interface AccountStore {
   /** Removes the account and its token; the first remaining one becomes active. */
   remove(id: string): Promise<AccountsState>;
   setActive(id: string): Promise<AccountsState>;
+  /** Keeps the account's user as its server last described it (bootstrap's me). */
+  updateUser(id: string, user: AccountUser): Promise<AccountsState>;
 }
 
 export function createAccountStore(kv: KeyValue): AccountStore {
@@ -98,7 +103,7 @@ export function createAccountStore(kv: KeyValue): AccountStore {
     add: serial(async (host: string, user: AccountUser, token: string) => {
       const { accounts } = await load();
       const id = accountId(host, user.id);
-      const account: Account = { id, host, user: { id: user.id, name: user.name, role: user.role }, signedOut: false };
+      const account: Account = { id, host, user: accountUser(user), signedOut: false };
       // The token first: a list entry without its token would look signed in and fail.
       await kv.set(tokenKey(id), token);
       const i = accounts.findIndex((a) => a.id === id);
@@ -126,7 +131,27 @@ export function createAccountStore(kv: KeyValue): AccountStore {
       if (!state.accounts.some((a) => a.id === id)) return state;
       return save({ ...state, activeId: id });
     }),
+
+    updateUser: serial(async (id: string, user: AccountUser) => {
+      const state = await load();
+      return save({ ...state, accounts: state.accounts.map((a) => (a.id === id ? { ...a, user: accountUser(user) } : a)) });
+    }),
   };
+}
+
+/** The fields an account keeps of a user (a bootstrap's me has more). */
+export function accountUser(user: AccountUser): AccountUser {
+  return { id: user.id, name: user.name, role: user.role, pilot_id: user.pilot_id ?? null };
+}
+
+/** Whether the server's user differs from the stored one in a field the account keeps. */
+export function accountUserChanged(stored: AccountUser, server: AccountUser): boolean {
+  return stored.name !== server.name || stored.role !== server.role || (stored.pilot_id ?? null) !== (server.pilot_id ?? null);
+}
+
+/** The tab the app opens on: a pilot's own duty log, Live for everyone else. */
+export function firstTab(account: Account | null): '/duty' | '/live' {
+  return account?.user.pilot_id != null ? '/duty' : '/live';
 }
 
 function isAccount(a: unknown): a is Account {

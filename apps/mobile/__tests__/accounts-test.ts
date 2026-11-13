@@ -1,4 +1,4 @@
-import { createAccountStore, type KeyValue } from '@/lib/accounts';
+import { accountUserChanged, createAccountStore, firstTab, type KeyValue } from '@/lib/accounts';
 
 function memory(): KeyValue & { map: Map<string, string> } {
   const map = new Map<string, string>();
@@ -33,7 +33,7 @@ test('add: one account per host and user, the newest active, tokens kept apart f
   // Pairing the same user again replaces its token and signs it back in, in place.
   await store.markSignedOut(`${A}.1`);
   state = await store.add(A, { ...pat, name: 'Pat R.' }, 'tok-a1b');
-  expect(state.accounts[0]).toEqual({ id: `${A}.1`, host: A, user: { ...pat, name: 'Pat R.' }, signedOut: false });
+  expect(state.accounts[0]).toEqual({ id: `${A}.1`, host: A, user: { ...pat, name: 'Pat R.', pilot_id: null }, signedOut: false });
   expect(state.accounts).toHaveLength(3);
   expect(await store.token(`${A}.1`)).toBe('tok-a1b');
   expect(await createAccountStore(kv).load()).toEqual(state);
@@ -57,6 +57,22 @@ test('remove: the token too, and the first remaining account becomes active', as
   expect(await store.token(`${B}.2`)).toBeNull();
   state = await store.remove(`${A}.1`);
   expect(state).toEqual({ accounts: [], activeId: null });
+});
+
+test('updateUser keeps the server’s name, role and pilot; a pilot opens on the duty log', async () => {
+  const store = createAccountStore(memory());
+  await store.add(A, { ...pat, session_id: 5 } as typeof pat, 'tok-a');
+  let state = await store.load();
+  expect(state.accounts[0].user).toEqual({ ...pat, pilot_id: null });
+  expect(firstTab(state.accounts[0])).toBe('/live');
+  const linked = { ...pat, pilot_id: 4 };
+  expect(accountUserChanged(state.accounts[0].user, linked)).toBe(true);
+  expect(accountUserChanged(state.accounts[0].user, pat)).toBe(false);
+  state = await store.updateUser(`${A}.1`, linked);
+  expect(state.accounts[0].user).toEqual(linked);
+  expect(firstTab(state.accounts[0])).toBe('/duty');
+  expect(await store.token(`${A}.1`)).toBe('tok-a');
+  expect(firstTab(null)).toBe('/live');
 });
 
 test('setActive ignores an unknown id', async () => {

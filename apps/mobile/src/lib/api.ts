@@ -36,5 +36,5 @@ export function accountClient(host: string, token: string, onSignedOut: () => vo
 export async function pairWith(target: PairingTarget): Promise<{ token: string; user: AccountUser }> {
   const client = createApiClient({ baseUrl: origin(target.host), headers: appHeaders });
   const { token, me } = await pair(client, { token: target.token, device_name: Device.deviceName });
-  return { token, user: { id: me.id, name: me.name, role: me.role } };
+  return { token, user: me };
 }

@@ -15,7 +15,7 @@ import { useNow } from '@/lib/use-now';
 
 /**
  * A pilot's duty log, read-only (the web's, from Settings → Pilots): the pilot picked from
- * the header's menu (kept per account), a month at a time up to this one.
+ * the header's menu (kept per account), else the user's own, a month at a time up to this one.
  */
 export default function DutyScreen() {
   const router = useRouter();
@@ -25,7 +25,7 @@ export default function DutyScreen() {
   const now = useNow(60_000);
   const [picked, setPicked] = useStoredState(active ? accountPrefKey(active.host, active.user.id, 'duty-pilot') : null, parseDutyPilot);
   const pilots = tab.ready ? tab.bootstrap.pilots : [];
-  const pilot = dutyPilotShown(pilots, picked);
+  const pilot = dutyPilotShown(pilots, picked, tab.ready ? tab.bootstrap.me.pilot_id ?? null : null);
   const { log, failed, reload } = useDutyLog(pilot?.id ?? null);
   // The month shown; null follows the current one.
   const [shown, setShown] = useState<number | null>(null);

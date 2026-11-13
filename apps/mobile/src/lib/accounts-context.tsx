@@ -5,7 +5,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ApiHttpError, type ApiClient } from '@wingbeat/core/api/client';
 import { deleteSession, getMe } from '@wingbeat/core/api/me';
-import { createAccountStore, secureKeyValue, type Account, type AccountsState } from './accounts';
+import { accountUserChanged, createAccountStore, secureKeyValue, type Account, type AccountsState, type AccountUser } from './accounts';
 import { accountClient, pairWith } from './api';
 import type { PairingTarget } from './pairing-link';
 import { setTileAuth } from './tile-auth';
@@ -26,6 +26,8 @@ interface AccountsValue extends AccountsState {
    * error, keeping the account, when the instance can't be reached or refuses.
    */
   signOut(id: string): Promise<void>;
+  /** Stores the account's user as its server describes it, when that differs. */
+  syncUser(id: string, user: AccountUser): void;
 }
 
 const store = createAccountStore(secureKeyValue());
@@ -91,6 +93,10 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
     setActive: async (id) => setState(await store.setActive(id)),
     remove: async (id) => setState(await store.remove(id)),
     signOut,
+    syncUser: (id, user) => {
+      const account = state.accounts.find((a) => a.id === id);
+      if (account && account.user.id === user.id && accountUserChanged(account.user, user)) store.updateUser(id, user).then(setState);
+    },
   }), [state, loaded, active, client, addAccount, signOut]);
 
   return <AccountsContext.Provider value={value}>{children}</AccountsContext.Provider>;
