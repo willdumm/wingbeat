@@ -6,7 +6,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWindowDimensions, View } from 'react-native';
-import { Stack, useIsFocused, useRouter } from 'expo-router';
+import { Stack, useIsFocused, useRouter, useSegments } from 'expo-router';
 import { Button, Form, Host, HStack, LabeledContent, Section, Text, VStack } from '@expo/ui/swift-ui';
 import { buttonStyle, disabled as disabledIf, font, foregroundStyle, labelStyle } from '@expo/ui/swift-ui/modifiers';
 import { matchesFlight } from '@wingbeat/core/filters';
@@ -40,6 +40,8 @@ const FIT_PADDING = { top: 120, right: 40, bottom: 120, left: 40 };
 export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; flightId?: number; onDay?: (dayKey: string) => void }) {
   const t = useTokens();
   const router = useRouter();
+  // The tab whose stack the screen is in (Flights, or Duty from a flight in the log), for Edit.
+  const stack = useSegments()[1] === 'duty' ? 'duty' : 'flights';
   const focused = useIsFocused();
   const { active } = useAccounts();
   const { store, lastRefresh, generation } = useFlights();
@@ -111,7 +113,7 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
   // One flight: from the list, or from the day.
   const one = flight && track && (() => {
     const detail = flightDetail(tab.tz, flight, tab.roster);
-    const edit = () => router.push({ pathname: '/flights/assign', params: { id: String(flight.id) } });
+    const edit = () => router.push({ pathname: `/${stack}/assign`, params: { id: String(flight.id) } });
     const notes = [detail.manual && 'Manual entry', !track.line.features.length && 'No track recorded'].filter(Boolean).join(' · ');
     const sections = (
       <>

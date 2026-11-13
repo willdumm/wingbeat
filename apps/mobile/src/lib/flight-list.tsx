@@ -11,7 +11,8 @@ import type { FlightDay, FlightRow } from './flights';
 import { SFIcon } from './map-tools';
 import { px, useTokens } from './theme';
 
-function Row({ row, onPress }: { row: FlightRow; onPress: () => void }) {
+/** One flight's row, also the duty log's (duty-list.tsx). */
+export function FlightRowView({ row, onPress }: { row: FlightRow; onPress: () => void }) {
   const t = useTokens();
   const dim = { fontSize: 14, color: t['text-muted'] };
   return (
@@ -84,7 +85,7 @@ export function FlightList({ days, empty, onSelect, onMapDay, onRefresh }: {
           )}
         </View>
       )}
-      renderItem={({ item }) => <Row row={item} onPress={() => onSelect(item.id)} />}
+      renderItem={({ item }) => <FlightRowView row={item} onPress={() => onSelect(item.id)} />}
       ListEmptyComponent={empty}
     />
   );

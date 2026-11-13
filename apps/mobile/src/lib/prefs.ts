@@ -1,9 +1,11 @@
 /**
  * What the app keeps between launches besides the accounts and the flights: the theme, and
- * for each account the map's basemap and overlays and the Flights tab's filter. Each is a
+ * for each account the map's basemap and overlays, the Flights tab's filter, the Duty tab's
+ * pilot and the last copy of each pilot's duty records it fetched. Each is a
  * JSON value in expo-sqlite/kv-store (stored-state.ts) under a key from here, and its parse
  * function turns whatever is stored (nothing, or an older version's value) into a valid one.
  */
+import { DutyLogResponse } from '@wingbeat/core/api/duty';
 import { normalizeFilterState, type FilterState } from '@wingbeat/core/filters';
 import { DATE_PRESETS, type DatePresetId } from './flights';
 
@@ -11,7 +13,7 @@ export const THEME_KEY = 'prefs.theme';
 
 const ACCOUNT_PREFIX = 'prefs.account.';
 
-export function accountPrefKey(host: string, userId: number, name: 'map' | 'flight-filter' | 'elevation'): string {
+export function accountPrefKey(host: string, userId: number, name: 'map' | 'flight-filter' | 'elevation' | 'duty-pilot' | `duty-log.${number}`): string {
   return `${ACCOUNT_PREFIX}${host}.${userId}.${name}`;
 }
 
@@ -80,4 +82,15 @@ export function parseFlightFilter(stored: unknown): FlightFilterPref {
   const o = (stored && typeof stored === 'object' ? stored : {}) as Partial<Record<keyof FlightFilterPref, unknown>>;
   const preset = DATE_PRESETS.find((p) => p.id === o.preset)?.id ?? 'all';
   return { filter: normalizeFilterState(o.filter), preset };
+}
+
+// ── Duty ──
+
+/** The pilot the Duty tab shows; null until one is picked. */
+export const parseDutyPilot = (stored: unknown): number | null => (typeof stored === 'number' ? stored : null);
+
+/** The last copy of a pilot's duty records (GET /api/duty-days), shown until the next fetch; null when there's none or it no longer parses. */
+export function parseDutyLog(stored: unknown): DutyLogResponse | null {
+  const parsed = DutyLogResponse.safeParse(stored);
+  return parsed.success ? parsed.data : null;
 }

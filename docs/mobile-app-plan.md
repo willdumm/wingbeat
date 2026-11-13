@@ -2061,7 +2061,7 @@ layers need no Android counterpart; only the chrome around the map does.
 
 | Feature | App | iOS | Android | Core / notes |
 |---|---|---|---|---|
-| Month view, totals and limits | Phase 6 | a `List` of days by month, a `Gauge` (or `ProgressView`) per limit | `LazyColumn`, `LinearProgressIndicator` (`Progress`) | `duty` |
+| Month view, totals and limits | Done, read-only (the Duty tab; the pilot from the header's menu until `users.pilot_id`) | dense RN rows like the flight list (days newest first as sticky headings, a flight opens its map), a bar per limit, Upcoming in the current month | the same RN views | `duty` (`computeDutyData`), app `duty.ts` |
 | Plan or edit a day (duty or rest, start and end, through, note, use the default) | Phase 6 | a `Form` with a segmented `Picker`, `DatePicker`s (`hourAndMinute`), a `Toggle` | `SingleChoiceSegmentedButtonRow`, the Material time picker, `Switch` | `duty`, the duty request schemas |
 | Default duty, duty methods history | Phase 11 | `Form` | `ListItem`s | `duty` |
 | PDF export | Phase 6 (hidden WebView; see "Decided 2026-11-13") | `ShareLink` (share sheet) for the file | `Share.share` | the Typst template |
