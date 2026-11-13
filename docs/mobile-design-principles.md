@@ -36,6 +36,9 @@ written down, so Android is a port of the UI layer, not a redesign.
   scattered through screens. Screens don't import `@expo/ui/swift-ui` or
   `@expo/ui/jetpack-compose` directly; they use the shared component. (Today several do:
   "Known debt".)
+  > "When possible, my preference is to avoid platform-specific code by using expo/ui -
+  > wrapped native components, though when those aren't available I'd use separate native
+  > code for each platform." (the user, 2026-11-13)
 - **The universal layer first** (`import … from '@expo/ui'`: `BottomSheet`, `Picker`,
   `Switch`, `List`, `ListItem`, `TextInput`, `Icon`, …), which renders SwiftUI on iOS and
   Compose on Android from one tree. Drop to a platform layer only for what the universal one

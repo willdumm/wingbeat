@@ -1952,7 +1952,10 @@ EAS profile `testflight` (`distribution: "store"`, `channel: "preview"`,
 eas-cli@latest build --profile testflight --platform ios`, then `eas submit`, which needs the
 user's Apple sign-in. On that build, check that `expo-clipboard` is linked (Copy replaces the
 share buttons), that the source maps uploaded, and the waiting Sentry test error. App Store
-Connect's EU DSA trader status is unset; it matters only for an App Store release.
+Connect's EU DSA trader status is unset; it matters only for an App Store release. The App Store
+Connect record is named "Wingbeat (0ea…)" (EAS generated it: "Wingbeat" is taken, likely an
+unreleased reservation); the user wants it renamed to "Wingbeat Flight Tracking" (App
+Information → Name) at the next chance. The name under the icon stays `app.config.ts`'s "Wingbeat".
 
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with
