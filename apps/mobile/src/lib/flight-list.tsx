@@ -1,12 +1,14 @@
 /**
  * The flight list (the dashboard's): operator days as sticky headings with their flight
- * count, newest first, and each flight's time and duration, route, assignment and remarks.
+ * count and, when a flight has a track, "Map all" (the day's flights on a map), newest first,
+ * and each flight's time and duration, route, assignment and remarks.
  * A corrected time or label has the web's †; a manual flight its "Manual" chip. Pull to
  * refresh; with no flights, the empty state fills the screen.
  */
 import { useState, type ReactElement } from 'react';
 import { Pressable, RefreshControl, SectionList, Text, View } from 'react-native';
 import type { FlightDay, FlightRow } from './flights';
+import { SFIcon } from './map-tools';
 import { px, useTokens } from './theme';
 
 function Row({ row, onPress }: { row: FlightRow; onPress: () => void }) {
@@ -42,10 +44,11 @@ function Row({ row, onPress }: { row: FlightRow; onPress: () => void }) {
   );
 }
 
-export function FlightList({ days, empty, onSelect, onRefresh }: {
+export function FlightList({ days, empty, onSelect, onMapDay, onRefresh }: {
   days: FlightDay[];
   empty: ReactElement;
   onSelect: (id: number) => void;
+  onMapDay: (dayKey: string) => void;
   onRefresh: () => Promise<void>;
 }) {
   const t = useTokens();
@@ -65,13 +68,20 @@ export function FlightList({ days, empty, onSelect, onRefresh }: {
       stickySectionHeadersEnabled
       renderSectionHeader={({ section }) => (
         <View style={{
-          flexDirection: 'row', alignItems: 'baseline', gap: 8, backgroundColor: t['surface-2'],
+          flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: t['surface-2'],
           paddingVertical: px(t['space-2']), paddingHorizontal: px(t['space-4']),
         }}>
           <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: t['text-primary'] }}>{section.title}</Text>
           <Text style={{ fontSize: 13, color: t['text-muted'] }}>
             {section.data.length + (section.data.length === 1 ? ' flight' : ' flights')}
           </Text>
+          {section.mappable && (
+            <Pressable onPress={() => onMapDay(section.dayKey)} accessibilityRole="button" accessibilityLabel={'Map all of ' + section.title} hitSlop={8}
+              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 4, opacity: pressed ? 0.5 : 1 })}>
+              <SFIcon name="map" fallback="⌖" size={13} color={t['accent']} />
+              <Text style={{ fontSize: 13, fontWeight: '600', color: t['accent'] }}>Map all</Text>
+            </Pressable>
+          )}
         </View>
       )}
       renderItem={({ item }) => <Row row={item} onPress={() => onSelect(item.id)} />}

@@ -1,7 +1,8 @@
 /**
  * What the Live tab shows, from the flight store and the last refresh: one status card per
  * active tracker (what the dashboard's buildAircraftCard() shows), each tracker's position,
- * and the track of each flight in progress; or a day's flights at once (dayMap). Colors are
+ * and the track of its current or latest flight (the dashboard's default view), with the
+ * bounds the map fits to them; or a day's flights at once (dayMap, the Flights tab's day map). Colors are
  * core's trackerColor(), or the caller's faint color for a tracker without one.
  */
 import type { InstanceSettings } from '@wingbeat/core/api/bootstrap';
@@ -10,7 +11,7 @@ import { toFeet, toKnots } from '@wingbeat/core/format';
 import { dayFlightNumbers, groundTrail, isGpsFresh, isInFlight, mercatorPixel, nearestPointIdx, pickedPointDetails, trackerColor, type LiveData, type LocationDetails } from '@wingbeat/core/live';
 import { SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
 import { relativeTime, tzLongDateLabel, unixToTzDateStr } from '@wingbeat/core/time';
-import type { Flight } from './flights';
+import { bboxOf, type Flight } from './flights';
 
 export interface LiveTracker {
   id: number;
@@ -110,17 +111,16 @@ export function groundTrailFeatures(cards: StatusCard[], live: Record<number, Li
 }
 
 /**
- * The track so far of each tracker in flight: its latest flight's points (the tracker's own
- * records, as positions are). getRaw is the flight store's.
+ * Each tracker's latest flight's track: the one in progress while it's in flight, else the
+ * last it recorded (the tracker's own records, as positions are). getRaw is the flight store's.
  */
-export function inFlightTracks(
+export function latestTracks(
   cards: StatusCard[],
   getRaw: (trackerIds: number[]) => TrackedFlight[],
 ): GeoJSON.FeatureCollection<GeoJSON.LineString> {
   return {
     type: 'FeatureCollection',
     features: cards.flatMap((c) => {
-      if (!c.inFlight) return [];
       const latest = getRaw([c.trackerId]).at(-1);
       if (!latest || latest.points.length < 2) return [];
       return [{
@@ -133,6 +133,12 @@ export function inFlightTracks(
   };
 }
 
+/** What the Live map fits on opening: every coordinate of the collections (tracks and positions); null when there are none. */
+export function liveBounds(...collections: GeoJSON.FeatureCollection<GeoJSON.Point | GeoJSON.LineString>[]): [number, number, number, number] | null {
+  return bboxOf(collections.flatMap((c) => c.features.flatMap((f) =>
+    (f.geometry.type === 'Point' ? [f.geometry.coordinates] : f.geometry.coordinates) as [number, number][])));
+}
+
 // ── The point picker: a tap on the map, snapped to a drawn track's point ──
 
 /** A drawn track's point, with what the location sheet says about it. */
@@ -142,14 +148,14 @@ export interface TrackPick {
   pilotName: string | null;
 }
 
-/** The points a tap snaps to: each in-flight track's and ground trail's (Live). */
+/** The points a tap snaps to: each latest track's and ground trail's (Live). */
 export function liveTrackPicks(
   cards: StatusCard[],
   live: Record<number, LiveData>,
   getRaw: (trackerIds: number[]) => TrackedFlight[],
 ): TrackPick[] {
   return cards.flatMap((c) => {
-    const latest = c.inFlight ? getRaw([c.trackerId]).at(-1) : undefined;
+    const latest = getRaw([c.trackerId]).at(-1);
     const trail = groundTrail(SPEED_THRESHOLD_KMH, live[c.trackerId]);
     return [...(latest?.points ?? []), ...(trail?.points ?? [])]
       .map((point) => ({ point, trackerId: c.trackerId, pilotName: latest?.pilot_name ?? null }));
@@ -231,6 +237,8 @@ export interface DayMap {
   tracks: GeoJSON.FeatureCollection<GeoJSON.LineString>;
   /** Each flight's start, and its numbered end (`label`) unless it's in progress. */
   points: GeoJSON.FeatureCollection<GeoJSON.Point>;
+  /** The flights drawn, in order, with their numbers and colors (the day map's list). */
+  flights: { flight: Flight; n: number; color: string }[];
   /** The trackers, when there are several (the web's legend). */
   legend: { label: string; color: string }[];
   /** [west, south, east, north]; null when no flight has a track. */
@@ -257,11 +265,13 @@ export function dayMap(
   const tracks: DayMap['tracks']['features'] = [];
   const points: DayMap['points']['features'] = [];
   const all: [number, number][] = [];
+  const drawn: DayMap['flights'] = [];
   day.forEach((f, i) => {
     const n = numbers[i];
     if (n == null) return;
     const coords = f.points!.map((p) => [p.lon, p.lat] as [number, number]);
     const color = colorFor(f.tracker_id);
+    drawn.push({ flight: f, n, color });
     all.push(...coords);
     tracks.push({ type: 'Feature', id: f.id, geometry: { type: 'LineString', coordinates: coords }, properties: { color } });
     points.push({ type: 'Feature', id: 'start-' + f.id, geometry: { type: 'Point', coordinates: coords[0] }, properties: { color, inFlight: false } });
@@ -275,21 +285,8 @@ export function dayMap(
   return {
     tracks: { type: 'FeatureCollection', features: tracks },
     points: { type: 'FeatureCollection', features: points },
+    flights: drawn,
     legend: trackerIds.length > 1 ? trackerIds.map((id) => ({ label: labelFor(id), color: colorFor(id) })) : [],
     bounds: all.length ? [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)] : null,
   };
-}
-
-/**
- * A day key ("2026-10-03") as a device-local Date at noon, for a native date picker (which
- * picks calendar days in the device's zone; noon keeps clear of DST shifts), and back.
- */
-export function dayKeyToDate(dayKey: string): Date {
-  const [y, m, d] = dayKey.split('-').map(Number);
-  return new Date(y, m - 1, d, 12);
-}
-
-export function dateToDayKey(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }

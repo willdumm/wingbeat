@@ -66,12 +66,13 @@ interface LiveMapProps {
   onLongPress?: (lngLat: [number, number]) => void;
   /** The track points drawn, which the elevation tool's reference snaps to. */
   picks?: TrackPick[];
-  /** Bounds to fit once the bars and the panel are measured (a flight's track). */
-  fit?: [number, number, number, number];
+  /** Bounds to fit once the bars and the panel are measured (a flight's track), and again whenever fitKey changes. */
+  fit?: [number, number, number, number] | null;
+  fitKey?: unknown;
   ref?: Ref<LiveMapRef>;
 }
 
-export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, topBar, sheetHeight, fit, onPress, onLongPress, picks = [], ref }: LiveMapProps) {
+export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, topBar, sheetHeight, fit, fitKey, onPress, onLongPress, picks = [], ref }: LiveMapProps) {
   const t = useTokens();
   const camera = useRef<CameraRef>(null);
   const mapRef = useRef<MapRef>(null);
@@ -116,13 +117,14 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
       camera.current?.easeTo({ center: lngLat, duration: 400, padding: { top: topClear, bottom: bottomClear, left: 0, right: 0 } });
     },
   }), [top, topEdge, fitBottom, width, height]);
-  const fitted = useRef(false);
-  const measured = safe.height > 0;
+  const fitted = useRef<{ key: unknown } | null>(null);
+  // The top bar too, so the fit stays below it.
+  const measured = safe.height > 0 && (!topBar || topEdge > 0);
   useEffect(() => {
-    if (!fit || !measured || fitted.current) return;
-    fitted.current = true;
-    fitBounds(fit, 0);
-  }, [fit, measured]);
+    if (!fit || !measured || (fitted.current && fitted.current.key === fitKey)) return;
+    fitBounds(fit, fitted.current ? 800 : 0);
+    fitted.current = { key: fitKey };
+  }, [fit, measured, fitKey]);
 
   const layersTool: MapTool = {
     id: 'layers',

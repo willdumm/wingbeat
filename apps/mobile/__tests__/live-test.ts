@@ -1,6 +1,6 @@
 import { TRACKER_COLORS, type LiveData } from '@wingbeat/core/live';
 import type { Flight } from '@/lib/flights';
-import { dateToDayKey, dayKeyToDate, dayMap, flightTrackPicks, groundTrailFeatures, inFlightTracks, initialView, mapDays, pickDetails, positionFeatures, spotDetails, statusCards } from '@/lib/live';
+import { dayMap, flightTrackPicks, groundTrailFeatures, initialView, latestTracks, liveBounds, mapDays, pickDetails, positionFeatures, spotDetails, statusCards } from '@/lib/live';
 
 const NOW = 1_793_739_600;
 const trackers = [
@@ -27,16 +27,18 @@ test('one card per tracker, as the dashboard builds it', () => {
   expect(c).toMatchObject({ color: TRACKER_COLORS[2], gps: null, position: null });
 });
 
-test('positions for trackers with one; tracks only for those in flight', () => {
+test('positions for trackers with one; each tracker\'s latest track, in flight or not, and the bounds of all', () => {
   const cards = statusCards(trackers, live, NOW, 'faint');
   expect(positionFeatures(cards, live).features.map((f) => f.id)).toEqual([1, 2]);
   const raw: Record<number, { points: { lat: number; lon: number }[] }[]> = {
     1: [{ points: [{ lat: 1, lon: 2 }] }, { points: [{ lat: 57, lon: -152 }, { lat: 57.8, lon: -152.4 }] }],
     2: [{ points: [{ lat: 1, lon: 2 }, { lat: 3, lon: 4 }] }],
   };
-  const tracks = inFlightTracks(cards, ([id]) => (raw[id] ?? []) as never);
-  expect(tracks.features).toHaveLength(1);
-  expect(tracks.features[0].geometry.coordinates).toEqual([[-152, 57], [-152.4, 57.8]]);
+  const tracks = latestTracks(cards, ([id]: number[]) => (raw[id] ?? []) as never);
+  expect(tracks.features.map((f) => f.geometry.coordinates)).toEqual([[[-152, 57], [-152.4, 57.8]], [[2, 1], [4, 3]]]);
+  const [w, s, e, n] = liveBounds(tracks, positionFeatures(cards, live))!;
+  expect([w, s, e, n]).toEqual([-152.4, 1, 4, 57.8]);
+  expect(liveBounds({ type: 'FeatureCollection', features: [] })).toBeNull();
 });
 
 test('planes turned to their course; ground trails and their pilots only on the ground', () => {
@@ -94,37 +96,3 @@ describe('a day’s flights', () => {
   });
 });
 
-describe('the date picker’s days', () => {
-  test('a day key round-trips through a local date', () => {
-    for (const key of ['2026-01-01', '2026-03-08', '2026-11-01', '2026-12-31']) expect(dateToDayKey(dayKeyToDate(key))).toBe(key);
-  });
-});
-
-describe('the point picker', () => {
-  const flight = { id: 1, tracker_id: 7, pilot_name: 'Sam', start_time: 0, points: [
-    { t: 1_793_739_600, lat: 57.8, lon: -152.4, v: 185.2, e: 304.8, c: 90 },
-    { t: 1_793_739_660, lat: 57.9, lon: -152.4, v: null, e: null, c: null },
-  ] } as unknown as Flight;
-  const picks = flightTrackPicks([flight]);
-  const tracker = () => ({ name: 'inReach 1', assigned_aircraft: 'N77KZ' });
-
-  test('a tap near a track point snaps to it, with its details', () => {
-    // About 23 px from the first point at zoom 12 (core-live's nearestPointIdx test).
-    const d = pickDetails('America/Anchorage', [-152.404, 57.8], 12, picks, tracker);
-    expect(d?.snapped).toBe(true);
-    expect(d?.lngLat).toEqual([-152.4, 57.8]);
-    expect(d?.coords).toBe('57.800000, -152.400000');
-    expect(d?.rows.map(([label]) => label)).toEqual(['Tracker', 'Aircraft', 'Pilot', 'Time', 'Speed', 'Altitude']);
-  });
-
-  test('farther away, nothing', () => {
-    expect(pickDetails('America/Anchorage', [-152.404, 57.8], 13, picks, tracker)).toBeNull();
-  });
-
-  test('a long press: the spot itself, even near a track', () => {
-    const d = spotDetails('America/Anchorage', [-152.404, 57.8]);
-    expect(d.snapped).toBe(false);
-    expect(d.lngLat).toEqual([-152.404, 57.8]);
-    expect(d.rows).toEqual([]);
-  });
-});

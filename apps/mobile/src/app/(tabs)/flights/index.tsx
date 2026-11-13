@@ -39,6 +39,7 @@ export default function FlightsScreen() {
       <FlightList
         days={days}
         onSelect={(id) => router.push({ pathname: '/flights/[id]', params: { id: String(id) } })}
+        onMapDay={(day) => router.push({ pathname: '/flights/day', params: { day } })}
         onRefresh={refresh}
         empty={filtered ? (
           <EmptyState title="No matching flights" systemImage="line.3.horizontal.decrease.circle" description="No flights match the filter."

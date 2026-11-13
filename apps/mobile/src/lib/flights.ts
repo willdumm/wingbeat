@@ -52,6 +52,8 @@ export interface FlightDay {
   /** "Mon, Oct 3, 2026" */
   title: string;
   data: FlightRow[];
+  /** A flight has a track, so the day has a map ("Map all"). */
+  mappable: boolean;
 }
 
 /** Whether the instance has aircraft and pilots, which decides whether a missing one reads "Unknown". */
@@ -98,8 +100,9 @@ export function flightDays(tz: string, flights: Flight[], roster: Roster): Fligh
     const f = flights[i];
     const dayKey = unixToTzDateStr(tz, f.start_time);
     let day = days.at(-1);
-    if (day?.dayKey !== dayKey) days.push(day = { dayKey, title: tzLongDateLabel(dayKey), data: [] });
+    if (day?.dayKey !== dayKey) days.push(day = { dayKey, title: tzLongDateLabel(dayKey), data: [], mappable: false });
     day.data.push(flightRow(tz, f, roster));
+    if (f.points?.length) day.mappable = true;
   }
   return days;
 }
@@ -204,7 +207,8 @@ export function flightDetail(tz: string, f: Flight, roster: Roster): { title: st
  */
 const MIN_BOUNDS_DEG = 0.05;
 
-function bboxOf(coords: [number, number][]): [number, number, number, number] | null {
+/** The bounds of coords, widened to at least MIN_BOUNDS_DEG each way; null when there are none. */
+export function bboxOf(coords: [number, number][]): [number, number, number, number] | null {
   if (!coords.length) return null;
   const lons = coords.map((c) => c[0]);
   const lats = coords.map((c) => c[1]);
