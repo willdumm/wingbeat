@@ -1,8 +1,9 @@
 /**
  * The map of the Live tab and the flight detail: the basemap and overlays the user picked
- * (map-style.ts), points in their colors (each tracker's position, or a flight's start and
- * end, numbered when `label` is set: end-markers.tsx) and tracks (each flight in progress, a day's
- * flights, or the one flight). The map runs under the status bar, the header and the tab
+ * (map-style.ts), points in their colors (each tracker's position as a plane turned to its
+ * course when `plane` is set, a ground trail's pilot as a hollow dot when `pilot` is, or a
+ * flight's start and end, numbered when `label` is: end-markers.tsx) and tracks (each flight
+ * in progress, a day's flights, or the one flight; dotted when `trail` is set: a ground trail). The map runs under the status bar, the header and the tab
  * bar; along its top go a full-width bar (the status cards) or a floating overlay (the day
  * banner), and the tools (map-tools.tsx) at its bottom left, clear of them and of a sheet
  * over its bottom (a flight's details: map-sheet.tsx). The tools start with Layers, which picks
@@ -12,7 +13,7 @@
  */
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 import { PixelRatio, StyleSheet, View } from 'react-native';
-import { Camera, GeoJSONSource, Layer, Map, type CameraRef, type InitialViewState, type ViewState } from '@maplibre/maplibre-react-native';
+import { Camera, GeoJSONSource, Images, Layer, Map, type CameraRef, type InitialViewState, type ViewState } from '@maplibre/maplibre-react-native';
 import type { TileOverlay } from '@wingbeat/core/api/bootstrap';
 import { Picker, Section, Text as SwiftText, Toggle } from '@expo/ui/swift-ui';
 import { pickerStyle, tag } from '@expo/ui/swift-ui/modifiers';
@@ -32,6 +33,9 @@ export interface LiveMapRef {
   /** [west, south, east, north] */
   fitBounds(bounds: [number, number, number, number], options?: { bottom?: number }): void;
 }
+
+/** The plane markers' image: a signed distance field, tinted per tracker (scripts/gen-plane-icon.mjs). */
+const IMAGES = { plane: { source: require('../../assets/plane.png'), sdf: true } };
 
 /** Room around fitted bounds, inside the overlay and the bars: clear of the tool column on the left. */
 const FIT_PADDING = { top: 24, right: 40, bottom: 24, left: 72 };
@@ -161,16 +165,32 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
         compass compassPosition={{ top: Math.max(top, topEdge) - insets.top + px(t['space-2']), right: gutter }}
         attributionPosition={sheetHeight ? { top: Math.max(top, topEdge) - insets.top + px(t['space-2']), left: gutter } : { bottom: px(t['space-2']), right: gutter }} onRegionIsChanging={onView} onRegionDidChange={onView}>
         <Camera ref={camera} initialViewState={initialView} />
+        <Images images={IMAGES} />
         <GeoJSONSource id="tracks" data={tracks}>
-          <Layer id="tracks" type="line" layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+          <Layer id="tracks" type="line" filter={['!', ['has', 'trail']]} layout={{ 'line-cap': 'round', 'line-join': 'round' }}
             paint={{ 'line-color': ['get', 'color'], 'line-width': 3 }} />
+          {/* The web's dotted ground trail (dashes are in line widths). */}
+          <Layer id="trails" type="line" filter={['has', 'trail']} layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+            paint={{ 'line-color': ['get', 'color'], 'line-width': 3, 'line-opacity': 0.9, 'line-dasharray': [0.3, 2.3] }} />
         </GeoJSONSource>
         <GeoJSONSource id="positions" data={positions}>
-          <Layer id="positions" type="circle" filter={['!', ['has', 'label']]} paint={{
-            'circle-color': ['get', 'color'],
-            'circle-radius': ['case', ['get', 'inFlight'], 9, 7],
-            'circle-stroke-color': t['surface-1'],
-            'circle-stroke-width': 2.5,
+          <Layer id="positions" type="circle" filter={['all', ['!', ['has', 'label']], ['!', ['has', 'plane']]]} paint={{
+            'circle-color': ['case', ['has', 'pilot'], t['surface-1'], ['get', 'color']],
+            'circle-radius': ['case', ['has', 'pilot'], 6, 7],
+            'circle-stroke-color': ['case', ['has', 'pilot'], ['get', 'color'], t['surface-1']],
+            'circle-stroke-width': ['case', ['has', 'pilot'], 3, 2.5],
+          }} />
+          <Layer id="planes" type="symbol" filter={['has', 'plane']} layout={{
+            'icon-image': 'plane',
+            'icon-size': 1 / 3,
+            'icon-rotate': ['get', 'course'],
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          }} paint={{
+            'icon-color': ['get', 'color'],
+            'icon-halo-color': t['surface-1'],
+            'icon-halo-width': 1.5,
           }} />
         </GeoJSONSource>
         <EndMarkers ends={ends} groups={groups} />

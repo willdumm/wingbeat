@@ -118,6 +118,19 @@ describe('in flight and in progress', () => {
     assert.deepEqual(inProgress, [11]);
   });
 
+  test('ground trail: from the plane to the pilot, only on the ground and once it has moved', () => {
+    const pts = [{ t: NOW - 60, lat: 57.81, lon: -152.39, v: 4, e: 10, c: 0 }, { t: NOW, lat: 57.82, lon: -152.38, v: 5, e: 10, c: 0 }];
+    const parked = { lat: 57.8, lon: -152.4, velocity_kmh: 0, ground_trail: pts };
+    assert.deepEqual(live.groundTrail(KMH, parked), {
+      line: [{ lat: 57.8, lon: -152.4 }, { lat: 57.81, lon: -152.39 }, { lat: 57.82, lon: -152.38 }],
+      pilot: { lat: 57.82, lon: -152.38 },
+      points: pts,
+    });
+    assert.equal(live.groundTrail(KMH, { ...parked, velocity_kmh: 140 }), null, 'in flight');
+    assert.equal(live.groundTrail(KMH, { ...parked, ground_trail: [] }), null, 'not moved');
+    assert.equal(live.groundTrail(KMH, undefined), null);
+  });
+
   test('GPS is fresh for under four minutes', () => {
     assert.equal(live.GPS_FRESH_SECS, 240);
     assert.equal(live.isGpsFresh(NOW, NOW - 239), true);

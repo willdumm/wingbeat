@@ -1,6 +1,6 @@
 import { TRACKER_COLORS, type LiveData } from '@wingbeat/core/live';
 import type { Flight } from '@/lib/flights';
-import { dateToDayKey, dayKeyToDate, dayMap, inFlightTracks, initialView, mapDays, positionFeatures, statusCards } from '@/lib/live';
+import { dateToDayKey, dayKeyToDate, dayMap, groundTrailFeatures, inFlightTracks, initialView, mapDays, positionFeatures, statusCards } from '@/lib/live';
 
 const NOW = 1_793_739_600;
 const trackers = [
@@ -37,6 +37,21 @@ test('positions for trackers with one; tracks only for those in flight', () => {
   const tracks = inFlightTracks(cards, ([id]) => (raw[id] ?? []) as never);
   expect(tracks.features).toHaveLength(1);
   expect(tracks.features[0].geometry.coordinates).toEqual([[-152, 57], [-152.4, 57.8]]);
+});
+
+test('planes turned to their course; ground trails and their pilots only on the ground', () => {
+  const trail = [{ t: NOW - 60, lat: 57.81, lon: -152.39, v: 4, e: 10, c: 0 }];
+  const moved = { ...live, 1: { ...live[1], ground_trail: trail }, 2: { ...live[2], ground_trail: trail } };
+  const cards = statusCards(trackers, moved, NOW, 'faint');
+  const points = positionFeatures(cards, moved, { trails: true }).features;
+  expect(points.map((f) => [f.id, f.properties])).toEqual([
+    [1, { color: TRACKER_COLORS[0], inFlight: true, plane: true, course: 90 }],
+    [2, { color: TRACKER_COLORS[1], inFlight: false, plane: true, course: 90 }],
+    ['pilot-2', { color: TRACKER_COLORS[1], inFlight: false, pilot: true }],
+  ]);
+  const trails = groundTrailFeatures(cards, moved).features;
+  expect(trails.map((f) => f.id)).toEqual(['trail-2']);
+  expect(trails[0].geometry.coordinates).toEqual([[-152.4, 57.8], [-152.39, 57.81]]);
 });
 
 test("the map opens on the instance's view, else the first position", () => {

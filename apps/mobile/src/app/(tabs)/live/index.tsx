@@ -11,7 +11,7 @@ import { useBootstrap } from '@/lib/bootstrap-context';
 import { DayBanner } from '@/lib/day-banner';
 import { DayPickerSheet } from '@/lib/day-picker-sheet';
 import { useFlights } from '@/lib/flights-context';
-import { dayMap, inFlightTracks, initialView, mapDays, positionFeatures, statusCards } from '@/lib/live';
+import { dayMap, groundTrailFeatures, inFlightTracks, initialView, mapDays, positionFeatures, statusCards } from '@/lib/live';
 import { LiveMap, type LiveMapRef } from '@/lib/live-map';
 import { LocationSheet } from '@/lib/location-sheet';
 import { sheetDetentHeight } from '@/lib/map-sheet';
@@ -52,8 +52,11 @@ export default function LiveScreen() {
     [store, trackers, lastRefresh, generation],
   );
   const cards = useMemo(() => statusCards(trackers, live, now, t['text-faint']), [trackers, live, now, t]);
-  const positions = useMemo(() => positionFeatures(cards, live), [cards, live]);
-  const tracks = useMemo(() => inFlightTracks(cards, store?.getRaw ?? (() => [])), [store, cards, generation]);
+  const positions = useMemo(() => positionFeatures(cards, live, { trails: true }), [cards, live]);
+  const tracks = useMemo(() => ({
+    type: 'FeatureCollection' as const,
+    features: [...inFlightTracks(cards, store?.getRaw ?? (() => [])).features, ...groundTrailFeatures(cards, live).features],
+  }), [store, cards, live, generation]);
 
   const tz = tab.ready ? tab.tz : null;
   const flights = tab.ready ? tab.flights : null;

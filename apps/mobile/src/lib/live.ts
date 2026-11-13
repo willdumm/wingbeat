@@ -7,7 +7,7 @@
 import type { InstanceSettings } from '@wingbeat/core/api/bootstrap';
 import type { TrackedFlight } from '@wingbeat/core/api/flights';
 import { toFeet, toKnots } from '@wingbeat/core/format';
-import { dayFlightNumbers, isGpsFresh, isInFlight, trackerColor, type LiveData } from '@wingbeat/core/live';
+import { dayFlightNumbers, groundTrail, isGpsFresh, isInFlight, trackerColor, type LiveData } from '@wingbeat/core/live';
 import { SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
 import { relativeTime, tzLongDateLabel, unixToTzDateStr } from '@wingbeat/core/time';
 import type { Flight } from './flights';
@@ -62,16 +62,50 @@ export function statusCards(
   });
 }
 
-/** The cards' positions as map points (color, inFlight and course for the layers' styles). */
-export function positionFeatures(cards: StatusCard[], live: Record<number, LiveData>): GeoJSON.FeatureCollection<GeoJSON.Point> {
+/**
+ * The cards' positions as map points: plane markers (`plane`), turned to their `course`.
+ * With trails, each tracker's ground trail's pilot too (`pilot`: a hollow dot).
+ */
+export function positionFeatures(cards: StatusCard[], live: Record<number, LiveData>, { trails = false } = {}): GeoJSON.FeatureCollection<GeoJSON.Point> {
   return {
     type: 'FeatureCollection',
-    features: cards.flatMap((c) => c.position ? [{
-      type: 'Feature' as const,
-      id: c.trackerId,
-      geometry: { type: 'Point' as const, coordinates: c.position },
-      properties: { color: c.color, inFlight: c.inFlight, course: live[c.trackerId]?.course_deg ?? 0 },
-    }] : []),
+    features: cards.flatMap((c) => {
+      if (!c.position) return [];
+      const trail = trails ? groundTrail(SPEED_THRESHOLD_KMH, live[c.trackerId]) : null;
+      return [
+        {
+          type: 'Feature' as const,
+          id: c.trackerId,
+          geometry: { type: 'Point' as const, coordinates: c.position },
+          properties: { color: c.color, inFlight: c.inFlight, plane: true, course: live[c.trackerId]?.course_deg ?? 0 },
+        },
+        ...(trail ? [{
+          type: 'Feature' as const,
+          id: 'pilot-' + c.trackerId,
+          geometry: { type: 'Point' as const, coordinates: [trail.pilot.lon, trail.pilot.lat] },
+          properties: { color: c.color, inFlight: false, pilot: true },
+        }] : []),
+      ];
+    }),
+  };
+}
+
+/**
+ * Each tracker's ground trail (core's groundTrail: on the ground, once it has moved since
+ * landing), as a dotted line (`trail`) from its plane marker to its pilot.
+ */
+export function groundTrailFeatures(cards: StatusCard[], live: Record<number, LiveData>): GeoJSON.FeatureCollection<GeoJSON.LineString> {
+  return {
+    type: 'FeatureCollection',
+    features: cards.flatMap((c) => {
+      const trail = groundTrail(SPEED_THRESHOLD_KMH, live[c.trackerId]);
+      return trail ? [{
+        type: 'Feature' as const,
+        id: 'trail-' + c.trackerId,
+        geometry: { type: 'LineString' as const, coordinates: trail.line.map((p) => [p.lon, p.lat]) },
+        properties: { color: c.color, trail: true },
+      }] : [];
+    }),
   };
 }
 

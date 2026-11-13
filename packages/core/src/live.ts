@@ -83,6 +83,32 @@ export function isInFlight(thresholdKmh: number, live: { velocity_kmh?: number |
   return !!live && (live.velocity_kmh ?? 0) >= thresholdKmh;
 }
 
+/** A tracker's ground trail: where the pilot went after landing, while the plane stayed put. */
+export interface GroundTrail {
+  /** The landing spot (the live position, where the plane marker stays), then each point since. */
+  line: { lat: number; lon: number }[];
+  /** The tracker's current position: the pilot, carrying it. */
+  pilot: { lat: number; lon: number };
+  /** Its points since the latest flight (ground_trail's). */
+  points: FlightPoint[];
+}
+
+/**
+ * A tracker's ground trail, drawn from its plane marker: none while it's in flight, or
+ * before it has moved since its latest flight (or before the first refresh).
+ */
+export function groundTrail(thresholdKmh: number, live: LiveData | null | undefined): GroundTrail | null {
+  if (!live || isInFlight(thresholdKmh, live)) return null;
+  const points = live.ground_trail;
+  if (!points.length) return null;
+  const last = points[points.length - 1];
+  return {
+    line: [{ lat: live.lat, lon: live.lon }, ...points.map((p) => ({ lat: p.lat, lon: p.lon }))],
+    pilot: { lat: last.lat, lon: last.lon },
+    points,
+  };
+}
+
 /** Whether a GPS time (the card's, Unix seconds) is fresh. */
 export function isGpsFresh(now: number, gpsTime: number): boolean {
   return (now - gpsTime) < GPS_FRESH_SECS;

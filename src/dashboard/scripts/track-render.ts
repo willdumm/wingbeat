@@ -177,19 +177,17 @@ export function dashboardScriptsTrackRender(): string {
       return { layers, planes, endInfos, allPoints, trackerIds, latlngs: latlngsOut, pointData: pointDataOut, labels: labelsOut };
     }
 
-    // Draws a tracker's ground trail (its points since its last flight, compact like a
-    // flight's: { t, lat, lon, v, e, c }) as a dotted line in its color from the landing
-    // spot (from: [lat, lon]) to a hollow dot at the tracker's current position: the
-    // pilot, where the plane marker stays with the aircraft. Returns { layers, latlngs,
-    // pointData, labels } (the last three for the hover handler), or null with no points.
-    function drawGroundTrail(mapObj, { from, points, color, trackerId }) {
-      if (!points.length) return null;
+    // Draws a tracker's ground trail (core's groundTrail) as a dotted line in its color
+    // from the landing spot to a hollow dot at the tracker's current position: the pilot,
+    // where the plane marker stays with the aircraft. Returns { layers, latlngs, pointData,
+    // labels } (the last three for the hover handler).
+    function drawGroundTrail(mapObj, { line: trailLine, pilot, points }, { color, trackerId }) {
       const latlngs = points.map(p => [p.lat, p.lon]);
-      const line = L.polyline(from ? [from, ...latlngs] : latlngs, {
+      const line = L.polyline(trailLine.map(p => [p.lat, p.lon]), {
         color, weight: 3, opacity: 0.9, dashArray: '1 7', lineCap: 'round', lineJoin: 'round',
         interactive: false,
       }).addTo(mapObj);
-      const pilotDot = L.circleMarker(latlngs[latlngs.length - 1], {
+      const pilotDot = L.circleMarker([pilot.lat, pilot.lon], {
         radius: 6, color, weight: 3, fillColor: '#fff', fillOpacity: 1, interactive: false,
       }).addTo(mapObj);
       return {
