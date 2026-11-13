@@ -18,7 +18,8 @@
       "distribution": "store",
       "autoIncrement": true,
       "channel": "preview",
-      "environment": "preview"
+      "environment": "preview",
+      "env": { "SENTRY_ALLOW_FAILURE": "true" }
     },
     "production": {
       "autoIncrement": true,

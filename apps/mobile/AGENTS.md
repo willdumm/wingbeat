@@ -42,7 +42,8 @@ EAS_PROJECT_ROOT=$(realpath ../..) EAS_NO_VCS=1 npx eas-cli@latest build --profi
 Reporting is on only in a bundle built with `EXPO_PUBLIC_SENTRY_DSN` set (`src/lib/sentry.ts`).
 It and `SENTRY_ORG` / `SENTRY_PROJECT` (plain) and `SENTRY_AUTH_TOKEN` (secret) are EAS
 environment variables of the `preview` and `production` environments, so EAS Build reads them
-and its builds upload their source maps. The `development` profile sets
+and its builds upload their source maps (the `testflight` profile sets `SENTRY_ALLOW_FAILURE`, so a
+failed upload doesn't fail the build: check its log for the upload). The `development` profile sets
 `SENTRY_DISABLE_AUTO_UPLOAD` (a dev client loads its JS from Metro). An EAS Update uploads its
 own maps after publishing, with the same variables in the shell:
 
