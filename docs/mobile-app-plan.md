@@ -1951,11 +1951,13 @@ EAS profile `testflight` (`distribution: "store"`, `channel: "preview"`,
 `environment: "preview"`), built with `EAS_PROJECT_ROOT=$(realpath ../..) EAS_NO_VCS=1 npx
 eas-cli@latest build --profile testflight --platform ios`, then `eas submit`, which needs the
 user's Apple sign-in. On that build, check that `expo-clipboard` is linked (Copy replaces the
-share buttons), that the source maps uploaded, and the waiting Sentry test error. App Store
+share buttons), that the source maps uploaded, and the waiting Sentry test error. Build 4 (2026-11-13): Copy
+works and its source maps uploaded; for the test error, Settings has a temporary Diagnostics
+section ("Send Test Error", shown only when Sentry is on), shipped as the first OTA update, to
+remove once its event arrives with a resolved stack. App Store
 Connect's EU DSA trader status is unset; it matters only for an App Store release. The App Store
-Connect record is named "Wingbeat (0ea…)" (EAS generated it: "Wingbeat" is taken, likely an
-unreleased reservation); the user wants it renamed to "Wingbeat Flight Tracking" (App
-Information → Name) at the next chance. The name under the icon stays `app.config.ts`'s "Wingbeat".
+Connect record, which EAS named "Wingbeat (0ea…)" ("Wingbeat" is taken, likely an unreleased
+reservation), is renamed "Wingbeat Flight Tracking" (2026-11-13). The name under the icon stays `app.config.ts`'s "Wingbeat".
 
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with
