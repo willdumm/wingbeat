@@ -3,7 +3,8 @@
  * total, the §135.267 totals as bars toward their limits, the days planned after today (the
  * current month only), then the days newest first as sticky headings with their duty or
  * rest, note and flight time, each day's flights as the flight list's rows, corrections
- * whose flight is gone and warnings (the web's red rows). Pull to refresh. Like the flight
+ * whose flight is gone and warnings (the web's red rows). For an admin, a day's heading or an
+ * Upcoming row opens the day form (onDay). Pull to refresh. Like the flight
  * list, dense custom rows in React Native (docs/mobile-design-principles.md, 1).
  */
 import { useState, type ReactNode } from 'react';
@@ -84,7 +85,7 @@ function Item({ item, onSelect }: { item: DutyItem; onSelect: (id: number) => vo
   );
 }
 
-export function DutyList({ view, period, onPrev, onNext, notice, onSelect, onRefresh }: {
+export function DutyList({ view, period, onPrev, onNext, notice, onSelect, onDay, onRefresh }: {
   /** null while the pilot's records haven't loaded. */
   view: DutyMonthView | null;
   /** "November 2026" */
@@ -95,6 +96,8 @@ export function DutyList({ view, period, onPrev, onNext, notice, onSelect, onRef
   /** A line over the totals (the records couldn't be fetched). */
   notice: string | null;
   onSelect: (flightId: number) => void;
+  /** Opens the day form for a date; null for a user who can't edit the log. */
+  onDay: ((dayKey: string) => void) | null;
   onRefresh: () => Promise<void>;
 }) {
   const t = useTokens();
@@ -117,13 +120,14 @@ export function DutyList({ view, period, onPrev, onNext, notice, onSelect, onRef
       {view?.isCurrentMonth && (
         <Card title="Upcoming">
           {view.upcoming.length ? view.upcoming.map((u) => (
-            <View key={u.dayKey} style={{ flexDirection: 'row', gap: 8 }}>
+            <Pressable key={u.dayKey} onPress={onDay ? () => onDay(u.dayKey) : undefined} disabled={!onDay}
+              accessibilityRole={onDay ? 'button' : undefined} style={({ pressed }) => ({ flexDirection: 'row', gap: 8, opacity: pressed ? 0.5 : 1 })}>
               <Text style={{ width: 92, fontSize: 14, fontWeight: '600', color: t['text-primary'] }}>{u.title}</Text>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 14, color: t['text-secondary'], fontStyle: u.rest ? 'italic' : 'normal' }}>{u.duty}</Text>
                 {u.note && <Text style={muted}>{u.note}</Text>}
               </View>
-            </View>
+            </Pressable>
           )) : <Text style={muted}>Nothing planned after today.</Text>}
         </Card>
       )}
@@ -140,17 +144,19 @@ export function DutyList({ view, period, onPrev, onNext, notice, onSelect, onRef
       stickySectionHeadersEnabled
       ListHeaderComponent={header}
       renderSectionHeader={({ section }) => (
-        <View style={{
-          backgroundColor: t['surface-2'], paddingVertical: px(t['space-2']), paddingHorizontal: px(t['space-4']),
+        <Pressable onPress={onDay ? () => onDay(section.dayKey) : undefined} disabled={!onDay}
+          accessibilityRole={onDay ? 'button' : undefined} accessibilityHint={onDay ? 'Edits the day’s duty or rest' : undefined}
+          style={({ pressed }) => ({
+          backgroundColor: t['surface-2'], opacity: pressed ? 0.6 : 1, paddingVertical: px(t['space-2']), paddingHorizontal: px(t['space-4']),
           borderBottomWidth: section.data.length ? 0 : 1, borderBottomColor: t['border-subtle'],
-        }}>
+        })}>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
             <Text style={{ fontSize: 14, fontWeight: '700', color: t['text-primary'] }}>{section.title}</Text>
             <Text style={{ flex: 1, fontSize: 13, color: t['text-secondary'], fontStyle: section.rest ? 'italic' : 'normal' }}>{section.duty}</Text>
             {section.total && <Text style={{ fontSize: 13, fontWeight: '600', color: t['text-primary'], fontVariant: ['tabular-nums'] }}>{section.total}</Text>}
           </View>
           {section.note && <Text style={{ ...muted, fontStyle: 'italic' }}>{section.note}</Text>}
-        </View>
+        </Pressable>
       )}
       renderItem={({ item }) => <Item item={item} onSelect={onSelect} />}
       ListFooterComponent={view ? (

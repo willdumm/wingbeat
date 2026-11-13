@@ -2063,8 +2063,8 @@ layers need no Android counterpart; only the chrome around the map does.
 
 | Feature | App | iOS | Android | Core / notes |
 |---|---|---|---|---|
-| Month view, totals and limits | Done, read-only (the Duty tab: the pilot from the header's menu, else the user's own `users.pilot_id`) | dense RN rows like the flight list (days newest first as sticky headings, a flight opens its map), a bar per limit, Upcoming in the current month | the same RN views | `duty` (`computeDutyData`), app `duty.ts` |
-| Plan or edit a day (duty or rest, start and end, through, note, use the default) | Phase 6 | a `Form` with a segmented `Picker`, `DatePicker`s (`hourAndMinute`), a `Toggle` | `SingleChoiceSegmentedButtonRow`, the Material time picker, `Switch` | `duty`, the duty request schemas |
+| Month view, totals and limits | Done (the Duty tab: the pilot from the header's menu, else the user's own `users.pilot_id`) | dense RN rows like the flight list (days newest first as sticky headings, a flight opens its map), a bar per limit, Upcoming in the current month | the same RN views | `duty` (`computeDutyData`), app `duty.ts` |
+| Plan or edit a day (duty or rest, start and end, through, note, use the default) | Done (admins: a day's heading, an Upcoming row or the header's +; `duty/day.tsx`, fields in `duty-day-form.tsx`; a 409 offers Reload) | a `Form` with a segmented `Picker`, `DatePicker`s (`hourAndMinute`), `Toggle`s for Through and Duty Times (on: the default's times) | `SingleChoiceSegmentedButtonRow`, the Material time picker, `Switch` | `duty`, the duty request schemas |
 | Default duty, duty methods history | Phase 11 | `Form` | `ListItem`s | `duty` |
 | PDF export | Phase 6 (hidden WebView; see "Decided 2026-11-13") | `ShareLink` (share sheet) for the file | `Share.share` | the Typst template |
 | Role-based first tab | Done (no Settings override yet) | `/` redirects to Duty for a user linked to a pilot, else Live | same | `users.pilot_id`, kept on the stored account from bootstrap's `me` |

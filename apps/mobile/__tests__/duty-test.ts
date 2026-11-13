@@ -1,6 +1,7 @@
 import type { DutyLogResponse } from '@wingbeat/core/api/duty';
 import type { FlightCorrection, FlightEdit } from '@wingbeat/core/flight-edits';
 import {
+  dateOfDayKey, dateOfTime, dayKeyOfDate, dutyDayFormOf, dutyDayRequest, dutyDaysRecorded, dutyTimesSuggested, timeOfDate,
   dutyExportOptions, dutyMonth, dutyMonthIndex, dutyMonthOf, dutyMonths, dutyMonthView, dutyPilots, dutyPilotShown,
 } from '@/lib/duty';
 import type { Flight } from '@/lib/flights';
@@ -128,4 +129,34 @@ test('an export’s months, in order, as the screen computes each', () => {
   const months = dutyMonths(TZ, NOW, [flight({})], [], PILOT, dutyMonthIndex(2026, 5), dutyMonthIndex(2026, 7), log());
   expect(months.map((m) => [m.year, m.month, m.pilotName])).toEqual([[2026, 5, 'Jane Pilot'], [2026, 6, 'Jane Pilot'], [2026, 7, 'Jane Pilot']]);
   expect(months[2].monthSecs).toBe(4320);
+});
+
+test('the day form fills from the first date’s record', () => {
+  const l = log({ days: [day('2026-07-04', { duty_start: '06:00', duty_end: '15:00', note: 'Charter' }), day('2026-07-06', { rest: 1 })] });
+  expect(dutyDayFormOf(l, '2026-07-04', null)).toEqual({ from: '2026-07-04', through: null, rest: false, times: { start: '06:00', end: '15:00' }, note: 'Charter' });
+  expect(dutyDayFormOf(l, '2026-07-06', '2026-07-08')).toEqual({ from: '2026-07-06', through: '2026-07-08', rest: true, times: null, note: '' });
+  expect(dutyDaysRecorded(l, { from: '2026-07-05', through: null })).toBe(false);
+  expect(dutyDaysRecorded(l, { from: '2026-07-05', through: '2026-07-06' })).toBe(true);
+});
+
+test('the day form’s request: a rest day sends no times, and a bad range or times say why', () => {
+  const form = { from: '2026-07-04', through: '2026-07-05', rest: false, times: { start: '08:00', end: '17:00' }, note: 'x' };
+  expect(dutyDayRequest(form)).toEqual({
+    keys: ['2026-07-04', '2026-07-05'],
+    body: { dates: ['2026-07-04', '2026-07-05'], duty_start: '08:00', duty_end: '17:00', rest: false, note: 'x' },
+  });
+  expect(dutyDayRequest({ ...form, rest: true })).toMatchObject({ body: { duty_start: null, duty_end: null, rest: true } });
+  expect(dutyDayRequest({ ...form, through: '2026-07-01' })).toBe('The Through date is before the date.');
+  expect(dutyDayRequest({ ...form, times: { start: '08:00', end: '08:00' } })).toBe('The duty end must differ from its start.');
+});
+
+test('Duty Times starts from the pilot’s default on the date', () => {
+  const l = log({ default_duties: [{ effective_date: '2026-07-05', duty_start: '07:00', duty_end: '16:00' }] });
+  expect(dutyTimesSuggested(l, '2026-07-04')).toEqual({ start: '07:00', end: '16:00' }); // the earliest entry before it starts
+  expect(dutyTimesSuggested(log(), '2026-07-04')).toEqual({ start: '08:00', end: '17:00' });
+});
+
+test('dates and times round-trip through the pickers’ Dates', () => {
+  expect(dayKeyOfDate(dateOfDayKey('2026-03-08'))).toBe('2026-03-08');
+  expect(timeOfDate(dateOfTime('06:05'))).toBe('06:05');
 });

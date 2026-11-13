@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Alert } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { currentDutyMonth, dutyPeriodLabel, type DutyInputFlight } from '@wingbeat/core/duty';
+import { tzAddDays, unixToTzDateStr } from '@wingbeat/core/time';
 import { dutyLogPdfName, dutyLogTypstSource } from '@wingbeat/core/duty-pdf';
 import { useAccounts } from '@/lib/accounts-context';
 import {
@@ -20,9 +21,11 @@ import { useFlightsTab } from '@/lib/use-flights-tab';
 import { useNow } from '@/lib/use-now';
 
 /**
- * A pilot's duty log, read-only (the web's, from Settings → Pilots): the pilot picked from
- * the header's menu (kept per account), else the user's own, a month at a time up to this one.
- * The header's Export PDF menu shares the web's PDF of the month, a quarter or 12 months.
+ * A pilot's duty log (the web's, from Settings → Pilots): the pilot picked from the header's
+ * menu (kept per account), else the user's own, a month at a time up to this one. The
+ * header's Export PDF menu shares the web's PDF of the month, a quarter or 12 months. An
+ * admin plans or edits a day in the day form (day.tsx): from a day, an Upcoming row, or the
+ * header's + (tomorrow, since rest is designated ahead, as the web's Plan duty or rest).
  */
 export default function DutyScreen() {
   const router = useRouter();
@@ -56,6 +59,8 @@ export default function DutyScreen() {
     return <EmptyState title="No pilots" systemImage="person.2" description="A pilot’s duty log shows here once an admin adds pilots in Settings on the web." />;
   }
   const offered = dutyPilots(pilots, pilot.id);
+  const openDay = tab.isAdmin && log
+    ? (date: string) => router.push({ pathname: '/duty/day', params: { pilot: String(pilot.id), date } }) : null;
   const notice = pdf.status ?? (failed
     ? (log ? 'Couldn’t refresh the duty records; showing the copy saved earlier.' : 'Couldn’t load the duty records. Pull down to try again.')
     : (log ? null : 'Loading…'));
@@ -73,6 +78,10 @@ export default function DutyScreen() {
     <>
       <Stack.Screen options={{ title: pilot.name }} />
       <Stack.Toolbar placement="right">
+        {openDay && (
+          <Stack.Toolbar.Button icon="plus" accessibilityLabel="Plan Duty or Rest"
+            onPress={() => openDay(tzAddDays(unixToTzDateStr(tab.tz, Math.floor(Date.now() / 1000)), 1))} />
+        )}
         {exportOptions.length > 0 && (
           <Stack.Toolbar.Menu icon="square.and.arrow.up" accessibilityLabel="Export PDF" title="Export PDF" disabled={pdf.status != null}>
             {exportOptions.map((o) => (
@@ -99,6 +108,7 @@ export default function DutyScreen() {
         onNext={index < current ? () => setShown(index + 1 >= current ? null : index + 1) : null}
         notice={notice}
         onSelect={(id) => router.push({ pathname: '/duty/[id]', params: { id: String(id) } })}
+        onDay={openDay}
         onRefresh={() => Promise.all([refresh(), reload()]).then(() => {})}
       />
       {pdf.compiler}

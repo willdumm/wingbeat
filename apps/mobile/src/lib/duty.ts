@@ -5,10 +5,11 @@
  * corrections whose flight is gone, and its warnings. Times are in the operator's timezone
  * (tz), through core's time.
  */
-import type { DutyLogResponse } from '@wingbeat/core/api/duty';
+import type { DutyDaysRequest, DutyLogResponse } from '@wingbeat/core/api/duty';
 import type { Pilot } from '@wingbeat/core/api/pilots';
 import {
-  computeDutyData, dutyDayText, dutyExportEarliest, dutyExportPresets, dutyRangeLabel, dutyRemarksText,
+  computeDutyData, dutyDayKeys, dutyDayText, dutyDefaultOn, dutyExportEarliest, dutyExportPresets, dutyRangeLabel,
+  dutyRemarksText, dutyTimesError,
   type DutyData, type DutyFlight, type DutyInputFlight,
 } from '@wingbeat/core/duty';
 import { flightEntrySummary, flightFieldEdited, type FlightCorrection } from '@wingbeat/core/flight-edits';
@@ -205,4 +206,74 @@ export function dutyMonthView(tz: string, data: DutyData): DutyMonthView {
     })),
     days,
   };
+}
+
+/**
+ * The day form (the web's "Duty or rest"): duty times or a rest day, and a note, for from
+ * or every day from it through through.
+ */
+export interface DutyDayForm {
+  from: string;
+  /** null: from alone. */
+  through: string | null;
+  rest: boolean;
+  /** Duty start and end (HH:MM); null records none (the default applies on a flying day). */
+  times: { start: string; end: string } | null;
+  note: string;
+}
+
+/** The form for from..through, filled from from's record in log, as the web's fills it. */
+export function dutyDayFormOf(log: DutyLogResponse, from: string, through: string | null): DutyDayForm {
+  const r = log.days.find((d) => d.date === from);
+  return {
+    from,
+    through,
+    rest: !!r?.rest,
+    times: r?.duty_start && r.duty_end ? { start: r.duty_start, end: r.duty_end } : null,
+    note: r?.note ?? '',
+  };
+}
+
+/** The times the form's Duty Times switch starts with: the pilot's default on from, else 08:00–17:00. */
+export function dutyTimesSuggested(log: DutyLogResponse, from: string): { start: string; end: string } {
+  const def = dutyDefaultOn(log.default_duties, from);
+  return def?.duty_start && def.duty_end ? { start: def.duty_start, end: def.duty_end } : { start: '08:00', end: '17:00' };
+}
+
+/** The form's days and its PUT /api/duty-days body (without base_history_id), or what's wrong with it. */
+export function dutyDayRequest(form: DutyDayForm): { keys: string[]; body: Omit<DutyDaysRequest, 'base_history_id'> } | string {
+  const keys = dutyDayKeys(form.from, form.through ?? '');
+  if (typeof keys === 'string') return keys;
+  const times = form.rest ? null : form.times;
+  const error = dutyTimesError(times?.start ?? null, times?.end ?? null);
+  if (error) return error;
+  return { keys, body: { dates: keys, duty_start: times?.start ?? null, duty_end: times?.end ?? null, rest: form.rest, note: form.note } };
+}
+
+/** Whether any of the form's days has a record: it offers Clear. */
+export function dutyDaysRecorded(log: DutyLogResponse, form: Pick<DutyDayForm, 'from' | 'through'>): boolean {
+  const keys = dutyDayKeys(form.from, form.through ?? '');
+  return typeof keys !== 'string' && log.days.some((d) => keys.includes(d.date));
+}
+
+// The native date pickers take and give Dates on the phone's clock; the form's dates and
+// times are the operator's wall-clock values, so they go through the phone's local time
+// unconverted (noon, and a day without a DST change, keep a date and time as typed).
+
+export function dateOfDayKey(key: string): Date {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d, 12);
+}
+
+export function dayKeyOfDate(d: Date): string {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+export function dateOfTime(hhmm: string): Date {
+  const [h, m] = hhmm.split(':').map(Number);
+  return new Date(2000, 0, 1, h, m);
+}
+
+export function timeOfDate(d: Date): string {
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
