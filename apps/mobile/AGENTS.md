@@ -25,7 +25,14 @@ npx expo export --platform ios --platform android --output-dir <scratch dir>   #
 ```
 
 The repo is a non-colocated jj repo, so EAS CLI commands need `EAS_NO_VCS=1`:
-`EAS_NO_VCS=1 npx eas-cli@latest <command>`.
+`EAS_NO_VCS=1 npx eas-cli@latest <command>`. A build also needs
+`EAS_PROJECT_ROOT=<repo root>`: otherwise EAS uploads only `apps/mobile`, without
+`packages/core` (the app's `file:` dependency). The repo root's `.easignore` keeps the upload
+to the app and core; `build:inspect --stage archive --output <dir>` shows what's sent.
+
+```bash
+EAS_PROJECT_ROOT=$(realpath ../..) EAS_NO_VCS=1 npx eas-cli@latest build --profile development --platform android
+```
 
 ## Sentry
 
