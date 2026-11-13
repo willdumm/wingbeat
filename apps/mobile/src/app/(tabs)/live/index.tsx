@@ -11,7 +11,7 @@ import { useBootstrap } from '@/lib/bootstrap-context';
 import { DayBanner } from '@/lib/day-banner';
 import { DayPickerSheet } from '@/lib/day-picker-sheet';
 import { useFlights } from '@/lib/flights-context';
-import { dayMap, groundTrailFeatures, inFlightTracks, initialView, mapDays, positionFeatures, statusCards } from '@/lib/live';
+import { dayMap, flightTrackPicks, groundTrailFeatures, inFlightTracks, initialView, liveTrackPicks, mapDays, pickDetails, positionFeatures, statusCards } from '@/lib/live';
 import { LiveMap, type LiveMapRef } from '@/lib/live-map';
 import { LocationSheet } from '@/lib/location-sheet';
 import { sheetDetentHeight } from '@/lib/map-sheet';
@@ -30,7 +30,8 @@ const LIVE = 'live';
 
 /**
  * The live view (each tracker's position and the track of each flight in progress, with the
- * status cards along the top; tapping one flies to it and opens its location details), or
+ * status cards along the top; tapping one flies to it and opens its location details, and a
+ * tap on the map opens the details of that spot, snapped to a drawn track's point), or
  * with the Day tool a day's flights at once (the dashboard's "Map all").
  */
 export default function LiveScreen() {
@@ -45,6 +46,7 @@ export default function LiveScreen() {
   const [dayKey, setDayKey] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
+  const [picked, setPicked] = useState<ReturnType<typeof pickDetails> | null>(null);
 
   const trackers = useMemo(() => bootstrap?.trackers.filter((tr) => tr.active && !tr.deleted) ?? [], [bootstrap]);
   const live = useMemo(
@@ -71,6 +73,11 @@ export default function LiveScreen() {
       inProgress: (f) => isFlightInProgress(SPEED_THRESHOLD_KMH, f, newestFirst, live),
     });
   }, [dayKey, tz, flights, trackers, cards, live, t]);
+
+  // What a tap on the map snaps to: the tracks drawn.
+  const picks = useMemo(() => (day && tz && flights
+    ? flightTrackPicks(flights.filter((f) => unixToTzDateStr(tz, f.start_time) === dayKey))
+    : liveTrackPicks(cards, live, store?.getRaw ?? (() => []))), [day, tz, flights, dayKey, cards, live, store, generation]);
 
   // Fits the day when it's picked, not when a refresh redraws it.
   const dayBounds = day?.bounds;
@@ -110,6 +117,9 @@ export default function LiveScreen() {
     ? locationDetails(now, trackers.find((tr) => tr.id === selected) ?? null, live[selectedCard.trackerId], pilotName)
     : null;
   const today = tz ? unixToTzDateStr(tz, now) : null;
+  const shown = day ? { type: 'FeatureCollection' as const, features: [...day.points.features, ...positions.features.filter((p) => p.properties?.inFlight)] } : positions;
+  const pickedDot: GeoJSON.Feature<GeoJSON.Point> | null = picked
+    && { type: 'Feature', id: 'picked', geometry: { type: 'Point', coordinates: picked.lngLat }, properties: { color: t['accent'] } };
 
   return (
     <View style={{ flex: 1, backgroundColor: t['bg-base'] }}>
@@ -119,19 +129,27 @@ export default function LiveScreen() {
         overlays={bootstrap.overlays}
         origin={origin(active.host)}
         initialView={initialView(bootstrap.instance, cards)}
-        positions={day ? { type: 'FeatureCollection', features: [...day.points.features, ...positions.features.filter((p) => p.properties?.inFlight)] } : positions}
+        positions={pickedDot ? { type: 'FeatureCollection', features: [...shown.features, pickedDot] } : shown}
         tracks={day ? day.tracks : tracks}
         tools={[dayTool]}
+        onPress={(lngLat, zoom) => {
+          if (!tz) return;
+          setSelected(null);
+          setPicked(pickDetails(tz, lngLat, zoom, picks, (id) => trackers.find((tr) => tr.id === id) ?? null));
+        }}
         overlay={dayKey && <DayBanner days={days} dayKey={dayKey} legend={day?.legend ?? []} onPick={setDayKey} />}
         topBar={!dayKey && cards.length > 0 && (
           <StatusCards cards={cards} onSelect={(c) => {
             // Centered above the location sheet, which opens at half the screen.
             if (c.position) map.current?.flyTo(c.position, { bottom: sheetDetentHeight('medium', screen) });
+            setPicked(null);
             setSelected(c.trackerId);
           }} />
         )}
       />
-      <LocationSheet title={selectedCard?.label ?? ''} details={details} onClose={() => setSelected(null)} />
+      {/* A status card's tracker, or a tap on the map (the web's point picker): one sheet, so one replaces the other in place. */}
+      <LocationSheet title={picked ? (picked.snapped ? 'On route' : 'Off route') : selectedCard?.label ?? ''} details={picked ?? details}
+        onClose={() => { setPicked(null); setSelected(null); }} />
       {today && (
         <DayPickerSheet open={calendarOpen} dayKey={dayKey ?? today} first={days.at(-1)?.dayKey ?? null} today={today}
           onPick={setDayKey} onClose={() => setCalendarOpen(false)} />

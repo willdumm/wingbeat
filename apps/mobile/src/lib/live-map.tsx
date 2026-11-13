@@ -55,12 +55,14 @@ interface LiveMapProps {
   topBar?: ReactNode;
   /** The height of a sheet over the map's bottom (map-sheet.tsx), as it moves: the tools ride on top of it. */
   sheetHeight?: number;
+  /** A tap on the map, where and at what zoom (the point picker). */
+  onPress?: (lngLat: [number, number], zoom: number) => void;
   /** Bounds to fit once the bars and the panel are measured (a flight's track). */
   fit?: [number, number, number, number];
   ref?: Ref<LiveMapRef>;
 }
 
-export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, topBar, sheetHeight, fit, ref }: LiveMapProps) {
+export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, topBar, sheetHeight, fit, onPress, ref }: LiveMapProps) {
   const t = useTokens();
   const camera = useRef<CameraRef>(null);
   // The insets iOS gives the screen (the bars drawn over it: status bar, header, tab bar),
@@ -136,8 +138,10 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
   const [view, setView] = useState<Pick<ViewState, 'zoom' | 'bearing'> | null>(null);
   const groups = view ? endMarkerGroups(ends, view) : ends.map((_, i) => [i]);
   const lastKey = useRef('');
+  const zoom = useRef(initialView && 'zoom' in initialView ? initialView.zoom ?? 0 : 0);
   useEffect(() => { lastKey.current = ''; }, [ends]);
   const onView = ({ nativeEvent: v }: { nativeEvent: ViewState }) => {
+    zoom.current = v.zoom;
     const key = groupsKey(endMarkerGroups(ends, v));
     if (key === lastKey.current && view) return;
     lastKey.current = key;
@@ -163,7 +167,8 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
           the sheet isn't part of the map's safe area. */}
       <Map style={StyleSheet.absoluteFill} mapStyle={mapStyle} logo={false}
         compass compassPosition={{ top: Math.max(top, topEdge) - insets.top + px(t['space-2']), right: gutter }}
-        attributionPosition={sheetHeight ? { top: Math.max(top, topEdge) - insets.top + px(t['space-2']), left: gutter } : { bottom: px(t['space-2']), right: gutter }} onRegionIsChanging={onView} onRegionDidChange={onView}>
+        attributionPosition={sheetHeight ? { top: Math.max(top, topEdge) - insets.top + px(t['space-2']), left: gutter } : { bottom: px(t['space-2']), right: gutter }} onRegionIsChanging={onView} onRegionDidChange={onView}
+        onPress={onPress && ((e) => onPress(e.nativeEvent.lngLat, zoom.current))}>
         <Camera ref={camera} initialViewState={initialView} />
         <Images images={IMAGES} />
         <GeoJSONSource id="tracks" data={tracks}>

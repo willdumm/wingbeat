@@ -5,9 +5,9 @@
  * core's trackerColor(), or the caller's faint color for a tracker without one.
  */
 import type { InstanceSettings } from '@wingbeat/core/api/bootstrap';
-import type { TrackedFlight } from '@wingbeat/core/api/flights';
+import type { FlightPoint, TrackedFlight } from '@wingbeat/core/api/flights';
 import { toFeet, toKnots } from '@wingbeat/core/format';
-import { dayFlightNumbers, groundTrail, isGpsFresh, isInFlight, trackerColor, type LiveData } from '@wingbeat/core/live';
+import { dayFlightNumbers, groundTrail, isGpsFresh, isInFlight, mercatorPixel, nearestPointIdx, pickedPointDetails, trackerColor, type LiveData, type LocationDetails } from '@wingbeat/core/live';
 import { SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
 import { relativeTime, tzLongDateLabel, unixToTzDateStr } from '@wingbeat/core/time';
 import type { Flight } from './flights';
@@ -131,6 +131,56 @@ export function inFlightTracks(
       }];
     }),
   };
+}
+
+// ── The point picker: a tap on the map, snapped to a drawn track's point ──
+
+/** A drawn track's point, with what the location sheet says about it. */
+export interface TrackPick {
+  point: FlightPoint;
+  trackerId: number | null;
+  pilotName: string | null;
+}
+
+/** The points a tap snaps to: each in-flight track's and ground trail's (Live). */
+export function liveTrackPicks(
+  cards: StatusCard[],
+  live: Record<number, LiveData>,
+  getRaw: (trackerIds: number[]) => TrackedFlight[],
+): TrackPick[] {
+  return cards.flatMap((c) => {
+    const latest = c.inFlight ? getRaw([c.trackerId]).at(-1) : undefined;
+    const trail = groundTrail(SPEED_THRESHOLD_KMH, live[c.trackerId]);
+    return [...(latest?.points ?? []), ...(trail?.points ?? [])]
+      .map((point) => ({ point, trackerId: c.trackerId, pilotName: latest?.pilot_name ?? null }));
+  });
+}
+
+/** The points of flights drawn with their tracks (a day's, or one flight). */
+export function flightTrackPicks(flights: Flight[]): TrackPick[] {
+  return flights.flatMap((f) => (f.points ?? []).map((point) => ({ point, trackerId: f.tracker_id, pilotName: f.pilot_name ?? null })));
+}
+
+/**
+ * What the location sheet shows for a tap at lngLat on a map at zoom: the nearest pick
+ * within core's SNAP_PX on screen, with its tracker, pilot, time, speed and altitude, or
+ * the tapped coordinates alone (snapped false). lngLat: where it is, for the map's dot.
+ */
+export function pickDetails(
+  tz: string,
+  lngLat: [number, number],
+  zoom: number,
+  picks: TrackPick[],
+  trackerFor: (id: number) => { name: string; assigned_aircraft?: string | null } | null,
+): LocationDetails & { snapped: boolean; lngLat: [number, number] } {
+  const project = (lat: number, lon: number) => mercatorPixel(lat, lon, zoom);
+  const i = nearestPointIdx(project(lngLat[1], lngLat[0]), picks, ({ point: p }) => project(p.lat, p.lon));
+  const pick = picks[i];
+  const details = pick
+    ? pickedPointDetails(tz, pick.point.lat, pick.point.lon, { time: pick.point.t, velocity_kmh: pick.point.v, elevation_m: pick.point.e },
+      pick.trackerId != null ? trackerFor(pick.trackerId) : null, pick.pilotName)
+    : pickedPointDetails(tz, lngLat[1], lngLat[0], null, null, null);
+  return { ...details, snapped: !!pick, lngLat: pick ? [pick.point.lon, pick.point.lat] : lngLat };
 }
 
 /** Where the map opens: the instance's default view, else the first position, else the world. */
