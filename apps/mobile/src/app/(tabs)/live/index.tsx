@@ -6,7 +6,7 @@ import { useAccounts } from '@/lib/accounts-context';
 import { origin } from '@/lib/api';
 import { useBootstrap } from '@/lib/bootstrap-context';
 import { useFlights } from '@/lib/flights-context';
-import { groundTrailFeatures, initialView, latestTracks, liveBounds, liveTrackPicks, pickDetails, positionFeatures, spotDetails, statusCards, type PickedSpot } from '@/lib/live';
+import { groundTrailFeatures, initialView, latestTracks, liveBounds, liveTrackPicks, pickDetails, positionFeatures, spotDetails, statusCards, trackStarts, type PickedSpot } from '@/lib/live';
 import { LiveMap, type LiveMapRef } from '@/lib/live-map';
 import { LocationSheet } from '@/lib/location-sheet';
 import { sheetDetentHeight } from '@/lib/map-sheet';
@@ -18,8 +18,8 @@ import { useFlightsTab } from '@/lib/use-flights-tab';
 import { useNow } from '@/lib/use-now';
 
 /**
- * The live view: each tracker's position and the track of its current or latest flight (the
- * dashboard's default view), fitted each time the tab comes up, with the status cards along
+ * The live view: each tracker's position and the track of its current or latest flight, with a
+ * dot where it took off (the dashboard's default view), fitted each time the tab comes up, with the status cards along
  * the top; tapping one flies to it and opens its location details, a tap on the map near a
  * drawn track opens that track point's, and a long press anywhere the pressed spot's. A day's
  * flights at once (the dashboard's "Map all") are on the Flights tab's day headers.
@@ -46,11 +46,16 @@ export default function LiveScreen() {
     [store, trackers, lastRefresh, generation],
   );
   const cards = useMemo(() => statusCards(trackers, live, now, t['text-faint']), [trackers, live, now, t]);
-  const positions = useMemo(() => positionFeatures(cards, live, { trails: true }), [cards, live]);
+  const latest = useMemo(() => latestTracks(cards, store?.getRaw ?? (() => [])), [store, cards, generation]);
+  // Each latest track's takeoff dot under the planes and pilots.
+  const positions = useMemo(() => ({
+    type: 'FeatureCollection' as const,
+    features: [...trackStarts(latest).features, ...positionFeatures(cards, live, { trails: true }).features],
+  }), [latest, cards, live]);
   const tracks = useMemo(() => ({
     type: 'FeatureCollection' as const,
-    features: [...latestTracks(cards, store?.getRaw ?? (() => [])).features, ...groundTrailFeatures(cards, live).features],
-  }), [store, cards, live, generation]);
+    features: [...latest.features, ...groundTrailFeatures(cards, live).features],
+  }), [latest, cards, live]);
   const bounds = useMemo(() => liveBounds(tracks, positions), [tracks, positions]);
 
   const tz = tab.ready ? tab.tz : null;

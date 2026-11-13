@@ -1,9 +1,9 @@
 import { useSegments } from 'expo-router';
 import { NativeTabs } from 'expo-router/native-tabs';
 
-// The flight detail (and its Edit modal) hides the tab bar: its sheet covers the bottom of the
-// screen, and at its smallest the tab bar would show around it.
-const NO_TAB_BAR = ['[id]', 'assign'];
+// The flight and day maps (and the Edit modal) hide the tab bar: their sheet covers the bottom
+// of the screen, and at its smallest the tab bar would show around it.
+const NO_TAB_BAR = ['[id]', 'day', 'assign'];
 
 export default function TabsLayout() {
   const segments = useSegments();

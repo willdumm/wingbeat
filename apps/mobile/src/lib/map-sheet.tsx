@@ -1,6 +1,7 @@
 /**
  * A native sheet over a map (SwiftUI, through @expo/ui), as Maps shows a place: its title, a
- * one-line summary and its actions (an Edit button) at the top, then a Form of its content
+ * one-line summary and its actions (an Edit button) at the top, after a leading one (a back
+ * button) if any, then a Form of its content
  * (Sections). It can't be dismissed, only dragged between a peek of the title, half the
  * screen and the full screen, and the map behind it stays live up to half. onHeight follows
  * its height as it moves (LiveMap's sheetHeight keeps the tools on top of it); onDetent says
@@ -27,8 +28,8 @@ export function sheetDetentHeight(detent: SheetDetent, screen: number): number {
 }
 
 /** isPresented: false while the screen is away or another modal needs the stage; onDismiss: it's gone. */
-export function MapSheet({ title, summary, actions, isPresented, onDismiss, onHeight, onDetent, children }: {
-  title: string; summary?: string; actions?: ReactNode; isPresented: boolean; onDismiss?: () => void;
+export function MapSheet({ title, summary, leading, actions, isPresented, onDismiss, onHeight, onDetent, children }: {
+  title: string; summary?: string; leading?: ReactNode; actions?: ReactNode; isPresented: boolean; onDismiss?: () => void;
   onHeight?: (height: number) => void; onDetent?: (detent: SheetDetent) => void; children: ReactNode;
 }) {
   const [detent, setDetent] = useState<PresentationDetent>('medium');
@@ -50,7 +51,8 @@ export function MapSheet({ title, summary, actions, isPresented, onDismiss, onHe
         ]}>
           {/* Its top, in the window, as the sheet moves. */}
           <VStack alignment="leading" spacing={0} modifiers={onHeight ? [onGeometryChange((g) => onHeight(screen - g.y))] : []}>
-            <HStack modifiers={[padding({ top: 20, horizontal: 20, bottom: 8 })]}>
+            <HStack spacing={12} modifiers={[padding({ top: 20, horizontal: 20, bottom: 8 })]}>
+              {leading}
               <VStack alignment="leading" spacing={2} modifiers={[frame({ maxWidth: Infinity, alignment: 'leading' })]}>
                 <Text modifiers={[font({ textStyle: 'title3', weight: 'bold' }), lineLimit(1)]}>{title}</Text>
                 {!!summary && <Text modifiers={[foregroundStyle({ type: 'hierarchical', style: 'secondary' }), lineLimit(1)]}>{summary}</Text>}

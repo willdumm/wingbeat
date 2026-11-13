@@ -1,6 +1,6 @@
 import { TRACKER_COLORS, type LiveData } from '@wingbeat/core/live';
 import type { Flight } from '@/lib/flights';
-import { dayMap, flightTrackPicks, groundTrailFeatures, initialView, latestTracks, liveBounds, mapDays, pickDetails, positionFeatures, spotDetails, statusCards } from '@/lib/live';
+import { dayMap, flightTrackPicks, groundTrailFeatures, initialView, latestTracks, liveBounds, mapDays, pickDetails, positionFeatures, spotDetails, statusCards, trackStarts } from '@/lib/live';
 
 const NOW = 1_793_739_600;
 const trackers = [
@@ -36,6 +36,10 @@ test('positions for trackers with one; each tracker\'s latest track, in flight o
   };
   const tracks = latestTracks(cards, ([id]: number[]) => (raw[id] ?? []) as never);
   expect(tracks.features.map((f) => f.geometry.coordinates)).toEqual([[[-152, 57], [-152.4, 57.8]], [[2, 1], [4, 3]]]);
+  expect(trackStarts(tracks).features.map((f) => [f.id, f.geometry.coordinates, f.properties])).toEqual([
+    ['start-1', [-152, 57], { color: TRACKER_COLORS[0], inFlight: false }],
+    ['start-2', [2, 1], { color: TRACKER_COLORS[1], inFlight: false }],
+  ]);
   const [w, s, e, n] = liveBounds(tracks, positionFeatures(cards, live))!;
   expect([w, s, e, n]).toEqual([-152.4, 1, 4, 57.8]);
   expect(liveBounds({ type: 'FeatureCollection', features: [] })).toBeNull();

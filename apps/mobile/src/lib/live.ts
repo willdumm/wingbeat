@@ -133,6 +133,19 @@ export function latestTracks(
   };
 }
 
+/** A dot at each track's first point, in its color (the dashboard's takeoff marker). */
+export function trackStarts(tracks: GeoJSON.FeatureCollection<GeoJSON.LineString>): GeoJSON.FeatureCollection<GeoJSON.Point> {
+  return {
+    type: 'FeatureCollection',
+    features: tracks.features.map((f) => ({
+      type: 'Feature' as const,
+      id: 'start-' + f.id,
+      geometry: { type: 'Point' as const, coordinates: f.geometry.coordinates[0] },
+      properties: { color: f.properties?.color, inFlight: false },
+    })),
+  };
+}
+
 /** What the Live map fits on opening: every coordinate of the collections (tracks and positions); null when there are none. */
 export function liveBounds(...collections: GeoJSON.FeatureCollection<GeoJSON.Point | GeoJSON.LineString>[]): [number, number, number, number] | null {
   return bboxOf(collections.flatMap((c) => c.features.flatMap((f) =>
