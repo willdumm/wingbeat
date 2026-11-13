@@ -11,7 +11,7 @@ import { Text, View } from 'react-native';
 import { GeoJSONSource, Layer, RasterDEMSource } from '@maplibre/maplibre-react-native';
 import { Button, Picker, Section, Text as SwiftText, Toggle } from '@expo/ui/swift-ui';
 import { pickerStyle, tag } from '@expo/ui/swift-ui/modifiers';
-import { DEM_PMTILES_URL, elevationRampStops } from '@wingbeat/core/elevation';
+import { DEM_MAX_ZOOM, DEM_PMTILES_URL, elevationRampStops } from '@wingbeat/core/elevation';
 import { toFeet } from '@wingbeat/core/format';
 import { useAccounts } from './accounts-context';
 import { ElevationReader, type ElevationReaderRef } from './elevation-reader';
@@ -108,7 +108,9 @@ export function ElevationLayers({ tool }: { tool: ElevationTool }) {
     [m, rgb ? `rgb(${rgb.join(',')})` : 'rgba(0,0,0,0)'])];
   return (
     <>
-      <RasterDEMSource id="elevation" url={'pmtiles://' + DEM_PMTILES_URL} tileSize={512} encoding="terrarium">
+      {/* As tiles, not a url: the archive's metadata names no encoding, and with a url the
+          source takes the encoding from there only (defaulting to mapbox: everything red). */}
+      <RasterDEMSource id="elevation" tiles={['pmtiles://' + DEM_PMTILES_URL]} maxzoom={DEM_MAX_ZOOM} tileSize={512} encoding="terrarium">
         <Layer id="elevation" type="color-relief" paint={{
           // The ramp, rebuilt around each reference.
           'color-relief-color': color as never,
