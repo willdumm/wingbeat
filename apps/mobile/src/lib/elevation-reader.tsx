@@ -5,6 +5,7 @@
  * The page keeps the last few decoded tiles, so panning within one reads without a fetch.
  */
 import { useImperativeHandle, useRef, type Ref } from 'react';
+import { View } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { DEM_PMTILES_URL, DEM_TILE_SIZE, decodeTerrarium, demZoomFor, latLngToTilePixel } from '@wingbeat/core/elevation';
 
@@ -77,13 +78,17 @@ export function ElevationReader({ ref }: { ref: Ref<ElevationReaderRef> }) {
     pending.current.delete(id);
   };
 
+  // The WebView's own container is flex: 1 (containerStyle, not style): unsized, it covers the
+  // map and takes its touches. A 1 px box that takes none.
   return (
-    <Web ref={web} source={{ html: PAGE, baseUrl: 'https://localhost/' }} originWhitelist={['*']}
-      style={{ position: 'absolute', width: 1, height: 1, opacity: 0 }} pointerEvents="none"
-      onMessage={onMessage}
-      onLoadEnd={() => {
-        loaded.current = true;
-        for (const call of queued.current.splice(0)) web.current?.injectJavaScript(call);
-      }} />
+    <View pointerEvents="none" style={{ position: 'absolute', width: 1, height: 1, opacity: 0 }}>
+      <Web ref={web} source={{ html: PAGE, baseUrl: 'https://localhost/' }} originWhitelist={['*']}
+        containerStyle={{ width: 1, height: 1, flex: 0 }} style={{ width: 1, height: 1 }}
+        onMessage={onMessage}
+        onLoadEnd={() => {
+          loaded.current = true;
+          for (const call of queued.current.splice(0)) web.current?.injectJavaScript(call);
+        }} />
+    </View>
   );
 }
