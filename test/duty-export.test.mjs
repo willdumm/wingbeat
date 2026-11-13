@@ -1,16 +1,16 @@
 // The Export PDF form's period presets (dutyExportPresets, @wingbeat/core/duty) and the
-// PDF's day grouping (_buildTypstSource, still a script string in pilot-duty.ts, so it runs
-// in the harness): warnings sit inside their day's block, between day rules only.
+// PDF's Typst source (dutyLogTypstSource, @wingbeat/core/duty-pdf): warnings sit inside
+// their day's block, between day rules only.
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { importCore } from './core.mjs';
-import { loadEngine } from './harness.mjs';
+import { importCore, TZ } from './core.mjs';
 import { fixtures } from './duty-fixtures.mjs';
 
 const { dutyExportPresets } = await importCore('duty');
-const engine = loadEngine({ now: '2026-10-16 12:00' });
-const { flight, duty, dutyMonth } = fixtures({ now: '2026-10-16 12:00' });
+const { dutyLogTypstSource, dutyLogPdfName } = await importCore('duty-pdf');
+const { flight, duty, dutyMonth, nowSecs } = fixtures({ now: '2026-10-16 12:00' });
+const typstSource = input => dutyLogTypstSource(TZ, nowSecs, input, 'Test');
 const idx = (y, m) => y * 12 + m - 1;
 const ranges = (shown, cur, earliest) =>
   Object.fromEntries(dutyExportPresets(shown, cur, earliest).map(p => [p.key, [p.from, p.to]]));
@@ -51,7 +51,7 @@ describe('PDF day grouping', () => {
     flight('2026-09-03 07:00', '12:00'), flight('2026-09-03 13:00', '17:30'),
     flight('2026-09-04 08:00', '09:00'),
   ], '2026-09', { days: [duty('2026-09-03', '06:00', '20:30')] });
-  const src = engine._buildTypstSource(data);
+  const src = typstSource(data);
   const table = src.slice(src.indexOf('#table('), src.indexOf('Month total'));
 
   test('the month table has no per-row rule, only the header and day rules', () => {
@@ -74,7 +74,7 @@ describe('PDF day grouping', () => {
 
 describe('what the PDF leaves out', () => {
   const months = ['2026-08', '2026-09'].map(m => dutyMonth([flight(m + '-03 07:00', '12:00')], m));
-  const srcs = [engine._buildTypstSource(months[1]), engine._buildTypstSource(months)];
+  const srcs = [typstSource(months[1]), typstSource(months)];
 
   test('no totals footnote, disclaimer or "Limits:" line; the screen keeps the limits label', () => {
     assert.match(months[1].limitsLabel, /^Limits: /);
@@ -96,5 +96,14 @@ describe('what the PDF leaves out', () => {
 
   test('with no notes, the PDF ends after the body', () => {
     for (const src of srcs) assert.doesNotMatch(src, /#set text\(size: 7pt, fill: muted\)/);
+  });
+});
+
+describe('the PDF file name', () => {
+  const months = ['2026-08', '2026-09'].map(m => dutyMonth([flight(m + '-03 07:00', '12:00')], m));
+
+  test('a month, and a range', () => {
+    assert.equal(dutyLogPdfName(months[1]), 'duty-log-pilot-2026-09.pdf');
+    assert.equal(dutyLogPdfName(months), 'duty-log-pilot-2026-08-to-2026-09.pdf');
   });
 });

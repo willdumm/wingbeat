@@ -45,6 +45,7 @@
     "./basemaps": "./src/basemaps.ts",
     "./corrections": "./src/corrections.ts",
     "./duty": "./src/duty.ts",
+    "./duty-pdf": "./src/duty-pdf.ts",
     "./edit-history": "./src/edit-history.ts",
     "./docs": "./src/docs.ts",
     "./elevation": "./src/elevation.ts",

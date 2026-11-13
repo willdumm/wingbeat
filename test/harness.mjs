@@ -68,8 +68,8 @@ const EXPORTS = [
   'flightEditedMark', 'flightRemarksHtml',
   // the core bundle (@wingbeat/core/duty)
   'computeDutyData',
-  // pilot-duty.ts
-  '_buildTypstSource',
+  // the core bundle (@wingbeat/core/duty-pdf)
+  'dutyLogTypstSource',
   // the core bundle (@wingbeat/core/corrections, edit-history)
   'readFlightForm', 'flightFormTimesOf', 'lastEditText',
   // filters.ts

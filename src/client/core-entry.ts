@@ -12,7 +12,8 @@ import * as flightEdits from '@wingbeat/core/flight-edits';
 import type { FlightCorrection, FlightEditField } from '@wingbeat/core/flight-edits';
 import * as time from '@wingbeat/core/time';
 import * as duty from '@wingbeat/core/duty';
-import type { ComputeDutyDataOptions, DutyDay, DutyInputFlight, DutyInterval } from '@wingbeat/core/duty';
+import type { ComputeDutyDataOptions, DutyData, DutyDay, DutyInputFlight, DutyInterval } from '@wingbeat/core/duty';
+import * as dutyPdf from '@wingbeat/core/duty-pdf';
 import * as corrections from '@wingbeat/core/corrections';
 import type { FlightFormFields, FlightFormTarget, FlightFormValues, FlightSaveOptions } from '@wingbeat/core/corrections';
 import * as editHistory from '@wingbeat/core/edit-history';
@@ -51,7 +52,7 @@ import * as namedPointsApi from '@wingbeat/core/api/named-points';
 import { createFlightStore, FLIGHT_STORE_KEY } from '@wingbeat/core/flight-store';
 
 declare const window: {
-  APP_SETTINGS: { timezone: string };
+  APP_SETTINGS: { timezone: string; appName: string };
   addEventListener(type: 'storage', listener: (e: { key: string | null }) => void): void;
 };
 declare const localStorage: { getItem(key: string): string | null; setItem(key: string, value: string): void };
@@ -105,6 +106,9 @@ Object.assign(globalThis, {
     duty.dutySaveConfirmText(tz(), records, keys, values),
   dutyRemarksText: duty.dutyRemarksText,
   dutyExportPresets: duty.dutyExportPresets,
+  // ── duty-pdf: the duty log PDF's Typst source and file name ──
+  dutyLogTypstSource: (input: DutyData | DutyData[]) => dutyPdf.dutyLogTypstSource(tz(), now(), input, window.APP_SETTINGS.appName),
+  dutyLogPdfName: dutyPdf.dutyLogPdfName,
   // ── corrections: the flight editor's requests and the flight form's validation ──
   flightRef: corrections.flightRef,
   flightAssignmentRequest: corrections.flightAssignmentRequest,

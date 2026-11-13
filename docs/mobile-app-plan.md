@@ -2112,9 +2112,11 @@ layers need no Android counterpart; only the chrome around the map does.
 - **Duty-log PDF: compiled in a hidden WebView in the app.** The app doesn't open the web
   (each phone would add a browser session to Devices), and Typst's WASM doesn't run in
   Hermes. The web loads typst.ts and its WASM from jsdelivr with no session, so a hidden
-  `react-native-webview` can do the same. The code that writes the Typst source (still a
-  script string in `src/shared/pilot-duty.ts`) moves to core first, the web switches to it in
-  the same change, and the app passes the source in from its own duty data. The WebView only
+  `react-native-webview` can do the same. The code that writes the Typst source (a script
+  string in `src/shared/pilot-duty.ts`) moves to core first, the web switches to it in the
+  same change, and the app passes the source in from its own duty data. Done 2026-11-14:
+  `@wingbeat/core/duty-pdf` (`dutyLogTypstSource`, `dutyLogPdfName`, and the compiler's and
+  font's URLs), byte-for-byte the old builder's output. The WebView only
   compiles, and returns the PDF's bytes, which the app writes to a file and shares
   (`expo-file-system`, `expo-sharing`). Those three native modules go into the TestFlight
   binary (step 12), so phase 6 ships as an OTA update.
