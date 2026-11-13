@@ -21,16 +21,9 @@ export function dashboardScriptsHover(): string {
     }
 
     // Returns the index into latlngs (default: the drawn track's) of the nearest point
-    // within 30 px, or -1.
+    // within 30 px (core's nearestPointIdx), or -1.
     function nearestRouteIdx(containerPt, latlngs = activeLatlngs) {
-      if (!latlngs.length) return -1;
-      let minPx = Infinity, nearestIdx = 0;
-      for (let i = 0; i < latlngs.length; i++) {
-        const pt = map.latLngToContainerPoint(latlngs[i]);
-        const d = Math.hypot(containerPt.x - pt.x, containerPt.y - pt.y);
-        if (d < minPx) { minPx = d; nearestIdx = i; }
-      }
-      return minPx <= 30 ? nearestIdx : -1;
+      return nearestPointIdx(containerPt, latlngs, (ll) => map.latLngToContainerPoint(ll));
     }
 
     // Snaps to the nearest track point within 30 px of screenPt.

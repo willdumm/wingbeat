@@ -127,6 +127,10 @@ Object.assign(globalThis, {
   trackerColor: live.trackerColor,
   dayFlightNumbers: live.dayFlightNumbers,
   groupEndMarkers: live.groupEndMarkers,
+  nearestPointIdx: live.nearestPointIdx,
+  pickedPointDetails: (lat: number, lon: number, point: live.PickedPoint | null,
+                       tracker: Parameters<typeof live.pickedPointDetails>[4], pilotName: string | null | undefined) =>
+    live.pickedPointDetails(tz(), lat, lon, point, tracker, pilotName),
   locationDetails: (tracker: Parameters<typeof live.locationDetails>[1], d: Parameters<typeof live.locationDetails>[2], pilotName: string | null | undefined) =>
     live.locationDetails(now(), tracker, d, pilotName),
   isInFlight: (d: Parameters<typeof live.isInFlight>[1]) => live.isInFlight(SPEED_THRESHOLD_KMH, d),

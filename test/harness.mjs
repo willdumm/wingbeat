@@ -75,7 +75,7 @@ const EXPORTS = [
   // filters.ts
   'filterStore',
   // the core bundle (@wingbeat/core/live, maintenance, alerts)
-  'isInFlight', 'isGpsFresh', 'nextLivePoll', '_maintenanceStatus', '_estimatedMeter', 'computeAlertsFor',
+  'isInFlight', 'isGpsFresh', 'nextLivePoll', 'nearestPointIdx', 'pickedPointDetails', '_maintenanceStatus', '_estimatedMeter', 'computeAlertsFor',
   // the core bundle (@wingbeat/core/regions, accounting, analytics)
   'haversineKm', 'homeBaseNamesIn', 'computeRegionHoursIn', 'computeMonthlyAccountingIn', 'tzLongMonthLabel',
   'sgGenerateBuckets', 'sgComputeDataIn', 'interpolateRoutePoints', 'endpointHeatPointsIn',

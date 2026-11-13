@@ -9,7 +9,7 @@
 import type { FlightPoint, TrackedFlight } from './api/flights';
 import type { RefreshResult } from './flight-store';
 import { toFeet, toKnots } from './format';
-import { relativeTime } from './time';
+import { fmtTzPointTime, relativeTime } from './time';
 
 /** A GPS fix younger than this (seconds) shows as fresh on its status card. */
 export const GPS_FRESH_SECS = 240;
@@ -255,6 +255,29 @@ export function mercatorPixel(lat: number, lon: number, zoom: number, tileSize =
   };
 }
 
+/** How far from a track point, in screen pixels, a tap or the cursor still snaps to it. */
+export const SNAP_PX = 30;
+
+/**
+ * The index of the point nearest target on screen, within maxPx, or -1: what the hover and
+ * the point picker snap to. project gives a point's screen position (the web's
+ * latLngToContainerPoint, or mercatorPixel at the map's zoom with target projected the same way).
+ */
+export function nearestPointIdx<P>(
+  target: { x: number; y: number },
+  points: readonly P[],
+  project: (p: P) => { x: number; y: number },
+  maxPx = SNAP_PX,
+): number {
+  let minPx = Infinity, nearest = -1;
+  points.forEach((p, i) => {
+    const pt = project(p);
+    const d = Math.hypot(target.x - pt.x, target.y - pt.y);
+    if (d < minPx) { minPx = d; nearest = i; }
+  });
+  return minPx <= maxPx ? nearest : -1;
+}
+
 /** A compass heading's 16-point direction ("NNE"). */
 export function cardinalDir(deg: number): string {
   const dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
@@ -301,6 +324,46 @@ export function locationDetails(
     coords: lat + ', ' + lon,
     googleMapsUrl: 'https://www.google.com/maps?q=' + lat + ',' + lon,
     mapshareUrl: tracker?.mapshare_url ?? null,
+    rows,
+  };
+}
+
+/** A track point the point picker snapped to (its time in Unix seconds). */
+export interface PickedPoint {
+  time: number | null;
+  velocity_kmh: number | null;
+  elevation_m: number | null;
+}
+
+/**
+ * The point picker's details for a tapped position: the coordinates and, when it snapped to
+ * a track point, that point's tracker, aircraft, pilot, time, speed and altitude.
+ */
+export function pickedPointDetails(
+  tz: string,
+  lat: number,
+  lon: number,
+  point: PickedPoint | null,
+  tracker: { name: string; assigned_aircraft?: string | null } | null,
+  pilotName: string | null | undefined,
+): LocationDetails {
+  const latStr = lat.toFixed(6);
+  const lonStr = lon.toFixed(6);
+  const rows: [string, string][] = [];
+  if (point) {
+    if (tracker) {
+      rows.push(['Tracker', tracker.name]);
+      if (tracker.assigned_aircraft) rows.push(['Aircraft', tracker.assigned_aircraft]);
+    }
+    if (pilotName) rows.push(['Pilot', pilotName]);
+    if (point.time) rows.push(['Time', fmtTzPointTime(tz, point.time)]);
+    if (point.velocity_kmh != null) rows.push(['Speed', toKnots(point.velocity_kmh)]);
+    if (point.elevation_m != null) rows.push(['Altitude', toFeet(point.elevation_m)]);
+  }
+  return {
+    coords: latStr + ', ' + lonStr,
+    googleMapsUrl: 'https://www.google.com/maps?q=' + latStr + ',' + lonStr,
+    mapshareUrl: null,
     rows,
   };
 }

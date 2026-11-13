@@ -61,29 +61,18 @@ export function dashboardScriptsPointPicker(rootExpr = 'document'): string {
       ${rootExpr}.getElementById('point-picker-route-status').textContent =
         routePoint ? 'on route' : 'off route';
 
-      const latStr = lat.toFixed(6);
-      const lngStr = lng.toFixed(6);
-      pointPickerLatlngEl.textContent = latStr + ', ' + lngStr;
-      pointPickerGmaps.href = 'https://www.google.com/maps?q=' + latStr + ',' + lngStr;
-
-      const rows = [];
-      if (routePoint) {
-        const _t = routePoint.tracker_id != null
-          ? trackerList.find(tr => tr.id === routePoint.tracker_id)
-          : null;
-        if (_t) {
-          rows.push(['Tracker', _t.name]);
-          if (_t.assigned_aircraft) rows.push(['Aircraft', _t.assigned_aircraft]);
-        }
-        if (routePoint.flight_id != null) {
-          const _f = allFlights.find(fl => fl.id === routePoint.flight_id);
-          if (_f?.pilot_name) rows.push(['Pilot', _f.pilot_name]);
-        }
-        if (routePoint.garmin_time) rows.push(['Time', fmtTzPointTime(routePoint.garmin_time)]);
-        if (routePoint.velocity_kmh != null) rows.push(['Speed', toKnots(routePoint.velocity_kmh)]);
-        if (routePoint.elevation_m != null) rows.push(['Altitude', toFeet(routePoint.elevation_m)]);
-      }
-      pointPickerDetails.innerHTML = rows.map(([label, value]) =>
+      const _t = routePoint?.tracker_id != null
+        ? trackerList.find(tr => tr.id === routePoint.tracker_id)
+        : null;
+      const _f = routePoint?.flight_id != null
+        ? allFlights.find(fl => fl.id === routePoint.flight_id)
+        : null;
+      const details = pickedPointDetails(lat, lng, routePoint && {
+        time: routePoint.garmin_time, velocity_kmh: routePoint.velocity_kmh, elevation_m: routePoint.elevation_m,
+      }, _t ?? null, _f?.pilot_name);
+      pointPickerLatlngEl.textContent = details.coords;
+      pointPickerGmaps.href = details.googleMapsUrl;
+      pointPickerDetails.innerHTML = details.rows.map(([label, value]) =>
         '<span class="popup-detail-label">' + escHtml(label) + '</span>' +
         '<span class="popup-detail-value">' + escHtml(value) + '</span>'
       ).join('');
