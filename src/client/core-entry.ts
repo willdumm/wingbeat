@@ -106,6 +106,8 @@ Object.assign(globalThis, {
     duty.dutySaveConfirmText(tz(), records, keys, values),
   dutyRemarksText: duty.dutyRemarksText,
   dutyExportPresets: duty.dutyExportPresets,
+  dutyExportEarliest: (flights: DutyInputFlight[], pilotId: number, shown: number, cur: number) =>
+    duty.dutyExportEarliest(tz(), flights, pilotId, shown, cur),
   // ── duty-pdf: the duty log PDF's Typst source and file name ──
   dutyLogTypstSource: (input: DutyData | DutyData[]) => dutyPdf.dutyLogTypstSource(tz(), now(), input, window.APP_SETTINGS.appName),
   dutyLogPdfName: dutyPdf.dutyLogPdfName,

@@ -1,7 +1,7 @@
 import type { DutyLogResponse } from '@wingbeat/core/api/duty';
 import type { FlightCorrection, FlightEdit } from '@wingbeat/core/flight-edits';
 import {
-  dutyMonth, dutyMonthIndex, dutyMonthOf, dutyMonthView, dutyPilots, dutyPilotShown,
+  dutyExportOptions, dutyMonth, dutyMonthIndex, dutyMonthOf, dutyMonths, dutyMonthView, dutyPilots, dutyPilotShown,
 } from '@/lib/duty';
 import type { Flight } from '@/lib/flights';
 import { parseDutyLog, parseDutyPilot } from '@/lib/prefs';
@@ -112,4 +112,20 @@ test('stored duty prefs', () => {
   expect(parseDutyLog(log())).toEqual(log());
   expect(parseDutyLog({ days: 'x' })).toBeNull();
   expect(parseDutyLog(undefined)).toBeNull();
+});
+
+test('the Export PDF menu: the shown month, its quarter so far, the quarter before, the last 12 months', () => {
+  const cur = dutyMonthIndex(2026, 7);
+  expect(dutyExportOptions(TZ, [flight({})], PILOT.id, cur, cur).map(({ title, subtitle }) => [title, subtitle])).toEqual([
+    ['Month', 'July 2026'],
+    ['Quarter', 'July 2026'],
+    ['Previous quarter', 'April – June 2026'],
+    ['Last 12 months', 'August 2025 – July 2026'],
+  ]);
+});
+
+test('an export’s months, in order, as the screen computes each', () => {
+  const months = dutyMonths(TZ, NOW, [flight({})], [], PILOT, dutyMonthIndex(2026, 5), dutyMonthIndex(2026, 7), log());
+  expect(months.map((m) => [m.year, m.month, m.pilotName])).toEqual([[2026, 5, 'Jane Pilot'], [2026, 6, 'Jane Pilot'], [2026, 7, 'Jane Pilot']]);
+  expect(months[2].monthSecs).toBe(4320);
 });

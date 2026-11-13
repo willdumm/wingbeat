@@ -8,7 +8,8 @@
 import type { DutyLogResponse } from '@wingbeat/core/api/duty';
 import type { Pilot } from '@wingbeat/core/api/pilots';
 import {
-  computeDutyData, dutyDayText, dutyRemarksText, type DutyData, type DutyFlight, type DutyInputFlight,
+  computeDutyData, dutyDayText, dutyExportEarliest, dutyExportPresets, dutyRangeLabel, dutyRemarksText,
+  type DutyData, type DutyFlight, type DutyInputFlight,
 } from '@wingbeat/core/duty';
 import { flightEntrySummary, flightFieldEdited, type FlightCorrection } from '@wingbeat/core/flight-edits';
 import { fmtDuration, fmtTzTime, tzShortDate, unixToTzTime } from '@wingbeat/core/time';
@@ -98,6 +99,44 @@ export function dutyMonth(tz: string, now: number, flights: DutyInputFlight[], u
   return computeDutyData(tz, now, flights, pilot.id, pilot.name, year, month, {
     days: log.days, defaultDuty: log.default_duties, unmatched, method: log.duty_methods,
   });
+}
+
+/** A period the Export PDF menu offers: from..to are month indexes (dutyMonthIndex). */
+export interface DutyExportOption {
+  key: string;
+  title: string;
+  /** "July – September 2026" */
+  subtitle: string;
+  from: number;
+  to: number;
+}
+
+const EXPORT_TITLES: Record<string, string> = {
+  month: 'Month', quarter: 'Quarter', prevQuarter: 'Previous quarter', year: 'Last 12 months',
+};
+
+/**
+ * The Export PDF menu's periods (core's presets, as the web's export form offers them): the
+ * shown month, its quarter through this month (cur), the quarter before, the last 12 months.
+ */
+export function dutyExportOptions(tz: string, flights: DutyInputFlight[], pilotId: number, shown: number, cur: number): DutyExportOption[] {
+  const earliest = dutyExportEarliest(tz, flights, pilotId, shown, cur);
+  const ym = (i: number) => { const [year, month] = dutyMonthOf(i); return { year, month }; };
+  return dutyExportPresets(shown, cur, earliest).map((p) => ({
+    key: p.key,
+    title: EXPORT_TITLES[p.key] ?? p.label,
+    subtitle: dutyRangeLabel(p.from === p.to ? [ym(p.from)] : [ym(p.from), ym(p.to)]),
+    from: p.from,
+    to: p.to,
+  }));
+}
+
+/** The pilot's months from..to (month indexes), in order, each as dutyMonth computes it. */
+export function dutyMonths(tz: string, now: number, flights: DutyInputFlight[], unmatched: FlightCorrection[],
+                           pilot: Pick<Pilot, 'id' | 'name'>, from: number, to: number, log: DutyLogResponse): DutyData[] {
+  const months: DutyData[] = [];
+  for (let i = from; i <= to; i++) months.push(dutyMonth(tz, now, flights, unmatched, pilot, ...dutyMonthOf(i), log));
+  return months;
 }
 
 function flightRow(tz: string, f: DutyFlight): FlightRow {

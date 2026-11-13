@@ -789,7 +789,7 @@ export function pilotDutyScript(): string {
 
     // Export form: the months to export, from a preset (dutyExportPresets) or picked
     // From/To. One PDF, a section per month and a summary page per quarter
-    // (_buildTypstSource).
+    // (dutyLogTypstSource, @wingbeat/core/duty-pdf).
     function _dutyOpenExportForm() {
       if (!_dutyLog) return;
       const [curY, curM] = currentDutyMonth();
@@ -797,12 +797,7 @@ export function pilotDutyScript(): string {
       const ym = i => [Math.floor(i / 12), i % 12 + 1];
       const cur = idx(curY, curM), shown = idx(_dutyYear, _dutyMonth);
       // From the pilot's first flight (at least the last 12 months) through this month.
-      let earliest = Math.min(shown, cur - 11);
-      for (const f of flightStore.getCompleted()) {
-        if (f.pilot_id !== _dutyPilotId) continue;
-        const [y, m] = unixToTzDateStr(f.start_time).split('-').map(Number);
-        earliest = Math.min(earliest, idx(y, m));
-      }
+      const earliest = dutyExportEarliest(flightStore.getCompleted(), _dutyPilotId, shown, cur);
       const presetList = dutyExportPresets(shown, cur, earliest);
       const presets = {};
       for (const p of presetList) presets[p.key] = [p.from, p.to];

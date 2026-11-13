@@ -745,6 +745,21 @@ export function dutyRemarksText(f: { remarks: string[] }): string {
 }
 
 /**
+ * The first month (year * 12 + month - 1) an export offers: the month of the pilot's first
+ * flight, and at least the shown month and the 12 months through this one (cur).
+ */
+export function dutyExportEarliest(tz: string, flights: { pilot_id?: number | null; start_time: number }[], pilotId: number,
+                                   shown: number, cur: number): number {
+  let earliest = Math.min(shown, cur - 11);
+  for (const f of flights) {
+    if (f.pilot_id !== pilotId) continue;
+    const [y, m] = unixToTzDateStr(tz, f.start_time).split('-').map(Number);
+    earliest = Math.min(earliest, y * 12 + m - 1);
+  }
+  return earliest;
+}
+
+/**
  * The Export PDF form's period presets as { key, label, from, to } (month indexes,
  * year * 12 + month - 1): the shown month, its calendar quarter (through this month,
  * cur), the quarter before it (the usual quarterly sign-off), and the last 12 months.

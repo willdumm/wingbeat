@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { importCore, TZ } from './core.mjs';
 import { fixtures } from './duty-fixtures.mjs';
 
-const { dutyExportPresets } = await importCore('duty');
+const { dutyExportPresets, dutyExportEarliest } = await importCore('duty');
 const { dutyLogTypstSource, dutyLogPdfName } = await importCore('duty-pdf');
 const { flight, duty, dutyMonth, nowSecs } = fixtures({ now: '2026-10-16 12:00' });
 const typstSource = input => dutyLogTypstSource(TZ, nowSecs, input, 'Test');
@@ -43,6 +43,21 @@ describe('export presets', () => {
     assert.deepEqual(r.quarter, [early, idx(2026, 3)]);
     assert.equal('prevQuarter' in r, false);
     assert.deepEqual(ranges(idx(2026, 8), cur, idx(2026, 8)).prevQuarter, undefined);
+  });
+});
+
+describe('the earliest month offered', () => {
+  const cur = idx(2026, 10);
+
+  test('at least the shown month and the last 12 months', () => {
+    assert.equal(dutyExportEarliest(TZ, [], 1, cur, cur), cur - 11);
+    assert.equal(dutyExportEarliest(TZ, [], 1, idx(2025, 6), cur), idx(2025, 6));
+  });
+
+  test('back to the pilot’s first flight, in the operator’s timezone; other pilots’ don’t count', () => {
+    // 20:00 on Feb 28 in Anchorage is already March 1 in UTC.
+    const flights = [flight('2025-02-28 20:00', '21:00'), flight('2024-01-05 08:00', '09:00', { pilot: 2 })];
+    assert.equal(dutyExportEarliest(TZ, flights, 1, cur, cur), idx(2025, 2));
   });
 });
 
