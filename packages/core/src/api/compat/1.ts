@@ -39,6 +39,7 @@ const Me = z.looseObject({
   id: num,
   name: z.string(),
   role: z.enum(['admin', 'viewer']),
+  pilot_id: optionalNum,
   device_name: nullableStr,
   session_id: num,
 });

@@ -940,6 +940,26 @@ describe('the settings modal’s requests, through the core client', async () =>
     await assert.rejects(users.createInvite(client, { name: 'X', role: 'owner' }), refused(400, 'role must be admin or viewer'));
   });
 
+  test('users: linked to the pilot they are, which bootstrap’s me carries; one user per pilot', async () => {
+    await w.run("INSERT INTO users (id, name, role) VALUES (31, 'Pat Pilot', 'viewer')");
+    assert.equal((await me.getMe(client)).pilot_id, null);
+    assert.deepEqual(await users.updateUser(client, 1, { pilot_id: 1 }), { ok: true });
+    assert.equal((await me.getMe(client)).pilot_id, 1);
+    assert.equal((await w.request('GET', '/api/bootstrap')).body.me.pilot_id, 1);
+    assert.equal((await users.getUsers(client)).users.find(u => u.id === 1).pilot_id, 1);
+    await assert.rejects(users.updateUser(client, 31, { pilot_id: 1 }), refused(409, 'That pilot is already linked to Ada Admin'));
+    await assert.rejects(users.updateUser(client, 31, { pilot_id: 999 }), refused(404, 'Pilot not found'));
+    await assert.rejects(users.updateUser(client, 999, { pilot_id: null }), refused(404, 'User not found'));
+    await assert.rejects(users.updateUser(client, 31, {}), refused(400, 'Nothing to update'));
+    // Relinking the same user to the same pilot is fine; unlinking frees the pilot.
+    await users.updateUser(client, 1, { pilot_id: 1 });
+    await users.updateUser(client, 1, { pilot_id: null });
+    await users.updateUser(client, 31, { pilot_id: 1 });
+    assert.equal((await me.getMe(client)).pilot_id, null);
+    assert.equal((await w.request('PATCH', '/api/users/31', { pilot_id: null }, { as: 'viewer' })).status, 403);
+    assert.deepEqual(await users.deleteUser(client, 31), { ok: true });
+  });
+
   test('trackers: added, edited (assignment and access code), paused, its assignment carried over, then deleted', async () => {
     const added = await trackers.createTracker(client, { name: 'Three', type: 'inreach',
       source_url: 'https://share.garmin.com/Feed/Share/abc', credentials: { password: 'pw' }, assigned_aircraft: null, assigned_pilot: null });
@@ -1048,6 +1068,7 @@ describe('request validation: the settings modal’s writes', () => {
   test('a field of the wrong type is a 400 naming it', async () => {
     const cases = [
       ['PATCH', '/api/me/sessions/1', { device_name: 5 }, /^device_name: /],
+      ['PATCH', '/api/users/1', { pilot_id: '1' }, /^pilot_id: /],
       ['POST', '/api/invites', { name: 'A', role: 'viewer', expires_in_hours: '24' }, /^expires_in_hours: /],
       ['POST', '/api/trackers', { name: 'T', type: 'spot', source_url: 'https://example.com/x', assigned_pilot: 'one' }, /^assigned_pilot: /],
       ['PUT', '/api/trackers/1', { active: 'yes' }, /^active: /],

@@ -216,6 +216,7 @@ Object.assign(globalThis, {
   createPilot: (body: pilotsApi.PilotCreateRequest) => pilotsApi.createPilot(api, body),
   updatePilot: (id: number, body: pilotsApi.PilotUpdateRequest) => pilotsApi.updatePilot(api, id, body),
   fetchUsers: () => usersApi.getUsers(api),
+  updateUser: (id: number, body: usersApi.UserUpdateRequest) => usersApi.updateUser(api, id, body),
   deleteUser: (id: number) => usersApi.deleteUser(api, id),
   fetchInvites: () => usersApi.getInvites(api),
   createInvite: (body: usersApi.InviteRequest) => usersApi.createInvite(api, body),

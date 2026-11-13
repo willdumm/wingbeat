@@ -24,7 +24,7 @@ import { DefaultDutyRequest, DutyDaysClearRequest, DutyDaysRequest, DutyMethodRe
 import { MAX_DEVICE_NAME_LENGTH, SessionRenameRequest, deviceNameLength } from '@wingbeat/core/api/me-requests';
 import { PairRequest } from '@wingbeat/core/api/app-requests';
 import { API_VERSION, APP_VERSION_HEADER, MAX_APP_VERSION_LENGTH, MIN_CLIENT_LEVEL } from '@wingbeat/core/api/version';
-import { InviteRequest } from '@wingbeat/core/api/users-requests';
+import { InviteRequest, UserUpdateRequest } from '@wingbeat/core/api/users-requests';
 import { ApplyAssignmentRequest, TestFeedRequest, TrackerCreateRequest, TrackerUpdateRequest } from '@wingbeat/core/api/trackers-requests';
 import { OverlayRequest } from '@wingbeat/core/api/overlays-requests';
 import { AircraftCreateRequest, AircraftUpdateRequest } from '@wingbeat/core/api/aircraft-requests';
@@ -45,7 +45,7 @@ const SESSION_IDLE_SECS = 90 * 24 * 3600;
 const SESSION_TOUCH_SECS = 3600;
 const DEVICE_LINK_TTL_SECS = 15 * 60;
 
-type AuthUser = { id: number; name: string; role: string; sessionId: number; device_name: string | null };
+type AuthUser = { id: number; name: string; role: string; pilot_id: number | null; sessionId: number; device_name: string | null };
 type Variables = { user: AuthUser; db: D1Database; tenant: Tenant; cspNonce: string };
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -83,7 +83,7 @@ app.onError((err, c) => {
   return c.text('Internal Server Error', 500);
 });
 
-type SessionLookup = { id: number; user_id: number; name: string; role: string; device_name: string | null; last_seen_at: number; token_hashed: number; app_version: string | null };
+type SessionLookup = { id: number; user_id: number; name: string; role: string; pilot_id: number | null; device_name: string | null; last_seen_at: number; token_hashed: number; app_version: string | null };
 
 // Finds the live session for a cookie value. New rows store sha256(cookie) with
 // token_hashed = 1; legacy rows hold the raw cookie with token_hashed = 0. The token_hashed
@@ -94,7 +94,7 @@ async function lookupSession(c: Context<{ Bindings: Env; Variables: Variables }>
   const hash = await sha256Hex(raw);
   const db = c.var.db;
   const row = await db.prepare(
-    `SELECT s.id, s.user_id, u.name, u.role, s.device_name, s.last_seen_at, s.token_hashed, s.app_version
+    `SELECT s.id, s.user_id, u.name, u.role, u.pilot_id, s.device_name, s.last_seen_at, s.token_hashed, s.app_version
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE (s.token = ?1 AND s.token_hashed = 1) OR (s.token = ?2 AND s.token_hashed = 0)`
   ).bind(hash, raw).first<SessionLookup>();
@@ -120,7 +120,7 @@ async function lookupSession(c: Context<{ Bindings: Env; Variables: Variables }>
 }
 
 function sessionUser(row: SessionLookup): AuthUser {
-  return { id: row.user_id, name: row.name, role: row.role, sessionId: row.id, device_name: row.device_name };
+  return { id: row.user_id, name: row.name, role: row.role, pilot_id: row.pilot_id, sessionId: row.id, device_name: row.device_name };
 }
 
 const requireAdmin: MiddlewareHandler<{ Bindings: Env; Variables: Variables }> = async (c, next) => {
@@ -132,7 +132,7 @@ const _defaultTrackerIdCache = new Map<string, number | null>();
 function invalidateTrackerCache(tenantKey: string) { _defaultTrackerIdCache.delete(tenantKey); }
 
 function meJson(u: AuthUser) {
-  return { id: u.id, name: u.name, role: u.role, device_name: u.device_name, session_id: u.sessionId };
+  return { id: u.id, name: u.name, role: u.role, pilot_id: u.pilot_id, device_name: u.device_name, session_id: u.sessionId };
 }
 
 // The feed URL (source_url) can embed a share id/key that lets whoever holds it poll the
@@ -458,7 +458,7 @@ function joinRefusal(row: InviteToken): JoinRefusal | null {
   return null;
 }
 
-type Redeemed = { sessionToken: string; sessionId: number; userId: number; name: string; role: string };
+type Redeemed = { sessionToken: string; sessionId: number; userId: number; name: string; role: string; pilotId: number | null };
 
 /**
  * Redeems a join token for a new session named deviceName: the web's POST /join/:token
@@ -477,7 +477,7 @@ async function redeemJoinToken(db: D1Database, row: InviteToken, deviceName: str
   const consume = db.prepare('UPDATE invite_tokens SET used = 1 WHERE id = ? AND used = 0 AND expires_at >= ?').bind(row.id, now);
   // Last, in the same transaction: the new session and its user, for the caller's response.
   const created = db.prepare(
-    `SELECT s.id, s.user_id, u.name, u.role FROM sessions s JOIN users u ON u.id = s.user_id
+    `SELECT s.id, s.user_id, u.name, u.role, u.pilot_id FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token = ? AND s.token_hashed = 1`
   ).bind(sessionHash);
   const batch = row.type === 'invite'
@@ -494,10 +494,10 @@ async function redeemJoinToken(db: D1Database, row: InviteToken, deviceName: str
         .bind(row.user_id!, sessionHash, deviceName),
       created,
     ]);
-  const session = batch.at(-1)!.results[0] as { id: number; user_id: number; name: string; role: string } | undefined;
+  const session = batch.at(-1)!.results[0] as { id: number; user_id: number; name: string; role: string; pilot_id: number | null } | undefined;
   // Lost: joinRefusal looks at the clock again, so a link that expired meanwhile says so.
   if (!session) return { ok: false, refusal: joinRefusal(row) ?? usedRefusal(row) };
-  return { ok: true, session: { sessionToken, sessionId: session.id, userId: session.user_id, name: session.name, role: session.role } };
+  return { ok: true, session: { sessionToken, sessionId: session.id, userId: session.user_id, name: session.name, role: session.role, pilotId: session.pilot_id } };
 }
 
 app.get('/join/:token', async (c) => {
@@ -550,8 +550,8 @@ app.post('/api/app/pair', valid('json', PairRequest), async (c) => {
   const redeemed = await redeemJoinToken(c.var.db, row, deviceName);
   if (!redeemed.ok) return c.json({ error: redeemed.refusal.message }, redeemed.refusal.status);
   // The app's X-Wingbeat-App header is recorded from its next request, not this one.
-  const { sessionToken, sessionId, userId, name, role } = redeemed.session;
-  return c.json({ token: sessionToken, me: meJson({ id: userId, name, role, sessionId, device_name: deviceName }) });
+  const { sessionToken, sessionId, userId, name, role, pilotId } = redeemed.session;
+  return c.json({ token: sessionToken, me: meJson({ id: userId, name, role, pilot_id: pilotId, sessionId, device_name: deviceName }) });
 });
 
 // ── Page routes ───────────────────────────────────────────────────────────────
@@ -731,14 +731,35 @@ app.post('/api/me/ping', async (c) => {
 
 app.get('/api/users', requireAdmin, async (c) => {
   const { results } = await c.var.db.prepare(`
-    SELECT u.id, u.name, u.role, u.is_env_admin, u.created_at,
+    SELECT u.id, u.name, u.role, u.is_env_admin, u.pilot_id, u.created_at,
            COUNT(s.id) AS device_count
     FROM users u
     LEFT JOIN sessions s ON s.user_id = u.id
     GROUP BY u.id
     ORDER BY u.created_at ASC
-  `).all<{ id: number; name: string; role: string; is_env_admin: number; created_at: number; device_count: number }>();
+  `).all<{ id: number; name: string; role: string; is_env_admin: number; pilot_id: number | null; created_at: number; device_count: number }>();
   return c.json({ users: results });
+});
+
+// Links a user to the pilot they are (or unlinks them, with null): the app opens a linked
+// user's own duty log first. A pilot links to one user at most (the users_pilot index).
+app.patch('/api/users/:id', requireAdmin, valid('json', UserUpdateRequest), async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  if (isNaN(id)) return c.json({ error: 'Invalid user id' }, 400);
+  const body = c.req.valid('json');
+  if (body.pilot_id === undefined) return c.json({ error: 'Nothing to update' }, 400);
+  const db = c.var.db;
+  const user = await db.prepare('SELECT id FROM users WHERE id = ?').bind(id).first();
+  if (!user) return c.json({ error: 'User not found' }, 404);
+  if (body.pilot_id !== null) {
+    const pilot = await db.prepare('SELECT id FROM pilots WHERE id = ?').bind(body.pilot_id).first();
+    if (!pilot) return c.json({ error: 'Pilot not found' }, 404);
+    const other = await db.prepare('SELECT name FROM users WHERE pilot_id = ? AND id != ?')
+      .bind(body.pilot_id, id).first<{ name: string }>();
+    if (other) return c.json({ error: `That pilot is already linked to ${other.name}` }, 409);
+  }
+  await db.prepare('UPDATE users SET pilot_id = ? WHERE id = ?').bind(body.pilot_id, id).run();
+  return c.json({ ok: true });
 });
 
 /**

@@ -1369,7 +1369,9 @@ them later if unassigned flights with evidence turn out to be common.
 ### Schema
 
 - Phase 6: `users.pilot_id` (`REFERENCES pilots(id) ON DELETE SET NULL`, a partial unique
-  index so only one user links to each pilot).
+  index so only one user links to each pilot). Done: migration `0005_user_pilot.sql`, in
+  `me` (bootstrap, GET /api/me, the pairing response) and GET /api/users, set with
+  `PATCH /api/users/:id` from Settings → Users → Pilot (admins).
 - Phase 8:
   - `trackers.current_pilot` (`REFERENCES pilots(id) ON DELETE SET NULL`) and
     `trackers.current_aircraft` (`REFERENCES aircraft(tail_number)`);
@@ -1775,8 +1777,8 @@ Released as v0.4.0 (PR #9) on 2026-11-11. Production got step 1 alone first, the
    phase's one migration), written at most when it changes.
 4. **`DELETE /api/me`** and the web's "Delete my account" in Settings (see "Account
    deletion"): refuses the env admin and the last admin, deletes the `users` row and
-   relies on the cascades. `push_subscriptions`, `presence_events` and `users.pilot_id`
-   don't exist yet; the phases that add them extend the route.
+   relies on the cascades. `push_subscriptions` and `presence_events` don't exist yet; the
+   phases that add them extend the route (`users.pilot_id`, phase 6, goes with the row).
 5. **The first compat snapshot**: `packages/core/src/api/compat/1.ts` freezes the response
    schemas of the routes the app calls at level 1, and `test/worker-sql.test.mjs` checks
    each of those routes' real responses against every snapshot.

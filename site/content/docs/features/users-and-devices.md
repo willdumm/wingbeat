@@ -25,6 +25,12 @@ expire after 7 days and can be used once. A sign-in link for adding another devi
   everything under Global Settings (app name, timezone, map defaults,
   notifications, regions, named points).
 
+## Users who are pilots
+
+An admin can link a user to the pilot they are (Settings → Admin → Users →
+**Pilot**). Each pilot links to one user at most. The Wingbeat app shows a
+linked user their own duty log first.
+
 ## My Devices
 
 Each user can be signed into multiple devices at once. Settings → My Devices

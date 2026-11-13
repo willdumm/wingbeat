@@ -161,7 +161,7 @@ describe('app pairing (POST /api/app/pair)', () => {
     const r = await pair({ token: link, device_name: '  Ada’s iPhone  ' });
     assert.equal(r.status, 200);
     assert.match(r.body.token, /^[0-9a-f]+$/);
-    assert.deepEqual({ ...r.body.me, session_id: 0 }, { id: 1, name: 'Ada Admin', role: 'admin', device_name: 'Ada’s iPhone', session_id: 0 });
+    assert.deepEqual({ ...r.body.me, session_id: 0 }, { id: 1, name: 'Ada Admin', role: 'admin', pilot_id: null, device_name: 'Ada’s iPhone', session_id: 0 });
     const row = await w.first('SELECT id, token, token_hashed, device_name FROM sessions WHERE token = ?', await sha256Hex(r.body.token));
     assert.deepEqual([row.id, row.token_hashed, row.device_name], [r.body.me.session_id, 1, 'Ada’s iPhone']);
     const me = await w.request('GET', '/api/me', undefined, bearer(r.body.token));

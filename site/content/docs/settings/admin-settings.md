@@ -39,7 +39,8 @@ lists read-only):
 
 ## Users
 
-Invite new users (name + role) and manage existing accounts. See
+Invite new users (name + role), link a user to the pilot they are, and manage
+existing accounts. See
 [Users & Devices](../../features/users-and-devices).
 
 ## Global Settings

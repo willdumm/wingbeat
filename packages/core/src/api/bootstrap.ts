@@ -15,11 +15,15 @@ export { TileOverlay } from './overlays';
 
 const nullableStr = z.nullable(z.string());
 
-/** The signed-in user (GET /api/me has the same shape). */
+/**
+ * The signed-in user (GET /api/me has the same shape). pilot_id is the pilot they are,
+ * linked in Settings → Users (absent from servers older than the link).
+ */
 export const Me = z.looseObject({
   id: z.number(),
   name: z.string(),
   role: z.enum(['admin', 'viewer']),
+  pilot_id: z.nullish(z.number()),
   device_name: nullableStr,
   session_id: z.number(),
 });
