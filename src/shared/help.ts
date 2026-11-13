@@ -1,3 +1,4 @@
+import { docsHref } from '@wingbeat/core/docs';
 import { icon } from './icons';
 
 /**
@@ -5,13 +6,6 @@ import { icon } from './icons';
  * regulatory limits (the duty log). The notice says the same as the docs' compliance
  * warning (site/layouts/_shortcodes/compliance.html).
  */
-
-const DOCS_BASE = 'https://wingbeat.dummthings.dev/docs/';
-
-/** The docs page at path (relative to /docs/, e.g. 'features/pilot-duty-log/#warnings-and-totals'). */
-export function docsHref(path = ''): string {
-  return DOCS_BASE + path;
-}
 
 /** An inline "book" link to a docs page, opening in a new tab. */
 export function docsLinkMarkup(path: string, label: string): string {

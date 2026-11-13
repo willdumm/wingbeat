@@ -24,9 +24,11 @@ interface FlightsValue {
   generation: number;
   /** Refreshes now (pull to refresh), restarting the schedule; resolves when it's done. */
   refresh: () => Promise<void>;
+  /** Drops the cached copy and downloads it all again (Settings' "Clear Flight Cache", as the web's). */
+  clearCache: () => Promise<void>;
 }
 
-const FlightsContext = createContext<FlightsValue>({ store: null, lastRefresh: null, generation: 0, refresh: async () => {} });
+const FlightsContext = createContext<FlightsValue>({ store: null, lastRefresh: null, generation: 0, refresh: async () => {}, clearCache: async () => {} });
 
 export function FlightsProvider({ children }: { children: ReactNode }) {
   const { loaded, accounts, active, client } = useAccounts();
@@ -36,6 +38,10 @@ export function FlightsProvider({ children }: { children: ReactNode }) {
   const [generation, setGeneration] = useState(0);
   const poller = useRef<(() => Promise<void>) | null>(null);
   const refresh = useMemo(() => async () => { await poller.current?.(); }, []);
+  const clearCache = useMemo(() => async () => {
+    store?.clearCache();
+    await poller.current?.();
+  }, [store]);
 
   // Drops the cached copies and the settings (prefs.ts) no account reads any more.
   useEffect(() => {
@@ -93,7 +99,7 @@ export function FlightsProvider({ children }: { children: ReactNode }) {
   }, [store, handshake, trackers]);
 
   return (
-    <FlightsContext.Provider value={{ store, lastRefresh, generation, refresh }}>
+    <FlightsContext.Provider value={{ store, lastRefresh, generation, refresh, clearCache }}>
       {children}
     </FlightsContext.Provider>
   );

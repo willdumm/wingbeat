@@ -2092,8 +2092,8 @@ layers need no Android counterpart; only the chrome around the map does.
 | Accounts: switch, add, sign out | Done | a `Form`; a context menu instead of touch-and-hold | `ListItem`s, a long-press `DropdownMenu` | `api/me` |
 | Delete my account | Done | a destructive `Button`, `Alert` | `AlertDialog` | `DELETE /api/me` |
 | Theme | Done | a segmented `Picker` | `SingleChoiceSegmentedButtonRow` | — |
-| Documentation link | Not started (easy) | a `Link` to the docs site in `expo-web-browser` (public, no session) | same | — |
-| Clear local cache | Not started (easy) | a destructive `Button` | same | `flight-cache.ts` |
+| Documentation link | Done (not yet on the phone): a Help section | a `Button` opening the docs site in `expo-web-browser` (public, no session) | same | `docs` (`docsHref`, the web's too) |
+| Clear local cache | Done (not yet on the phone): "Clear Flight Cache" in the active account's section, with a confirmation, then a full download | a destructive `Button`, `Alert` | same | `flight-cache.ts`, the flight store's `clearCache` |
 | My Devices (rename, sign out) | Phase 11 (first in Settings) | a `List` with `SwipeActions`; an `Alert` with a text field to rename | a long-press menu, an `AlertDialog` with a `TextField` | `api/me` |
 | Notification subscriptions | Phase 7 | a `Form` of `Toggle`s | `Switch` `ListItem`s | phase 7's routes |
 | Aircraft, pilots, trackers (add, edit, test a feed) | Phase 11 | `Form`s pushed on the Settings stack | `ListItem` screens | the settings request schemas |

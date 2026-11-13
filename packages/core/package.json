@@ -46,6 +46,7 @@
     "./corrections": "./src/corrections.ts",
     "./duty": "./src/duty.ts",
     "./edit-history": "./src/edit-history.ts",
+    "./docs": "./src/docs.ts",
     "./elevation": "./src/elevation.ts",
     "./filters": "./src/filters.ts",
     "./format": "./src/format.ts",
