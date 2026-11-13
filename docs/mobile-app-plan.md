@@ -1875,7 +1875,7 @@ them) and the Flights tab's filter and date preset; the keys of removed accounts
 with their flight caches. Notification subscriptions, auto-logging and the opening tab come
 with phases 7 and 8.
 
-Done: step 9, except creating the Sentry project. `apps/mobile/src/lib/sentry.ts` initializes
+Done: step 9. `apps/mobile/src/lib/sentry.ts` initializes
 Sentry only when the bundle was built with `EXPO_PUBLIC_SENTRY_DSN` (an EAS environment
 variable, so local and development runs report nothing), with the channel as its environment.
 Events carry the tags `host` and `server_api_version` (the active account's) and
@@ -1891,7 +1891,9 @@ uploads them (`SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` as EAS environ
 variables; the `development` profile sets `SENTRY_DISABLE_AUTO_UPLOAD`), and an EAS Update is
 followed by `npx sentry-expo-upload-sourcemaps dist` (`apps/mobile/AGENTS.md`). The plugin
 takes org and project from those variables rather than `app.config.ts`, so they don't enter
-the fingerprint. In the Sentry project, turn on "Prevent storing of IP addresses".
+the fingerprint. The Sentry project is `dumm-software-llc/wingbeat-mobile` (React Native),
+with "Prevent storing of IP addresses" on; the four variables are set for the `preview` and
+`production` EAS environments, and a test event sent with its DSN arrived.
 
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with
