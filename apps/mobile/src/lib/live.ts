@@ -185,3 +185,17 @@ export function dayMap(
     bounds: all.length ? [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)] : null,
   };
 }
+
+/**
+ * A day key ("2026-10-03") as a device-local Date at noon, for a native date picker (which
+ * picks calendar days in the device's zone; noon keeps clear of DST shifts), and back.
+ */
+export function dayKeyToDate(dayKey: string): Date {
+  const [y, m, d] = dayKey.split('-').map(Number);
+  return new Date(y, m - 1, d, 12);
+}
+
+export function dateToDayKey(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}

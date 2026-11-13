@@ -1,20 +1,26 @@
 /**
  * The map of the Live tab and the flight detail: the basemap and overlays the user picked
  * (map-style.ts), points in their colors (each tracker's position, or a flight's start and
- * end, numbered when `label` is set) and tracks (each flight in progress, a day's
- * flights, or the one flight). The tools along the left edge (map-tools.tsx) start with
- * Layers, which picks the basemap and toggles the overlays; picking a basemap resets the
- * overlays to that basemap's defaults, as on the web. Each account keeps its choice, between
+ * end, numbered when `label` is set: end-markers.tsx) and tracks (each flight in progress, a day's
+ * flights, or the one flight). The map runs under the status bar, the header and the tab
+ * bar; along its top go a full-width bar (the status cards) or a floating overlay (the day
+ * banner), and the tools
+ * (map-tools.tsx) at its bottom left, clear of them. The tools start with Layers, which picks
+ * the basemap and toggles the overlays; picking a basemap resets the overlays to that
+ * basemap's defaults, as on the web. Each account keeps its choice, between
  * launches too (prefs.ts), and the Live tab and the flight detail share it.
  */
-import { useImperativeHandle, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
-import { PixelRatio, Platform, Text, View } from 'react-native';
-import { Camera, GeoJSONSource, Layer, Map, Marker, type CameraRef, type InitialViewState } from '@maplibre/maplibre-react-native';
+import { useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
+import { PixelRatio, StyleSheet, View } from 'react-native';
+import { Camera, GeoJSONSource, Layer, Map, type CameraRef, type InitialViewState, type ViewState } from '@maplibre/maplibre-react-native';
 import type { TileOverlay } from '@wingbeat/core/api/bootstrap';
-import { useHeaderHeight } from 'expo-router/react-navigation';
+import { Picker, Section, Text as SwiftText, Toggle } from '@expo/ui/swift-ui';
+import { pickerStyle, tag } from '@expo/ui/swift-ui/modifiers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-screens/experimental';
 import { useAccounts } from './accounts-context';
-import { MapTools, mapToolsWidth, PanelRow, PanelSection, type MapTool } from './map-tools';
+import { EndMarkers, endMarkerGroups, groupsKey, type EndMarker } from './end-markers';
+import { MapTools, Material, type MapTool } from './map-tools';
 import { defaultBasemapId, defaultOverlayIds, liveMapStyle, type MapBasemap } from './map-style';
 import { accountPrefKey, parseMapChoice } from './prefs';
 import { useStoredState } from './stored-state';
@@ -26,8 +32,8 @@ export interface LiveMapRef {
   fitBounds(bounds: [number, number, number, number]): void;
 }
 
-/** Room around fitted bounds: clear of the tool column on the left. */
-const FIT_PADDING = { top: 48, right: 40, bottom: 40, left: 72 };
+/** Room around fitted bounds, inside the overlay and the bars: clear of the tool column on the left. */
+const FIT_PADDING = { top: 24, right: 40, bottom: 24, left: 72 };
 
 interface LiveMapProps {
   basemaps: MapBasemap[];
@@ -38,21 +44,28 @@ interface LiveMapProps {
   tracks: GeoJSON.FeatureCollection;
   /** Tools after Layers. */
   tools?: MapTool[];
-  /** Shown along the top, right of the tools (under an open panel). */
-  banner?: ReactNode;
+  /** Shown along the top, below the status bar or the header. */
+  overlay?: ReactNode;
+  /** A full-width bar along the top, on a soft blur that runs up under the status bar. */
+  topBar?: ReactNode;
   ref?: Ref<LiveMapRef>;
 }
 
-export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], banner, ref }: LiveMapProps) {
+export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, topBar, ref }: LiveMapProps) {
   const t = useTokens();
   const camera = useRef<CameraRef>(null);
+  // The insets iOS gives the screen (the bars drawn over it: status bar, header, tab bar),
+  // measured by where a full-screen safe-area view lays out its content (a smaller view's
+  // insets are clipped to its bounds), and where the top bar or overlay ends.
   const [height, setHeight] = useState(0);
-  // iOS draws the stack header over the screen (the map shows through it); Android lays the
-  // screen out below it. Without a header (the Live tab), the map runs under the status bar.
-  const headerHeight = useHeaderHeight();
-  const insets = useSafeAreaInsets();
-  const toolsTop = (Platform.OS === 'ios' ? Math.max(headerHeight, insets.top) : headerHeight ? 0 : insets.top) + px(t['space-2']);
-  const panelMaxHeight = Math.max(160, height - toolsTop - px(t['space-3']));
+  const [safe, setSafe] = useState({ y: 0, height: 0 });
+  // The top floors at safe-area-context's: without a header, the native view reports none.
+  const { top: statusBar } = useSafeAreaInsets();
+  const insets = { top: Math.max(safe.y, statusBar), bottom: safe.height ? Math.max(0, height - safe.y - safe.height) : 0 };
+  const [topEdge, setTopEdge] = useState(0);
+  const gutter = px(t['space-3']);
+  const top = insets.top + px(t['space-2']);
+  const bottom = insets.bottom + gutter;
   const { active } = useAccounts();
   const [choice, setChoice] = useStoredState(active ? accountPrefKey(active.host, active.user.id, 'map') : null, parseMapChoice);
   const basemap = basemaps.find((b) => b.id === choice.basemap) ?? basemaps.find((b) => b.id === defaultBasemapId(basemaps)) ?? null;
@@ -60,32 +73,50 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
 
   useImperativeHandle(ref, () => ({
     flyTo: (center) => camera.current?.flyTo({ center, zoom: 10, duration: 800 }),
-    fitBounds: (bounds) => camera.current?.fitBounds(bounds, { padding: FIT_PADDING, duration: 800 }),
-  }), []);
+    fitBounds: (bounds) => camera.current?.fitBounds(bounds, {
+      padding: { ...FIT_PADDING, top: FIT_PADDING.top + Math.max(top, topEdge), bottom: FIT_PADDING.bottom + insets.bottom },
+      duration: 800,
+    }),
+  }), [top, topEdge, insets.bottom]);
 
   const layersTool: MapTool = {
     id: 'layers',
     icon: 'square.3.layers.3d',
     label: 'Layers',
-    panel: () => (
+    menu: (
       <>
         {basemaps.length > 1 && (
-          <PanelSection title="Basemap">
-            {basemaps.map((b) => (
-              <PanelRow key={b.id} label={b.label} on={b.id === basemap?.id} onPress={() => setChoice({ basemap: b.id, overlays: null })} />
-            ))}
-          </PanelSection>
+          <Picker label="Basemap" selection={basemap?.id ?? null} modifiers={[pickerStyle('inline')]}
+            onSelectionChange={(id: string | null) => setChoice({ basemap: id, overlays: null })}>
+            {basemaps.map((b) => <SwiftText key={b.id} modifiers={[tag(b.id)]}>{b.label}</SwiftText>)}
+          </Picker>
         )}
         {overlays.length > 0 && (
-          <PanelSection title="Overlays">
+          <Section title="Overlays">
             {overlays.map((o) => (
-              <PanelRow key={o.id} label={o.label} on={onIds.includes(o.id)}
-                onPress={() => setChoice({ basemap: basemap?.id ?? null, overlays: onIds.includes(o.id) ? onIds.filter((id) => id !== o.id) : [...onIds, o.id] })} />
+              <Toggle key={o.id} label={o.label} isOn={onIds.includes(o.id)}
+                onIsOnChange={(on) => setChoice({ basemap: basemap?.id ?? null, overlays: on ? [...onIds, o.id] : onIds.filter((id) => id !== o.id) })} />
             ))}
-          </PanelSection>
+          </Section>
         )}
       </>
     ),
+  };
+
+  // Numbered points, regrouped into pills whenever the view changes which ones overlap.
+  const ends = useMemo(() => positions.features.flatMap((f): EndMarker[] =>
+    f.geometry.type === 'Point' && f.properties?.label != null
+      ? [{ id: String(f.id), lngLat: f.geometry.coordinates as [number, number], label: String(f.properties.label), color: f.properties.color }]
+      : []), [positions]);
+  const [view, setView] = useState<Pick<ViewState, 'zoom' | 'bearing'> | null>(null);
+  const groups = view ? endMarkerGroups(ends, view) : ends.map((_, i) => [i]);
+  const lastKey = useRef('');
+  useEffect(() => { lastKey.current = ''; }, [ends]);
+  const onView = ({ nativeEvent: v }: { nativeEvent: ViewState }) => {
+    const key = groupsKey(endMarkerGroups(ends, v));
+    if (key === lastKey.current && view) return;
+    lastKey.current = key;
+    setView({ zoom: v.zoom, bearing: v.bearing });
   };
 
   const pixelRatio = PixelRatio.get();
@@ -99,7 +130,12 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
 
   return (
     <View style={{ flex: 1 }} onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>
-      <Map style={{ flex: 1 }} mapStyle={mapStyle} logo={false} compass>
+      <SafeAreaView edges={{ top: true, bottom: true }} pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <View style={{ flex: 1 }} onLayout={(e) => setSafe({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })} />
+      </SafeAreaView>
+      <Map style={StyleSheet.absoluteFill} mapStyle={mapStyle} logo={false}
+        compass compassPosition={{ top: Math.max(top, topEdge) + px(t['space-2']), right: gutter }}
+        attributionPosition={{ bottom: insets.bottom + px(t['space-1']), right: px(t['space-2']) }} onRegionIsChanging={onView} onRegionDidChange={onView}>
         <Camera ref={camera} initialViewState={initialView} />
         <GeoJSONSource id="tracks" data={tracks}>
           <Layer id="tracks" type="line" layout={{ 'line-cap': 'round', 'line-join': 'round' }}
@@ -113,24 +149,21 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
             'circle-stroke-width': 2.5,
           }} />
         </GeoJSONSource>
-        {/* Numbered points as views: text on the map itself would need a glyph server. */}
-        {positions.features.flatMap((f) => f.geometry.type === 'Point' && f.properties?.label != null ? [
-          <Marker key={String(f.id)} id={'label-' + f.id} lngLat={f.geometry.coordinates as [number, number]}>
-            <View style={{
-              minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 5, alignItems: 'center', justifyContent: 'center',
-              backgroundColor: f.properties.color, borderWidth: 2, borderColor: t['surface-1'],
-            }}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: t['accent-fg'] }}>{f.properties.label}</Text>
-            </View>
-          </Marker>,
-        ] : [])}
+        <EndMarkers ends={ends} groups={groups} />
       </Map>
-      {banner && (
-        <View style={{ position: 'absolute', top: toolsTop, left: mapToolsWidth(t), right: px(t['space-3']), alignItems: 'flex-start' }}>
-          {banner}
+      {topBar ? (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top }}
+          onLayout={(ev) => setTopEdge(ev.nativeEvent.layout.height)}>
+          <Material material="ultraThin" />
+          {topBar}
         </View>
-      )}
-      <MapTools tools={[...(basemaps.length + overlays.length > 1 ? [layersTool] : []), ...tools]} top={toolsTop} maxHeight={panelMaxHeight} />
+      ) : overlay ? (
+        <View style={{ position: 'absolute', top, left: gutter, right: gutter, alignItems: 'center' }}
+          onLayout={(ev) => setTopEdge(top + ev.nativeEvent.layout.height)}>
+          {overlay}
+        </View>
+      ) : null}
+      <MapTools tools={[...(basemaps.length + overlays.length > 1 ? [layersTool] : []), ...tools]} left={gutter} bottom={bottom} />
     </View>
   );
 }

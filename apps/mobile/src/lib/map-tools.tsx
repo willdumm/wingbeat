@@ -1,23 +1,24 @@
 /**
- * The map's tools: a column of round icon buttons along its left edge, each opening its
- * panel beside the column (one at a time; tapping the button again or the map closes it).
- * A tool's button shows as on (accent) while its panel is open or its `active` is set (the
- * Day tool while a day is mapped). Icons are SF Symbols, through @expo/ui's SwiftUI Image.
+ * The map's tools: a column of round glass buttons at its bottom left, each a native menu
+ * (SwiftUI, through @expo/ui). A tool's button shows as on (prominent, in the accent) while its
+ * `active` is set (the Day tool while a day is mapped). Also the bits of native chrome the
+ * map's overlays share: SF Symbol icons and the translucent material behind a card.
  */
-import { useState, type ReactNode } from 'react';
-import { Platform, Pressable, ScrollView, Text, View } from 'react-native';
-import { Host, Image } from '@expo/ui/swift-ui';
+import type { ReactNode } from 'react';
+import { Platform, StyleSheet, Text, View } from 'react-native';
+import { GlassEffectContainer, Host, Image, Menu, Rectangle, VStack } from '@expo/ui/swift-ui';
+import { accessibilityLabel, buttonBorderShape, buttonStyle, controlSize, foregroundStyle, frame, menuStyle, tint } from '@expo/ui/swift-ui/modifiers';
 import type { SFSymbol } from 'sf-symbols-typescript';
-import { px, useTokens, type Tokens } from './theme';
+import { px, useTokens } from './theme';
 
 export interface MapTool {
   id: string;
   icon: SFSymbol;
-  /** The button's accessibility label and the panel's title. */
+  /** The button's accessibility label. */
   label: string;
   active?: boolean;
-  /** The panel's content; close() closes it (after a pick that's final, say). */
-  panel: (close: () => void) => ReactNode;
+  /** The menu's items: SwiftUI Buttons, Toggles, Pickers and Sections. */
+  menu: ReactNode;
 }
 
 /**
@@ -34,102 +35,53 @@ export function SFIcon({ name, fallback, size, color }: { name: SFSymbol; fallba
   );
 }
 
-const BUTTON = 44;
-
-/** Where the column ends: what's beside it (an open panel, a banner) starts here. */
-export const mapToolsWidth = (t: Tokens) => px(t['space-3']) + BUTTON + px(t['space-2']);
-
 // A shadow token as boxShadow (dark mode's are 'none').
 export const shadow = (token: string) => (token === 'none' ? undefined : token);
 
-function ToolButton({ tool, on, onPress, t }: { tool: MapTool; on: boolean; onPress: () => void; t: Tokens }) {
-  const color = on ? t['accent-fg'] : t['text-primary'];
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={tool.label}
-      accessibilityState={{ selected: on }}
-      style={({ pressed }) => ({
-        width: BUTTON, height: BUTTON, borderRadius: BUTTON / 2, alignItems: 'center', justifyContent: 'center',
-        backgroundColor: on ? t['accent-solid'] : pressed ? t['surface-hover'] : t['surface-float'],
-        borderWidth: 1, borderColor: on ? t['accent-solid'] : t['glass-border'], boxShadow: shadow(t['shadow-md']),
-      })}
-    >
-      <SFIcon name={tool.icon} fallback={tool.label[0]} size={19} color={color} />
-    </Pressable>
+/**
+ * A blurred, translucent backdrop filling its parent (which rounds and clips it): the map
+ * shows through slightly. An iOS material (thin unless given); Android gets the float surface.
+ */
+export function Material({ material = 'thin' }: { material?: 'ultraThin' | 'thin' | 'regular' }) {
+  const t = useTokens();
+  return Platform.OS === 'ios' ? (
+    // Ignoring the safe area: under the status bar, SwiftUI would otherwise squeeze it to nothing.
+    <Host style={StyleSheet.absoluteFill} pointerEvents="none" ignoreSafeArea="all">
+      <Rectangle modifiers={[foregroundStyle({ type: 'material', material })]} />
+    </Host>
+  ) : (
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: t['surface-float'] }]} />
   );
 }
 
-/** The panel's sections: a heading over a group of rows. */
-export function PanelSection({ title, children }: { title?: string; children: ReactNode }) {
-  const t = useTokens();
-  return (
-    <View style={{ gap: px(t['space-1']) }}>
-      {title && (
-        <Text style={{ fontSize: 12, fontWeight: '700', letterSpacing: 0.4, color: t['text-muted'], textTransform: 'uppercase' }}>
-          {title}
-        </Text>
-      )}
-      {children}
-    </View>
-  );
-}
+const BUTTON = 44;
 
-/** A panel row: a label (and detail) with a check when on. */
-export function PanelRow({ label, detail, on, swatch, onPress }: {
-  label: string; detail?: string; on?: boolean; swatch?: string; onPress: () => void;
-}) {
+/** left and bottom: where the column sits on the map (bottom clear of the tab bar). */
+export function MapTools({ tools, left, bottom }: { tools: MapTool[]; left: number; bottom: number }) {
   const t = useTokens();
+  if (!tools.length) return null;
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityState={{ selected: !!on }}
-      style={({ pressed }) => ({
-        flexDirection: 'row', alignItems: 'center', gap: px(t['space-2']), minHeight: 40,
-        paddingHorizontal: px(t['space-2']), borderRadius: px(t['radius-sm']),
-        backgroundColor: on ? t['accent-surface'] : pressed ? t['surface-hover'] : 'transparent',
-      })}
-    >
-      {swatch && <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: swatch }} />}
-      <Text style={{ flex: 1, fontSize: 15, fontWeight: on ? '600' : '400', color: on ? t['accent-text'] : t['text-primary'] }} numberOfLines={1}>
-        {label}
-      </Text>
-      {detail && <Text style={{ fontSize: 13, color: t['text-muted'] }}>{detail}</Text>}
-    </Pressable>
-  );
-}
-
-/** top: where the column starts (below the header or the status bar); maxHeight bounds the panel. */
-export function MapTools({ tools, top, maxHeight }: { tools: MapTool[]; top: number; maxHeight: number }) {
-  const t = useTokens();
-  const [openId, setOpenId] = useState<string | null>(null);
-  const open = tools.find((tool) => tool.id === openId) ?? null;
-  const close = () => setOpenId(null);
-  const left = px(t['space-3']);
-  return (
-    <>
-      {open && <Pressable style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }} onPress={close} accessibilityLabel="Close" />}
-      <View style={{ position: 'absolute', top, left, gap: px(t['space-2']) }}>
-        {tools.map((tool) => (
-          <ToolButton key={tool.id} tool={tool} t={t} on={tool.id === openId || !!tool.active}
-            onPress={() => setOpenId(tool.id === openId ? null : tool.id)} />
-        ))}
-      </View>
-      {open && (
-        <View style={{
-          position: 'absolute', top, left: mapToolsWidth(t), right: px(t['space-3']), maxWidth: 320,
-          maxHeight, borderRadius: px(t['radius-lg']), backgroundColor: t['surface-1'], borderWidth: 1, borderColor: t['border'], boxShadow: shadow(t['shadow-lg']),
-        }}>
-          <ScrollView
-            contentInsetAdjustmentBehavior="never"
-            contentContainerStyle={{ padding: px(t['space-3']), gap: px(t['space-3']) }}
-          >
-            <Text style={{ fontSize: 17, fontWeight: '700', color: t['text-primary'] }}>{open.label}</Text>
-            {open.panel(close)}
-          </ScrollView>
-        </View>
-      )}
-    </>
+    <Host matchContents style={{ position: 'absolute', left, bottom }}>
+      <GlassEffectContainer spacing={px(t['space-2'])}>
+        <VStack spacing={px(t['space-2'])}>
+          {tools.map((tool) => (
+            <Menu
+              key={tool.id}
+              label={<Image systemName={tool.icon} size={19} modifiers={[frame({ width: BUTTON - 16, height: BUTTON - 16 })]} />}
+              modifiers={[
+                accessibilityLabel(tool.label),
+                menuStyle('button'),
+                buttonStyle(tool.active ? 'glassProminent' : 'glass'),
+                buttonBorderShape('circle'),
+                controlSize('large'),
+                ...(tool.active ? [tint(t['accent-solid'])] : []),
+              ]}
+            >
+              {tool.menu}
+            </Menu>
+          ))}
+        </VStack>
+      </GlassEffectContainer>
+    </Host>
   );
 }

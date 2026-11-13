@@ -1,82 +1,73 @@
 /**
- * The aircraft status cards as a native list (the dashboard's status bar): tail and
- * In Flight / On Ground, GPS age with its freshness dot, altitude and speed in flight, and
- * the place. The status chip and dot follow the web's status primitive (src/shared/status.ts).
+ * The aircraft status cards (the dashboard's status bar), compact in the map's top bar (on
+ * its blur, LiveMap's topBar): tail and in flight / on ground, then GPS age with its
+ * freshness dot, altitude and speed in flight, and the place. One card spans the bar;
+ * several scroll sideways, divided by hairlines. The dots follow the web's status primitive
+ * (src/shared/status.ts).
  */
-import { Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-screens/experimental';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import type { StatusCard } from './live';
-import { px, useTokens, type Tokens } from './theme';
+import { px, useTokens } from './theme';
 
 function Dot({ color }: { color: string }) {
   return <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: color }} />;
 }
 
-function Chip({ inFlight, t }: { inFlight: boolean; t: Tokens }) {
-  return (
-    <View style={{
-      flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 3, paddingHorizontal: 8,
-      borderRadius: px(t['radius-pill']), backgroundColor: inFlight ? t['live-surface'] : t['surface-2'],
-    }}>
-      <Dot color={inFlight ? t['live-dot'] : t['text-faint']} />
-      <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.3, color: inFlight ? t['live-fg'] : t['text-secondary'] }}>
-        {inFlight ? 'IN FLIGHT' : 'ON GROUND'}
-      </Text>
-    </View>
-  );
-}
-
-function Card({ card, onPress }: { card: StatusCard; onPress: () => void }) {
+function Card({ card, width, divider, onPress }: { card: StatusCard; width: number | undefined; divider: boolean; onPress: () => void }) {
   const t = useTokens();
-  const details = [card.metrics, card.location].filter(Boolean).join(' · ');
+  const details = [card.gps, card.metrics, card.location].filter(Boolean).join(' · ');
   return (
     <Pressable
       onPress={onPress}
       disabled={!card.position}
+      accessibilityRole="button"
+      accessibilityLabel={`${card.label}, ${card.inFlight ? 'in flight' : 'on ground'}`}
       style={({ pressed }) => ({
-        gap: 6, padding: px(t['space-3']), borderRadius: px(t['radius-md']), borderWidth: 1.5,
-        borderColor: card.inFlight ? card.color : t['border-subtle'],
-        backgroundColor: pressed ? t['surface-hover'] : t['surface-1'],
+        width, gap: 2, paddingVertical: px(t['space-2']), paddingHorizontal: px(t['space-3']), opacity: pressed ? 0.6 : 1,
+        borderLeftWidth: divider ? StyleSheet.hairlineWidth : 0, borderLeftColor: t['border'],
       })}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: card.color }} />
-        <Text style={{ flex: 1, fontSize: 17, fontWeight: '700', color: t['text-primary'] }} numberOfLines={1}>{card.label}</Text>
-        <Chip inFlight={card.inFlight} t={t} />
+        <Text style={{ flexShrink: 1, fontSize: 15, fontWeight: '700', color: t['text-primary'] }} numberOfLines={1}>{card.label}</Text>
+        <Dot color={card.inFlight ? t['live-dot'] : t['text-faint']} />
+        <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.3, color: card.inFlight ? t['live-fg'] : t['text-secondary'] }}>
+          {card.inFlight ? 'IN FLIGHT' : 'ON GROUND'}
+        </Text>
       </View>
-      {(card.gps || details) && (
+      {!!details && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           {card.gps && <Dot color={card.gpsFresh ? t['success-dot'] : t['text-faint']} />}
-          {card.gps && <Text style={{ fontSize: 13, color: t['text-muted'] }}>{card.gps}</Text>}
-          {!!details && (
-            <Text style={{ flex: 1, fontSize: 13, color: t['text-muted'] }} numberOfLines={1}>
-              {card.gps ? '· ' : ''}{details}
-            </Text>
-          )}
+          <Text style={{ flexShrink: 1, fontSize: 12, color: t['text-secondary'] }} numberOfLines={1}>{details}</Text>
         </View>
       )}
     </Pressable>
   );
 }
 
-/**
- * onSelect: a card with a position was tapped. Sits at the bottom of a tab screen: the safe
- * area keeps it above the tab bar, which iOS draws over the screen.
- */
+/** onSelect: a card with a position was tapped. */
 export function StatusCards({ cards, onSelect }: { cards: StatusCard[]; onSelect: (card: StatusCard) => void }) {
   const t = useTokens();
+  const { width: screen } = useWindowDimensions();
+  if (cards.length <= 1) {
+    return (
+      <View>
+        {cards.map((c) => <Card key={c.trackerId} card={c} width={undefined} divider={false} onPress={() => onSelect(c)} />)}
+      </View>
+    );
+  }
+  // Each card a little narrower than the bar, so the next one peeks in.
+  const width = Math.min(320, screen - 48);
   return (
-    <>
-      <ScrollView
-        style={{ flexGrow: 0, maxHeight: '33%', backgroundColor: t['bg-base'] }}
-        contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={{ gap: px(t['space-2']), padding: px(t['space-3']) }}
-      >
-        {cards.map((c) => <Card key={c.trackerId} card={c} onPress={() => onSelect(c)} />)}
-        {!cards.length && <Text style={{ color: t['text-muted'], textAlign: 'center' }}>No active trackers.</Text>}
-      </ScrollView>
-      {/* Only the inset tall: empty, and without the flex: 1 SafeAreaView sets by default. */}
-      <SafeAreaView edges={{ bottom: true }} style={{ flex: 0, backgroundColor: t['bg-base'] }} />
-    </>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentInsetAdjustmentBehavior="never"
+      style={{ flexGrow: 0 }}
+      snapToInterval={width}
+      decelerationRate="fast"
+    >
+      {cards.map((c, i) => <Card key={c.trackerId} card={c} width={width} divider={i > 0} onPress={() => onSelect(c)} />)}
+    </ScrollView>
   );
 }

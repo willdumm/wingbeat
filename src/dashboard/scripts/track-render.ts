@@ -33,7 +33,9 @@ export function dashboardScriptsTrackRender(): string {
     // Multiple flights that land at the same place: horizontal pill of numbered
     // circles on a white background, centered at the group centroid.
     function makeGroupIcon(group) {
-      const D = 20, gap = 2, padX = 4, padY = 4; // pad enough to contain the 2px circle stroke inside the pill border
+      // Core's END_MARKER geometry (groupEndMarkers sizes the pills from it); the pad is enough
+      // to contain the 2px circle stroke inside the pill border.
+      const D = 20, gap = 2, padX = 4, padY = 4;
       const w = group.length * D + (group.length - 1) * gap + padX * 2;
       const h = D + padY * 2;
       const r = D / 2;
@@ -79,51 +81,23 @@ export function dashboardScriptsTrackRender(): string {
     }
 
     // Groups endInfos ({ latlng, flightNum, color }) by pixel proximity at mapObj's
-    // current zoom and adds one marker per group. Returns the markers it added.
+    // current zoom (core's groupEndMarkers) and adds one marker per group. Returns the
+    // markers it added.
     function placeEndMarkers(mapObj, endInfos) {
-      // Pill geometry — must match makeGroupIcon.
-      const D = 20, gap = 2, padX = 4, padY = 4;
-      const circleR = D / 2;
-      const pillHalfH = (D + 2 * padY) / 2; // = 12px
-
-      // Half-width of a pill containing n circles.
-      function pillHalfW(n) { return (n * D + (n - 1) * gap + 2 * padX) / 2; }
-
-      // Each group tracks its infos and its running centroid in container pixels.
-      const groups = []; // { infos: [...], cx: number, cy: number }
-
-      for (const info of endInfos) {
-        const pt = mapObj.latLngToContainerPoint(info.latlng);
-        let placed = false;
-        for (const group of groups) {
-          const n = group.infos.length;
-          // Interference: new circle (D×D) overlaps the existing pill (W×H).
-          // Horizontal threshold = pill half-width + circle radius.
-          // Vertical threshold   = pill half-height + circle radius.
-          if (Math.abs(pt.x - group.cx) < pillHalfW(n) + circleR &&
-              Math.abs(pt.y - group.cy) < pillHalfH + circleR) {
-            group.infos.push(info);
-            // Keep centroid current so the next check uses an accurate position.
-            group.cx = (group.cx * n + pt.x) / (n + 1);
-            group.cy = (group.cy * n + pt.y) / (n + 1);
-            placed = true;
-            break;
-          }
-        }
-        if (!placed) groups.push({ infos: [info], cx: pt.x, cy: pt.y });
-      }
+      const groups = groupEndMarkers(endInfos.map(info => mapObj.latLngToContainerPoint(info.latlng)))
+        .map(g => g.members.map(i => endInfos[i]));
 
       const markers = [];
-      for (const group of groups) {
+      for (const infos of groups) {
         let markerLatLng, icon;
-        if (group.infos.length === 1) {
-          markerLatLng = group.infos[0].latlng;
-          icon = makeNumberIcon(group.infos[0].flightNum, group.infos[0].color);
+        if (infos.length === 1) {
+          markerLatLng = infos[0].latlng;
+          icon = makeNumberIcon(infos[0].flightNum, infos[0].color);
         } else {
-          const avgLat = group.infos.reduce((s, m) => s + m.latlng[0], 0) / group.infos.length;
-          const avgLon = group.infos.reduce((s, m) => s + m.latlng[1], 0) / group.infos.length;
+          const avgLat = infos.reduce((s, m) => s + m.latlng[0], 0) / infos.length;
+          const avgLon = infos.reduce((s, m) => s + m.latlng[1], 0) / infos.length;
           markerLatLng = [avgLat, avgLon];
-          icon = makeGroupIcon(group.infos);
+          icon = makeGroupIcon(infos);
         }
         markers.push(L.marker(markerLatLng, { icon, zIndexOffset: 1000 }).addTo(mapObj));
       }

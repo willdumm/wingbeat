@@ -1,15 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
-import { isFlightInProgress, trackerColor, trackerLiveData } from '@wingbeat/core/live';
+import { Button, Picker, Section, Text } from '@expo/ui/swift-ui';
+import { pickerStyle, tag } from '@expo/ui/swift-ui/modifiers';
+import { isFlightInProgress, locationDetails, trackerColor, trackerLiveData } from '@wingbeat/core/live';
+import { unixToTzDateStr } from '@wingbeat/core/time';
 import { SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
 import { useAccounts } from '@/lib/accounts-context';
 import { origin } from '@/lib/api';
 import { useBootstrap } from '@/lib/bootstrap-context';
 import { DayBanner } from '@/lib/day-banner';
+import { DayPickerSheet } from '@/lib/day-picker-sheet';
 import { useFlights } from '@/lib/flights-context';
 import { dayMap, inFlightTracks, initialView, mapDays, positionFeatures, statusCards } from '@/lib/live';
 import { LiveMap, type LiveMapRef } from '@/lib/live-map';
-import { PanelRow, PanelSection, type MapTool } from '@/lib/map-tools';
+import { LocationSheet } from '@/lib/location-sheet';
+import type { MapTool } from '@/lib/map-tools';
 import { availableBasemaps } from '@/lib/map-style';
 import { Placeholder } from '@/lib/placeholder';
 import { StatusCards } from '@/lib/status-cards';
@@ -17,12 +22,15 @@ import { useTokens } from '@/lib/theme';
 import { useFlightsTab } from '@/lib/use-flights-tab';
 import { useNow } from '@/lib/use-now';
 
-/** How many of the newest days with flights the Day tool lists. */
-const DAYS_LISTED = 90;
+/** How many of the newest days with flights the Day menu lists (the calendar has the rest). */
+const DAYS_LISTED = 30;
+/** The Day menu's pick for the live view. */
+const LIVE = 'live';
 
 /**
  * The live view (each tracker's position and the track of each flight in progress, with the
- * status cards), or with the Day tool a day's flights at once (the dashboard's "Map all").
+ * status cards along the top; tapping one flies to it and opens its location details), or
+ * with the Day tool a day's flights at once (the dashboard's "Map all").
  */
 export default function LiveScreen() {
   const t = useTokens();
@@ -33,6 +41,8 @@ export default function LiveScreen() {
   const map = useRef<LiveMapRef>(null);
   const now = useNow(30_000);  // the cards' "GPS 5 min ago"
   const [dayKey, setDayKey] = useState<string | null>(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [selected, setSelected] = useState<number | null>(null);
 
   const trackers = useMemo(() => bootstrap?.trackers.filter((tr) => tr.active && !tr.deleted) ?? [], [bootstrap]);
   const live = useMemo(
@@ -73,19 +83,28 @@ export default function LiveScreen() {
     icon: 'calendar',
     label: 'Day',
     active: dayKey != null,
-    panel: (close) => (
+    menu: (
       <>
-        <PanelRow label="Live" detail="Flights in progress" on={dayKey == null} onPress={() => { setDayKey(null); close(); }} />
-        <PanelSection title="Map a day’s flights">
+        <Picker label="Day" selection={dayKey ?? LIVE} modifiers={[pickerStyle('inline')]}
+          onSelectionChange={(key: string) => setDayKey(key === LIVE ? null : key)}>
+          <Text modifiers={[tag(LIVE)]}>Live</Text>
           {days.slice(0, DAYS_LISTED).map((d) => (
-            <PanelRow key={d.dayKey} label={d.title} detail={String(d.count)} on={d.dayKey === dayKey}
-              onPress={() => { setDayKey(d.dayKey); close(); }} />
+            <Text key={d.dayKey} modifiers={[tag(d.dayKey)]}>{d.title + ' · ' + d.count + (d.count === 1 ? ' flight' : ' flights')}</Text>
           ))}
-          {!days.length && <PanelRow label="No flights with a track yet" onPress={close} />}
-        </PanelSection>
+        </Picker>
+        <Section>
+          <Button label="Choose a Date…" systemImage="calendar.badge.clock" onPress={() => setCalendarOpen(true)} />
+        </Section>
       </>
     ),
   };
+
+  const selectedCard = cards.find((c) => c.trackerId === selected) ?? null;
+  const pilotName = selected != null ? flights?.findLast((f) => f.tracker_id === selected)?.pilot_name : null;
+  const details = selectedCard
+    ? locationDetails(now, trackers.find((tr) => tr.id === selected) ?? null, live[selectedCard.trackerId], pilotName)
+    : null;
+  const today = tz ? unixToTzDateStr(tz, now) : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: t['bg-base'] }}>
@@ -98,9 +117,16 @@ export default function LiveScreen() {
         positions={day ? { type: 'FeatureCollection', features: [...day.points.features, ...positions.features.filter((p) => p.properties?.inFlight)] } : positions}
         tracks={day ? day.tracks : tracks}
         tools={[dayTool]}
-        banner={dayKey && <DayBanner days={days} dayKey={dayKey} legend={day?.legend ?? []} onPick={setDayKey} />}
+        overlay={dayKey && <DayBanner days={days} dayKey={dayKey} legend={day?.legend ?? []} onPick={setDayKey} />}
+        topBar={!dayKey && cards.length > 0 && (
+          <StatusCards cards={cards} onSelect={(c) => { if (c.position) map.current?.flyTo(c.position); setSelected(c.trackerId); }} />
+        )}
       />
-      {!dayKey && <StatusCards cards={cards} onSelect={(c) => c.position && map.current?.flyTo(c.position)} />}
+      <LocationSheet title={selectedCard?.label ?? ''} details={details} onClose={() => setSelected(null)} />
+      {today && (
+        <DayPickerSheet open={calendarOpen} dayKey={dayKey ?? today} first={days.at(-1)?.dayKey ?? null} today={today}
+          onPick={setDayKey} onClose={() => setCalendarOpen(false)} />
+      )}
     </View>
   );
 }

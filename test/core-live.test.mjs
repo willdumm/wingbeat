@@ -41,6 +41,44 @@ describe('dayFlightNumbers', () => {
   });
 });
 
+describe('groupEndMarkers', () => {
+  test('overlapping markers merge into one pill at their centroid; distant ones stay apart', () => {
+    const groups = live.groupEndMarkers([{ x: 0, y: 0 }, { x: 15, y: 5 }, { x: 200, y: 0 }]);
+    assert.deepEqual(plain(groups), [{ members: [0, 1], x: 7.5, y: 2.5 }, { members: [2], x: 200, y: 0 }]);
+  });
+  test('a pill widens as it grows, so a marker beside it joins', () => {
+    // 30px clears a single circle (overlap under 14 + 10 = 24px) but not a pill of two (25 + 10 = 35px).
+    assert.equal(live.groupEndMarkers([{ x: 0, y: 0 }, { x: 30, y: 0 }]).length, 2);
+    assert.equal(live.groupEndMarkers([{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 40, y: 0 }]).length, 1);
+  });
+  test('zooming in (pixels from mercatorPixel) splits a pill apart', () => {
+    const ends = [[57.79, -152.39], [57.80, -152.40]];
+    const at = (zoom) => live.groupEndMarkers(ends.map(([lat, lon]) => live.mercatorPixel(lat, lon, zoom))).length;
+    assert.equal(at(8), 1);
+    assert.equal(at(14), 2);
+  });
+});
+
+describe('locationDetails', () => {
+  const d = { lat: 57.8, lon: -152.4, velocity_kmh: 185.2, elevation_m: 304.8, course_deg: 23, garmin_time: NOW - 300,
+    last_point_time: NOW - 120, ground_trail: [], location_label: 'Near Kodiak', last_polled: null };
+  test('the popup’s coordinates, links and rows, in order', () => {
+    const details = live.locationDetails(NOW, { name: 'inReach 1', assigned_aircraft: 'N77KZ', mapshare_url: 'https://share.garmin.com/x' }, d, 'Sam');
+    assert.deepEqual(plain(details), {
+      coords: '57.800000, -152.400000',
+      googleMapsUrl: 'https://www.google.com/maps?q=57.800000,-152.400000',
+      mapshareUrl: 'https://share.garmin.com/x',
+      rows: [['Tracker', 'inReach 1'], ['Aircraft', 'N77KZ'], ['Pilot', 'Sam'], ['Altitude', '1,000 ft'], ['Speed', '100.0 kt'],
+        ['Heading', '23° NNE'], ['Location', 'Near Kodiak'], ['GPS fix', '2 min ago']],
+    });
+  });
+  test('only what’s known; nothing without a position', () => {
+    const bare = { ...d, velocity_kmh: null, elevation_m: null, course_deg: null, location_label: null, last_point_time: null };
+    assert.deepEqual(plain(live.locationDetails(NOW, null, bare, null).rows), [['GPS fix', '5 min ago']]);
+    assert.equal(live.locationDetails(NOW, null, null, null), null);
+  });
+});
+
 describe('trackerLiveData', () => {
   test('each tracker’s latest flight’s last point, with what the refresh said about it', () => {
     const result = {

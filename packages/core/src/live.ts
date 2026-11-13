@@ -8,6 +8,8 @@
  */
 import type { FlightPoint, TrackedFlight } from './api/flights';
 import type { RefreshResult } from './flight-store';
+import { toFeet, toKnots } from './format';
+import { relativeTime } from './time';
 
 /** A GPS fix younger than this (seconds) shows as fresh on its status card. */
 export const GPS_FRESH_SECS = 240;
@@ -168,4 +170,111 @@ export function dayFlightNumbers(flights: { tracker_id: number | null; points?: 
     perTracker.set(f.tracker_id, n);
     return n;
   });
+}
+
+/**
+ * A day's numbered end markers: circles END_MARKER.size across, merged into a pill of
+ * circles (END_MARKER.gap apart, END_MARKER.pad inside its border) wherever they'd overlap.
+ */
+export const END_MARKER = { size: 20, gap: 2, pad: 4 } as const;
+
+/** Half the width of a pill of n end markers. */
+export function endPillHalfWidth(n: number): number {
+  const { size, gap, pad } = END_MARKER;
+  return (n * size + (n - 1) * gap + 2 * pad) / 2;
+}
+
+/** A group of end markers: their indices in the input, and the group's centroid in pixels. */
+export interface EndMarkerGroup {
+  members: number[];
+  x: number;
+  y: number;
+}
+
+/**
+ * Groups end markers by where they are on screen (pixels at the map's current zoom): a
+ * marker joins the first group whose pill it would overlap, which then moves to the
+ * centroid of its markers. Re-run on zoom, so pills split apart as the map zooms in.
+ */
+export function groupEndMarkers(points: { x: number; y: number }[]): EndMarkerGroup[] {
+  const r = END_MARKER.size / 2;
+  const pillHalfHeight = r + END_MARKER.pad;
+  const groups: EndMarkerGroup[] = [];
+  points.forEach((pt, i) => {
+    const group = groups.find((g) =>
+      Math.abs(pt.x - g.x) < endPillHalfWidth(g.members.length) + r &&
+      Math.abs(pt.y - g.y) < pillHalfHeight + r);
+    if (!group) {
+      groups.push({ members: [i], x: pt.x, y: pt.y });
+      return;
+    }
+    const n = group.members.length;
+    group.members.push(i);
+    group.x = (group.x * n + pt.x) / (n + 1);
+    group.y = (group.y * n + pt.y) / (n + 1);
+  });
+  return groups;
+}
+
+/**
+ * A position's Web Mercator pixel coordinates at a zoom (tileSize 512 for MapLibre, 256
+ * for Leaflet): what groupEndMarkers needs on a map that only reports its zoom.
+ */
+export function mercatorPixel(lat: number, lon: number, zoom: number, tileSize = 512): { x: number; y: number } {
+  const world = tileSize * 2 ** zoom;
+  const sin = Math.sin((lat * Math.PI) / 180);
+  return {
+    x: ((lon + 180) / 360) * world,
+    y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * world,
+  };
+}
+
+/** A compass heading's 16-point direction ("NNE"). */
+export function cardinalDir(deg: number): string {
+  const dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+  return dirs[Math.round(deg / 22.5) % 16];
+}
+
+/** What a tracker's location details show (the dashboard's location popup, the app's sheet). */
+export interface LocationDetails {
+  /** "57.800000, -152.400000", as copied. */
+  coords: string;
+  googleMapsUrl: string;
+  /** The tracker's Garmin MapShare page (inReach trackers only). */
+  mapshareUrl: string | null;
+  /** [label, value] rows: tracker, aircraft, pilot, altitude, speed, heading, location, GPS fix. */
+  rows: [string, string][];
+}
+
+/**
+ * A tracker's location details from its live data. pilotName: its latest flight's pilot.
+ * null without a position.
+ */
+export function locationDetails(
+  now: number,
+  tracker: { name: string; assigned_aircraft?: string | null; mapshare_url?: string | null } | null,
+  d: LiveData | null | undefined,
+  pilotName: string | null | undefined,
+): LocationDetails | null {
+  if (!d || !d.lat) return null;
+  const lat = d.lat.toFixed(6);
+  const lon = d.lon.toFixed(6);
+  const rows: [string, string][] = [];
+  if (tracker) {
+    rows.push(['Tracker', tracker.name]);
+    if (tracker.assigned_aircraft) rows.push(['Aircraft', tracker.assigned_aircraft]);
+  }
+  if (pilotName) rows.push(['Pilot', pilotName]);
+  if (d.elevation_m != null) rows.push(['Altitude', toFeet(d.elevation_m)]);
+  if (d.velocity_kmh != null) rows.push(['Speed', toKnots(d.velocity_kmh)]);
+  if (d.course_deg != null) rows.push(['Heading', Math.round(d.course_deg) + '° ' + cardinalDir(d.course_deg)]);
+  if (d.location_label) rows.push(['Location', d.location_label]);
+  const gpsTime = d.last_point_time ?? d.garmin_time;
+  if (gpsTime) rows.push(['GPS fix', relativeTime(now, gpsTime)]);
+  return {
+    coords: lat + ', ' + lon,
+    googleMapsUrl: 'https://www.google.com/maps?q=' + lat + ',' + lon,
+    mapshareUrl: tracker?.mapshare_url ?? null,
+    rows,
+  };
 }

@@ -4,6 +4,7 @@
  * trackers' legend when the day has several.
  */
 import { Pressable, Text, View } from 'react-native';
+import { tzLongDateLabel } from '@wingbeat/core/time';
 import type { DayMap, MapDay } from './live';
 import { SFIcon, shadow } from './map-tools';
 import { px, useTokens } from './theme';
@@ -31,10 +32,10 @@ export function DayBanner({ days, dayKey, legend, onPick }: {
   days: MapDay[]; dayKey: string; legend: DayMap['legend']; onPick: (dayKey: string | null) => void;
 }) {
   const t = useTokens();
-  const i = days.findIndex((d) => d.dayKey === dayKey);
-  const day = days[i];
-  const older = i >= 0 && i + 1 < days.length ? days[i + 1].dayKey : null;
-  const newer = i > 0 ? days[i - 1].dayKey : null;
+  // The nearest days with flights either side (a day picked from the calendar may have none).
+  const day = days.find((d) => d.dayKey === dayKey);
+  const older = days.find((d) => d.dayKey < dayKey)?.dayKey ?? null;
+  const newer = days.findLast((d) => d.dayKey > dayKey)?.dayKey ?? null;
   return (
     <View style={{
       maxWidth: '100%', paddingVertical: px(t['space-1']), paddingHorizontal: px(t['space-1']), gap: 2,
@@ -44,7 +45,7 @@ export function DayBanner({ days, dayKey, legend, onPick }: {
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         <Arrow icon="chevron.left" label="Older day" fallback="‹" onPress={older ? () => onPick(older) : null} />
         <View style={{ flexShrink: 1, alignItems: 'center', paddingHorizontal: px(t['space-1']) }}>
-          <Text style={{ fontSize: 15, fontWeight: '700', color: t['text-primary'] }} numberOfLines={1}>{day?.title ?? dayKey}</Text>
+          <Text style={{ fontSize: 15, fontWeight: '700', color: t['text-primary'] }} numberOfLines={1}>{day?.title ?? tzLongDateLabel(dayKey)}</Text>
           <Text style={{ fontSize: 12, color: t['text-muted'] }}>
             {day ? day.count + (day.count === 1 ? ' flight' : ' flights') : 'No flights'}
           </Text>

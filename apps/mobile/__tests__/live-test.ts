@@ -1,6 +1,6 @@
 import { TRACKER_COLORS, type LiveData } from '@wingbeat/core/live';
 import type { Flight } from '@/lib/flights';
-import { dayMap, inFlightTracks, initialView, mapDays, positionFeatures, statusCards } from '@/lib/live';
+import { dateToDayKey, dayKeyToDate, dayMap, inFlightTracks, initialView, mapDays, positionFeatures, statusCards } from '@/lib/live';
 
 const NOW = 1_793_739_600;
 const trackers = [
@@ -76,5 +76,11 @@ describe('a day’s flights', () => {
     expect(d.points.features.map((f) => [f.id, f.properties?.label])).toEqual([['start-1', undefined], ['end-1', '1'], ['start-2', undefined]]);
     expect(d.legend).toEqual([{ label: 'T1', color: 'c1' }, { label: 'T2', color: 'c2' }]);
     expect(d.bounds).toEqual([-153, 57, -150, 60]);
+  });
+});
+
+describe('the date picker’s days', () => {
+  test('a day key round-trips through a local date', () => {
+    for (const key of ['2026-01-01', '2026-03-08', '2026-11-01', '2026-12-31']) expect(dateToDayKey(dayKeyToDate(key))).toBe(key);
   });
 });

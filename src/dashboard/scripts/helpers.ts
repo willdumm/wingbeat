@@ -14,11 +14,6 @@ export function dashboardScriptsHelpers(): string {
       ) * 180 / Math.PI + 360) % 360;
     }
 
-    function cardinalDir(deg) {
-      const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-      return dirs[Math.round(deg / 22.5) % 16];
-    }
-
     // A flight list day is an operator day (the date filter's days), whatever the
     // device's timezone. Epochs in, through the core bundle's time globals.
     function dayKey(unix) {
