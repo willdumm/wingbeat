@@ -24,29 +24,34 @@ export function LocationSheet({ title, details, onClose }: { title: string; deta
           // The map behind stays live at half the screen: panned, zoomed, or tapped for another point.
           presentationBackgroundInteraction({ type: 'enabledUpThrough', detent: 'medium' }),
         ]}>
-          {details && (
-            <Form>
-              <Section title={title}>
-                <HStack>
-                  <Text modifiers={[font({ design: 'monospaced', textStyle: 'body' }), textSelection(true)]}>{details.coords}</Text>
-                  <Spacer />
-                  <CopyButton text={details.coords} />
-                </HStack>
-              </Section>
-              <Section>
-                {details.rows.map(([label, value]) => (
-                  <LabeledContent key={label} label={label}><Text>{value}</Text></LabeledContent>
-                ))}
-              </Section>
-              <Section>
-                <LinkRow label="Open in Google Maps" url={details.googleMapsUrl} />
-                {details.mapshareUrl && <LinkRow label="Open Garmin MapShare" url={details.mapshareUrl} />}
-              </Section>
-            </Form>
-          )}
+          {details && <Form><LocationSections title={title} details={details} /></Form>}
         </Group>
       </BottomSheet>
     </Host>
+  );
+}
+
+/** The sheet's sections, for a Form of its own or another sheet's (the flight detail's MapSheet). */
+export function LocationSections({ title, details }: { title?: string; details: LocationDetails }) {
+  return (
+    <>
+      <Section title={title}>
+        <HStack>
+          <Text modifiers={[font({ design: 'monospaced', textStyle: 'body' }), textSelection(true)]}>{details.coords}</Text>
+          <Spacer />
+          <CopyButton text={details.coords} />
+        </HStack>
+      </Section>
+      <Section>
+        {details.rows.map(([label, value]) => (
+          <LabeledContent key={label} label={label}><Text>{value}</Text></LabeledContent>
+        ))}
+      </Section>
+      <Section>
+        <LinkRow label="Open in Google Maps" url={details.googleMapsUrl} />
+        {details.mapshareUrl && <LinkRow label="Open Garmin MapShare" url={details.mapshareUrl} />}
+      </Section>
+    </>
   );
 }
 
