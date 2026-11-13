@@ -2,12 +2,12 @@
  * The map's tools: a column of round glass buttons at its bottom left, each a native menu
  * (SwiftUI, through @expo/ui). A tool's button shows as on (prominent, in the accent) while its
  * `active` is set (the Day tool while a day is mapped). Also the bits of native chrome the
- * map's overlays share: SF Symbol icons and the translucent material behind a card.
+ * map's overlays share: SF Symbol icons and shadows.
  */
 import type { ReactNode } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
-import { GlassEffectContainer, Host, Image, Menu, Rectangle, VStack } from '@expo/ui/swift-ui';
-import { accessibilityLabel, buttonBorderShape, buttonStyle, controlSize, foregroundStyle, frame, menuStyle, tint } from '@expo/ui/swift-ui/modifiers';
+import { Platform, Text } from 'react-native';
+import { GlassEffectContainer, Host, Image, Menu, VStack } from '@expo/ui/swift-ui';
+import { accessibilityLabel, buttonBorderShape, buttonStyle, controlSize, frame, menuStyle, tint } from '@expo/ui/swift-ui/modifiers';
 import type { SFSymbol } from 'sf-symbols-typescript';
 import { px, useTokens } from './theme';
 
@@ -37,22 +37,6 @@ export function SFIcon({ name, fallback, size, color }: { name: SFSymbol; fallba
 
 // A shadow token as boxShadow (dark mode's are 'none').
 export const shadow = (token: string) => (token === 'none' ? undefined : token);
-
-/**
- * A blurred, translucent backdrop filling its parent (which rounds and clips it): the map
- * shows through slightly. An iOS material (thin unless given); Android gets the float surface.
- */
-export function Material({ material = 'thin' }: { material?: 'ultraThin' | 'thin' | 'regular' }) {
-  const t = useTokens();
-  return Platform.OS === 'ios' ? (
-    // Ignoring the safe area: under the status bar, SwiftUI would otherwise squeeze it to nothing.
-    <Host style={StyleSheet.absoluteFill} pointerEvents="none" ignoreSafeArea="all">
-      <Rectangle modifiers={[foregroundStyle({ type: 'material', material })]} />
-    </Host>
-  ) : (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: t['surface-float'] }]} />
-  );
-}
 
 const BUTTON = 44;
 

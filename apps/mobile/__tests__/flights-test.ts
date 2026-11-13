@@ -77,6 +77,7 @@ test('the detail shows a corrected field with the tracker’s value', () => {
   const f = flight({ origin_label: 'Kodiak Muni', edit: edit({ original: { origin_label: 'Kodiak', end_time: JUL1_0800 + 3600 } }) });
   const d = flightDetail(TZ, f, roster);
   expect(d.title).toBe('Wed, Jul 1, 2026');
+  expect(d.summary).toBe('Kodiak Muni → Larsen Bay · 1.2 hr');
   expect(d.fields).toEqual([
     { label: 'Dep', value: '08:00 AKDT' },
     { label: 'Arr', value: '09:12 AKDT', tracker: 'Tracker: 09:00' },
@@ -86,7 +87,9 @@ test('the detail shows a corrected field with the tracker’s value', () => {
     { label: 'Aircraft', value: 'N123AB' },
     { label: 'Pilot', value: 'Jane Pilot' },
   ]);
-  expect(flightDetail(TZ, flight({ end_time: null }), roster).fields[1].value).toBe('In progress');
+  const open = flightDetail(TZ, flight({ end_time: null, destination_label: null }), roster);
+  expect(open.fields[1].value).toBe('In progress');
+  expect(open.summary).toBe('Kodiak → — · In progress');
 });
 
 test('the track: its line, start and end, and bounds; a manual flight’s named points', () => {

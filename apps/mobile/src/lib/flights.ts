@@ -165,8 +165,11 @@ export interface DetailField {
   tracker?: string;
 }
 
-/** The detail's fields: date, departure, arrival, duration, origin, destination, aircraft, pilot. */
-export function flightDetail(tz: string, f: Flight, roster: Roster): { title: string; fields: DetailField[]; remarks: string[]; manual: boolean } {
+/**
+ * The detail's title (the date), its one-line summary (route and duration, for the collapsed
+ * panel) and fields: departure, arrival, duration, origin, destination, aircraft, pilot.
+ */
+export function flightDetail(tz: string, f: Flight, roster: Roster): { title: string; summary: string; fields: DetailField[]; remarks: string[]; manual: boolean } {
   const edited = (field: FlightEditField) => flightFieldEdited(f, field)
     ? { tracker: 'Tracker: ' + flightOriginalText(tz, field, f.edit!.original[field]) }
     : {};
@@ -183,6 +186,10 @@ export function flightDetail(tz: string, f: Flight, roster: Roster): { title: st
   );
   return {
     title: tzLongDateLabel(unixToTzDateStr(tz, f.start_time)),
+    summary: [
+      (f.origin_label || '—') + ' → ' + (f.destination_label || '—'),
+      f.end_time ? fields[2].value : 'In progress',
+    ].join(' · '),
     fields,
     remarks: flightRemarks(f),
     manual: !!f.edit?.manual,

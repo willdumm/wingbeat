@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { useWindowDimensions, View } from 'react-native';
 import { Button, Picker, Section, Text } from '@expo/ui/swift-ui';
 import { pickerStyle, tag } from '@expo/ui/swift-ui/modifiers';
 import { isFlightInProgress, locationDetails, trackerColor, trackerLiveData } from '@wingbeat/core/live';
@@ -14,6 +14,7 @@ import { useFlights } from '@/lib/flights-context';
 import { dayMap, inFlightTracks, initialView, mapDays, positionFeatures, statusCards } from '@/lib/live';
 import { LiveMap, type LiveMapRef } from '@/lib/live-map';
 import { LocationSheet } from '@/lib/location-sheet';
+import { sheetDetentHeight } from '@/lib/map-sheet';
 import type { MapTool } from '@/lib/map-tools';
 import { availableBasemaps } from '@/lib/map-style';
 import { Placeholder } from '@/lib/placeholder';
@@ -39,6 +40,7 @@ export default function LiveScreen() {
   const { store, lastRefresh, generation } = useFlights();
   const tab = useFlightsTab();
   const map = useRef<LiveMapRef>(null);
+  const { height: screen } = useWindowDimensions();
   const now = useNow(30_000);  // the cards' "GPS 5 min ago"
   const [dayKey, setDayKey] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -119,7 +121,11 @@ export default function LiveScreen() {
         tools={[dayTool]}
         overlay={dayKey && <DayBanner days={days} dayKey={dayKey} legend={day?.legend ?? []} onPick={setDayKey} />}
         topBar={!dayKey && cards.length > 0 && (
-          <StatusCards cards={cards} onSelect={(c) => { if (c.position) map.current?.flyTo(c.position); setSelected(c.trackerId); }} />
+          <StatusCards cards={cards} onSelect={(c) => {
+            // Centered above the location sheet, which opens at half the screen.
+            if (c.position) map.current?.flyTo(c.position, { bottom: sheetDetentHeight('medium', screen) });
+            setSelected(c.trackerId);
+          }} />
         )}
       />
       <LocationSheet title={selectedCard?.label ?? ''} details={details} onClose={() => setSelected(null)} />

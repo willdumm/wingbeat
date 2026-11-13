@@ -4,8 +4,8 @@
  * end, numbered when `label` is set: end-markers.tsx) and tracks (each flight in progress, a day's
  * flights, or the one flight). The map runs under the status bar, the header and the tab
  * bar; along its top go a full-width bar (the status cards) or a floating overlay (the day
- * banner), and the tools
- * (map-tools.tsx) at its bottom left, clear of them. The tools start with Layers, which picks
+ * banner), and the tools (map-tools.tsx) at its bottom left, clear of them and of a sheet
+ * over its bottom (a flight's details: map-sheet.tsx). The tools start with Layers, which picks
  * the basemap and toggles the overlays; picking a basemap resets the overlays to that
  * basemap's defaults, as on the web. Each account keeps its choice, between
  * launches too (prefs.ts), and the Live tab and the flight detail share it.
@@ -20,16 +20,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SafeAreaView } from 'react-native-screens/experimental';
 import { useAccounts } from './accounts-context';
 import { EndMarkers, endMarkerGroups, groupsKey, type EndMarker } from './end-markers';
-import { MapTools, Material, type MapTool } from './map-tools';
+import { MapTools, shadow, type MapTool } from './map-tools';
 import { defaultBasemapId, defaultOverlayIds, liveMapStyle, type MapBasemap } from './map-style';
 import { accountPrefKey, parseMapChoice } from './prefs';
 import { useStoredState } from './stored-state';
 import { px, useTokens } from './theme';
 
+/** bottom: how much of the map's bottom a sheet covers (map-sheet.tsx's sheetDetentHeight), to keep the view above it. */
 export interface LiveMapRef {
-  flyTo(center: [number, number]): void;
+  flyTo(center: [number, number], options?: { bottom?: number }): void;
   /** [west, south, east, north] */
-  fitBounds(bounds: [number, number, number, number]): void;
+  fitBounds(bounds: [number, number, number, number], options?: { bottom?: number }): void;
 }
 
 /** Room around fitted bounds, inside the overlay and the bars: clear of the tool column on the left. */
@@ -46,12 +47,16 @@ interface LiveMapProps {
   tools?: MapTool[];
   /** Shown along the top, below the status bar or the header. */
   overlay?: ReactNode;
-  /** A full-width bar along the top, on a soft blur that runs up under the status bar. */
+  /** A full-width bar along the top, on the floating surface (as the overlay's), running up under the status bar. */
   topBar?: ReactNode;
+  /** The height of a sheet over the map's bottom (map-sheet.tsx), as it moves: the tools ride on top of it. */
+  sheetHeight?: number;
+  /** Bounds to fit once the bars and the panel are measured (a flight's track). */
+  fit?: [number, number, number, number];
   ref?: Ref<LiveMapRef>;
 }
 
-export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, topBar, ref }: LiveMapProps) {
+export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, topBar, sheetHeight, fit, ref }: LiveMapProps) {
   const t = useTokens();
   const camera = useRef<CameraRef>(null);
   // The insets iOS gives the screen (the bars drawn over it: status bar, header, tab bar),
@@ -66,18 +71,34 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
   const gutter = px(t['space-3']);
   const top = insets.top + px(t['space-2']);
   const bottom = insets.bottom + gutter;
+  // On top of the sheet, when there is one, and gone when it's pulled up past half the map.
+  const toolsBottom = sheetHeight ? sheetHeight + gutter : bottom;
+  const toolsShown = !sheetHeight || sheetHeight < height * 0.6;
   const { active } = useAccounts();
   const [choice, setChoice] = useStoredState(active ? accountPrefKey(active.host, active.user.id, 'map') : null, parseMapChoice);
   const basemap = basemaps.find((b) => b.id === choice.basemap) ?? basemaps.find((b) => b.id === defaultBasemapId(basemaps)) ?? null;
   const onIds = choice.overlays ?? defaultOverlayIds(overlays, basemap?.id ?? null);
 
+  // A sheet opens at half the screen (map-sheet.tsx), so fits go in the half above it.
+  const fitBottom = sheetHeight ? height / 2 : toolsBottom - gutter;
+  const fitBounds = (bounds: [number, number, number, number], duration: number, bottomClear = fitBottom) => camera.current?.fitBounds(bounds, {
+    padding: { ...FIT_PADDING, top: FIT_PADDING.top + Math.max(top, topEdge), bottom: FIT_PADDING.bottom + bottomClear },
+    duration,
+  });
   useImperativeHandle(ref, () => ({
-    flyTo: (center) => camera.current?.flyTo({ center, zoom: 10, duration: 800 }),
-    fitBounds: (bounds) => camera.current?.fitBounds(bounds, {
-      padding: { ...FIT_PADDING, top: FIT_PADDING.top + Math.max(top, topEdge), bottom: FIT_PADDING.bottom + insets.bottom },
-      duration: 800,
+    flyTo: (center, { bottom: bottomClear = 0 } = {}) => camera.current?.flyTo({
+      center, zoom: 10, duration: 800,
+      padding: { top: Math.max(top, topEdge), bottom: bottomClear, left: 0, right: 0 },
     }),
-  }), [top, topEdge, insets.bottom]);
+    fitBounds: (bounds, { bottom: bottomClear } = {}) => fitBounds(bounds, 800, bottomClear),
+  }), [top, topEdge, fitBottom]);
+  const fitted = useRef(false);
+  const measured = safe.height > 0;
+  useEffect(() => {
+    if (!fit || !measured || fitted.current) return;
+    fitted.current = true;
+    fitBounds(fit, 0);
+  }, [fit, measured]);
 
   const layersTool: MapTool = {
     id: 'layers',
@@ -133,9 +154,12 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
       <SafeAreaView edges={{ top: true, bottom: true }} pointerEvents="none" style={StyleSheet.absoluteFill}>
         <View style={{ flex: 1 }} onLayout={(e) => setSafe({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })} />
       </SafeAreaView>
+      {/* MapLibre places its ornaments within the map's own safe area (inside the bars), so
+          their offsets don't add our insets again. With a sheet, the attribution goes top left:
+          the sheet isn't part of the map's safe area. */}
       <Map style={StyleSheet.absoluteFill} mapStyle={mapStyle} logo={false}
-        compass compassPosition={{ top: Math.max(top, topEdge) + px(t['space-2']), right: gutter }}
-        attributionPosition={{ bottom: insets.bottom + px(t['space-1']), right: px(t['space-2']) }} onRegionIsChanging={onView} onRegionDidChange={onView}>
+        compass compassPosition={{ top: Math.max(top, topEdge) - insets.top + px(t['space-2']), right: gutter }}
+        attributionPosition={sheetHeight ? { top: Math.max(top, topEdge) - insets.top + px(t['space-2']), left: gutter } : { bottom: px(t['space-2']), right: gutter }} onRegionIsChanging={onView} onRegionDidChange={onView}>
         <Camera ref={camera} initialViewState={initialView} />
         <GeoJSONSource id="tracks" data={tracks}>
           <Layer id="tracks" type="line" layout={{ 'line-cap': 'round', 'line-join': 'round' }}
@@ -154,7 +178,9 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
       {topBar ? (
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top }}
           onLayout={(ev) => setTopEdge(ev.nativeEvent.layout.height)}>
-          <Material material="ultraThin" />
+          <View style={[StyleSheet.absoluteFill, {
+            backgroundColor: t['surface-float'], borderBottomWidth: 1, borderBottomColor: t['glass-border'], boxShadow: shadow(t['shadow-md']),
+          }]} />
           {topBar}
         </View>
       ) : overlay ? (
@@ -163,7 +189,7 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
           {overlay}
         </View>
       ) : null}
-      <MapTools tools={[...(basemaps.length + overlays.length > 1 ? [layersTool] : []), ...tools]} left={gutter} bottom={bottom} />
+      {toolsShown && <MapTools tools={[...(basemaps.length + overlays.length > 1 ? [layersTool] : []), ...tools]} left={gutter} bottom={toolsBottom} />}
     </View>
   );
 }
