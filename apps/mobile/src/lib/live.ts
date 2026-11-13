@@ -161,10 +161,13 @@ export function flightTrackPicks(flights: Flight[]): TrackPick[] {
   return flights.flatMap((f) => (f.points ?? []).map((point) => ({ point, trackerId: f.tracker_id, pilotName: f.pilot_name ?? null })));
 }
 
+/** A picked spot: the location sheet's details, whether it's a track's point, and where it is (for the map's dot). */
+export type PickedSpot = LocationDetails & { snapped: boolean; lngLat: [number, number] };
+
 /**
  * What the location sheet shows for a tap at lngLat on a map at zoom: the nearest pick
  * within core's SNAP_PX on screen, with its tracker, pilot, time, speed and altitude, or
- * the tapped coordinates alone (snapped false). lngLat: where it is, for the map's dot.
+ * null when no track is that close.
  */
 export function pickDetails(
   tz: string,
@@ -172,15 +175,18 @@ export function pickDetails(
   zoom: number,
   picks: TrackPick[],
   trackerFor: (id: number) => { name: string; assigned_aircraft?: string | null } | null,
-): LocationDetails & { snapped: boolean; lngLat: [number, number] } {
+): PickedSpot | null {
   const project = (lat: number, lon: number) => mercatorPixel(lat, lon, zoom);
-  const i = nearestPointIdx(project(lngLat[1], lngLat[0]), picks, ({ point: p }) => project(p.lat, p.lon));
-  const pick = picks[i];
-  const details = pick
-    ? pickedPointDetails(tz, pick.point.lat, pick.point.lon, { time: pick.point.t, velocity_kmh: pick.point.v, elevation_m: pick.point.e },
-      pick.trackerId != null ? trackerFor(pick.trackerId) : null, pick.pilotName)
-    : pickedPointDetails(tz, lngLat[1], lngLat[0], null, null, null);
-  return { ...details, snapped: !!pick, lngLat: pick ? [pick.point.lon, pick.point.lat] : lngLat };
+  const pick = picks[nearestPointIdx(project(lngLat[1], lngLat[0]), picks, ({ point: p }) => project(p.lat, p.lon))];
+  if (!pick) return null;
+  const details = pickedPointDetails(tz, pick.point.lat, pick.point.lon, { time: pick.point.t, velocity_kmh: pick.point.v, elevation_m: pick.point.e },
+    pick.trackerId != null ? trackerFor(pick.trackerId) : null, pick.pilotName);
+  return { ...details, snapped: true, lngLat: [pick.point.lon, pick.point.lat] };
+}
+
+/** What the location sheet shows for a long press at lngLat: the spot itself, on a track or not. */
+export function spotDetails(tz: string, lngLat: [number, number]): PickedSpot {
+  return { ...pickedPointDetails(tz, lngLat[1], lngLat[0], null, null, null), snapped: false, lngLat };
 }
 
 /** Where the map opens: the instance's default view, else the first position, else the world. */

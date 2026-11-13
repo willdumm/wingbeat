@@ -1,12 +1,12 @@
 /**
- * A tracker's location details in a native sheet, from tapping its status card: what the
- * dashboard's location popup shows (core's locationDetails). The coordinates and links copy
+ * A tracker's location details in a native sheet, from tapping its status card, or a picked
+ * point's: what the dashboard's location popup shows (core's locationDetails). The coordinates and links copy
  * (or, in a build without the clipboard module, share: the share sheet has Copy), with Google
  * Maps and Garmin MapShare links.
  */
 import { useEffect, useState } from 'react';
 import { BottomSheet, Button, Form, Group, HStack, Host, LabeledContent, Link, Section, ShareLink, Spacer, Text } from '@expo/ui/swift-ui';
-import { buttonStyle, font, labelStyle, presentationDetents, presentationDragIndicator, textSelection } from '@expo/ui/swift-ui/modifiers';
+import { buttonStyle, font, labelStyle, presentationBackgroundInteraction, presentationDetents, presentationDragIndicator, textSelection } from '@expo/ui/swift-ui/modifiers';
 import type { LocationDetails } from '@wingbeat/core/live';
 import { copyText } from './clipboard';
 
@@ -18,7 +18,12 @@ export function LocationSheet({ title, details, onClose }: { title: string; deta
   return (
     <Host matchContents style={{ position: 'absolute' }}>
       <BottomSheet isPresented={details != null} onIsPresentedChange={(shown) => { if (!shown) onClose(); }}>
-        <Group modifiers={[presentationDetents(['medium', 'large']), presentationDragIndicator('visible')]}>
+        <Group modifiers={[
+          presentationDetents(['medium', 'large']),
+          presentationDragIndicator('visible'),
+          // The map behind stays live at half the screen: panned, zoomed, or tapped for another point.
+          presentationBackgroundInteraction({ type: 'enabledUpThrough', detent: 'medium' }),
+        ]}>
           {details && (
             <Form>
               <Section title={title}>

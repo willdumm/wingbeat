@@ -13,7 +13,7 @@
  */
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 import { PixelRatio, StyleSheet, View } from 'react-native';
-import { Camera, GeoJSONSource, Images, Layer, Map, type CameraRef, type InitialViewState, type ViewState } from '@maplibre/maplibre-react-native';
+import { Camera, GeoJSONSource, Images, Layer, Map, type CameraRef, type InitialViewState, type MapRef, type ViewState } from '@maplibre/maplibre-react-native';
 import type { TileOverlay } from '@wingbeat/core/api/bootstrap';
 import { Picker, Section, Text as SwiftText, Toggle } from '@expo/ui/swift-ui';
 import { pickerStyle, tag } from '@expo/ui/swift-ui/modifiers';
@@ -32,6 +32,8 @@ export interface LiveMapRef {
   flyTo(center: [number, number], options?: { bottom?: number }): void;
   /** [west, south, east, north] */
   fitBounds(bounds: [number, number, number, number], options?: { bottom?: number }): void;
+  /** Pans a point hidden under the bars or a sheet to the middle of the view above it, at the same zoom. */
+  reveal(lngLat: [number, number], options?: { bottom?: number }): void;
 }
 
 /** The plane markers' image: a signed distance field, tinted per tracker (scripts/gen-plane-icon.mjs). */
@@ -57,18 +59,21 @@ interface LiveMapProps {
   sheetHeight?: number;
   /** A tap on the map, where and at what zoom (the point picker). */
   onPress?: (lngLat: [number, number], zoom: number) => void;
+  /** A long press on the map, where. */
+  onLongPress?: (lngLat: [number, number]) => void;
   /** Bounds to fit once the bars and the panel are measured (a flight's track). */
   fit?: [number, number, number, number];
   ref?: Ref<LiveMapRef>;
 }
 
-export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, topBar, sheetHeight, fit, onPress, ref }: LiveMapProps) {
+export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, topBar, sheetHeight, fit, onPress, onLongPress, ref }: LiveMapProps) {
   const t = useTokens();
   const camera = useRef<CameraRef>(null);
+  const mapRef = useRef<MapRef>(null);
   // The insets iOS gives the screen (the bars drawn over it: status bar, header, tab bar),
   // measured by where a full-screen safe-area view lays out its content (a smaller view's
   // insets are clipped to its bounds), and where the top bar or overlay ends.
-  const [height, setHeight] = useState(0);
+  const [{ width, height }, setSize] = useState({ width: 0, height: 0 });
   const [safe, setSafe] = useState({ y: 0, height: 0 });
   // The top floors at safe-area-context's: without a header, the native view reports none.
   const { top: statusBar } = useSafeAreaInsets();
@@ -97,7 +102,14 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
       padding: { top: Math.max(top, topEdge), bottom: bottomClear, left: 0, right: 0 },
     }),
     fitBounds: (bounds, { bottom: bottomClear } = {}) => fitBounds(bounds, 800, bottomClear),
-  }), [top, topEdge, fitBottom]);
+    reveal: async (lngLat, { bottom: bottomClear = 0 } = {}) => {
+      const topClear = Math.max(top, topEdge);
+      const [x, y] = await mapRef.current?.project(lngLat) ?? [0, 0];
+      const margin = FIT_PADDING.bottom;
+      if (x >= margin && x <= width - margin && y >= topClear + margin && y <= height - bottomClear - margin) return;
+      camera.current?.easeTo({ center: lngLat, duration: 400, padding: { top: topClear, bottom: bottomClear, left: 0, right: 0 } });
+    },
+  }), [top, topEdge, fitBottom, width, height]);
   const fitted = useRef(false);
   const measured = safe.height > 0;
   useEffect(() => {
@@ -158,17 +170,18 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
   }), [basemap, overlays, onIds.join(','), origin, pixelRatio, t]);
 
   return (
-    <View style={{ flex: 1 }} onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>
+    <View style={{ flex: 1 }} onLayout={(e) => setSize(e.nativeEvent.layout)}>
       <SafeAreaView edges={{ top: true, bottom: true }} pointerEvents="none" style={StyleSheet.absoluteFill}>
         <View style={{ flex: 1 }} onLayout={(e) => setSafe({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })} />
       </SafeAreaView>
       {/* MapLibre places its ornaments within the map's own safe area (inside the bars), so
           their offsets don't add our insets again. With a sheet, the attribution goes top left:
           the sheet isn't part of the map's safe area. */}
-      <Map style={StyleSheet.absoluteFill} mapStyle={mapStyle} logo={false}
+      <Map ref={mapRef} style={StyleSheet.absoluteFill} mapStyle={mapStyle} logo={false}
         compass compassPosition={{ top: Math.max(top, topEdge) - insets.top + px(t['space-2']), right: gutter }}
         attributionPosition={sheetHeight ? { top: Math.max(top, topEdge) - insets.top + px(t['space-2']), left: gutter } : { bottom: px(t['space-2']), right: gutter }} onRegionIsChanging={onView} onRegionDidChange={onView}
-        onPress={onPress && ((e) => onPress(e.nativeEvent.lngLat, zoom.current))}>
+        onPress={onPress && ((e) => onPress(e.nativeEvent.lngLat, zoom.current))}
+        onLongPress={onLongPress && ((e) => onLongPress(e.nativeEvent.lngLat))}>
         <Camera ref={camera} initialViewState={initialView} />
         <Images images={IMAGES} />
         <GeoJSONSource id="tracks" data={tracks}>

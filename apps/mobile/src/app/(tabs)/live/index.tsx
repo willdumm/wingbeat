@@ -11,7 +11,7 @@ import { useBootstrap } from '@/lib/bootstrap-context';
 import { DayBanner } from '@/lib/day-banner';
 import { DayPickerSheet } from '@/lib/day-picker-sheet';
 import { useFlights } from '@/lib/flights-context';
-import { dayMap, flightTrackPicks, groundTrailFeatures, inFlightTracks, initialView, liveTrackPicks, mapDays, pickDetails, positionFeatures, statusCards } from '@/lib/live';
+import { dayMap, flightTrackPicks, groundTrailFeatures, inFlightTracks, initialView, liveTrackPicks, mapDays, pickDetails, positionFeatures, spotDetails, statusCards, type PickedSpot } from '@/lib/live';
 import { LiveMap, type LiveMapRef } from '@/lib/live-map';
 import { LocationSheet } from '@/lib/location-sheet';
 import { sheetDetentHeight } from '@/lib/map-sheet';
@@ -30,8 +30,9 @@ const LIVE = 'live';
 
 /**
  * The live view (each tracker's position and the track of each flight in progress, with the
- * status cards along the top; tapping one flies to it and opens its location details, and a
- * tap on the map opens the details of that spot, snapped to a drawn track's point), or
+ * status cards along the top; tapping one flies to it and opens its location details, a tap
+ * on the map near a drawn track opens that track point's, and a long press anywhere the
+ * pressed spot's), or
  * with the Day tool a day's flights at once (the dashboard's "Map all").
  */
 export default function LiveScreen() {
@@ -46,7 +47,7 @@ export default function LiveScreen() {
   const [dayKey, setDayKey] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
-  const [picked, setPicked] = useState<ReturnType<typeof pickDetails> | null>(null);
+  const [picked, setPicked] = useState<PickedSpot | null>(null);
 
   const trackers = useMemo(() => bootstrap?.trackers.filter((tr) => tr.active && !tr.deleted) ?? [], [bootstrap]);
   const live = useMemo(
@@ -118,6 +119,12 @@ export default function LiveScreen() {
     : null;
   const today = tz ? unixToTzDateStr(tz, now) : null;
   const shown = day ? { type: 'FeatureCollection' as const, features: [...day.points.features, ...positions.features.filter((p) => p.properties?.inFlight)] } : positions;
+  // The sheet opens at half the screen: a picked point under it pans up into view.
+  const pick = (spot: PickedSpot | null) => {
+    setSelected(null);
+    setPicked(spot);
+    if (spot) map.current?.reveal(spot.lngLat, { bottom: sheetDetentHeight('medium', screen) });
+  };
   const pickedDot: GeoJSON.Feature<GeoJSON.Point> | null = picked
     && { type: 'Feature', id: 'picked', geometry: { type: 'Point', coordinates: picked.lngLat }, properties: { color: t['accent'] } };
 
@@ -133,10 +140,10 @@ export default function LiveScreen() {
         tracks={day ? day.tracks : tracks}
         tools={[dayTool]}
         onPress={(lngLat, zoom) => {
-          if (!tz) return;
-          setSelected(null);
-          setPicked(pickDetails(tz, lngLat, zoom, picks, (id) => trackers.find((tr) => tr.id === id) ?? null));
+          // Away from a track, a tap closes the sheet, as in Maps.
+          if (tz) pick(pickDetails(tz, lngLat, zoom, picks, (id) => trackers.find((tr) => tr.id === id) ?? null));
         }}
+        onLongPress={(lngLat) => { if (tz) pick(spotDetails(tz, lngLat)); }}
         overlay={dayKey && <DayBanner days={days} dayKey={dayKey} legend={day?.legend ?? []} onPick={setDayKey} />}
         topBar={!dayKey && cards.length > 0 && (
           <StatusCards cards={cards} onSelect={(c) => {

@@ -1,6 +1,6 @@
 import { TRACKER_COLORS, type LiveData } from '@wingbeat/core/live';
 import type { Flight } from '@/lib/flights';
-import { dateToDayKey, dayKeyToDate, dayMap, flightTrackPicks, groundTrailFeatures, inFlightTracks, initialView, mapDays, pickDetails, positionFeatures, statusCards } from '@/lib/live';
+import { dateToDayKey, dayKeyToDate, dayMap, flightTrackPicks, groundTrailFeatures, inFlightTracks, initialView, mapDays, pickDetails, positionFeatures, spotDetails, statusCards } from '@/lib/live';
 
 const NOW = 1_793_739_600;
 const trackers = [
@@ -111,14 +111,18 @@ describe('the point picker', () => {
   test('a tap near a track point snaps to it, with its details', () => {
     // About 23 px from the first point at zoom 12 (core-live's nearestPointIdx test).
     const d = pickDetails('America/Anchorage', [-152.404, 57.8], 12, picks, tracker);
-    expect(d.snapped).toBe(true);
-    expect(d.lngLat).toEqual([-152.4, 57.8]);
-    expect(d.coords).toBe('57.800000, -152.400000');
-    expect(d.rows.map(([label]) => label)).toEqual(['Tracker', 'Aircraft', 'Pilot', 'Time', 'Speed', 'Altitude']);
+    expect(d?.snapped).toBe(true);
+    expect(d?.lngLat).toEqual([-152.4, 57.8]);
+    expect(d?.coords).toBe('57.800000, -152.400000');
+    expect(d?.rows.map(([label]) => label)).toEqual(['Tracker', 'Aircraft', 'Pilot', 'Time', 'Speed', 'Altitude']);
   });
 
-  test('farther away, the tapped spot alone', () => {
-    const d = pickDetails('America/Anchorage', [-152.404, 57.8], 13, picks, tracker);
+  test('farther away, nothing', () => {
+    expect(pickDetails('America/Anchorage', [-152.404, 57.8], 13, picks, tracker)).toBeNull();
+  });
+
+  test('a long press: the spot itself, even near a track', () => {
+    const d = spotDetails('America/Anchorage', [-152.404, 57.8]);
     expect(d.snapped).toBe(false);
     expect(d.lngLat).toEqual([-152.404, 57.8]);
     expect(d.rows).toEqual([]);
