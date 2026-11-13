@@ -126,8 +126,17 @@ export function ElevationLayers({ tool }: { tool: ElevationTool }) {
   );
 }
 
-/** The crosshair at center (map px), the readout at top, and the hidden DEM reader. */
-export function ElevationChrome({ tool, center, top }: { tool: ElevationTool; center: { x: number; y: number }; top: number }) {
+/**
+ * The crosshair at center (map px), the readout at the top right (clear of a back button at
+ * the top left), and the hidden DEM reader. onReadoutHeight: so the compass can move below it.
+ */
+export function ElevationChrome({ tool, center, top, side, onReadoutHeight }: {
+  tool: ElevationTool;
+  center: { x: number; y: number };
+  top: number;
+  side: number;
+  onReadoutHeight: (height: number) => void;
+}) {
   const t = useTokens();
   if (!tool.on) return null;
   const here = tool.readout === undefined ? '…' : tool.readout === null ? 'No data' : toFeet(tool.readout);
@@ -140,7 +149,8 @@ export function ElevationChrome({ tool, center, top }: { tool: ElevationTool; ce
         <View style={[line, { left: arm - 1, top: 0, width: 2, height: arm * 2 }]} />
         <View style={[line, { top: arm - 1, left: 0, height: 2, width: arm * 2 }]} />
       </View>
-      <View pointerEvents="none" style={{ position: 'absolute', top, left: 0, right: 0, alignItems: 'center' }}>
+      <View pointerEvents="none" style={{ position: 'absolute', top, left: side, right: side, alignItems: 'flex-end' }}
+        onLayout={(ev) => onReadoutHeight(ev.nativeEvent.layout.height)}>
         <View style={{
           paddingVertical: px(t['space-1']), paddingHorizontal: px(t['space-3']),
           borderRadius: px(t['radius-pill']), backgroundColor: t['surface-float'], borderWidth: 1, borderColor: t['glass-border'],

@@ -84,6 +84,7 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
   const { top: statusBar } = useSafeAreaInsets();
   const insets = { top: Math.max(safe.y, statusBar), bottom: safe.height ? Math.max(0, height - safe.y - safe.height) : 0 };
   const [topEdge, setTopEdge] = useState(0);
+  const [readoutHeight, setReadoutHeight] = useState(0);
   const gutter = px(t['space-3']);
   const top = insets.top + px(t['space-2']);
   const bottom = insets.bottom + gutter;
@@ -193,7 +194,7 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
           their offsets don't add our insets again. With a sheet, the attribution goes top left:
           the sheet isn't part of the map's safe area. */}
       <Map ref={mapRef} style={StyleSheet.absoluteFill} mapStyle={mapStyle} logo={false}
-        compass compassPosition={{ top: Math.max(top, topEdge) - insets.top + px(t['space-2']), right: gutter }}
+        compass compassPosition={{ top: Math.max(top, topEdge) - insets.top + px(t['space-2']) + (elevation.on ? readoutHeight + px(t['space-2']) : 0), right: gutter }}
         attributionPosition={sheetHeight ? { top: Math.max(top, topEdge) - insets.top + px(t['space-2']), left: gutter } : { bottom: px(t['space-2']), right: gutter }} onRegionIsChanging={onView} onRegionDidChange={onView}
         onPress={(e) => (elevation.on ? elevation.press(e.nativeEvent.lngLat, zoom.current) : onPress?.(e.nativeEvent.lngLat, zoom.current))}
         onLongPress={onLongPress && ((e) => onLongPress(e.nativeEvent.lngLat))}>
@@ -243,7 +244,7 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
           {overlay}
         </View>
       ) : null}
-      <ElevationChrome tool={elevation} center={crosshair} top={Math.max(top, topEdge) + px(t['space-2'])} />
+      <ElevationChrome tool={elevation} center={crosshair} top={Math.max(top, topEdge) + px(t['space-2'])} side={gutter} onReadoutHeight={setReadoutHeight} />
       {toolsShown && <MapTools tools={[...(basemaps.length + overlays.length > 1 ? [layersTool] : []), elevation.tool, ...tools]} left={gutter} bottom={toolsBottom} />}
     </View>
   );
