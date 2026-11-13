@@ -1952,9 +1952,9 @@ EAS profile `testflight` (`distribution: "store"`, `channel: "preview"`,
 eas-cli@latest build --profile testflight --platform ios`, then `eas submit`, which needs the
 user's Apple sign-in. On that build, check that `expo-clipboard` is linked (Copy replaces the
 share buttons), that the source maps uploaded, and the waiting Sentry test error. Build 4 (2026-11-13): Copy
-works and its source maps uploaded; for the test error, Settings has a temporary Diagnostics
-section ("Send Test Error", shown only when Sentry is on), shipped as the first OTA update, to
-remove once its event arrives with a resolved stack. App Store
+works and its source maps uploaded; a temporary Settings row sent a test error from the first OTA
+update, which arrived with its stack resolved by the update's uploaded maps (AGENTS.md), so build
+4, OTA updates and Sentry all work end to end. The row is removed. App Store
 Connect's EU DSA trader status is unset; it matters only for an App Store release. The App Store
 Connect record, which EAS named "Wingbeat (0ea…)" ("Wingbeat" is taken, likely an unreleased
 reservation), is renamed "Wingbeat Flight Tracking" (2026-11-13). The name under the icon stays `app.config.ts`'s "Wingbeat".

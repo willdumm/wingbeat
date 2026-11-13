@@ -30,24 +30,6 @@ export function initSentry() {
 /** The root component, wrapped for Sentry's touch breadcrumbs and error handling when it's on. */
 export const withSentry = <P extends Record<string, unknown>>(Root: ComponentType<P>) => (dsn ? Sentry.wrap(Root) : Root);
 
-/** Whether this bundle reports to Sentry. */
-export const sentryEnabled = !!dsn;
-
-/**
- * Throws, catches and reports a test error, and waits for it to send: Settings' temporary
- * check that a release bundle reports and its source map resolves the stack. Returns the
- * event ID, or null if the send didn't finish.
- */
-export async function sendTestError(): Promise<string | null> {
-  let eventId = '';
-  try {
-    throw new Error('Wingbeat test error');
-  } catch (err) {
-    eventId = Sentry.captureException(err, { tags: { test: 'true' } });
-  }
-  return (await Sentry.flush()) ? eventId : null;
-}
-
 /** Tags what follows with the active account's host and its server's API version. */
 export function setInstanceTags(host: string | null, apiVersion: number | null) {
   if (!dsn) return;

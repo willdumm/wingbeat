@@ -15,7 +15,6 @@ import { useAccounts } from '@/lib/accounts-context';
 import type { Account } from '@/lib/accounts';
 import { ChoicePicker } from '@/lib/choice-list';
 import { THEME_CHOICES } from '@/lib/prefs';
-import { sendTestError, sentryEnabled } from '@/lib/sentry';
 import { useThemeChoice, useTokens } from '@/lib/theme';
 
 const PRIMARY = foregroundStyle({ type: 'hierarchical', style: 'primary' });
@@ -108,16 +107,6 @@ export default function SettingsScreen() {
         <Section title="Appearance">
           <ChoicePicker label="Theme" choices={THEME_CHOICES} value={theme} onChange={setTheme} style="segmented" />
         </Section>
-
-        {/* Temporary: checks Sentry from a release bundle (docs/mobile-app-plan.md, "Phase 5 progress"). */}
-        {sentryEnabled && (
-          <Section title="Diagnostics">
-            <Button label="Send Test Error" onPress={async () => {
-              const id = await sendTestError();
-              Alert.alert(id ? 'Test error sent' : 'Test error not sent', id ?? 'Sentry didn’t confirm the send.');
-            }} />
-          </Section>
-        )}
       </Form>
     </Host>
   );
