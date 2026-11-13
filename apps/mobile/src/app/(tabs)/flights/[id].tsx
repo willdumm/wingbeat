@@ -105,6 +105,7 @@ export default function FlightScreen() {
             sheetHeight={sheetHeight}
             positions={positions}
             tracks={track.line}
+            picks={picks}
             // Away from the track, a tap goes back to the flight.
             onPress={(lngLat, zoom) => pick(pickDetails(tab.tz, lngLat, zoom, picks, (tid) => tab.bootstrap.trackers.find((tr) => tr.id === tid) ?? null))}
             onLongPress={(lngLat) => pick(spotDetails(tab.tz, lngLat))}

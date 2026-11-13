@@ -164,10 +164,15 @@ export function flightTrackPicks(flights: Flight[]): TrackPick[] {
 /** A picked spot: the location sheet's details, whether it's a track's point, and where it is (for the map's dot). */
 export type PickedSpot = LocationDetails & { snapped: boolean; lngLat: [number, number] };
 
+/** The pick nearest a tap at lngLat on a map at zoom, within core's SNAP_PX on screen. */
+export function nearestPick(lngLat: [number, number], zoom: number, picks: TrackPick[]): TrackPick | undefined {
+  const project = (lat: number, lon: number) => mercatorPixel(lat, lon, zoom);
+  return picks[nearestPointIdx(project(lngLat[1], lngLat[0]), picks, ({ point: p }) => project(p.lat, p.lon))];
+}
+
 /**
- * What the location sheet shows for a tap at lngLat on a map at zoom: the nearest pick
- * within core's SNAP_PX on screen, with its tracker, pilot, time, speed and altitude, or
- * null when no track is that close.
+ * What the location sheet shows for a tap at lngLat on a map at zoom: the nearest pick's
+ * tracker, pilot, time, speed and altitude, or null when no track is that close.
  */
 export function pickDetails(
   tz: string,
@@ -176,8 +181,7 @@ export function pickDetails(
   picks: TrackPick[],
   trackerFor: (id: number) => { name: string; assigned_aircraft?: string | null } | null,
 ): PickedSpot | null {
-  const project = (lat: number, lon: number) => mercatorPixel(lat, lon, zoom);
-  const pick = picks[nearestPointIdx(project(lngLat[1], lngLat[0]), picks, ({ point: p }) => project(p.lat, p.lon))];
+  const pick = nearestPick(lngLat, zoom, picks);
   if (!pick) return null;
   const details = pickedPointDetails(tz, pick.point.lat, pick.point.lon, { time: pick.point.t, velocity_kmh: pick.point.v, elevation_m: pick.point.e },
     pick.trackerId != null ? trackerFor(pick.trackerId) : null, pick.pilotName);

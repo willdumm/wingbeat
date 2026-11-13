@@ -139,6 +139,7 @@ export default function LiveScreen() {
         positions={pickedDot ? { type: 'FeatureCollection', features: [...shown.features, pickedDot] } : shown}
         tracks={day ? day.tracks : tracks}
         tools={[dayTool]}
+        picks={picks}
         onPress={(lngLat, zoom) => {
           // Away from a track, a tap closes the sheet, as in Maps.
           if (tz) pick(pickDetails(tz, lngLat, zoom, picks, (id) => trackers.find((tr) => tr.id === id) ?? null));

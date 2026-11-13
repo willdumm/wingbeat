@@ -27,9 +27,8 @@
  * active at once — the one addition this doc's Touch points list didn't spell out.
  */
 
-import { DEM_TILE_SIZE } from '@wingbeat/core/elevation';
+import { DEM_PMTILES_URL, DEM_TILE_SIZE } from '@wingbeat/core/elevation';
 
-const DEM_PMTILES_URL = 'https://download.mapterhorn.com/planet.pmtiles';
 const ELEV_RANGE_KEY = 'ft_elev_range_m';
 const ELEV_OPACITY_KEY = 'ft_elev_opacity';
 const ELEV_DEFAULT_RANGE_M = 300;

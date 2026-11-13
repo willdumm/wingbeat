@@ -8,7 +8,8 @@
  * banner), and the tools (map-tools.tsx) at its bottom left, clear of them and of a sheet
  * over its bottom (a flight's details: map-sheet.tsx). The tools start with Layers, which picks
  * the basemap and toggles the overlays; picking a basemap resets the overlays to that
- * basemap's defaults, as on the web. Each account keeps its choice, between
+ * basemap's defaults, as on the web. Then Elevation (elevation-tool.tsx), which takes the
+ * map's taps while it's on. Each account keeps its choice, between
  * launches too (prefs.ts), and the Live tab and the flight detail share it.
  */
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
@@ -20,7 +21,9 @@ import { pickerStyle, tag } from '@expo/ui/swift-ui/modifiers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SafeAreaView } from 'react-native-screens/experimental';
 import { useAccounts } from './accounts-context';
+import { ElevationChrome, ElevationLayers, useElevationTool } from './elevation-tool';
 import { EndMarkers, endMarkerGroups, groupsKey, type EndMarker } from './end-markers';
+import type { TrackPick } from './live';
 import { MapTools, shadow, type MapTool } from './map-tools';
 import { defaultBasemapId, defaultOverlayIds, liveMapStyle, type MapBasemap } from './map-style';
 import { accountPrefKey, parseMapChoice } from './prefs';
@@ -61,12 +64,14 @@ interface LiveMapProps {
   onPress?: (lngLat: [number, number], zoom: number) => void;
   /** A long press on the map, where. */
   onLongPress?: (lngLat: [number, number]) => void;
+  /** The track points drawn, which the elevation tool's reference snaps to. */
+  picks?: TrackPick[];
   /** Bounds to fit once the bars and the panel are measured (a flight's track). */
   fit?: [number, number, number, number];
   ref?: Ref<LiveMapRef>;
 }
 
-export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, topBar, sheetHeight, fit, onPress, onLongPress, ref }: LiveMapProps) {
+export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, topBar, sheetHeight, fit, onPress, onLongPress, picks = [], ref }: LiveMapProps) {
   const t = useTokens();
   const camera = useRef<CameraRef>(null);
   const mapRef = useRef<MapRef>(null);
@@ -152,8 +157,18 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
   const lastKey = useRef('');
   const zoom = useRef(initialView && 'zoom' in initialView ? initialView.zoom ?? 0 : 0);
   useEffect(() => { lastKey.current = ''; }, [ends]);
+  // The elevation crosshair: the middle of the view between the bars and a sheet.
+  const crosshair = { x: width / 2, y: (Math.max(top, topEdge) + height - (sheetHeight ?? insets.bottom)) / 2 };
+  const elevation = useElevationTool({
+    picks,
+    center: async () => {
+      const lngLat = await mapRef.current?.unproject([crosshair.x, crosshair.y]);
+      return lngLat ? { lngLat: [lngLat[0], lngLat[1]], zoom: zoom.current } : null;
+    },
+  });
   const onView = ({ nativeEvent: v }: { nativeEvent: ViewState }) => {
     zoom.current = v.zoom;
+    elevation.readCenter();
     const key = groupsKey(endMarkerGroups(ends, v));
     if (key === lastKey.current && view) return;
     lastKey.current = key;
@@ -180,10 +195,11 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
       <Map ref={mapRef} style={StyleSheet.absoluteFill} mapStyle={mapStyle} logo={false}
         compass compassPosition={{ top: Math.max(top, topEdge) - insets.top + px(t['space-2']), right: gutter }}
         attributionPosition={sheetHeight ? { top: Math.max(top, topEdge) - insets.top + px(t['space-2']), left: gutter } : { bottom: px(t['space-2']), right: gutter }} onRegionIsChanging={onView} onRegionDidChange={onView}
-        onPress={onPress && ((e) => onPress(e.nativeEvent.lngLat, zoom.current))}
+        onPress={(e) => (elevation.on ? elevation.press(e.nativeEvent.lngLat, zoom.current) : onPress?.(e.nativeEvent.lngLat, zoom.current))}
         onLongPress={onLongPress && ((e) => onLongPress(e.nativeEvent.lngLat))}>
         <Camera ref={camera} initialViewState={initialView} />
         <Images images={IMAGES} />
+        <ElevationLayers tool={elevation} />
         <GeoJSONSource id="tracks" data={tracks}>
           <Layer id="tracks" type="line" filter={['!', ['has', 'trail']]} layout={{ 'line-cap': 'round', 'line-join': 'round' }}
             paint={{ 'line-color': ['get', 'color'], 'line-width': 3 }} />
@@ -227,7 +243,8 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
           {overlay}
         </View>
       ) : null}
-      {toolsShown && <MapTools tools={[...(basemaps.length + overlays.length > 1 ? [layersTool] : []), ...tools]} left={gutter} bottom={toolsBottom} />}
+      <ElevationChrome tool={elevation} center={crosshair} top={Math.max(top, topEdge) + px(t['space-2'])} />
+      {toolsShown && <MapTools tools={[...(basemaps.length + overlays.length > 1 ? [layersTool] : []), elevation.tool, ...tools]} left={gutter} bottom={toolsBottom} />}
     </View>
   );
 }

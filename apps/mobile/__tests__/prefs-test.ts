@@ -1,5 +1,5 @@
 import { emptyFilterState } from '@wingbeat/core/filters';
-import { accountPrefKey, parseFlightFilter, parseMapChoice, parseTheme, staleAccountPrefKeys, THEME_KEY } from '@/lib/prefs';
+import { accountPrefKey, parseElevationPref, parseFlightFilter, parseMapChoice, parseTheme, staleAccountPrefKeys, THEME_KEY } from '@/lib/prefs';
 
 const A = 'a.wingbeat.dummthings.dev';
 const B = 'b.wingbeat.dummthings.dev';
@@ -41,5 +41,13 @@ describe('parse functions', () => {
     expect(parseFlightFilter({ preset: '7d', filter: { pilotIds: [2] } }))
       .toEqual({ filter: { ...emptyFilterState(), pilotIds: [2] }, preset: '7d' });
     expect(parseFlightFilter({ preset: '365d' }).preset).toBe('all');
+  });
+});
+
+describe('parseElevationPref', () => {
+  it('defaults to the web’s ±300 m at 55%, and keeps values in range', () => {
+    expect(parseElevationPref(undefined)).toEqual({ rangeM: 300, opacity: 55 });
+    expect(parseElevationPref({ rangeM: 1000, opacity: 0 })).toEqual({ rangeM: 1000, opacity: 0 });
+    expect(parseElevationPref({ rangeM: 9000, opacity: '70' })).toEqual({ rangeM: 300, opacity: 55 });
   });
 });

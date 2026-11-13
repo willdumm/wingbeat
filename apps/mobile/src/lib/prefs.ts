@@ -11,7 +11,7 @@ export const THEME_KEY = 'prefs.theme';
 
 const ACCOUNT_PREFIX = 'prefs.account.';
 
-export function accountPrefKey(host: string, userId: number, name: 'map' | 'flight-filter'): string {
+export function accountPrefKey(host: string, userId: number, name: 'map' | 'flight-filter' | 'elevation'): string {
   return `${ACCOUNT_PREFIX}${host}.${userId}.${name}`;
 }
 
@@ -48,6 +48,24 @@ export function parseMapChoice(stored: unknown): MapChoice {
     basemap: typeof o.basemap === 'string' ? o.basemap : null,
     overlays: Array.isArray(o.overlays) ? o.overlays.filter((id) => typeof id === 'number') : null,
   };
+}
+
+// ── Elevation tool ──
+
+/** The elevation tint's range either side of the reference and its opacity (the web's sliders and defaults). */
+export interface ElevationPref {
+  rangeM: number;
+  opacity: number;
+}
+
+export const ELEVATION_RANGES_M = [50, 100, 200, 300, 500, 1000, 2000];
+export const ELEVATION_OPACITIES = [25, 40, 55, 70, 85];
+
+export function parseElevationPref(stored: unknown): ElevationPref {
+  const o = (stored && typeof stored === 'object' ? stored : {}) as Partial<Record<keyof ElevationPref, unknown>>;
+  const within = (v: unknown, min: number, max: number, fallback: number) =>
+    (typeof v === 'number' && v >= min && v <= max ? v : fallback);
+  return { rangeM: within(o.rangeM, 50, 2000, 300), opacity: within(o.opacity, 0, 100, 55) };
 }
 
 // ── Flight filter ──
