@@ -7,9 +7,10 @@
  * too (prefs.ts), and the Live tab and the flight detail share it.
  */
 import { useImperativeHandle, useMemo, useRef, type Ref } from 'react';
-import { PixelRatio, Pressable, ScrollView, Text, View } from 'react-native';
+import { PixelRatio, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { Camera, GeoJSONSource, Layer, Map, type CameraRef, type InitialViewState } from '@maplibre/maplibre-react-native';
 import type { TileOverlay } from '@wingbeat/core/api/bootstrap';
+import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useAccounts } from './accounts-context';
 import { defaultBasemapId, defaultOverlayIds, liveMapStyle, type MapBasemap } from './map-style';
 import { accountPrefKey, parseMapChoice } from './prefs';
@@ -49,6 +50,10 @@ function Pill({ label, on, onPress }: { label: string; on: boolean; onPress: () 
 export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, ref }: LiveMapProps) {
   const t = useTokens();
   const camera = useRef<CameraRef>(null);
+  // iOS draws the stack header over the screen (the map shows through it); Android lays the
+  // screen out below it.
+  const headerHeight = useHeaderHeight();
+  const pickerTop = (Platform.OS === 'ios' ? headerHeight : 0) + px(t['space-2']);
   const { active } = useAccounts();
   const [choice, setChoice] = useStoredState(active ? accountPrefKey(active.host, active.user.id, 'map') : null, parseMapChoice);
   const basemap = basemaps.find((b) => b.id === choice.basemap) ?? basemaps.find((b) => b.id === defaultBasemapId(basemaps)) ?? null;
@@ -88,7 +93,10 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={{ position: 'absolute', top: px(t['space-2']), left: 0, right: 0 }}
+          // iOS native tabs inset a screen's first scroll view, which this one is: the inset
+          // pushed the pills out of the strip.
+          contentInsetAdjustmentBehavior="never"
+          style={{ position: 'absolute', top: pickerTop, left: 0, right: 0 }}
           contentContainerStyle={{ gap: px(t['space-2']), paddingHorizontal: px(t['space-3']) }}
         >
           {basemaps.length > 1 && basemaps.map((b) => (

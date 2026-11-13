@@ -4,6 +4,7 @@
  * the place. The status chip and dot follow the web's status primitive (src/shared/status.ts).
  */
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-screens/experimental';
 import type { StatusCard } from './live';
 import { px, useTokens, type Tokens } from './theme';
 
@@ -58,16 +59,24 @@ function Card({ card, onPress }: { card: StatusCard; onPress: () => void }) {
   );
 }
 
-/** onSelect: a card with a position was tapped. */
+/**
+ * onSelect: a card with a position was tapped. Sits at the bottom of a tab screen: the safe
+ * area keeps it above the tab bar, which iOS draws over the screen.
+ */
 export function StatusCards({ cards, onSelect }: { cards: StatusCard[]; onSelect: (card: StatusCard) => void }) {
   const t = useTokens();
   return (
-    <ScrollView
-      style={{ flexGrow: 0, maxHeight: '45%', backgroundColor: t['bg-base'] }}
-      contentContainerStyle={{ gap: px(t['space-2']), padding: px(t['space-3']) }}
-    >
-      {cards.map((c) => <Card key={c.trackerId} card={c} onPress={() => onSelect(c)} />)}
-      {!cards.length && <Text style={{ color: t['text-muted'], textAlign: 'center' }}>No active trackers.</Text>}
-    </ScrollView>
+    <>
+      <ScrollView
+        style={{ flexGrow: 0, maxHeight: '33%', backgroundColor: t['bg-base'] }}
+        contentInsetAdjustmentBehavior="never"
+        contentContainerStyle={{ gap: px(t['space-2']), padding: px(t['space-3']) }}
+      >
+        {cards.map((c) => <Card key={c.trackerId} card={c} onPress={() => onSelect(c)} />)}
+        {!cards.length && <Text style={{ color: t['text-muted'], textAlign: 'center' }}>No active trackers.</Text>}
+      </ScrollView>
+      {/* Only the inset tall: empty, and without the flex: 1 SafeAreaView sets by default. */}
+      <SafeAreaView edges={{ bottom: true }} style={{ flex: 0, backgroundColor: t['bg-base'] }} />
+    </>
   );
 }
