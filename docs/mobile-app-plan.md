@@ -2,7 +2,12 @@
 
 **Status: phases 1 and 4 done.** Phase 1 was released as wingbeat v0.3.0 (2026-11-08), and
 phase 4, the API for the app, as v0.4.0 (in production since 2026-11-11; see "Phase 4
-progress"). Next: phase 5, the app shell. The app is built whether or not the beacon probe passes, and Web Push (phase 2)
+progress"). **Phase 5, the app shell, is under way** on `app-shell`: steps 1–9 are done, plus
+the native map work after them, and step 10 has its iOS development build (see "Phase 5
+progress"). Its Android build and Maestro flows are deferred ("iOS only for now"); steps 11
+and 12 (the `demo` tenant, TestFlight) are next. What the app has against the web, feature by
+feature, with the native element each uses, is "Feature parity with the web"; the UI rules
+are in `docs/mobile-design-principles.md`. The app is built whether or not the beacon probe passes, and Web Push (phase 2)
 is deferred while Pushover works (both decided 2026-11-08; see "Phases").
 Done in phase 1: the foundation (`packages/core`, the browser bundle as a
 Text module, the nonce test, the theme tokens), step 1, `time` (core time with zone
@@ -49,7 +54,9 @@ the v0.3.0 releases have logged no mismatches. All open questions are answered.
 
 1. **Native look.** Use platform UI everywhere it exists (navigation, tabs, sheets, lists,
    menus, pickers, switches) so the app reads as an iOS app on iOS and an Android app on
-   Android, not as a web page in a shell.
+   Android, not as a web page in a shell. Use the native control rather than imitate it, and
+   name each choice's Android counterpart even while only iOS ships: the rules are in
+   `docs/mobile-design-principles.md`.
 2. **Replace Pushover** with push from the app. Web Push from the dashboard, which works on
    every instance without the app, is deferred while Pushover works (phase 2).
 3. **Reuse the web dashboard's logic**, so a rule (duty limits, flight corrections, time
@@ -1550,8 +1557,8 @@ Times follow the same rule as the web: the operator's timezone with its abbrevia
 core's `time`, whatever the phone's zone (see "Times and the operator's timezone"). For an
 account whose operator is in another zone, that's the only correct reading of a duty log.
 
-- **Live:** map with tracker positions and in-flight tracks, and the status cards as a native
-  list (from the same data the dashboard's `aircraft-cards` uses).
+- **Live:** map with tracker positions and in-flight tracks, and the status cards in a bar
+  along its top (from the same data the dashboard's `aircraft-cards` uses).
 - **Flights:** list with day grouping and filters, and a flight detail with its track on the
   map, times, labels and assignment. Admins can edit assignment.
 - **Duty log:** month view and totals from `@wingbeat/core/duty`, with day planning for the
@@ -1895,6 +1902,43 @@ the fingerprint. The Sentry project is `dumm-software-llc/wingbeat-mobile` (Reac
 with "Prevent storing of IP addresses" on; the four variables are set for the `preview` and
 `production` EAS environments, and a test event sent with its DSN arrived.
 
+Step 10, in part: the iOS `development` build (EAS `62536b2d`) runs on the user's iPhone,
+signed in to staging. The Android build and the Maestro flows are deferred while the app is
+iOS only.
+
+Done after step 9, from the first device runs (2026-11-13; the rules they settled are in
+`docs/mobile-design-principles.md`):
+
+- **Fixes:** `/` redirects to `/live`; the Live layout accounts for the tab bar and header
+  that iOS draws over the screen.
+- **Map tools and the day view.** The Live map runs to the top under the status bar. Its
+  tools are a column of glass buttons at the bottom left (`map-tools.tsx`), each a SwiftUI
+  menu: Layers (a basemap `Picker`, overlay `Toggle`s) on every map, and on Live, Day (the
+  newest 30 days with flights, plus "Choose a Date…", a graphical `DatePicker` in a sheet).
+  A day maps all its flights as the dashboard's "Map all" does, with a banner to step
+  between days. Core gained `dayFlightNumbers` (the web's track-render uses it).
+- **End markers and the location sheet.** Numbered ends merge into pills by zoom (core's
+  `groupEndMarkers` / `mercatorPixel`, which the web now uses too). Tapping a status card
+  flies to the aircraft and opens a native location sheet (core's `locationDetails`, shared
+  with the web's location popup): coordinates, rows, Google Maps and MapShare links, and
+  copy buttons. `expo-clipboard` is installed for the next native build; without it, the
+  buttons share.
+- **The flight detail in a native sheet** (`map-sheet.tsx`): the map fills the screen under
+  an undismissable sheet with peek, medium and large detents, the track refits above it, the
+  Layers button rides on it, and the tab bar hides.
+- **Status cards on the float surface:** the tail on a pill in the tracker's color, the
+  details on the first line when they fit.
+
+Next in the app, in this order (the user's queue, 2026-11-13): plane markers turned to their
+heading, and ground trails; the point picker (tap the map for its coordinates, snapping to a
+track point); the elevation tool; then step 12's TestFlight build (below). For step 12: an
+EAS profile `testflight` (`distribution: "store"`, `channel: "preview"`,
+`environment: "preview"`), built with `EAS_PROJECT_ROOT=$(realpath ../..) EAS_NO_VCS=1 npx
+eas-cli@latest build --profile testflight --platform ios`, then `eas submit`, which needs the
+user's Apple sign-in. On that build, check that `expo-clipboard` is linked (Copy replaces the
+share buttons), that the source maps uploaded, and the waiting Sentry test error. App Store
+Connect's EU DSA trader status is unset; it matters only for an App Store release.
+
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with
    its config plugin (`expo-notifications`, `expo-location`, `expo-task-manager`,
@@ -1942,6 +1986,121 @@ with "Prevent storing of IP addresses" on; the four variables are set for the `p
 12. **TestFlight and Android internal distribution.** A `preview` build to TestFlight
     (internal testers first) and to EAS internal distribution for Android, and the first
     `eas update` to the preview channel.
+
+### Feature parity with the web
+
+Audited 2026-11-13 against `app-shell` (6b11aa5a) and the web dashboard, analytics and
+Settings (`src/dashboard/`, `src/analytics/`, `src/shared/`). This is goal 5's inventory: every
+feature the web has, where the app is with it, and the native element it uses or will use on
+each platform (the rules and the usual pairs are in `docs/mobile-design-principles.md`,
+section 2). "Core" names what both clients share. A feature whose logic is still in a web
+script string moves to core first (phase 11's rule). Status: **Done**, **Partial**, **Queued**
+(the next steps, in "Phase 5 progress"), or the phase it's planned in. Update the row when a
+feature lands.
+
+MapLibre (`@maplibre/maplibre-react-native`) is the same component on both platforms, so map
+layers need no Android counterpart; only the chrome around the map does.
+
+**Live (the dashboard's map)**
+
+| Feature | App | iOS | Android | Core / notes |
+|---|---|---|---|---|
+| Tracker positions | Done (circles) | MapLibre layer | same | `live` |
+| Plane marker turned to its heading | Queued | MapLibre `SymbolLayer` with an image (`Images`), `iconRotate` from the heading | same | heading from the last points (`live`) |
+| In-flight tracks | Done | MapLibre `LineLayer` | same | `live` |
+| Ground trails (taxi between flights) | Queued | MapLibre `LineLayer`, dashed | same | move the web's trail rule to `live` |
+| Status cards | Done (top bar) | RN views on the float surface (no system equivalent) | the same RN component | `live` (`statusCards`) |
+| Location popup (coordinates, details, links, copy) | Done (location sheet) | `BottomSheet` + `Form` + `LabeledContent`, `Link`, Copy (`expo-clipboard`) | universal `BottomSheet` (`ModalBottomSheet`) with `ListItem`s, `Share.share` | `live` (`locationDetails`) |
+| Basemap and overlays | Done (Layers menu) | `Menu` with a `Picker` and `Toggle`s | `DropdownMenu` with radio and checkbox items | `basemaps` |
+| Map a day's flights ("Map all") | Done (Day menu, banner) | `Menu` + `Picker`; a graphical `DatePicker` in a sheet | `DropdownMenu`; the Material `DatePicker` dialog | `dayFlightNumbers`, `groupEndMarkers` |
+| Point picker (tap the map, snap to a track point, copy) | Queued | MapLibre `onPress`, then the location sheet | the same, with its Android sheet | move the web's snapping (`point-picker.ts`) to `live` |
+| Elevation tool (tint by reference elevation, readout) | Queued (the hardest) | a MapLibre `raster-dem` source on Mapterhorn's tiles, if MapLibre Native's layers can tint by a reference elevation; otherwise a tinted raster source. The readout goes in a sheet | same | `elevation` (decode, tint) |
+| Alerts strip (unassigned flights, maintenance due, timer not recorded, duty near its limits) | Phase 10 (proposed: phase 7) | a `List` in a sheet, opened from a toolbar button, with a tab badge | a `ModalBottomSheet` list, a `Badge` on the tab | `alerts` (`computeAlerts`). Proposed for phase 7, with push, since the same events notify |
+| Refresh now, "updated n min ago" | Partial (automatic only) | `RefreshControl` on the Flights list; the age in the status bar | `RefreshControl` | `nextLivePoll` |
+| Hover a flight to highlight its track | n/a on touch | tapping a track selects its flight (opens its sheet) | same | — |
+
+**Flights**
+
+| Feature | App | iOS | Android | Core / notes |
+|---|---|---|---|---|
+| List grouped by operator day | Done | RN `SectionList` with sticky headers (kept: virtualized, dense custom rows) | same | `time`, `flights.ts` |
+| Filters: aircraft, pilots, trackers | Done (hand-built list) | a `Form` of `Toggle` rows (debt: `choice-list.tsx`) | `Checkbox` `ListItem`s | `filters` |
+| Filters: from and to dates | Partial (presets) | the presets in a `Picker`, plus two compact `DatePicker`s | `SingleChoiceSegmentedButtonRow` or radio rows, the Material date-range picker | `filters`, `time` |
+| Collapse a day; "Show recent" | Phase 11 | tap the day header (or `Section(isExpanded:)`, if the list moves to SwiftUI) | same | — |
+| Map a day from the list | Phase 11 | a context menu on the day header opens Live's day view | a long-press `DropdownMenu` | the Day tool's `dayMap` |
+| Flight detail (track, times, labels, assignment, remarks) | Done | the map + `MapSheet` (`BottomSheet` with detents, a `Form`) | persistent sheet: open (design principles, section 3) | `flight-edits` |
+| Assignment edit (admins) | Done (hand-built list) | a `Form` with `Picker`s (`navigationLink` style for long lists) | `ExposedDropdownMenuBox` | `corrections` (`flightAssignmentRequest`) |
+| Edit times, origin and destination, Part 91 ("Operated under"), pay, remark | Phase 11 | a `Form`: compact `DatePicker`s (date, hour and minute) read in the operator's zone, a `Picker` for named points, `TextField`s | `ListItem`s that open the Material date and time pickers, `ExposedDropdownMenuBox`, `TextField` | `flight-edits` (`flightFormTimes`, …), `corrections` |
+| Remove and restore, revert to tracker, delete a manual flight | Phase 11 | destructive `Button`s, `ConfirmationDialog` | `AlertDialog` | `corrections` |
+| Add a manual flight | Phase 11 | the edit `Form` in a sheet, from a toolbar `+` | `FloatingActionButton` | `flight-edits`, `corrections` |
+| Bulk edit ("Edit flights") | Phase 11 | the list's edit mode, multi-select and a bottom toolbar | long-press to select, a contextual top bar | `corrections` |
+| Edit history | Phase 11 | a `List` in the detail's sheet | `LazyColumn` | `edit-history` |
+| Edit conflict (409) | Phase 11 | an `Alert` with Reload and Overwrite | the same (`AlertDialog`) | `corrections` (`base_history_id`) |
+
+**Duty log** (phase 6)
+
+| Feature | App | iOS | Android | Core / notes |
+|---|---|---|---|---|
+| Month view, totals and limits | Phase 6 | a `List` of days by month, a `Gauge` (or `ProgressView`) per limit | `LazyColumn`, `LinearProgressIndicator` (`Progress`) | `duty` |
+| Plan or edit a day (duty or rest, start and end, through, note, use the default) | Phase 6 | a `Form` with a segmented `Picker`, `DatePicker`s (`hourAndMinute`), a `Toggle` | `SingleChoiceSegmentedButtonRow`, the Material time picker, `Switch` | `duty`, the duty request schemas |
+| Default duty, duty methods history | Phase 11 | `Form` | `ListItem`s | `duty` |
+| PDF export | Open (see below) | `ShareLink` (share sheet) for the file | `Share.share` | the Typst template |
+| Role-based first tab | Phase 6 | the `NativeTabs` initial route | same | `users.pilot_id` |
+
+**Maintenance** (the web's aircraft info; phase 11)
+
+| Feature | App | iOS | Android | Core / notes |
+|---|---|---|---|---|
+| Items and their due status, by hours or months | Phase 11 | a `List` with a status chip (the meanings of the web's `status.ts`), a `Gauge` for hours left | `ListItem`, `LinearProgressIndicator` | `maintenance` |
+| Meter readings (hobbs, tach) | Phase 11 | a `Form`: decimal `TextField`, `DatePicker` | `TextField`, the date picker | `maintenance` (`estimatedMeter`) |
+| Add, edit and delete an item | Phase 11 | a `Form` in a sheet; `SwipeActions` to delete | a long-press menu | `maintenance` |
+
+**Analytics** (phase 11)
+
+| Feature | App | iOS | Android | Core / notes |
+|---|---|---|---|---|
+| Heatmaps (time, stops; weighting) | Phase 11 | MapLibre `HeatmapLayer`, a Layers-style menu for the mode | the same, `DropdownMenu` | `analytics` (`endpointHeatPoints`, `interpolateRoutePoints`) |
+| Stream graph (interval, scale, home base) | Phase 11 | Swift Charts. `@expo/ui`'s `Chart` takes one series of points and may not stack areas: check, and otherwise draw it in RN (SVG or Skia) on both | no `@expo/ui` chart: the RN drawing | `analytics` (`sgComputeData`, …) |
+| Accounting (monthly hours and stops by region), overall totals | Phase 11 | `List` / `Grid` | `LazyColumn` | `accounting` |
+| Region info popup | Phase 11 | the location sheet's pattern | same | `regions` |
+| The shared filter section | Phase 11 | the Flights filter `Form` | same | `filters` |
+
+**Settings**
+
+| Feature | App | iOS | Android | Core / notes |
+|---|---|---|---|---|
+| Accounts: switch, add, sign out | Done (hand-built list) | a `Form`; a context menu instead of touch-and-hold | `ListItem`s, a long-press `DropdownMenu` | `api/me` |
+| Delete my account | Done | a destructive `Button`, `Alert` | `AlertDialog` | `DELETE /api/me` |
+| Theme | Done (hand-built list) | a segmented `Picker` | `SingleChoiceSegmentedButtonRow` | — |
+| Documentation link | Not started (easy) | a `Link` to the docs site in `expo-web-browser` (public, no session) | same | — |
+| Clear local cache | Not started (easy) | a destructive `Button` | same | `flight-cache.ts` |
+| My Devices (rename, sign out) | Phase 11 (first in Settings) | a `List` with `SwipeActions`; an `Alert` with a text field to rename | a long-press menu, an `AlertDialog` with a `TextField` | `api/me` |
+| Notification subscriptions | Phase 7 | a `Form` of `Toggle`s | `Switch` `ListItem`s | phase 7's routes |
+| Aircraft, pilots, trackers (add, edit, test a feed) | Phase 11 | `Form`s pushed on the Settings stack | `ListItem` screens | the settings request schemas |
+| Users and invites (with the "Add phone" QR code) | Phase 11 | a `Form`; the QR code in a sheet, `ShareLink` | same | — |
+| General, duty limits, timezone (with its warning) | Phase 11 | `Form`, `Picker`, `Stepper` | `ListItem`s, `ExposedDropdownMenuBox` | `settings` |
+| Webhooks (notification targets) | Phase 11 | `Form` | same | — |
+| Named points | Phase 11 | a list, and the map with `MapSheet` (pick a point on the map) | the same, with the Android sheet | `regions` |
+| Regions (the map editor) | Phase 11, last | drawing polygons on MapLibre with RN gestures: the hardest settings page | same | `regions` |
+| Overlays, tile layers | Phase 11 | `Form` | same | `basemaps` |
+| Setup checklist | Phase 11 | a `List` with checkmarks | same | — |
+
+**Open, to settle with the user:**
+
+- **Duty-log PDF.** "Screens (v1)" says PDF opens the web export, but since 2026-11-11 the
+  app doesn't open the web (each phone would add a browser session to Devices). Typst's WASM
+  doesn't run in Hermes. Options: render it in a hidden WebView in the app (the same Typst
+  code, the data passed in, no session) and share the file, or render it on the Worker. The
+  recommendation is the WebView: it keeps one implementation and costs no server time.
+- **The alerts screen** is in phase 10, but alerts and push notify about the same events.
+  Proposed: bring it into phase 7.
+- **Android's persistent sheet** (design principles, section 3), decided when Android starts.
+
+**Native debt in what's built** (design principles, section 7): the hand-built grouped lists
+(`choice-list.tsx`, used by Settings, the filter sheet and the assignment edit) become
+`Form`s; `HeaderButton` becomes native bar buttons; screens that import SwiftUI directly get
+a shared component with an Android twin; and the flight list gets pull to refresh. Proposed
+as one step before TestFlight, since testers see these screens first.
 
 ## Rollout and risk to the web dashboard
 
@@ -2094,8 +2253,10 @@ phases 8–10 as needed):**
       methods, and the instance's settings (with the timezone-change warning).
     - **The other pages:** maintenance, accounting, and analytics (heatmaps, the stream graph),
       on core's `maintenance`, `accounting` and `analytics`.
-    The inventory of what the web does is taken again at the start of the phase, since the
-    web keeps growing; anything new on the web after that is planned with its app version.
+    The inventory, with each feature's native element on iOS and Android, is "Feature parity
+    with the web" (taken 2026-11-13). Check it against the web again at the start of the
+    phase, since the web keeps growing; anything new on the web after that is planned with its
+    app version.
 
 ## Open questions
 

@@ -1,8 +1,11 @@
 # Wingbeat app (`apps/mobile`)
 
 The Expo app for Wingbeat. The plan, its decisions and the phase 5 step list are in
-`docs/mobile-app-plan.md` ("The app itself", "Phase 5 progress"); read the repo's
-`CLAUDE.md` too.
+`docs/mobile-app-plan.md` ("The app itself", "Phase 5 progress", and "Feature parity with
+the web" for each feature's native element on iOS and Android); read the repo's `CLAUDE.md`
+too. Read `docs/mobile-design-principles.md` before any UI change: native controls rather
+than imitations, an Android counterpart for every choice, one shared component per concept,
+and the layout lessons from device runs.
 
 ## Expo has changed — do not trust your training data
 
