@@ -1,15 +1,16 @@
 /**
  * What the Live tab shows, from the flight store and the last refresh: one status card per
  * active tracker (what the dashboard's buildAircraftCard() shows), each tracker's position,
- * and the track of each flight in progress. Colors are core's trackerColor(), or the
- * caller's faint color for a tracker without one.
+ * and the track of each flight in progress; or a day's flights at once (dayMap). Colors are
+ * core's trackerColor(), or the caller's faint color for a tracker without one.
  */
 import type { InstanceSettings } from '@wingbeat/core/api/bootstrap';
 import type { TrackedFlight } from '@wingbeat/core/api/flights';
 import { toFeet, toKnots } from '@wingbeat/core/format';
-import { isGpsFresh, isInFlight, trackerColor, type LiveData } from '@wingbeat/core/live';
+import { dayFlightNumbers, isGpsFresh, isInFlight, trackerColor, type LiveData } from '@wingbeat/core/live';
 import { SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
-import { relativeTime } from '@wingbeat/core/time';
+import { relativeTime, tzLongDateLabel, unixToTzDateStr } from '@wingbeat/core/time';
+import type { Flight } from './flights';
 
 export interface LiveTracker {
   id: number;
@@ -106,4 +107,81 @@ export function initialView(
   if (instance) return { center: [instance.map_default_lng, instance.map_default_lat], zoom: instance.map_default_zoom };
   const first = cards.find((c) => c.position)?.position;
   return first ? { center: first, zoom: 8 } : { center: [0, 20], zoom: 1 };
+}
+
+// ── A day's flights (the dashboard's "Map all") ──
+
+export interface MapDay {
+  dayKey: string;
+  /** "Mon, Oct 3, 2026" */
+  title: string;
+  /** Its flights with a track. */
+  count: number;
+}
+
+/** The operator days with a flight that has a track, newest first. flights: getAll()'s (chronological). */
+export function mapDays(tz: string, flights: Flight[]): MapDay[] {
+  const days: MapDay[] = [];
+  for (let i = flights.length - 1; i >= 0; i--) {
+    const f = flights[i];
+    if (!f.points?.length) continue;
+    const dayKey = unixToTzDateStr(tz, f.start_time);
+    const day = days.at(-1);
+    if (day?.dayKey === dayKey) day.count++;
+    else days.push({ dayKey, title: tzLongDateLabel(dayKey), count: 1 });
+  }
+  return days;
+}
+
+export interface DayMap {
+  tracks: GeoJSON.FeatureCollection<GeoJSON.LineString>;
+  /** Each flight's start, and its numbered end (`label`) unless it's in progress. */
+  points: GeoJSON.FeatureCollection<GeoJSON.Point>;
+  /** The trackers, when there are several (the web's legend). */
+  legend: { label: string; color: string }[];
+  /** [west, south, east, north]; null when no flight has a track. */
+  bounds: [number, number, number, number] | null;
+}
+
+/**
+ * A day's flights drawn at once, as the dashboard's day view does: each track in its
+ * tracker's color, a dot at its start and its number (core's dayFlightNumbers) at its end.
+ * flights: getAll()'s (chronological); inProgress(f): whether f is still in the air.
+ */
+export function dayMap(
+  tz: string,
+  dayKey: string,
+  flights: Flight[],
+  { colorFor, labelFor, inProgress }: {
+    colorFor: (trackerId: number | null) => string;
+    labelFor: (trackerId: number | null) => string;
+    inProgress: (f: Flight) => boolean;
+  },
+): DayMap {
+  const day = flights.filter((f) => unixToTzDateStr(tz, f.start_time) === dayKey);
+  const numbers = dayFlightNumbers(day);
+  const tracks: DayMap['tracks']['features'] = [];
+  const points: DayMap['points']['features'] = [];
+  const all: [number, number][] = [];
+  day.forEach((f, i) => {
+    const n = numbers[i];
+    if (n == null) return;
+    const coords = f.points!.map((p) => [p.lon, p.lat] as [number, number]);
+    const color = colorFor(f.tracker_id);
+    all.push(...coords);
+    tracks.push({ type: 'Feature', id: f.id, geometry: { type: 'LineString', coordinates: coords }, properties: { color } });
+    points.push({ type: 'Feature', id: 'start-' + f.id, geometry: { type: 'Point', coordinates: coords[0] }, properties: { color, inFlight: false } });
+    if (!inProgress(f)) {
+      points.push({ type: 'Feature', id: 'end-' + f.id, geometry: { type: 'Point', coordinates: coords.at(-1)! }, properties: { color, inFlight: false, label: String(n) } });
+    }
+  });
+  const trackerIds = [...new Set(day.filter((_, i) => numbers[i] != null).map((f) => f.tracker_id))];
+  const lons = all.map((c) => c[0]);
+  const lats = all.map((c) => c[1]);
+  return {
+    tracks: { type: 'FeatureCollection', features: tracks },
+    points: { type: 'FeatureCollection', features: points },
+    legend: trackerIds.length > 1 ? trackerIds.map((id) => ({ label: labelFor(id), color: colorFor(id) })) : [],
+    bounds: all.length ? [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)] : null,
+  };
 }

@@ -1,5 +1,6 @@
 import { TRACKER_COLORS, type LiveData } from '@wingbeat/core/live';
-import { inFlightTracks, initialView, positionFeatures, statusCards } from '@/lib/live';
+import type { Flight } from '@/lib/flights';
+import { dayMap, inFlightTracks, initialView, mapDays, positionFeatures, statusCards } from '@/lib/live';
 
 const NOW = 1_793_739_600;
 const trackers = [
@@ -44,4 +45,36 @@ test("the map opens on the instance's view, else the first position", () => {
     .toEqual({ center: [-150, 60], zoom: 6 });
   expect(initialView(undefined, cards)).toEqual({ center: [-152.4, 57.8], zoom: 8 });
   expect(initialView(undefined, [])).toEqual({ center: [0, 20], zoom: 1 });
+});
+
+describe('a day’s flights', () => {
+  const TZ = 'America/Anchorage';
+  const pt = (lon: number, lat: number) => ({ t: 0, lat, lon, v: 0, e: 0, c: 0 });
+  // 2026-11-03 09:00 and 13:00 AKST, then 2026-11-04 10:00.
+  const flight = (id: number, start: number, tracker_id: number | null, points = [pt(-152, 57), pt(-153, 58)]) =>
+    ({ id, start_time: start, end_time: start + 3600, tracker_id, points }) as unknown as Flight;
+  const flights = [
+    flight(1, 1_793_728_800, 1),
+    flight(2, 1_793_743_200, 2, [pt(-150, 59), pt(-151, 60)]),
+    flight(3, 1_793_745_000, null, []),
+    flight(4, 1_793_818_800, 1),
+  ];
+
+  test('days with a tracked flight, newest first', () => {
+    expect(mapDays(TZ, flights)).toEqual([
+      { dayKey: '2026-11-04', title: expect.stringContaining('Nov 4'), count: 1 },
+      { dayKey: '2026-11-03', title: expect.stringContaining('Nov 3'), count: 2 },
+    ]);
+  });
+
+  test('each track in its color, numbered ends, a legend for several trackers, the bounds', () => {
+    const d = dayMap(TZ, '2026-11-03', flights, {
+      colorFor: (id) => 'c' + id, labelFor: (id) => 'T' + id, inProgress: (f) => f.id === 2,
+    });
+    expect(d.tracks.features.map((f) => f.properties)).toEqual([{ color: 'c1' }, { color: 'c2' }]);
+    // Flight 2 is in progress: a start, no numbered end.
+    expect(d.points.features.map((f) => [f.id, f.properties?.label])).toEqual([['start-1', undefined], ['end-1', '1'], ['start-2', undefined]]);
+    expect(d.legend).toEqual([{ label: 'T1', color: 'c1' }, { label: 'T2', color: 'c2' }]);
+    expect(d.bounds).toEqual([-153, 57, -150, 60]);
+  });
 });

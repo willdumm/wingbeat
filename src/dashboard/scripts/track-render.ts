@@ -144,10 +144,8 @@ export function dashboardScriptsTrackRender(): string {
       const trackerIds = [...new Set(
         flights.filter(f => (f.points ?? []).length > 0).map(f => f.tracker_id)
       )];
-      const multiTracker = trackerIds.length > 1;
-
-      // Per-tracker flight counter for stop numbering.
-      const perTrackerFlightNum = {};
+      // Stop numbers (core's dayFlightNumbers).
+      const flightNums = dayFlightNumbers(flights);
 
       const layers = [];
       const planes = {};
@@ -161,13 +159,7 @@ export function dashboardScriptsTrackRender(): string {
         if (pts.length === 0) continue;
 
         const color = colorFor(flight.tracker_id);
-        let flightNum;
-        if (multiTracker) {
-          perTrackerFlightNum[flight.tracker_id] = (perTrackerFlightNum[flight.tracker_id] || 0) + 1;
-          flightNum = perTrackerFlightNum[flight.tracker_id];
-        } else {
-          flightNum = i + 1;
-        }
+        const flightNum = flightNums[i];
 
         const latlngs = pts.map(p => [p.lat, p.lon]);
         const pointData = _trackPointData(flight);

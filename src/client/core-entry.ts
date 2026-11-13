@@ -125,6 +125,7 @@ Object.assign(globalThis, {
   // ── live: the status cards' and Live view's rules (the threshold is the server's) ──
   trackerLiveData: live.trackerLiveData,
   trackerColor: live.trackerColor,
+  dayFlightNumbers: live.dayFlightNumbers,
   isInFlight: (d: Parameters<typeof live.isInFlight>[1]) => live.isInFlight(SPEED_THRESHOLD_KMH, d),
   isGpsFresh: (gpsTime: number) => live.isGpsFresh(now(), gpsTime),
   isFlightInProgress: (flight: Parameters<typeof live.isFlightInProgress>[1], flights: Parameters<typeof live.isFlightInProgress>[2],

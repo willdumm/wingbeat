@@ -31,6 +31,16 @@ describe('trackerColor', () => {
   });
 });
 
+describe('dayFlightNumbers', () => {
+  const f = (tracker_id, n = 1) => ({ tracker_id, points: Array(n).fill({}) });
+  test('one tracker: a flight’s place in the day, skipping none', () => {
+    assert.deepEqual(live.dayFlightNumbers([f(1), f(1, 0), f(1)]), [1, null, 3]);
+  });
+  test('several trackers: each counts its drawn flights from 1', () => {
+    assert.deepEqual(live.dayFlightNumbers([f(1), f(2), f(2, 0), f(1), f(2)]), [1, 1, null, 2, 2]);
+  });
+});
+
 describe('trackerLiveData', () => {
   test('each tracker’s latest flight’s last point, with what the refresh said about it', () => {
     const result = {

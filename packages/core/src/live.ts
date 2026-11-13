@@ -150,3 +150,22 @@ export function trackedStart(f: MaybeEdited): number {
 export function sameTrackedFlight(a: MaybeEdited, b: MaybeEdited): boolean {
   return a.tracker_id != null && a.tracker_id === b.tracker_id && trackedStart(a) === trackedStart(b);
 }
+
+/**
+ * A day view's flight numbers (the end markers' and the "Flight 2 end" labels'), for its
+ * flights in chronological order: with flights of several trackers, each tracker's flights
+ * with points count from 1; with one tracker, a flight's place in the day. null for a flight
+ * without points, which has nothing to draw.
+ */
+export function dayFlightNumbers(flights: { tracker_id: number | null; points?: unknown[] | null }[]): (number | null)[] {
+  const drawn = (f: (typeof flights)[number]) => (f.points ?? []).length > 0;
+  const multiTracker = new Set(flights.filter(drawn).map((f) => f.tracker_id)).size > 1;
+  const perTracker = new Map<number | null, number>();
+  return flights.map((f, i) => {
+    if (!drawn(f)) return null;
+    if (!multiTracker) return i + 1;
+    const n = (perTracker.get(f.tracker_id) ?? 0) + 1;
+    perTracker.set(f.tracker_id, n);
+    return n;
+  });
+}
