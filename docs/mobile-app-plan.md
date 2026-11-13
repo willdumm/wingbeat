@@ -1562,7 +1562,8 @@ account whose operator is in another zone, that's the only correct reading of a 
 - **Flights:** list with day grouping and filters, and a flight detail with its track on the
   map, times, labels and assignment. Admins can edit assignment.
 - **Duty log:** month view and totals from `@wingbeat/core/duty`, with day planning for the
-  signed-in pilot. PDF opens the web export.
+  signed-in pilot. The PDF is compiled in a hidden WebView from core's Typst source and
+  shared (decided 2026-11-13; see "Feature parity with the web").
 - **Settings:** accounts (instances), notification subscriptions, auto-logging and
   permissions, theme, and **Delete my account** (see "Account deletion"). The instance's
   settings come later, natively (phase 11).
@@ -1929,9 +1930,13 @@ Done after step 9, from the first device runs (2026-11-13; the rules they settle
 - **Status cards on the float surface:** the tail on a pill in the tracker's color, the
   details on the first line when they fit.
 
-Next in the app, in this order (the user's queue, 2026-11-13): plane markers turned to their
-heading, and ground trails; the point picker (tap the map for its coordinates, snapping to a
-track point); the elevation tool; then step 12's TestFlight build (below). For step 12: an
+Next in the app, in this order (the user, 2026-11-13): the native-debt cleanup ("Feature
+parity with the web", "Decided 2026-11-13"); the native modules the coming phases need, so
+the TestFlight binary has them (`react-native-webview`, `expo-file-system` and
+`expo-sharing` for the duty-log PDF; check the parity list for any other); then step 12's
+TestFlight build (below); then plane markers turned to their heading, and ground trails; the
+point picker (tap the map for its coordinates, snapping to a track point); and the elevation
+tool, all of which ship as OTA updates. For step 12: an
 EAS profile `testflight` (`distribution: "store"`, `channel: "preview"`,
 `environment: "preview"`), built with `EAS_PROJECT_ROOT=$(realpath ../..) EAS_NO_VCS=1 npx
 eas-cli@latest build --profile testflight --platform ios`, then `eas submit`, which needs the
@@ -2015,7 +2020,7 @@ layers need no Android counterpart; only the chrome around the map does.
 | Map a day's flights ("Map all") | Done (Day menu, banner) | `Menu` + `Picker`; a graphical `DatePicker` in a sheet | `DropdownMenu`; the Material `DatePicker` dialog | `dayFlightNumbers`, `groupEndMarkers` |
 | Point picker (tap the map, snap to a track point, copy) | Queued | MapLibre `onPress`, then the location sheet | the same, with its Android sheet | move the web's snapping (`point-picker.ts`) to `live` |
 | Elevation tool (tint by reference elevation, readout) | Queued (the hardest) | a MapLibre `raster-dem` source on Mapterhorn's tiles, if MapLibre Native's layers can tint by a reference elevation; otherwise a tinted raster source. The readout goes in a sheet | same | `elevation` (decode, tint) |
-| Alerts strip (unassigned flights, maintenance due, timer not recorded, duty near its limits) | Phase 10 (proposed: phase 7) | a `List` in a sheet, opened from a toolbar button, with a tab badge | a `ModalBottomSheet` list, a `Badge` on the tab | `alerts` (`computeAlerts`). Proposed for phase 7, with push, since the same events notify |
+| Alerts strip (unassigned flights, maintenance due, timer not recorded, duty near its limits) | Any time (screen); with phase 7 (notifications) | a `List` in a sheet, opened from a toolbar button, with a tab badge | a `ModalBottomSheet` list, a `Badge` on the tab | `alerts` (`computeAlerts`), on the phone; their notifications come from the Worker running the same core code (see "Decided 2026-11-13") |
 | Refresh now, "updated n min ago" | Partial (automatic only) | `RefreshControl` on the Flights list; the age in the status bar | `RefreshControl` | `nextLivePoll` |
 | Hover a flight to highlight its track | n/a on touch | tapping a track selects its flight (opens its sheet) | same | — |
 
@@ -2044,7 +2049,7 @@ layers need no Android counterpart; only the chrome around the map does.
 | Month view, totals and limits | Phase 6 | a `List` of days by month, a `Gauge` (or `ProgressView`) per limit | `LazyColumn`, `LinearProgressIndicator` (`Progress`) | `duty` |
 | Plan or edit a day (duty or rest, start and end, through, note, use the default) | Phase 6 | a `Form` with a segmented `Picker`, `DatePicker`s (`hourAndMinute`), a `Toggle` | `SingleChoiceSegmentedButtonRow`, the Material time picker, `Switch` | `duty`, the duty request schemas |
 | Default duty, duty methods history | Phase 11 | `Form` | `ListItem`s | `duty` |
-| PDF export | Open (see below) | `ShareLink` (share sheet) for the file | `Share.share` | the Typst template |
+| PDF export | Phase 6 (hidden WebView; see "Decided 2026-11-13") | `ShareLink` (share sheet) for the file | `Share.share` | the Typst template |
 | Role-based first tab | Phase 6 | the `NativeTabs` initial route | same | `users.pilot_id` |
 
 **Maintenance** (the web's aircraft info; phase 11)
@@ -2085,22 +2090,43 @@ layers need no Android counterpart; only the chrome around the map does.
 | Overlays, tile layers | Phase 11 | `Form` | same | `basemaps` |
 | Setup checklist | Phase 11 | a `List` with checkmarks | same | — |
 
-**Open, to settle with the user:**
+**Decided 2026-11-13:**
 
-- **Duty-log PDF.** "Screens (v1)" says PDF opens the web export, but since 2026-11-11 the
-  app doesn't open the web (each phone would add a browser session to Devices). Typst's WASM
-  doesn't run in Hermes. Options: render it in a hidden WebView in the app (the same Typst
-  code, the data passed in, no session) and share the file, or render it on the Worker. The
-  recommendation is the WebView: it keeps one implementation and costs no server time.
-- **The alerts screen** is in phase 10, but alerts and push notify about the same events.
-  Proposed: bring it into phase 7.
-- **Android's persistent sheet** (design principles, section 3), decided when Android starts.
+- **Duty-log PDF: compiled in a hidden WebView in the app.** The app doesn't open the web
+  (each phone would add a browser session to Devices), and Typst's WASM doesn't run in
+  Hermes. The web loads typst.ts and its WASM from jsdelivr with no session, so a hidden
+  `react-native-webview` can do the same. The code that writes the Typst source (still a
+  script string in `src/shared/pilot-duty.ts`) moves to core first, the web switches to it in
+  the same change, and the app passes the source in from its own duty data. The WebView only
+  compiles, and returns the PDF's bytes, which the app writes to a file and shares
+  (`expo-file-system`, `expo-sharing`). Those three native modules go into the TestFlight
+  binary (step 12), so phase 6 ships as an OTA update.
+- **Alerts: one computation, in core, for the app, the web and the Worker.** Today alerts
+  (unassigned flights, maintenance due, timer not recorded, duty near its limits) are
+  computed only in the web page, by core's `computeAlerts`, and notify no one. The Worker's
+  notifications are tracker events (takeoff, landing, gaps; `src/notifications.ts`).
+  - **An alerts screen in the app** computes them on the phone with `computeAlerts`, as the
+    web does. It's cheap and can come any time; it's no longer tied to phase 10.
+  - **Alert notifications come from the Worker, not the client.** A notification raised on
+    the phone fires only while the app runs, and the app doesn't rely on background fetch
+    (see "Data and sync"). A Worker cron calls the **same** `computeAlerts` and `sortAlerts`
+    from `@wingbeat/core/alerts`, with no second implementation of any rule. Whatever the
+    Worker needs that is still page-only (how the page assembles `AlertLists` from the flight
+    store, corrections, aircraft, pilots and trackers; the maintenance and duty inputs) moves
+    to core first, and the web switches to it in the same change, so the web, the app and the
+    Worker read the same rules from one place. The Worker builds its inputs from D1 with the
+    same core functions the clients apply (`applyFlightEdits`, …). Who gets which alert and
+    how often (a digest, or when one becomes due) is settled with phase 7's push, which
+    delivers them; a test runs one fixture through the page bundle's and the Worker's paths
+    and checks they produce the same alerts.
+- **Native debt before TestFlight** (design principles, section 7): the hand-built grouped
+  lists (`choice-list.tsx`, used by Settings, the filter sheet and the assignment edit) become
+  `Form`s, `HeaderButton` becomes native bar buttons, the flight list gets pull to refresh,
+  and empty states use `ContentUnavailableView`. Moving screens' direct SwiftUI imports
+  behind shared components with Android twins waits for Android.
 
-**Native debt in what's built** (design principles, section 7): the hand-built grouped lists
-(`choice-list.tsx`, used by Settings, the filter sheet and the assignment edit) become
-`Form`s; `HeaderButton` becomes native bar buttons; screens that import SwiftUI directly get
-a shared component with an Android twin; and the flight list gets pull to refresh. Proposed
-as one step before TestFlight, since testers see these screens first.
+**Open:** Android's persistent sheet (design principles, section 3), decided when Android
+starts.
 
 ## Rollout and risk to the web dashboard
 
@@ -2200,7 +2226,7 @@ were, so references elsewhere in this doc stay valid.
    hosted instances, `push_subscriptions` and `push_devices` (one migration, since phase 2
    is deferred), `POST /api/me/push-devices`, subscriptions in the app, Expo delivery in
    `dispatchNotifications()` (ahead of its no-webhooks early return, isolated from the
-   webhook and Pushover sends) and receipt checks, channels, categories, Time Sensitive gap alerts and deep links. First App Store
+   webhook and Pushover sends) and receipt checks, channels, categories, Time Sensitive gap alerts and deep links. Alert notifications (maintenance due, duty near its limits, …) from a Worker cron that calls core's `computeAlerts`, the same code the web and the app run (see "Feature parity with the web", "Decided 2026-11-13"). First App Store
    release (iOS, individual account). Android goes to Play once the Play organization account
    exists; until then it stays on EAS internal distribution. Then move the operators you
    host off Pushover and retire it (see "Retiring Pushover").
@@ -2226,9 +2252,9 @@ were, so references elsewhere in this doc stay valid.
 **Later:**
 
 10. Two pilots aboard and "Did you fly?" prompts, Live Activities (APNs from wherever the Expo
-    token is held), self-hosted PMTiles basemaps, FAA sectionals and offline regions, an alerts
-    screen in the app (`alerts` is in core from phase 1), and the web moving to MapLibre if it's worth it
-    by then.
+    token is held), self-hosted PMTiles basemaps, FAA sectionals and offline regions, and the web moving to MapLibre if it's worth it
+    by then. (The app's alerts screen moved out of this phase on 2026-11-13: it can come any
+    time, and alert notifications come with phase 7.)
 
 **Web parity (goal 5; after phase 7's first release, one step at a time, interleaved with
 phases 8–10 as needed):**
