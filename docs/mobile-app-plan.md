@@ -1930,6 +1930,16 @@ Done after step 9, from the first device runs (2026-11-13; the rules they settle
 - **Status cards on the float surface:** the tail on a pill in the tracker's color, the
   details on the first line when they fit.
 
+Done next (2026-11-13): the native-debt cleanup below (Settings, the filter and the
+assignment edit are SwiftUI `Form`s; native `Stack.Toolbar` buttons; pull to refresh on
+Flights; `EmptyState` on `ContentUnavailableView`), and the native modules for the TestFlight
+binary: `react-native-webview`, `expo-file-system`, `expo-sharing`, and `react-native-svg`
+(phase 11's QR code and, if Swift Charts can't stack, the stream graph). From the TestFlight
+build on, development runs over TestFlight (the user, 2026-11-13: "I'd like to do all future
+development over testflight, assuming that's not going to run into any expo free tier
+limits"): JS changes ship as `eas update --channel preview` (unlimited on the free plan),
+and only a native change takes one of the free plan's 15 iOS builds a month.
+
 Next in the app, in this order (the user, 2026-11-13): the native-debt cleanup ("Feature
 parity with the web", "Decided 2026-11-13"); the native modules the coming phases need, so
 the TestFlight binary has them (`react-native-webview`, `expo-file-system` and
@@ -2021,7 +2031,7 @@ layers need no Android counterpart; only the chrome around the map does.
 | Point picker (tap the map, snap to a track point, copy) | Queued | MapLibre `onPress`, then the location sheet | the same, with its Android sheet | move the web's snapping (`point-picker.ts`) to `live` |
 | Elevation tool (tint by reference elevation, readout) | Queued (the hardest) | a MapLibre `raster-dem` source on Mapterhorn's tiles, if MapLibre Native's layers can tint by a reference elevation; otherwise a tinted raster source. The readout goes in a sheet | same | `elevation` (decode, tint) |
 | Alerts strip (unassigned flights, maintenance due, timer not recorded, duty near its limits) | Any time (screen); with phase 7 (notifications) | a `List` in a sheet, opened from a toolbar button, with a tab badge | a `ModalBottomSheet` list, a `Badge` on the tab | `alerts` (`computeAlerts`), on the phone; their notifications come from the Worker running the same core code (see "Decided 2026-11-13") |
-| Refresh now, "updated n min ago" | Partial (automatic only) | `RefreshControl` on the Flights list; the age in the status bar | `RefreshControl` | `nextLivePoll` |
+| Refresh now, "updated n min ago" | Partial (pull to refresh on Flights; no age shown) | `RefreshControl` on the Flights list; the age in the status bar | `RefreshControl` | `nextLivePoll` |
 | Hover a flight to highlight its track | n/a on touch | tapping a track selects its flight (opens its sheet) | same | — |
 
 **Flights**
@@ -2029,12 +2039,12 @@ layers need no Android counterpart; only the chrome around the map does.
 | Feature | App | iOS | Android | Core / notes |
 |---|---|---|---|---|
 | List grouped by operator day | Done | RN `SectionList` with sticky headers (kept: virtualized, dense custom rows) | same | `time`, `flights.ts` |
-| Filters: aircraft, pilots, trackers | Done (hand-built list) | a `Form` of `Toggle` rows (debt: `choice-list.tsx`) | `Checkbox` `ListItem`s | `filters` |
-| Filters: from and to dates | Partial (presets) | the presets in a `Picker`, plus two compact `DatePicker`s | `SingleChoiceSegmentedButtonRow` or radio rows, the Material date-range picker | `filters`, `time` |
+| Filters: aircraft, pilots, trackers | Done | a `Form` of `Toggle` rows (`ToggleSection`) | `Checkbox` `ListItem`s | `filters` |
+| Filters: from and to dates | Partial (presets, in a `Picker`) | the presets in a `Picker`, plus two compact `DatePicker`s | `SingleChoiceSegmentedButtonRow` or radio rows, the Material date-range picker | `filters`, `time` |
 | Collapse a day; "Show recent" | Phase 11 | tap the day header (or `Section(isExpanded:)`, if the list moves to SwiftUI) | same | — |
 | Map a day from the list | Phase 11 | a context menu on the day header opens Live's day view | a long-press `DropdownMenu` | the Day tool's `dayMap` |
 | Flight detail (track, times, labels, assignment, remarks) | Done | the map + `MapSheet` (`BottomSheet` with detents, a `Form`) | persistent sheet: open (design principles, section 3) | `flight-edits` |
-| Assignment edit (admins) | Done (hand-built list) | a `Form` with `Picker`s (`navigationLink` style for long lists) | `ExposedDropdownMenuBox` | `corrections` (`flightAssignmentRequest`) |
+| Assignment edit (admins) | Done | a `Form` with `Picker`s (`menu` style: `navigationLink` needs a SwiftUI navigation stack) | `ExposedDropdownMenuBox` | `corrections` (`flightAssignmentRequest`) |
 | Edit times, origin and destination, Part 91 ("Operated under"), pay, remark | Phase 11 | a `Form`: compact `DatePicker`s (date, hour and minute) read in the operator's zone, a `Picker` for named points, `TextField`s | `ListItem`s that open the Material date and time pickers, `ExposedDropdownMenuBox`, `TextField` | `flight-edits` (`flightFormTimes`, …), `corrections` |
 | Remove and restore, revert to tracker, delete a manual flight | Phase 11 | destructive `Button`s, `ConfirmationDialog` | `AlertDialog` | `corrections` |
 | Add a manual flight | Phase 11 | the edit `Form` in a sheet, from a toolbar `+` | `FloatingActionButton` | `flight-edits`, `corrections` |
@@ -2074,9 +2084,9 @@ layers need no Android counterpart; only the chrome around the map does.
 
 | Feature | App | iOS | Android | Core / notes |
 |---|---|---|---|---|
-| Accounts: switch, add, sign out | Done (hand-built list) | a `Form`; a context menu instead of touch-and-hold | `ListItem`s, a long-press `DropdownMenu` | `api/me` |
+| Accounts: switch, add, sign out | Done | a `Form`; a context menu instead of touch-and-hold | `ListItem`s, a long-press `DropdownMenu` | `api/me` |
 | Delete my account | Done | a destructive `Button`, `Alert` | `AlertDialog` | `DELETE /api/me` |
-| Theme | Done (hand-built list) | a segmented `Picker` | `SingleChoiceSegmentedButtonRow` | — |
+| Theme | Done | a segmented `Picker` | `SingleChoiceSegmentedButtonRow` | — |
 | Documentation link | Not started (easy) | a `Link` to the docs site in `expo-web-browser` (public, no session) | same | — |
 | Clear local cache | Not started (easy) | a destructive `Button` | same | `flight-cache.ts` |
 | My Devices (rename, sign out) | Phase 11 (first in Settings) | a `List` with `SwipeActions`; an `Alert` with a text field to rename | a long-press menu, an `AlertDialog` with a `TextField` | `api/me` |

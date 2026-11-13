@@ -14,6 +14,12 @@
       "distribution": "internal",
       "channel": "preview"
     },
+    "testflight": {
+      "distribution": "store",
+      "autoIncrement": true,
+      "channel": "preview",
+      "environment": "preview"
+    },
     "production": {
       "autoIncrement": true,
       "channel": "production"
@@ -21,6 +27,11 @@
   },
   "submit": {
     "production": {
+      "ios": {
+        "appleTeamId": "W4MAPA8GZ7"
+      }
+    },
+    "testflight": {
       "ios": {
         "appleTeamId": "W4MAPA8GZ7"
       }
