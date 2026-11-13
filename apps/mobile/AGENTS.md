@@ -48,9 +48,16 @@ failed upload doesn't fail the build: check its log for the upload). The `develo
 own maps after publishing, with the same variables in the shell:
 
 ```bash
-EAS_NO_VCS=1 npx eas-cli@latest update --channel preview --environment preview --message "..."
+EAS_NO_VCS=1 npx eas-cli@latest update --channel preview --environment preview --platform ios --message "..."
 npx sentry-expo-upload-sourcemaps dist
 ```
+
+`--platform ios` while the app is iOS only: without it the export also bundles web, which fails
+(no `react-native-web`). The runtime version is the native fingerprint, so an update reaches only
+builds with the same one: `npx expo-updates fingerprint:generate --platform ios` gives the local
+hash, and `eas build:list --json` shows each build's `fingerprint.hash`. The app icon is in it, so
+until a build includes the current `assets/icon.png`, publish with the icon of the build you
+target swapped in (`jj file show -r <commit> assets/icon.png > assets/icon.png` from here; build 4 is `1c29db10`) and put it back after.
 
 Never send flight or location data: anything new that could reach an event (a breadcrumb, a
 tag, an `extra`) goes through `src/lib/sentry-scrub.ts`'s rules.
