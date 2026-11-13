@@ -58,9 +58,26 @@ SENTRY_URL=https://sentry.io/ SENTRY_ORG=dumm-software-llc SENTRY_PROJECT=wingbe
 `--platform ios` while the app is iOS only: without it the export also bundles web, which fails
 (no `react-native-web`). The runtime version is the native fingerprint, so an update reaches only
 builds with the same one: `npx expo-updates fingerprint:generate --platform ios` gives the local
-hash, and `eas build:list --json` shows each build's `fingerprint.hash`. The app icon is in it, so
-until a build includes the current `assets/icon.png`, publish with the icon of the build you
-target swapped in (`jj file show -r <commit> assets/icon.png > assets/icon.png` from here; build 4 is `1c29db10`) and put it back after.
+hash, and `eas build:list --json` shows each build's `fingerprint.hash`. The app icon and
+`.gitignore` are in it, so until a build includes the current ones, publish with the target
+build's copies swapped in (build 4 is `1c29db10`), and check the hash before publishing:
+
+```bash
+S=<scratch dir>
+cp assets/icon.png .gitignore $S/                       # the current copies, to put back
+jj file show -r 1c29db10 assets/icon.png > $S/icon-b.png
+jj file show -r 1c29db10 .gitignore > $S/gitignore-b
+cp $S/icon-b.png assets/icon.png && cp $S/gitignore-b .gitignore
+npx expo-updates fingerprint:generate --platform ios   # hash must match the build's
+# … publish and upload source maps …
+cp $S/icon.png assets/icon.png && cp $S/.gitignore .gitignore
+jj diff --stat                                          # must be empty
+```
+
+Run no `jj` command while the old `.gitignore` is in place: it doesn't ignore
+`.env.sentry-build-plugin`, `dist/` or `.expo/`, so a snapshot then commits the token file to `@`
+(and `jj file show … > .gitignore` snapshots after the shell has emptied the file). If that
+happens, put `.gitignore` back and `jj file untrack .env.sentry-build-plugin .expo dist expo-env.d.ts`.
 
 Never send flight or location data: anything new that could reach an event (a breadcrumb, a
 tag, an `extra`) goes through `src/lib/sentry-scrub.ts`'s rules.
