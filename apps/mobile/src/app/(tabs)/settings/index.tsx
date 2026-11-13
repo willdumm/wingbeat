@@ -6,14 +6,19 @@
  */
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Alert, ScrollView } from 'react-native';
+import { Alert } from 'react-native';
+import { Button, ContextMenu, Form, HStack, Host, Image, Section, Spacer, Text, VStack } from '@expo/ui/swift-ui';
+import { disabled, font, foregroundStyle } from '@expo/ui/swift-ui/modifiers';
 import { apiErrorMessage } from '@wingbeat/core/api/client';
 import { deleteMe } from '@wingbeat/core/api/me';
 import { useAccounts } from '@/lib/accounts-context';
 import type { Account } from '@/lib/accounts';
-import { ChoiceSection, ListRow, ListSection } from '@/lib/choice-list';
+import { ChoicePicker } from '@/lib/choice-list';
 import { THEME_CHOICES } from '@/lib/prefs';
-import { px, useThemeChoice, useTokens } from '@/lib/theme';
+import { useThemeChoice, useTokens } from '@/lib/theme';
+
+const PRIMARY = foregroundStyle({ type: 'hierarchical', style: 'primary' });
+const SECONDARY = foregroundStyle({ type: 'hierarchical', style: 'secondary' });
 
 const accountDetail = (a: Account) =>
   a.host + (a.signedOut ? ' · signed out' : a.user.role === 'admin' ? ' · admin' : '');
@@ -64,26 +69,45 @@ export default function SettingsScreen() {
   );
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" style={{ backgroundColor: t['bg-base'] }}
-      contentContainerStyle={{ paddingVertical: px(t['space-4']), gap: px(t['space-6']) }}>
-      <ListSection title="Accounts" footer={accounts.length > 1 ? 'Tap an account to show it; touch and hold to sign out.' : undefined}>
-        {accounts.map((a) => (
-          <ListRow key={a.id} label={a.user.name} detail={accountDetail(a)} selected={a.id === active?.id} disabled={busy}
-            onPress={() => setActive(a.id)} onLongPress={() => confirmSignOut(a)} />
-        ))}
-        <ListRow label="Add account" disabled={busy} onPress={() => router.push('/add-account')} />
-      </ListSection>
+    <Host style={{ flex: 1 }}>
+      <Form modifiers={[disabled(busy)]}>
+        <Section title="Accounts" footer={accounts.length > 1 ? <Text>Tap an account to show it; touch and hold it to sign out.</Text> : undefined}>
+          {accounts.map((a) => (
+            <ContextMenu key={a.id}>
+              <ContextMenu.Items>
+                <Button role="destructive" label={a.signedOut ? 'Remove from This Phone' : 'Sign Out'} systemImage={a.signedOut ? 'trash' : 'rectangle.portrait.and.arrow.right'}
+                  onPress={() => confirmSignOut(a)} />
+              </ContextMenu.Items>
+              <ContextMenu.Trigger>
+                <Button onPress={() => setActive(a.id)}>
+                  <HStack>
+                    <VStack alignment="leading" spacing={2}>
+                      <Text modifiers={[PRIMARY]}>{a.user.name}</Text>
+                      <Text modifiers={[font({ textStyle: 'footnote' }), SECONDARY]}>{accountDetail(a)}</Text>
+                    </VStack>
+                    <Spacer />
+                    {a.id === active?.id && <Image systemName="checkmark" color={t['accent']} />}
+                  </HStack>
+                </Button>
+              </ContextMenu.Trigger>
+            </ContextMenu>
+          ))}
+          <Button label="Add Account" onPress={() => router.push('/add-account')} />
+        </Section>
 
-      {active && (
-        <ListSection title={active.host}>
-          <ListRow label={active.signedOut ? 'Remove from this phone' : 'Sign out'} disabled={busy} onPress={() => confirmSignOut(active)} />
-          {!active.signedOut && (
-            <ListRow label="Delete my account" destructive disabled={busy || !client} onPress={() => confirmDelete(active)} />
-          )}
-        </ListSection>
-      )}
+        {active && (
+          <Section title={active.host}>
+            <Button label={active.signedOut ? 'Remove from This Phone' : 'Sign Out'} onPress={() => confirmSignOut(active)} />
+            {!active.signedOut && (
+              <Button role="destructive" label="Delete My Account" modifiers={[disabled(!client)]} onPress={() => confirmDelete(active)} />
+            )}
+          </Section>
+        )}
 
-      <ChoiceSection title="Appearance" choices={THEME_CHOICES} isSelected={(v) => v === theme} onPress={setTheme} />
-    </ScrollView>
+        <Section title="Appearance">
+          <ChoicePicker label="Theme" choices={THEME_CHOICES} value={theme} onChange={setTheme} style="segmented" />
+        </Section>
+      </Form>
+    </Host>
   );
 }

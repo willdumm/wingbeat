@@ -1,10 +1,11 @@
 /**
  * The flight list (the dashboard's): operator days as sticky headings with their flight
  * count, newest first, and each flight's time and duration, route, assignment and remarks.
- * A corrected time or label has the web's †; a manual flight its "Manual" chip.
+ * A corrected time or label has the web's †; a manual flight its "Manual" chip. Pull to
+ * refresh; with no flights, the empty state fills the screen.
  */
-import type { ReactNode } from 'react';
-import { Pressable, SectionList, Text, View } from 'react-native';
+import { useState, type ReactElement } from 'react';
+import { Pressable, RefreshControl, SectionList, Text, View } from 'react-native';
 import type { FlightDay, FlightRow } from './flights';
 import { px, useTokens } from './theme';
 
@@ -41,14 +42,26 @@ function Row({ row, onPress }: { row: FlightRow; onPress: () => void }) {
   );
 }
 
-export function FlightList({ days, empty, onSelect }: { days: FlightDay[]; empty: ReactNode; onSelect: (id: number) => void }) {
+export function FlightList({ days, empty, onSelect, onRefresh }: {
+  days: FlightDay[];
+  empty: ReactElement;
+  onSelect: (id: number) => void;
+  onRefresh: () => Promise<void>;
+}) {
   const t = useTokens();
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = () => {
+    setRefreshing(true);
+    onRefresh().finally(() => setRefreshing(false));
+  };
   return (
     <SectionList
       sections={days}
       keyExtractor={(row) => String(row.id)}
       contentInsetAdjustmentBehavior="automatic"
       style={{ backgroundColor: t['bg-base'] }}
+      contentContainerStyle={days.length ? undefined : { flexGrow: 1 }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
       stickySectionHeadersEnabled
       renderSectionHeader={({ section }) => (
         <View style={{
@@ -62,7 +75,7 @@ export function FlightList({ days, empty, onSelect }: { days: FlightDay[]; empty
         </View>
       )}
       renderItem={({ item }) => <Row row={item} onPress={() => onSelect(item.id)} />}
-      ListEmptyComponent={<View style={{ padding: px(t['space-8']), alignItems: 'center', gap: 12 }}>{empty}</View>}
+      ListEmptyComponent={empty}
     />
   );
 }

@@ -4,7 +4,7 @@
  * adaptive schedule (core's nextLivePoll) and at once on return to the foreground. It
  * refreshes only when the handshake is 'ok'; otherwise the cached copy is all there is.
  */
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
 import Storage from 'expo-sqlite/kv-store';
 import type { FlightStore, RefreshResult } from '@wingbeat/core/flight-store';
@@ -22,9 +22,11 @@ interface FlightsValue {
   lastRefresh: RefreshResult | null;
   /** Bumped whenever the store's flights may have changed, for screens to re-read them. */
   generation: number;
+  /** Refreshes now (pull to refresh), restarting the schedule; resolves when it's done. */
+  refresh: () => Promise<void>;
 }
 
-const FlightsContext = createContext<FlightsValue>({ store: null, lastRefresh: null, generation: 0 });
+const FlightsContext = createContext<FlightsValue>({ store: null, lastRefresh: null, generation: 0, refresh: async () => {} });
 
 export function FlightsProvider({ children }: { children: ReactNode }) {
   const { loaded, accounts, active, client } = useAccounts();
@@ -32,6 +34,8 @@ export function FlightsProvider({ children }: { children: ReactNode }) {
   const [store, setStore] = useState<FlightStore | null>(null);
   const [lastRefresh, setLastRefresh] = useState<RefreshResult | null>(null);
   const [generation, setGeneration] = useState(0);
+  const poller = useRef<(() => Promise<void>) | null>(null);
+  const refresh = useMemo(() => async () => { await poller.current?.(); }, []);
 
   // Drops the cached copies and the settings (prefs.ts) no account reads any more.
   useEffect(() => {
@@ -79,16 +83,17 @@ export function FlightsProvider({ children }: { children: ReactNode }) {
       if (AppState.currentState === 'active') timer = setTimeout(poll, next.delayMs);
     };
 
+    poller.current = poll;
     poll();
     const sub = AppState.addEventListener('change', (s) => {
       if (s === 'active') poll();
       else stop();
     });
-    return () => { stopped = true; stop(); sub.remove(); };
+    return () => { stopped = true; poller.current = null; stop(); sub.remove(); };
   }, [store, handshake, trackers]);
 
   return (
-    <FlightsContext.Provider value={{ store, lastRefresh, generation }}>
+    <FlightsContext.Provider value={{ store, lastRefresh, generation, refresh }}>
       {children}
     </FlightsContext.Provider>
   );

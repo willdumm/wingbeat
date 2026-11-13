@@ -77,7 +77,7 @@ export default function LiveScreen() {
 
   // The map waits for the bootstrap, which has the basemaps and the default view.
   if (!loaded || !active || active.signedOut || handshake === 'server-too-old' || !bootstrap) {
-    return <Placeholder text="Loading…" />;
+    return <Placeholder />;
   }
 
   const dayTool: MapTool = {

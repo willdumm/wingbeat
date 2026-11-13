@@ -143,19 +143,17 @@ Things that cost a device run each to learn:
   `pointerEvents="none"` so the Pressable gets the touch.
 - MapLibre symbol text needs a glyphs URL, so numbered markers are `Marker` views.
 - Glass button styles need iOS 26.
+- A SwiftUI `Picker` in `navigationLink` style needs a SwiftUI navigation stack; the app's
+  stacks are React Navigation's, so long lists use the `menu` style.
 
 ## 7. Known debt (things that break these rules today)
 
-Fix these as their screens are next touched; the parity list carries them too.
+Fix these as their screens are next touched; the parity list carries them too. The
+hand-built lists, the RN header buttons, the missing pull to refresh and the RN empty states
+were fixed on 2026-11-13 (`choice-list.tsx` is now `ChoicePicker` and `ToggleSection` in a
+`Form`; `Stack.Toolbar`; `FlightList`'s `onRefresh`; `EmptyState`).
 
-- **Hand-built lists:** `choice-list.tsx` (`ListSection`, `ListRow`, `ChoiceSection`) draws
-  iOS grouped lists in RN views. Settings, the filter sheet and the assignment edit use it.
-  They become `Form`s: `Picker`s for single choices, `Toggle` rows for multi-choice,
-  `Button(role: destructive)` rows, and a context menu instead of touch-and-hold on accounts.
-- **Header buttons:** `HeaderButton` is RN text in the header; use the native stack's own bar
-  button items.
 - **Screens importing SwiftUI directly** (`live/index.tsx`'s Day menu, `flights/[id].tsx`'s
-  form, `live-map.tsx`'s Layers menu): move each behind a shared component with an
+  form, `live-map.tsx`'s Layers menu, the `Form`s of Settings, the filter and the assignment
+  edit): move each behind a shared component with an
   `.android.tsx` twin when Android starts.
-- **No pull to refresh** on the flight list (`RefreshControl` is native on both platforms).
-- **Empty states** are RN text; `ContentUnavailableView` on iOS.

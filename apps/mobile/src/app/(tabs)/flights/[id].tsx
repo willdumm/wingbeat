@@ -7,7 +7,6 @@ import { trackerColor } from '@wingbeat/core/live';
 import { useAccounts } from '@/lib/accounts-context';
 import { origin } from '@/lib/api';
 import { flightDetail, flightTrack } from '@/lib/flights';
-import { HeaderButton } from '@/lib/header-button';
 import { LiveMap, type LiveMapRef } from '@/lib/live-map';
 import { MapSheet, sheetDetentHeight } from '@/lib/map-sheet';
 import { availableBasemaps } from '@/lib/map-style';
@@ -43,7 +42,7 @@ export default function FlightScreen() {
   const map = useRef<LiveMapRef>(null);
   const { height: screen } = useWindowDimensions();
 
-  if (!tab.ready || !active) return <Placeholder text="Loading…" />;
+  if (!tab.ready || !active) return <Placeholder />;
   if (!flight || !track) return <Placeholder text="This flight isn’t in the list any more." />;
   const detail = flightDetail(tab.tz, flight, tab.roster);
   const edit = () => router.push({ pathname: '/flights/assign', params: { id: String(flight.id) } });
@@ -74,8 +73,12 @@ export default function FlightScreen() {
       <Stack.Screen options={{
         // The date and Edit head the sheet over the map; without a map, the header.
         title: track.bounds ? '' : detail.title,
-        headerRight: tab.isAdmin && !track.bounds ? () => <HeaderButton title="Edit" onPress={edit} /> : undefined,
       }} />
+      {tab.isAdmin && !track.bounds && (
+        <Stack.Toolbar placement="right">
+          <Stack.Toolbar.Button onPress={edit}>Edit</Stack.Toolbar.Button>
+        </Stack.Toolbar>
+      )}
       {track.bounds ? (
         <>
           <LiveMap

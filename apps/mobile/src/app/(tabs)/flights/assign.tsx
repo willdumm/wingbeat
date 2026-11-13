@@ -1,14 +1,13 @@
 import { useState } from 'react';
-import { Alert, ScrollView } from 'react-native';
+import { Alert } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Form, Host, Section } from '@expo/ui/swift-ui';
 import { setFlightAssignment } from '@wingbeat/core/api/corrections';
 import { useAccounts } from '@/lib/accounts-context';
-import { ChoiceSection } from '@/lib/choice-list';
+import { ChoicePicker } from '@/lib/choice-list';
 import { useFlights } from '@/lib/flights-context';
 import { assignmentChoices, assignmentRequest } from '@/lib/flights';
-import { HeaderButton } from '@/lib/header-button';
 import { Placeholder } from '@/lib/placeholder';
-import { px, useTokens } from '@/lib/theme';
 import { useFlightsTab } from '@/lib/use-flights-tab';
 
 /**
@@ -17,7 +16,6 @@ import { useFlightsTab } from '@/lib/use-flights-tab';
  * and the detail.
  */
 export default function AssignScreen() {
-  const t = useTokens();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { client } = useAccounts();
@@ -28,7 +26,7 @@ export default function AssignScreen() {
   const [pilot, setPilot] = useState<number | null | undefined>(undefined);
   const [saving, setSaving] = useState(false);
 
-  if (!tab.ready || !client || !store) return <Placeholder text="Loading…" />;
+  if (!tab.ready || !client || !store) return <Placeholder />;
   if (!flight || !tab.isAdmin) return <Placeholder text="This flight isn’t in the list any more." />;
   const choices = assignmentChoices(flight, tab.bootstrap.aircraft, tab.bootstrap.pilots);
   const aircraftTail = tail === undefined ? flight.aircraft_tail ?? null : tail;
@@ -50,17 +48,20 @@ export default function AssignScreen() {
 
   return (
     <>
-      <Stack.Screen options={{
-        headerLeft: () => <HeaderButton title="Cancel" onPress={() => router.back()} disabled={saving} />,
-        headerRight: () => <HeaderButton title={saving ? 'Saving…' : 'Save'} bold onPress={save} disabled={saving} />,
-      }} />
-      <ScrollView
-        style={{ backgroundColor: t['bg-base'] }}
-        contentContainerStyle={{ gap: px(t['space-6']), paddingVertical: px(t['space-4']) }}
-      >
-        <ChoiceSection title="Aircraft" choices={choices.aircraft} isSelected={(v) => v === aircraftTail} onPress={setTail} />
-        <ChoiceSection title="Pilot" choices={choices.pilots} isSelected={(v) => v === pilotId} onPress={setPilot} />
-      </ScrollView>
+      <Stack.Toolbar placement="left">
+        <Stack.Toolbar.Button disabled={saving} onPress={() => router.back()}>Cancel</Stack.Toolbar.Button>
+      </Stack.Toolbar>
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button variant="done" disabled={saving} onPress={save}>{saving ? 'Saving…' : 'Save'}</Stack.Toolbar.Button>
+      </Stack.Toolbar>
+      <Host style={{ flex: 1 }}>
+        <Form>
+          <Section>
+            <ChoicePicker label="Aircraft" choices={choices.aircraft} value={aircraftTail} onChange={setTail} />
+            <ChoicePicker label="Pilot" choices={choices.pilots} value={pilotId} onChange={setPilot} />
+          </Section>
+        </Form>
+      </Host>
     </>
   );
 }

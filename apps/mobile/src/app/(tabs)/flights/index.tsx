@@ -1,21 +1,20 @@
 import { useMemo } from 'react';
-import { Button, Text } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { emptyFilterState, matchesFlight } from '@wingbeat/core/filters';
 import { unixToTzDateStr } from '@wingbeat/core/time';
 import { useFlightFilter } from '@/lib/flight-filter-context';
+import { EmptyState } from '@/lib/empty-state';
 import { FlightList } from '@/lib/flight-list';
+import { useFlights } from '@/lib/flights-context';
 import { flightDays, isFiltered, presetDateRange } from '@/lib/flights';
-import { HeaderButton } from '@/lib/header-button';
 import { Placeholder } from '@/lib/placeholder';
-import { useTokens } from '@/lib/theme';
 import { useFlightsTab } from '@/lib/use-flights-tab';
 import { useNow } from '@/lib/use-now';
 
 export default function FlightsScreen() {
-  const t = useTokens();
   const router = useRouter();
   const tab = useFlightsTab();
+  const { refresh } = useFlights();
   const { filter, setFilter, preset, setPreset } = useFlightFilter();
   const now = useNow(60_000);
   const tz = tab.ready ? tab.tz : null;
@@ -29,22 +28,22 @@ export default function FlightsScreen() {
     [flights, roster?.hasAircraft, roster?.hasPilots, tz, applied],
   );
 
-  if (!tab.ready) return <Placeholder text="Loading…" />;
+  if (!tab.ready) return <Placeholder />;
   const filtered = isFiltered(applied);
   return (
     <>
-      <Stack.Screen options={{
-        headerRight: () => <HeaderButton title={filtered ? 'Filter •' : 'Filter'} onPress={() => router.push('/flights/filters')} />,
-      }} />
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button icon={filtered ? 'line.3.horizontal.decrease.circle.fill' : 'line.3.horizontal.decrease.circle'}
+          accessibilityLabel={filtered ? 'Filter (on)' : 'Filter'} onPress={() => router.push('/flights/filters')} />
+      </Stack.Toolbar>
       <FlightList
         days={days}
         onSelect={(id) => router.push({ pathname: '/flights/[id]', params: { id: String(id) } })}
+        onRefresh={refresh}
         empty={filtered ? (
-          <>
-            <Text style={{ color: t['text-muted'] }}>No flights match the filter.</Text>
-            <Button title="Clear filter" color={t['accent']} onPress={() => { setFilter(emptyFilterState()); setPreset('all'); }} />
-          </>
-        ) : <Text style={{ color: t['text-muted'] }}>No flights recorded yet.</Text>}
+          <EmptyState title="No matching flights" systemImage="line.3.horizontal.decrease.circle" description="No flights match the filter."
+            action={{ label: 'Clear Filter', onPress: () => { setFilter(emptyFilterState()); setPreset('all'); } }} />
+        ) : <EmptyState title="No flights yet" systemImage="airplane" description="Flights appear here once a tracker records one." />}
       />
     </>
   );

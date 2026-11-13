@@ -1,77 +1,46 @@
 /**
- * Grouped lists in the iOS Settings style: a titled section of rows (ListSection, ListRow),
- * and a section of choices, each row with a check when it's selected (ChoiceSection: the
- * filter sheet's multi-selects, the assignment edit's single choices, the theme).
+ * Choices in a native form (SwiftUI `Form` sections): one of several in a `Picker`
+ * (ChoicePicker: the assignment edit's aircraft and pilot, the filter's dates, the theme),
+ * and any of several as `Toggle` rows (ToggleSection: the filter's aircraft, pilots and
+ * trackers). Android: radio and `Checkbox` `ListItem`s (docs/mobile-design-principles.md, 2).
  */
-import { Children, type ReactNode } from 'react';
-import { Pressable, Text, View } from 'react-native';
-import { px, useTokens } from './theme';
+import { Picker, Section, Text, Toggle } from '@expo/ui/swift-ui';
+import { pickerStyle, tag, type PickerStyleType } from '@expo/ui/swift-ui/modifiers';
+import type { FilterChoice as Choice } from './flights';
 
-export function ListSection({ title, footer, children }: { title?: string; footer?: string; children: ReactNode }) {
-  const t = useTokens();
-  const rows = Children.toArray(children);
-  return (
-    <View style={{ gap: px(t['space-2']) }}>
-      {title && (
-        <Text style={{ fontSize: 13, fontWeight: '600', letterSpacing: 0.3, color: t['text-muted'], textTransform: 'uppercase', paddingHorizontal: px(t['space-4']) }}>
-          {title}
-        </Text>
-      )}
-      <View style={{ borderRadius: px(t['radius-md']), overflow: 'hidden', marginHorizontal: px(t['space-3']), backgroundColor: t['surface-1'] }}>
-        {rows.map((row, i) => (
-          <View key={i} style={{ borderTopWidth: i ? 1 : 0, borderTopColor: t['border-subtle'] }}>{row}</View>
-        ))}
-      </View>
-      {footer && (
-        <Text style={{ fontSize: 13, color: t['text-muted'], paddingHorizontal: px(t['space-4']) }}>{footer}</Text>
-      )}
-    </View>
-  );
-}
-
-/** A row: its label, a line under it, and a check when selected; destructive is red. */
-export function ListRow({ label, detail, selected, destructive, disabled, onPress, onLongPress }: {
+/**
+ * One of choices. The options are tagged by index, so a value can be anything (null
+ * included, which a SwiftUI tag can't be). The default style is a menu in the row (a long
+ * one scrolls); a short list can take `segmented` or `inline`. Not `navigationLink`: it
+ * needs a SwiftUI navigation stack, and the app's stacks are React Navigation's.
+ */
+export function ChoicePicker<V>({ label, choices, value, onChange, style = 'menu' }: {
   label: string;
-  detail?: string;
-  selected?: boolean;
-  destructive?: boolean;
-  disabled?: boolean;
-  onPress: () => void;
-  onLongPress?: () => void;
+  choices: Choice<V>[];
+  value: V;
+  onChange: (v: V) => void;
+  style?: PickerStyleType;
 }) {
-  const t = useTokens();
   return (
-    <Pressable
-      onPress={onPress}
-      onLongPress={onLongPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityState={{ selected, disabled }}
-      style={({ pressed }) => ({
-        flexDirection: 'row', alignItems: 'center', paddingVertical: px(t['space-3']), paddingHorizontal: px(t['space-4']),
-        backgroundColor: pressed ? t['surface-hover'] : t['surface-1'],
-      })}
-    >
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={{ fontSize: 16, color: disabled ? t['text-faint'] : destructive ? t['danger'] : t['text-primary'] }}>{label}</Text>
-        {detail && <Text style={{ fontSize: 13, color: t['text-muted'] }}>{detail}</Text>}
-      </View>
-      {selected && <Text style={{ fontSize: 16, fontWeight: '700', color: t['accent'] }}>✓</Text>}
-    </Pressable>
+    <Picker label={label} selection={choices.findIndex((c) => c.value === value)} modifiers={[pickerStyle(style)]}
+      onSelectionChange={(i: number) => { if (choices[i]) onChange(choices[i].value); }}>
+      {choices.map((c, i) => <Text key={i} modifiers={[tag(i)]}>{c.label}</Text>)}
+    </Picker>
   );
 }
 
-export function ChoiceSection<V>({ title, choices, isSelected, onPress }: {
+/** A section of choices, any of which can be on. */
+export function ToggleSection<V>({ title, choices, isOn, onToggle }: {
   title: string;
-  choices: { value: V; label: string }[];
-  isSelected: (v: V) => boolean;
-  onPress: (v: V) => void;
+  choices: Choice<V>[];
+  isOn: (v: V) => boolean;
+  onToggle: (v: V) => void;
 }) {
   return (
-    <ListSection title={title}>
+    <Section title={title}>
       {choices.map((c) => (
-        <ListRow key={String(c.value)} label={c.label} selected={isSelected(c.value)} onPress={() => onPress(c.value)} />
+        <Toggle key={String(c.value)} label={c.label} isOn={isOn(c.value)} onIsOnChange={() => onToggle(c.value)} />
       ))}
-    </ListSection>
+    </Section>
   );
 }
