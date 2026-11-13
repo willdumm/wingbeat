@@ -105,6 +105,10 @@ Object.assign(globalThis, {
   dutySaveConfirmText: (records: DutyDay[], keys: string[], values: Parameters<typeof duty.dutySaveConfirmText>[3]) =>
     duty.dutySaveConfirmText(tz(), records, keys, values),
   dutyRemarksText: duty.dutyRemarksText,
+  dutyDayKeys: duty.dutyDayKeys,
+  dutyTimesError: duty.dutyTimesError,
+  dutyDefaultHint: duty.dutyDefaultHint,
+  dutyRestHint: (record: Parameters<typeof duty.dutyRestHint>[1]) => duty.dutyRestHint(tz(), record),
   dutyExportPresets: duty.dutyExportPresets,
   dutyExportEarliest: (flights: DutyInputFlight[], pilotId: number, shown: number, cur: number) =>
     duty.dutyExportEarliest(tz(), flights, pilotId, shown, cur),

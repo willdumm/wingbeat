@@ -13,6 +13,7 @@
  */
 import type { EffectiveFlight, FlightCorrection, FlightEdit } from './flight-edits';
 import { flightRemarks } from './flight-edits';
+import { MAX_DUTY_DAYS_PER_REQUEST } from './record-limits';
 import {
   fmtDuration, tzAddDays, tzAddMonths, tzDateKey, tzDateLabel, tzLocalToEpoch, tzShortDate,
   unixToTzDateStr, unixToTzTime,
@@ -737,6 +738,45 @@ export function dutySaveConfirmText(tz: string, records: DutyDay[], keys: string
     (restLost.length === 1 ? ', including a rest day that loses its designation'
       : restLost.length ? ', including ' + restLost.length + ' rest days that lose their designation' : '') +
     '. Save?';
+}
+
+/**
+ * The day form's dates as day keys, from through (through empty: from alone), or what's
+ * wrong with them. A range covers at most MAX_DUTY_DAYS_PER_REQUEST days (the server's
+ * limit).
+ */
+export function dutyDayKeys(from: string, through: string): string[] | string {
+  through = through || from;
+  if (!from) return 'Enter a date.';
+  if (through < from) return 'The Through date is before the date.';
+  const keys: string[] = [];
+  for (let k = from; k <= through; k = tzAddDays(k, 1)) {
+    keys.push(k);
+    if (keys.length > MAX_DUTY_DAYS_PER_REQUEST) return 'Enter at most ' + MAX_DUTY_DAYS_PER_REQUEST + ' days at a time.';
+  }
+  return keys;
+}
+
+/** What's wrong with the day form's duty start and end (HH:MM, or null), or null. */
+export function dutyTimesError(start: string | null, end: string | null): string | null {
+  if ((start == null) !== (end == null)) return 'Enter both duty start and end, or neither.';
+  if (start != null && start === end) return 'The duty end must differ from its start.';
+  return null;
+}
+
+/** The day form's line about the pilot's default duty on its date (dutyDefaultOn's). */
+export function dutyDefaultHint(def: DutyTimes): string {
+  return 'Default duty ' + def.duty_start + '–' + def.duty_end + ' applies on a flying day with no times recorded.';
+}
+
+/**
+ * The day form's line for a rest day: when the record's rest was designated, or, for a day
+ * not yet rest, that saving designates it today.
+ */
+export function dutyRestHint(tz: string, record: Pick<DutyDay, 'rest' | 'rest_designated_at'> | null): string {
+  return record && record.rest && record.rest_designated_at != null
+    ? 'Designated ' + tzDateLabel(unixToTzDateStr(tz, record.rest_designated_at)) + ', ' + unixToTzTime(tz, record.rest_designated_at) + '.'
+    : 'Today is recorded as the date the rest was designated. Rest has to be designated before the day it falls on.';
 }
 
 /** "Remarks: Part 91 · Training" for a flight with remarks, else ''. */

@@ -1,6 +1,6 @@
 import { icon } from './icons';
 import { complianceNoticeMarkup } from './help';
-import { MAX_DUTY_DAYS_PER_REQUEST, MAX_DUTY_NOTE_LENGTH } from '@wingbeat/core/record-limits';
+import { MAX_DUTY_NOTE_LENGTH } from '@wingbeat/core/record-limits';
 import { TYPST_FONT_URLS, TYPST_SCRIPT_URL, TYPST_WASM_URL } from '@wingbeat/core/duty-pdf';
 
 /** Duty log view body: month navigation + export toolbar, then the table and totals. */
@@ -882,9 +882,6 @@ export function pilotDutyScript(): string {
       return true;
     }
 
-    // The day form's Through range covers at most this many days (the server's limit).
-    const _DUTY_MAX_RANGE_DAYS = ${MAX_DUTY_DAYS_PER_REQUEST};
-
     // Day form: duty start/end, or a rest day, plus a note, for dateKey or, with a
     // "Through" date, for every day from it to that date (e.g. a block of rest days planned
     // ahead). Opened from a date in the table, an Upcoming entry or the toolbar's Plan duty
@@ -956,24 +953,13 @@ export function pilotDutyScript(): string {
       const setKind = getKind.set;
 
       // The date range as day keys, or an error message.
-      function readDates() {
-        const from = $('#duty-d-date').value, through = $('#duty-d-through').value || from;
-        if (!from) return 'Enter a date.';
-        if (through < from) return 'The Through date is before the date.';
-        const keys = [];
-        for (let k = from; k <= through; k = tzAddDays(k, 1)) {
-          keys.push(k);
-          if (keys.length > _DUTY_MAX_RANGE_DAYS) return 'Enter at most ' + _DUTY_MAX_RANGE_DAYS + ' days at a time.';
-        }
-        return keys;
-      }
+      const readDates = () => dutyDayKeys($('#duty-d-date').value, $('#duty-d-through').value);
       // Fills the form from the first date's record, and offers Clear when the range has one.
       function load() {
         baseHistoryId = _dutyLog ? _dutyLog.last_history_id : 0;
         rec = recordOf($('#duty-d-date').value);
         def = dutyDefaultOn((_dutyLog && _dutyLog.default_duties) || [], $('#duty-d-date').value);
-        defaultHint.firstChild.textContent = def
-          ? 'Default duty ' + def.duty_start + '–' + def.duty_end + ' applies on a flying day with no times recorded.' : '';
+        defaultHint.firstChild.textContent = def ? dutyDefaultHint(def) : '';
         setKind(rec && rec.rest ? 'rest' : 'duty');
         $('#duty-d-start').value = (rec && rec.duty_start) || '';
         $('#duty-d-end').value = (rec && rec.duty_end) || '';
@@ -982,9 +968,7 @@ export function pilotDutyScript(): string {
         const base = baseHistoryId;
         showLastEdit($('[data-duty-last-edit]'), 'duty_days', _dutyPilotId + '/' + $('#duty-d-date').value)
           .then(h => { if (h && h.id > base && !errorEl.textContent) onConflict(h); });
-        restHint.textContent = rec && rec.rest && rec.rest_designated_at != null
-          ? 'Designated ' + tzDateLabel(unixToTzDateStr(rec.rest_designated_at)) + ', ' + unixToTzTime(rec.rest_designated_at) + '.'
-          : 'Today is recorded as the date the rest was designated. Rest has to be designated before the day it falls on.';
+        restHint.textContent = dutyRestHint(rec);
         updateClear();
       }
       function updateClear() {
@@ -1012,8 +996,8 @@ export function pilotDutyScript(): string {
         const rest = getKind() === 'rest';
         const dutyStart = rest ? null : ($('#duty-d-start').value || null);
         const dutyEnd = rest ? null : ($('#duty-d-end').value || null);
-        if ((dutyStart == null) !== (dutyEnd == null)) { errorEl.textContent = 'Enter both duty start and end, or neither.'; return; }
-        if (dutyStart != null && dutyStart === dutyEnd) { errorEl.textContent = 'The duty end must differ from its start.'; return; }
+        const timesError = dutyTimesError(dutyStart, dutyEnd);
+        if (timesError) { errorEl.textContent = timesError; return; }
         const body = { dates: keys, duty_start: dutyStart, duty_end: dutyEnd, rest, note: $('#duty-d-note').value };
         const ask = dutySaveConfirmText((_dutyLog && _dutyLog.days) || [], keys, body);
         if (ask && !confirm(ask)) return;
