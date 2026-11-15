@@ -1660,6 +1660,34 @@ account whose operator is in another zone, that's the only correct reading of a 
   single-use and expires in 15 minutes, and a stolen pairing shows up in the Devices list.
   Universal Links / App Links would be exclusive, but they can't cover self-hosted domains,
   since the app's associated domains are fixed at build time. So the scanner stays primary.
+- **Sign in with the browser (added 2026-11-15).** Someone signed in to the web in Safari on
+  the same phone has no second screen to scan from. The Add account screen's "Sign in with
+  Browser" button covers that, and is the main path on a phone:
+  1. The user types their Wingbeat address (`seahawkair`, or the whole host or URL). A bare
+     name gets `.wingbeat.dummthings.dev` appended, and the hosted-only check below applies.
+  2. The app makes a PKCE `code_verifier` (two native `uuidv4`s, 244 random bits), its
+     S256 `challenge`, and a `state`, and opens
+     `https://<host>/app/connect?challenge=…&state=…` with `expo-web-browser`'s
+     `openAuthSessionAsync(url, 'wingbeat://connect')`. That's `ASWebAuthenticationSession`
+     on iOS: not ephemeral, so it shares Safari's cookies, and the callback goes only to the
+     app that opened it, never through the OS's URL routing.
+  3. `GET /app/connect` (outside the auth middleware: it reads the session cookie itself).
+     Signed in: "Connect the Wingbeat app to <name>'s account?" and a Connect button. Not
+     signed in: says so and how to sign in on the web first (there's no login form, only
+     links). Connecting is always a tap, a `POST`, never silent.
+  4. `POST /app/connect` makes a device-link token as `/api/me/device-link` does, with the
+     challenge stored in `invite_tokens.code_challenge` (migration 0008), and redirects
+     (`303`) to `wingbeat://connect?token=…&state=…`. The CSP's `form-action` allows
+     `wingbeat:` for this redirect.
+  5. The app checks `state` and redeems the token with `POST /api/app/pair` plus
+     `code_verifier`. A token with a challenge is refused without the matching verifier, and
+     by `/join/:token` altogether, so a token caught on its way to the app is useless.
+
+  iOS keeps a home-screen web app's cookies apart from Safari's, so someone who only uses
+  Wingbeat from the home screen isn't signed in as far as this flow sees. For them, and as a
+  second path, the web's sign-in link card (Settings → Devices → add a phone) has an "Open in
+  Wingbeat app" button on phones: it opens `wingbeat://pair?host=…&token=…`, which the app
+  confirms before signing in, like any opened link.
 - **Hosted instances only, until phase 9.** Before pairing, the app checks that the host is
   a subdomain of `wingbeat.dummthings.dev`, where every hosted instance lives (decided
   2026-11-11, instead of a published list, since no customer has its own domain). A host that

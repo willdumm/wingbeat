@@ -50,6 +50,7 @@ function RootLayout() {
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="add-account" options={{ presentation: 'modal', headerShown: true, title: 'Add account' }} />
+              <Stack.Screen name="scan" options={{ presentation: 'modal', headerShown: true, title: 'Scan a code' }} />
               <Stack.Screen name="pair" options={{ presentation: 'modal', headerShown: true, title: 'Add account' }} />
             </Stack>
           </ClientUpdateGate>

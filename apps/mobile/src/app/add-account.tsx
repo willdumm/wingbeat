@@ -1,64 +1,45 @@
 /**
- * Add account: scan the sign-in QR code from Wingbeat on the web (Settings → Devices, or
- * an invite). The token goes from the camera straight to the instance, never through the
- * OS's URL routing (docs/mobile-app-plan.md, "Auth and pairing").
+ * Add account. The main path is "Sign in with Browser": the user types their Wingbeat address
+ * and connects the app from the browser they're already signed in to (docs/mobile-app-plan.md,
+ * "Auth and pairing"). The other is scanning the sign-in code Wingbeat on the web shows
+ * (scan.tsx). A SwiftUI `Form`; Android: a `Column` of a `TextField` and `Button`s
+ * (docs/mobile-design-principles.md, 2).
  */
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useIsFocused } from 'expo-router';
-import { Button, Linking, StyleSheet, Text, View } from 'react-native';
-import { PairingStatusView } from '@/lib/pairing-status';
-import { useTokens } from '@/lib/theme';
+import { useState } from 'react';
+import { useRouter } from 'expo-router';
+import { Button, Form, Host, Section, Text, TextField } from '@expo/ui/swift-ui';
+import { autocorrectionDisabled, disabled, keyboardType, onSubmit, submitLabel, textContentType, textInputAutocapitalization } from '@expo/ui/swift-ui/modifiers';
 import { usePairing } from '@/lib/use-pairing';
 
 export default function AddAccountScreen() {
-  const t = useTokens();
-  const [permission, requestPermission] = useCameraPermissions();
-  const { status, pairFrom, reset } = usePairing();
-  // Only one camera preview can run at a time, so it's unmounted when this screen isn't shown.
-  const focused = useIsFocused();
+  const router = useRouter();
+  const [address, setAddress] = useState('');
+  const { status, signInWithBrowser, reset } = usePairing();
+  const pairing = status.kind === 'pairing';
+  const signIn = () => {
+    reset();
+    signInWithBrowser(address);
+  };
 
-  if (!permission) return <View style={{ flex: 1, backgroundColor: t['bg-base'] }} />;
-
-  if (!permission.granted) {
-    return (
-      <View style={[styles.centered, { backgroundColor: t['bg-base'] }]}>
-        <Text style={[styles.text, { color: t['text-primary'] }]}>
-          Wingbeat needs the camera to scan the sign-in code from Wingbeat on the web.
-        </Text>
-        {permission.canAskAgain ? (
-          <Button title="Allow camera" color={t['accent']} onPress={requestPermission} />
-        ) : (
-          <Button title="Open Settings" color={t['accent']} onPress={() => Linking.openSettings()} />
-        )}
-      </View>
-    );
-  }
+  const footer = status.kind === 'pairing' ? `Signing in to ${status.host}…`
+    : status.kind === 'failed' ? status.message
+    : 'Opens your Wingbeat site in Safari. If you’re signed in there, you can connect the app to the same account.';
 
   return (
-    <View style={{ flex: 1, backgroundColor: t['bg-base'] }}>
-      {focused && (
-        <CameraView
-          style={StyleSheet.absoluteFill}
-          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-          onBarcodeScanned={status.kind === 'idle' ? ({ data }) => pairFrom(data) : undefined}
-        />
-      )}
-      <View style={styles.bottom}>
-        {status.kind === 'idle' ? (
-          <Text style={[styles.text, styles.hint, { color: t['text-primary'], backgroundColor: t['surface-float'] }]}>
-            In Wingbeat on the web, open Settings → Devices, add a phone, and scan its code here.
-          </Text>
-        ) : (
-          <PairingStatusView status={status} onRetry={reset} retryTitle="Scan again" />
-        )}
-      </View>
-    </View>
+    <Host style={{ flex: 1 }}>
+      <Form>
+        <Section title="Sign in with Browser" footer={<Text>{footer}</Text>}>
+          <TextField placeholder="Wingbeat address, like yourcompany" onTextChange={setAddress}
+            modifiers={[keyboardType('url'), textContentType('URL'), textInputAutocapitalization('never'),
+              autocorrectionDisabled(), submitLabel('go'), onSubmit(signIn)]} />
+          <Button label="Sign in with Browser" systemImage="safari" onPress={signIn}
+            modifiers={[disabled(pairing || !address.trim())]} />
+        </Section>
+        <Section footer={<Text>In Wingbeat on the web, open Settings → Devices and choose Get link to show a code.</Text>}>
+          <Button label="Scan a Code" systemImage="qrcode.viewfinder" onPress={() => router.push('/scan')}
+            modifiers={[disabled(pairing)]} />
+        </Section>
+      </Form>
+    </Host>
   );
 }
-
-const styles = StyleSheet.create({
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 },
-  text: { fontSize: 16, textAlign: 'center' },
-  bottom: { position: 'absolute', left: 16, right: 16, bottom: 48 },
-  hint: { padding: 12, borderRadius: 12, overflow: 'hidden' },
-});

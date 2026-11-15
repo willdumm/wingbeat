@@ -14,7 +14,7 @@ import { flightCorrectionKey } from '@wingbeat/core/flight-store';
 import { coreBundle, coreBundlePath } from './shared/core-bundle';
 import { dashboardHTML } from './dashboard';
 import { analyticsHTML } from './analytics';
-import { generateToken, sha256Hex, deviceNameFromUA, pairedDeviceName, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
+import { generateToken, sha256Hex, deviceNameFromUA, pairedDeviceName, noAccessHTML, joinHTML, joinErrorHTML, appPairLink, appConnectHTML, appConnectSignedOutHTML } from './auth';
 import { loadSettings, invalidateSettingsCache, settingsAsInstance } from './settings';
 import { envBasemapPresets, readEnvSecret } from './shared/map-controls';
 import { keyedBasemapPreset, substituteTileUrl, TILE_SUBDOMAINS } from '@wingbeat/core/basemaps';
@@ -26,6 +26,7 @@ import { DefaultDutyRequest, DutyDaysClearRequest, DutyDaysRequest, DutyMethodRe
 import { MAX_DEVICE_NAME_LENGTH, SessionRenameRequest, deviceNameLength } from '@wingbeat/core/api/me-requests';
 import { PushDeviceRequest, PushSubscriptionsRequest } from '@wingbeat/core/api/push-requests';
 import { PairRequest } from '@wingbeat/core/api/app-requests';
+import { APP_CONNECT_PATH, appConnectCallbackUrl, base64url, isCodeChallenge, isCodeVerifier, isConnectState } from '@wingbeat/core/app-connect';
 import { API_VERSION, APP_VERSION_HEADER, MAX_APP_VERSION_LENGTH, MIN_CLIENT_LEVEL } from '@wingbeat/core/api/version';
 import { InviteRequest, UserUpdateRequest } from '@wingbeat/core/api/users-requests';
 import { ApplyAssignmentRequest, TestFeedRequest, TrackerCreateRequest, TrackerUpdateRequest } from '@wingbeat/core/api/trackers-requests';
@@ -268,7 +269,8 @@ function buildCsp(nonce: string): string {
     "object-src 'none'",
     "base-uri 'none'",
     "frame-ancestors 'none'",
-    "form-action 'self'",
+    // wingbeat: is POST /app/connect's redirect back to the app.
+    "form-action 'self' wingbeat:",
   ].join('; ');
 }
 
@@ -359,6 +361,8 @@ app.use('*', async (c, next) => {
 
   if (path === '/login' || path === '/location') return next();
   if (path.startsWith('/join/') || path === '/api/app/pair') return next();
+  // Reads the session cookie itself, to say "not signed in" there rather than redirect.
+  if (path === APP_CONNECT_PATH) return next();
 
   // Admin routes take the bearer token, never a session cookie.
   if (isAdminPath(path)) return requireBearer(c, next);
@@ -435,9 +439,13 @@ app.post('/logout', async (c) => {
 // A device that already has a session here doesn't need another one: opening a device
 // link (e.g. again, or from an old deployment's "moved" screen) just takes it to the app.
 async function hasSession(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<boolean> {
+  return (await cookieSession(c)) !== null;
+}
+
+/** This browser's session, from its cookie alone, or null. */
+async function cookieSession(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<SessionLookup | null> {
   const token = getCookie(c, SESSION_COOKIE);
-  if (!token) return false;
-  return (await lookupSession(c, token)) !== null;
+  return token ? lookupSession(c, token) : null;
 }
 
 const findJoinToken = (db: D1Database, token: string) =>
@@ -508,26 +516,29 @@ app.get('/join/:token', async (c) => {
   const [row, settings] = await Promise.all([findJoinToken(c.var.db, token), loadSettings(c.var.tenant)]);
 
   const appName = settings.app_name;
-  if (!row) return c.html(joinErrorHTML(INVALID_LINK.message, appName), INVALID_LINK.status);
+  // A "Sign in with Browser" token is only for the app that holds its verifier.
+  if (!row || row.code_challenge) return c.html(joinErrorHTML(INVALID_LINK.message, appName), INVALID_LINK.status);
   if (row.type === 'device_link' && await hasSession(c)) return c.redirect('/');
   const refusal = joinRefusal(row);
   if (refusal) return c.html(joinErrorHTML(refusal.message, appName), refusal.status);
 
+  const appLink = appPairLink(c.req.header('User-Agent') ?? '', new URL(c.req.url).host, token);
   if (row.type === 'invite') {
-    return c.html(joinHTML('invite', row.invited_name!, token, appName));
+    return c.html(joinHTML('invite', row.invited_name!, token, appName, appLink));
   }
 
   const user = await c.var.db.prepare('SELECT name FROM users WHERE id = ?')
     .bind(row.user_id).first<{ name: string }>();
   if (!user) return c.html(joinErrorHTML('This link is no longer valid.', appName), 404);
-  return c.html(joinHTML('device_link', user.name, token, appName));
+  return c.html(joinHTML('device_link', user.name, token, appName, appLink));
 });
 
 app.post('/join/:token', async (c) => {
   const [row, settings] = await Promise.all([findJoinToken(c.var.db, c.req.param('token')), loadSettings(c.var.tenant)]);
 
   const appName = settings.app_name;
-  if (!row) return c.html(joinErrorHTML(INVALID_LINK.message, appName), INVALID_LINK.status);
+  // A "Sign in with Browser" token is only for the app that holds its verifier.
+  if (!row || row.code_challenge) return c.html(joinErrorHTML(INVALID_LINK.message, appName), INVALID_LINK.status);
   if (row.type === 'device_link' && await hasSession(c)) return c.redirect('/');
   const refusal = joinRefusal(row);
   if (refusal) return c.html(joinErrorHTML(refusal.message, appName), refusal.status);
@@ -548,6 +559,10 @@ app.post('/api/app/pair', valid('json', PairRequest), async (c) => {
   if (!row) return c.json({ error: INVALID_LINK.message }, INVALID_LINK.status);
   const refusal = joinRefusal(row);
   if (refusal) return c.json({ error: refusal.message }, refusal.status);
+  // A "Sign in with Browser" token goes only to the app that made its challenge.
+  if (row.code_challenge && !(isCodeVerifier(body.code_verifier) && await codeChallengeOf(body.code_verifier) === row.code_challenge)) {
+    return c.json({ error: INVALID_LINK.message }, INVALID_LINK.status);
+  }
 
   const deviceName = pairedDeviceName(body.device_name, c.req.header('User-Agent') ?? '');
   const redeemed = await redeemJoinToken(c.var.db, row, deviceName);
@@ -555,6 +570,44 @@ app.post('/api/app/pair', valid('json', PairRequest), async (c) => {
   // The app's X-Wingbeat-App header is recorded from its next request, not this one.
   const { sessionToken, sessionId, userId, name, role, pilotId } = redeemed.session;
   return c.json({ token: sessionToken, me: meJson({ id: userId, name, role, pilot_id: pilotId, sessionId, device_name: deviceName }) });
+});
+
+/** A PKCE verifier's S256 challenge. */
+async function codeChallengeOf(verifier: string): Promise<string> {
+  return base64url(new Uint8Array(await sha256(verifier)));
+}
+
+// "Sign in with Browser" (docs/mobile-app-plan.md, "Auth and pairing"): the app's auth
+// session opens this page in the phone's browser, which shares Safari's cookies. A signed-in
+// browser asks before connecting; the POST makes a device link bound to the app's PKCE
+// challenge and sends it back to the app, which redeems it at /api/app/pair with its verifier.
+app.get(APP_CONNECT_PATH, async (c) => {
+  const challenge = c.req.query('challenge');
+  const state = c.req.query('state');
+  const [session, settings] = await Promise.all([cookieSession(c), loadSettings(c.var.tenant)]);
+  const appName = settings.app_name;
+  if (!isCodeChallenge(challenge) || !isConnectState(state)) {
+    return c.html(joinErrorHTML('This sign-in request is invalid. Go back to the app and try again.', appName), 400);
+  }
+  if (!session) return c.html(appConnectSignedOutHTML(appName));
+  return c.html(appConnectHTML(session.name, challenge, state, appName));
+});
+
+app.post(APP_CONNECT_PATH, async (c) => {
+  const form = await c.req.parseBody();
+  const { challenge, state } = form;
+  const [session, settings] = await Promise.all([cookieSession(c), loadSettings(c.var.tenant)]);
+  const appName = settings.app_name;
+  if (!isCodeChallenge(challenge) || !isConnectState(state)) {
+    return c.html(joinErrorHTML('This sign-in request is invalid. Go back to the app and try again.', appName), 400);
+  }
+  if (!session) return c.html(appConnectSignedOutHTML(appName), 401);
+
+  const token = generateToken();
+  await c.var.db.prepare(
+    `INSERT INTO invite_tokens (token, type, user_id, expires_at, code_challenge) VALUES (?, 'device_link', ?, ?, ?)`
+  ).bind(token, session.user_id, Math.floor(Date.now() / 1000) + DEVICE_LINK_TTL_SECS, challenge).run();
+  return c.redirect(appConnectCallbackUrl(token, state), 303);
 });
 
 // ── Page routes ───────────────────────────────────────────────────────────────

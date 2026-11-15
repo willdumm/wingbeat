@@ -32,9 +32,9 @@ export function accountClient(host: string, token: string, onSignedOut: () => vo
   };
 }
 
-/** Redeems the scanned token at its instance: the new session's token and its user. */
+/** Redeems the scanned (or browser's) token at its instance: the new session's token and its user. */
 export async function pairWith(target: PairingTarget): Promise<{ token: string; user: AccountUser }> {
   const client = createApiClient({ baseUrl: origin(target.host), headers: appHeaders });
-  const { token, me } = await pair(client, { token: target.token, device_name: Device.deviceName });
+  const { token, me } = await pair(client, { token: target.token, device_name: Device.deviceName, code_verifier: target.codeVerifier });
   return { token, user: me };
 }

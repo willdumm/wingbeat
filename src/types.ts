@@ -236,6 +236,8 @@ export interface InviteToken {
   user_id: number | null;
   expires_at: number;
   used: number;
+  /** The app's PKCE S256 challenge, on a device link from POST /app/connect; null otherwise. */
+  code_challenge: string | null;
 }
 
 export interface Env {

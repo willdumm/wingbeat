@@ -228,6 +228,90 @@ describe('app pairing (POST /api/app/pair)', () => {
   });
 });
 
+// "Sign in with Browser": the app opens /app/connect with a PKCE challenge; the signed-in
+// browser asks, then redirects a device link bound to the challenge back to the app, which
+// redeems it at /api/app/pair with the verifier.
+describe('app connect (/app/connect)', () => {
+  const verifier = 'v'.repeat(20) + '-0123456789abcdef0123456789';
+  const challengeOf = async (v) => Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v))).toString('base64url');
+  const state = 'state-0123456789abcdef';
+  const form = (fields) => new URLSearchParams(fields).toString();
+  const connect = (fields, opts = {}) => w.request('POST', '/app/connect', form(fields),
+    { raw: true, ...opts, headers: { 'content-type': 'application/x-www-form-urlencoded', ...opts.headers } });
+  const pair = (body) => w.request('POST', '/api/app/pair', body, { as: null });
+  // Connects as the admin and returns the token from the redirect back to the app.
+  async function connectedToken(challenge) {
+    const r = await connect({ challenge, state });
+    assert.equal(r.status, 303);
+    const back = new URL(r.headers.get('location'));
+    assert.equal(back.protocol + '//' + back.host, 'wingbeat://connect');
+    assert.equal(back.searchParams.get('state'), state);
+    return back.searchParams.get('token');
+  }
+
+  test('a signed-in browser asks first; the page posts the challenge and state', async () => {
+    const challenge = await challengeOf(verifier);
+    const r = await w.request('GET', `/app/connect?challenge=${challenge}&state=${state}`);
+    assert.equal(r.status, 200);
+    assert.match(r.body, /Connect the Wingbeat app to <strong>Ada Admin<\/strong>/);
+    assert.match(r.body, /<form method="POST" action="\/app\/connect">/);
+    assert.ok(r.body.includes(`value="${challenge}"`) && r.body.includes(`value="${state}"`));
+    assert.match(r.headers.get('content-security-policy'), /form-action 'self' wingbeat:/);
+    // Nothing was made by looking.
+    assert.equal((await w.first('SELECT COUNT(*) AS n FROM invite_tokens WHERE code_challenge = ?', challenge)).n, 0);
+  });
+
+  test('a browser that isn’t signed in is told so, and can’t connect', async () => {
+    const challenge = await challengeOf(verifier);
+    const r = await w.request('GET', `/app/connect?challenge=${challenge}&state=${state}`, undefined, { as: null });
+    assert.equal(r.status, 200);
+    assert.match(r.body, /This browser isn't signed in/);
+    assert.equal((await connect({ challenge, state }, { as: null })).status, 401);
+    assert.equal((await connect({ challenge, state }, withCookie('revoked'))).status, 401);
+    assert.equal((await w.first('SELECT COUNT(*) AS n FROM invite_tokens WHERE code_challenge = ?', challenge)).n, 0);
+  });
+
+  test('a malformed challenge or state is refused on both', async () => {
+    const challenge = await challengeOf(verifier);
+    for (const q of [`challenge=short&state=${state}`, `challenge=${challenge}&state=x`, `state=${state}`]) {
+      assert.equal((await w.request('GET', '/app/connect?' + q)).status, 400, q);
+      assert.equal((await connect(Object.fromEntries(new URLSearchParams(q)))).status, 400, q);
+    }
+  });
+
+  test('the token pairs only with the verifier, once, and never on the web', async () => {
+    const token = await connectedToken(await challengeOf(verifier));
+    const row = await w.first('SELECT type, user_id, used, expires_at FROM invite_tokens WHERE token = ?', token);
+    assert.deepEqual([row.type, row.user_id, row.used], ['device_link', 1, 0]);
+    assert.ok(row.expires_at > now() + 14 * 60 && row.expires_at <= now() + 15 * 60);
+
+    assert.equal((await w.request('GET', '/join/' + token, undefined, { as: null })).status, 404);
+    assert.equal((await join(token)).status, 404);
+    for (const code_verifier of [undefined, null, 'w'.repeat(43), verifier + 'x', 'bad']) {
+      const r = await pair({ token, code_verifier });
+      assert.deepEqual([r.status, r.body], [404, { error: 'This link is invalid.' }], String(code_verifier));
+    }
+    const r = await pair({ token, code_verifier: verifier, device_name: 'Browser phone' });
+    assert.equal(r.status, 200);
+    assert.deepEqual([r.body.me.name, r.body.me.device_name], ['Ada Admin', 'Browser phone']);
+    assert.equal((await pair({ token, code_verifier: verifier })).status, 410);
+  });
+
+  test('a verifier on an ordinary device link is ignored', async () => {
+    const link = (await w.request('POST', '/api/me/device-link')).body.url.replace('/join/', '');
+    assert.equal((await pair({ token: link, code_verifier: verifier })).status, 200);
+  });
+
+  test('the join page offers the app on an iPhone only', async () => {
+    const token = await invite('Phone Invitee');
+    const iphone = { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)' };
+    const onPhone = await w.request('GET', '/join/' + token, undefined, { as: null, headers: iphone });
+    assert.ok(onPhone.body.includes(`href="wingbeat://pair?host=localhost&amp;token=${token}"`));
+    const onMac = await w.request('GET', '/join/' + token, undefined, { as: null, headers: { 'user-agent': 'Mozilla/5.0 (Macintosh)' } });
+    assert.doesNotMatch(onMac.body, /wingbeat:/);
+  });
+});
+
 // Account deletion started by the user (Settings, web and app): the account and everything
 // that signs it in go; the operator's records stay; the env admin and the last admin can't.
 describe('DELETE /api/me', () => {

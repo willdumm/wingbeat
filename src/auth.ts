@@ -81,6 +81,14 @@ export function pairedDeviceName(name: string | null | undefined, ua: string): s
   return cutDeviceName(name ?? '') || deviceNameFromUA(ua);
 }
 
+/** The app's wingbeat://pair link for a join token, when ua is an iPhone or iPad (the app is
+ * iOS only for now), or null. */
+export function appPairLink(ua: string, host: string, token: string): string | null {
+  const device = deviceNameFromUA(ua);
+  if (device !== 'iPhone' && device !== 'iPad') return null;
+  return `wingbeat://pair?host=${encodeURIComponent(host)}&token=${encodeURIComponent(token)}`;
+}
+
 export function deviceNameFromUA(ua: string): string {
   if (/iPhone/.test(ua)) return 'iPhone';
   if (/iPad/.test(ua)) return 'iPad';
@@ -111,7 +119,11 @@ export function noAccessHTML(appName: string): string {
 </html>`;
 }
 
-export function joinHTML(type: 'invite' | 'device_link', name: string, token: string, appName: string): string {
+/**
+ * The invite or device-link page. appLink, on an iPhone or iPad, also offers the sign-in in the
+ * app (wingbeat://pair, which the app confirms before signing in).
+ */
+export function joinHTML(type: 'invite' | 'device_link', name: string, token: string, appName: string, appLink: string | null = null): string {
   const heading = type === 'invite'
     ? `You've been invited to join as <strong>${escapeHtml(name)}</strong>.`
     : `Add a new device to <strong>${escapeHtml(name)}</strong>'s account?`;
@@ -132,6 +144,7 @@ export function joinHTML(type: 'invite' | 'device_link', name: string, token: st
     <form method="POST" action="/join/${escapeHtml(token)}">
       <button type="submit">${escapeHtml(btnLabel)}</button>
     </form>
+    ${appLink ? `<a class="back" href="${escapeHtml(appLink)}">Open in the Wingbeat app instead</a>` : ''}
   </div>
 </body>
 </html>`;
@@ -155,4 +168,48 @@ export function joinErrorHTML(message: string, appName: string): string {
   </div>
 </body>
 </html>`;
+}
+
+/** The page around an auth card: the same head, logo and card as the other auth pages. */
+function authPage(appName: string, card: string): string {
+  return `<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>${escapeHtml(appName)}</title>
+  <link rel="icon" href="${logoFaviconHref('dark')}" />
+  <style>${authPageStyles()}</style>
+</head>
+<body>
+  ${logoLockupMarkup(appName, { size: 32, tone: 'mono' })}
+  <div class="card">
+    ${card}
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * GET /app/connect in a signed-in browser: asks before connecting the app ("Sign in with
+ * Browser", docs/mobile-app-plan.md, "Auth and pairing"). The form posts the app's challenge
+ * and state back, and the response redirects to the app.
+ */
+export function appConnectHTML(name: string, challenge: string, state: string, appName: string): string {
+  return authPage(appName, `
+    <p style="margin-bottom: 1.5rem;">Connect the Wingbeat app to <strong>${escapeHtml(name)}</strong>'s account?</p>
+    <form method="POST" action="/app/connect">
+      <input type="hidden" name="challenge" value="${escapeHtml(challenge)}" />
+      <input type="hidden" name="state" value="${escapeHtml(state)}" />
+      <button type="submit">Connect</button>
+    </form>`);
+}
+
+/** GET /app/connect in a browser that isn't signed in here: how to sign in first. */
+export function appConnectSignedOutHTML(appName: string): string {
+  return authPage(appName, `
+    <p style="margin-bottom: 1rem;">This browser isn't signed in to ${escapeHtml(appName)}.</p>
+    <p>Open your sign-in link in Safari first, then try again in the app. Or, on a device that's
+      signed in, open Settings → Devices, choose Get link, and scan its code with the app.</p>`);
 }

@@ -829,6 +829,8 @@ export function settingsModalStyles(): string {
       white-space: nowrap;
     }
 
+    .settings-link-open-app { text-decoration: none; }
+
     .settings-link-qr {
       display: flex;
       justify-content: center;
@@ -2345,7 +2347,9 @@ export function settingsModalScript(): string {
 
     // ── Link display card ─────────────────────────────────────────────────────
 
-    function settingsCreateLinkPanel(url, label, onDone) {
+    // appLink: a wingbeat:// link that opens the same sign-in in the app, for the phone this
+    // page is on (docs/mobile-app-plan.md, "Auth and pairing").
+    function settingsCreateLinkPanel(url, label, onDone, appLink) {
       const card = document.createElement('div');
       card.className = 'settings-link-card';
 
@@ -2373,6 +2377,14 @@ export function settingsModalScript(): string {
       urlRow.appendChild(copyBtn);
       card.appendChild(urlRow);
 
+      if (appLink) {
+        const openApp = document.createElement('a');
+        openApp.className = 'btn-primary settings-link-open-app';
+        openApp.href = appLink;
+        openApp.textContent = 'Open in Wingbeat app';
+        card.appendChild(openApp);
+      }
+
       const qrWrap = document.createElement('div');
       qrWrap.className = 'settings-link-qr';
       card.appendChild(qrWrap);
@@ -2387,6 +2399,16 @@ export function settingsModalScript(): string {
       card.appendChild(doneBtn);
 
       return card;
+    }
+
+    // The app's link for a device link's /join/<token> path, on an iPhone or iPad (the app is
+    // iOS only for now; iPadOS reports itself as a Mac with touch), or null.
+    function settingsAppPairLink(joinPath) {
+      const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+        (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+      if (!ios) return null;
+      const token = joinPath.split('/').pop();
+      return 'wingbeat://pair?host=' + encodeURIComponent(location.host) + '&token=' + encodeURIComponent(token);
     }
 
     // ── Devices section ───────────────────────────────────────────────────────
@@ -2546,7 +2568,7 @@ export function settingsModalScript(): string {
           row.classList.remove('editing');
           btn.textContent = 'Get link';
           btn.disabled = false;
-        });
+        }, settingsAppPairLink(data.url));
         row.appendChild(card);
       } catch (_) {
         btn.textContent = 'Get link';

@@ -9,6 +9,8 @@ export interface PairingTarget {
   /** Lowercase hostname, with a port if the link had one. */
   host: string;
   token: string;
+  /** The PKCE verifier a "Sign in with Browser" token is redeemed with (browser-sign-in.ts). */
+  codeVerifier?: string;
 }
 
 export type ParseResult =
@@ -31,6 +33,11 @@ export function isHostedInstance(host: string): boolean {
 // generateToken() in src/auth.ts makes 64 hex characters; this allows any URL-safe token.
 const TOKEN = /^[A-Za-z0-9_-]{16,256}$/;
 const HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:\d{1,5})?$/;
+
+/** Whether text is a lowercase host (with an optional port) a link may name. */
+export const isPairingHost = (text: string) => HOST.test(text);
+/** Whether text has the shape of a device-link or invite token. */
+export const isPairingToken = (text: string) => TOKEN.test(text);
 
 /** Parses scanned or opened text into the instance and token, or says why it can't pair. */
 export function parsePairingLink(text: string): ParseResult {
