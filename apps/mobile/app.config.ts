@@ -29,6 +29,10 @@ const config: ExpoConfig = {
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
     },
+    // Gap alerts are sent Time Sensitive (src/app-push.ts) so they get through Focus.
+    entitlements: {
+      'com.apple.developer.usernotifications.time-sensitive': true,
+    },
   },
   android: {
     package: 'dev.dummthings.wingbeat',
