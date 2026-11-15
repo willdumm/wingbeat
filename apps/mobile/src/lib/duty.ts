@@ -8,13 +8,14 @@
 import type { DutyDaysRequest, DutyLogResponse } from '@wingbeat/core/api/duty';
 import type { Pilot } from '@wingbeat/core/api/pilots';
 import {
-  computeDutyData, dutyDayKeys, dutyDayText, dutyDefaultOn, dutyExportEarliest, dutyExportPresets, dutyRangeLabel,
-  dutyRemarksText, dutyTimesError,
+  computeDutyData, dutyDayKeys, dutyDayText, dutyDefaultOn, dutyExportEarliest, dutyExportPresets, dutyPeriodLabel,
+  dutyRangeLabel, dutyRemarksText, dutyTimesError,
   type DutyData, type DutyFlight, type DutyInputFlight,
 } from '@wingbeat/core/duty';
+import { dutyLogPdfName, dutyLogTypstSource } from '@wingbeat/core/duty-pdf';
 import { flightEntrySummary, flightFieldEdited, type FlightCorrection } from '@wingbeat/core/flight-edits';
 import { fmtDuration, fmtTzTime, tzShortDate, unixToTzTime } from '@wingbeat/core/time';
-import type { FlightRow } from './flights';
+import type { FilterChoice, FlightRow } from './flights';
 
 /** An hours limit or the quarter's rest days, as a bar toward its limit. */
 export interface DutyMeter {
@@ -130,6 +131,24 @@ export function dutyExportOptions(tz: string, flights: DutyInputFlight[], pilotI
     from: p.from,
     to: p.to,
   }));
+}
+
+/** The months a Custom export's From and To offer, newest first: earliest (dutyExportEarliest's) through cur. */
+export function dutyExportMonths(earliest: number, cur: number): FilterChoice<number>[] {
+  const out: FilterChoice<number>[] = [];
+  for (let i = cur; i >= earliest; i--) {
+    const [year, month] = dutyMonthOf(i);
+    out.push({ value: i, label: dutyPeriodLabel({ year, month }) });
+  }
+  return out;
+}
+
+/** The PDF of the pilot's months from..to: its Typst source and file name, as of now. */
+export function dutyPdfOf(tz: string, now: number, flights: DutyInputFlight[], unmatched: FlightCorrection[],
+                          pilot: Pick<Pilot, 'id' | 'name'>, from: number, to: number, log: DutyLogResponse,
+                          appName: string): { source: string; name: string } {
+  const months = dutyMonths(tz, now, flights, unmatched, pilot, from, to, log);
+  return { source: dutyLogTypstSource(tz, now, months, appName), name: dutyLogPdfName(months) };
 }
 
 /** The pilot's months from..to (month indexes), in order, each as dutyMonth computes it. */

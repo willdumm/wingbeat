@@ -3,10 +3,9 @@ import { Alert } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { currentDutyMonth, dutyPeriodLabel, type DutyInputFlight } from '@wingbeat/core/duty';
 import { tzAddDays, unixToTzDateStr } from '@wingbeat/core/time';
-import { dutyLogPdfName, dutyLogTypstSource } from '@wingbeat/core/duty-pdf';
 import { useAccounts } from '@/lib/accounts-context';
 import {
-  dutyExportOptions, dutyMonth, dutyMonthIndex, dutyMonthOf, dutyMonths, dutyMonthView, dutyPilots, dutyPilotShown,
+  dutyExportOptions, dutyMonth, dutyMonthIndex, dutyMonthOf, dutyMonthView, dutyPdfOf, dutyPilots, dutyPilotShown,
   type DutyExportOption,
 } from '@/lib/duty';
 import { DutyList } from '@/lib/duty-list';
@@ -23,7 +22,8 @@ import { useNow } from '@/lib/use-now';
 /**
  * A pilot's duty log (the web's, from Settings → Pilots): the pilot picked from the header's
  * menu (kept per account), else the user's own, a month at a time up to this one. The
- * header's Export PDF menu shares the web's PDF of the month, a quarter or 12 months. An
+ * header's Export PDF menu shares the web's PDF of the month, a quarter or 12 months, or
+ * opens Custom (export.tsx) to pick the months. An
  * admin plans or edits a day in the day form (day.tsx): from a day, an Upcoming row, or the
  * header's + (tomorrow, since rest is designated ahead, as the web's Plan duty or rest).
  */
@@ -68,9 +68,9 @@ export default function DutyScreen() {
   const exportPeriod = (o: DutyExportOption) => {
     if (!store || !log) return;
     const at = Math.floor(Date.now() / 1000);
-    const months = dutyMonths(tab.tz, at, store.getCompleted() as DutyInputFlight[], store.getUnmatched(), pilot, o.from, o.to, log);
-    const source = dutyLogTypstSource(tab.tz, at, months, tab.bootstrap.instance?.app_name ?? 'Wingbeat');
-    pdf.exportPdf(source, dutyLogPdfName(months)).catch((e: unknown) => {
+    const { source, name } = dutyPdfOf(tab.tz, at, store.getCompleted() as DutyInputFlight[], store.getUnmatched(), pilot,
+      o.from, o.to, log, tab.bootstrap.instance?.app_name ?? 'Wingbeat');
+    pdf.exportPdf(source, name).catch((e: unknown) => {
       Alert.alert('PDF export failed', e instanceof Error ? e.message : String(e));
     });
   };
@@ -89,6 +89,10 @@ export default function DutyScreen() {
                 {o.title}
               </Stack.Toolbar.MenuAction>
             ))}
+            <Stack.Toolbar.MenuAction icon="calendar"
+              onPress={() => router.push({ pathname: '/duty/export', params: { pilot: String(pilot.id), shown: String(index) } })}>
+              Custom…
+            </Stack.Toolbar.MenuAction>
           </Stack.Toolbar.Menu>
         )}
         {offered.length > 1 && (

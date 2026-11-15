@@ -2,7 +2,7 @@ import type { DutyLogResponse } from '@wingbeat/core/api/duty';
 import type { FlightCorrection, FlightEdit } from '@wingbeat/core/flight-edits';
 import {
   dateOfDayKey, dateOfTime, dayKeyOfDate, dutyDayFormOf, dutyDayRequest, dutyDaysRecorded, dutyTimesSuggested, timeOfDate,
-  dutyExportOptions, dutyMonth, dutyMonthIndex, dutyMonthOf, dutyMonths, dutyMonthView, dutyPilots, dutyPilotShown,
+  dutyExportMonths, dutyExportOptions, dutyMonth, dutyMonthIndex, dutyMonthOf, dutyMonths, dutyMonthView, dutyPilots, dutyPilotShown,
 } from '@/lib/duty';
 import type { Flight } from '@/lib/flights';
 import { parseDutyLog, parseDutyPilot } from '@/lib/prefs';
@@ -122,6 +122,15 @@ test('the Export PDF menu: the shown month, its quarter so far, the quarter befo
     ['Quarter', 'July 2026'],
     ['Previous quarter', 'April – June 2026'],
     ['Last 12 months', 'August 2025 – July 2026'],
+  ]);
+});
+
+test('a Custom export offers the months newest first', () => {
+  const cur = dutyMonthIndex(2026, 7);
+  expect(dutyExportMonths(cur - 2, cur)).toEqual([
+    { value: cur, label: 'July 2026' },
+    { value: cur - 1, label: 'June 2026' },
+    { value: cur - 2, label: 'May 2026' },
   ]);
 });
 
