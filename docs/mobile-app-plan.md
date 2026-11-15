@@ -1028,6 +1028,36 @@ access token. Without it, anyone holding a device's push token can send to it.
   APNs key goes wherever the Expo access token is held: the hosted instances' secrets, or the
   relay once it exists. Worth it, but after v1.
 
+### Alert notifications
+
+The alerts feed (unassigned flights, maintenance due, records needed, pilots near a duty
+limit) notifies the users subscribed to `alerts` when an alert first appears, not as a
+digest: core's `computeAlerts` already flags maintenance before it's due and duty at 90% of
+a limit, so an alert appearing is the advance warning.
+
+- **Done 2026-11-15 (phase 7):** `src/alert-push.ts`. On every fifth minute's cron tick
+  (`ALERT_CHECK_MINUTES`, from the tick's scheduled time, so no stored timestamp) and only
+  with `EXPO_ACCESS_TOKEN`, `checkAlerts()` builds the page's `AlertLists` from D1 (the
+  effective flights of active trackers and the manual ones through `applyFlightEdits`, as the
+  flight store's `getAll()`, and the bootstrap's aircraft, pilots and trackers), runs
+  `computeAlerts`, and pushes each alert whose key isn't in `alerts_seen` (migration 0006).
+  Title from core's `alertTitle`, body `alertText`'s line and detail, `data:
+  { type: 'alert', host }` (the app opens the alerts screen).
+- Keys: an unassigned flight's is its tracker and tracked start (it survives the poller
+  rewriting the flight under a new id); maintenance's is tail, item and status (due soon,
+  then overdue, notifies twice); records needed, tail and meter; duty, pilot and window.
+- `alerts_seen` holds the keys present at the last check, recorded whether or not anyone is
+  subscribed. An alert that goes (a pilot assigned, an item signed off) drops its key, so it
+  notifies again if it comes back. So subscribing doesn't replay the alerts already present
+  (the alerts screen lists them), and the first check on an instance seeds the table.
+- An unassigned flight still in the air (its tracker's `poll_state` is `in_flight`) waits
+  until it lands: its pilot is usually set after the flight.
+- A failed send isn't retried (the key is recorded first), as with tracker events.
+- Tests: `test/worker-alert-push.test.mjs` runs one fixture through the flight store and the
+  bootstrap, as the dashboard computes alerts, and through the cron, and checks the pushes
+  are those alerts; then once-per-alert, an alert coming back, the five-minute check and the
+  in-flight wait.
+
 ### Step 3, later: the push relay for self-hosted instances (phase 9)
 
 Built when the first self-hoster asks for the app, together with the in-app purchase

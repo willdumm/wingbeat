@@ -1,8 +1,9 @@
 /**
  * The dashboard's alerts feed: flights missing an aircraft or pilot, maintenance due or
  * overdue, meter readings or service dates a schedule needs, and pilots near a §135.267
- * limit, sorted by urgency, and the words each one shows (alertText). The rows are HTML on the
- * web side (dashboard/scripts/alerts.ts) and a list on the app's.
+ * limit, sorted by urgency, and the words each one shows (alertText, alertTitle). The rows
+ * are HTML on the web side (dashboard/scripts/alerts.ts), a list on the app's, and app
+ * pushes from the Worker (src/alert-push.ts).
  *
  * Takes the operator's timezone (`tz`), the clock (`now`, Unix seconds) and the page's
  * lists (effective flights, aircraft, pilots, trackers) as parameters.
@@ -266,5 +267,15 @@ export function alertText(alert: Alert): { text: string; detail: string | null }
         text: alert.pilot_name + ' · ' + alert.hours_flown.toFixed(1) + '/' + alert.limit_hours + ' hr (' + alert.window_label + ')',
         detail: null,
       };
+  }
+}
+
+/** An alert's notification title (its body is alertText's line, and its detail under it). */
+export function alertTitle(alert: Alert): string {
+  switch (alert.kind) {
+    case 'unassigned_flight': return 'Unassigned flight';
+    case 'maintenance': return alert.urgency === 'immediate' ? 'Maintenance overdue' : 'Maintenance due soon';
+    case 'timer_not_recorded': return 'Maintenance record needed';
+    case 'pilot_duty': return 'Near a duty limit';
   }
 }

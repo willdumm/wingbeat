@@ -73,7 +73,8 @@ export function splitSql(sql) {
  *   fetch(url, init)                      fetch with no session cookie, for the app's client (bearer or none)
  * startWorker({ bindings }) overrides Worker bindings (a value of undefined leaves one unset).
  * startWorker({ outbound }) answers the Worker's own fetches: outbound(request) → Response.
- *   scheduled()                           runs the cron handler once (polls, receipt checks)
+ *   scheduled({ scheduledTime })          runs the cron handler once (polls, receipt checks, alerts), at
+ *                                         scheduledTime (a Date, default now)
  *   db                                    the D1 binding, for seeding and checking rows
  *   all(sql, ...params) / first(sql, ...params) / run(sql, ...params)  shorthands on it
  */
@@ -145,7 +146,7 @@ export async function startWorker({ bindings: overrides = {}, outbound } = {}) {
       all: async (sql, ...params) => (await stmt(sql, params).all()).results,
       first: (sql, ...params) => stmt(sql, params).first(),
       run: (sql, ...params) => stmt(sql, params).run(),
-      scheduled: async () => (await mf.getWorker()).scheduled({ cron: '* * * * *' }),
+      scheduled: async ({ scheduledTime = new Date() } = {}) => (await mf.getWorker()).scheduled({ cron: '* * * * *', scheduledTime }),
       dispose: () => mf.dispose(),
     };
   } catch (err) {

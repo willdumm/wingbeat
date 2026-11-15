@@ -6,6 +6,7 @@ import { maybePoll, pollAllActive, pollAllActiveForce, testFeed } from './poller
 import { checkPublicHttpsUrl } from './safe-fetch';
 import { mapshareUrl } from './notifications';
 import { checkAppPushReceipts } from './app-push';
+import { checkAlerts } from './alert-push';
 import { resegment } from './segmentation';
 import { geocodePendingPoints, geocodeLivePoint, invalidateNamedPointsCache, computeLiveLabel, resolveRefPoint } from './geocoding';
 import { haversineMiles, SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
@@ -2844,7 +2845,7 @@ app.delete('/api/webhooks/:id', requireAdmin, async (c) => {
 export default {
   fetch: app.fetch,
 
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const routing = parseRouting(env);
     if (!routing) {
       console.error('CUSTOMER_ROUTING is not valid JSON; skipping scheduled poll');
@@ -2880,6 +2881,11 @@ export default {
           await checkAppPushReceipts(tenant);
         } catch (err) {
           console.error(`Push receipt check failed for ${hostname} ("${bindingName}"):`, String(err));
+        }
+        try {
+          await checkAlerts(tenant, event.scheduledTime);
+        } catch (err) {
+          console.error(`Alert check failed for ${hostname} ("${bindingName}"):`, String(err));
         }
       }
     })());

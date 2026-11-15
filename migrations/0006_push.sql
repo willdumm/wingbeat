@@ -36,3 +36,12 @@ CREATE TABLE IF NOT EXISTS push_tickets (
   device_id  INTEGER NOT NULL REFERENCES push_devices(id) ON DELETE CASCADE,
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
+
+-- alerts_seen: the alerts feed's alerts (core's computeAlerts) present at the cron's last
+-- alert check, by key (src/alert-push.ts, alertKey). An alert whose key isn't here is new and
+-- is pushed to the `alerts` subscribers; one that's gone drops its key, so it notifies again
+-- if it comes back.
+CREATE TABLE IF NOT EXISTS alerts_seen (
+  key     TEXT    PRIMARY KEY,
+  seen_at INTEGER NOT NULL
+);
