@@ -1,15 +1,18 @@
 import { useSegments } from 'expo-router';
 import { NativeTabs } from 'expo-router/native-tabs';
 import { FlightFilterProvider } from '@/lib/flight-filter-context';
+import { useAlerts } from '@/lib/use-alerts';
 
 // The flight and day maps (and the Edit modal) hide the tab bar: their sheet covers the bottom
 // of the screen, and at its smallest the tab bar would show around it. A flight opens from
 // the duty log too.
 const NO_TAB_BAR = ['[id]', 'day', 'assign'];
 
-// The filter is above the tabs since the flight map reads it from the Duty tab too.
+// The filter is above the tabs since the flight map reads it from the Duty tab too. The Flights
+// tab's badge counts the alerts (its header's bell opens them).
 export default function TabsLayout() {
   const segments = useSegments();
+  const alerts = useAlerts();
   const hidden = (segments[1] === 'flights' || segments[1] === 'duty') && NO_TAB_BAR.includes(segments.at(-1) ?? '');
   return (
     <FlightFilterProvider>
@@ -21,6 +24,7 @@ export default function TabsLayout() {
         <NativeTabs.Trigger name="flights">
           <NativeTabs.Trigger.Label>Flights</NativeTabs.Trigger.Label>
           <NativeTabs.Trigger.Icon sf="airplane" md="flight" />
+          <NativeTabs.Trigger.Badge hidden={!alerts?.length}>{String(alerts?.length ?? 0)}</NativeTabs.Trigger.Badge>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="duty">
           <NativeTabs.Trigger.Label>Duty</NativeTabs.Trigger.Label>

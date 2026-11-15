@@ -8,6 +8,7 @@ import { FlightList } from '@/lib/flight-list';
 import { useFlights } from '@/lib/flights-context';
 import { flightDays, isFiltered, presetDateRange } from '@/lib/flights';
 import { Placeholder } from '@/lib/placeholder';
+import { useAlerts } from '@/lib/use-alerts';
 import { useFlightsTab } from '@/lib/use-flights-tab';
 import { useNow } from '@/lib/use-now';
 
@@ -17,6 +18,7 @@ export default function FlightsScreen() {
   const { refresh, lastRefresh } = useFlights();
   const { filter, setFilter, preset, setPreset } = useFlightFilter();
   const now = useNow(60_000);
+  const alerts = useAlerts();
   const tz = tab.ready ? tab.tz : null;
   // The preset's days move when the operator's day does.
   const today = tz ? unixToTzDateStr(tz, now) : null;
@@ -33,6 +35,9 @@ export default function FlightsScreen() {
   return (
     <>
       <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button icon={alerts?.length ? 'bell.badge' : 'bell'}
+          accessibilityLabel={alerts?.length ? alerts.length + (alerts.length === 1 ? ' alert' : ' alerts') : 'Alerts'}
+          onPress={() => router.push('/flights/alerts')} />
         <Stack.Toolbar.Button icon={filtered ? 'line.3.horizontal.decrease.circle.fill' : 'line.3.horizontal.decrease.circle'}
           accessibilityLabel={filtered ? 'Filter (on)' : 'Filter'} onPress={() => router.push('/flights/filters')} />
       </Stack.Toolbar>

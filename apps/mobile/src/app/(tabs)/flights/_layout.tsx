@@ -8,6 +8,7 @@ export default function FlightsLayout() {
       <Stack.Screen name="day" options={{ title: 'Day' }} />
       <Stack.Screen name="filters" options={{ presentation: 'modal', title: 'Filter flights' }} />
       <Stack.Screen name="assign" options={{ presentation: 'modal', title: 'Assignment' }} />
+      <Stack.Screen name="alerts" options={{ presentation: 'modal', title: 'Alerts' }} />
     </Stack>
   );
 }

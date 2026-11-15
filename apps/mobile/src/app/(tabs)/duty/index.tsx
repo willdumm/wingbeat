@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { currentDutyMonth, dutyPeriodLabel, type DutyInputFlight } from '@wingbeat/core/duty';
 import { tzAddDays, unixToTzDateStr } from '@wingbeat/core/time';
 import { useAccounts } from '@/lib/accounts-context';
@@ -26,6 +26,7 @@ import { useNow } from '@/lib/use-now';
  * opens Custom (export.tsx) to pick the months. An
  * admin plans or edits a day in the day form (day.tsx): from a day, an Upcoming row, or the
  * header's + (tomorrow, since rest is designated ahead, as the web's Plan duty or rest).
+ * The alerts screen opens a pilot's with params pilot, which picks them.
  */
 export default function DutyScreen() {
   const router = useRouter();
@@ -34,11 +35,19 @@ export default function DutyScreen() {
   const { store, generation, refresh } = useFlights();
   const now = useNow(60_000);
   const [picked, setPicked] = useStoredState(active ? accountPrefKey(active.host, active.user.id, 'duty-pilot') : null, parseDutyPilot);
+  const params = useLocalSearchParams<{ pilot?: string }>();
   const pilots = tab.ready ? tab.bootstrap.pilots : [];
   const pilot = dutyPilotShown(pilots, picked, tab.ready ? tab.bootstrap.me.pilot_id ?? null : null);
   const { log, failed, reload } = useDutyLog(pilot?.id ?? null);
   // The month shown; null follows the current one.
   const [shown, setShown] = useState<number | null>(null);
+  // From an alert: the pilot's log at the current month, where their totals are.
+  useEffect(() => {
+    if (!params.pilot) return;
+    setPicked(Number(params.pilot));
+    setShown(null);
+    router.setParams({ pilot: undefined });
+  }, [params.pilot]);
 
   const tz = tab.ready ? tab.tz : null;
   const current = tz ? dutyMonthIndex(...currentDutyMonth(tz, now)) : 0;
