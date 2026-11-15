@@ -158,8 +158,9 @@ Object.assign(globalThis, {
   _estimatedMeter: maintenance.estimatedMeter,
   _maintenanceStatus: (item: MaintenanceItem, estHobbs: number | null, estTach: number | null) =>
     maintenance.maintenanceStatus(tz(), now(), item, estHobbs, estTach),
-  // ── alerts: the dashboard's alerts feed (its rows are HTML in alerts.ts) ──
+  // ── alerts: the dashboard's alerts feed (its rows' HTML is in alerts.ts) ──
   computeAlertsFor: (lists: AlertLists) => alerts.computeAlerts(tz(), now(), lists),
+  alertText: alerts.alertText,
   // ── regions: distances and which region a point is in (the analytics page holds REGIONS
   // and wraps the …In functions under their old names) ──
   haversineKm: regions.haversineKm,
