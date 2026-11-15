@@ -5,6 +5,7 @@ import { Env, Tenant, Point, Flight, FlightRecord, FlightPoint, Tracker, Aircraf
 import { maybePoll, pollAllActive, pollAllActiveForce, testFeed } from './poller';
 import { checkPublicHttpsUrl } from './safe-fetch';
 import { mapshareUrl } from './notifications';
+import { checkAppPushReceipts } from './app-push';
 import { resegment } from './segmentation';
 import { geocodePendingPoints, geocodeLivePoint, invalidateNamedPointsCache, computeLiveLabel, resolveRefPoint } from './geocoding';
 import { haversineMiles, SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
@@ -316,7 +317,7 @@ app.use('*', async (c, next) => {
   }
 
   c.set('db', db);
-  c.set('tenant', { db, key: bindingName, host });
+  c.set('tenant', { db, key: bindingName, host, expoAccessToken: c.env.EXPO_ACCESS_TOKEN });
   return next();
 });
 
@@ -2869,10 +2870,16 @@ export default {
           console.error(`Binding "${bindingName}" not found for host ${hostname}; skipping`);
           continue;
         }
+        const tenant: Tenant = { db, key: bindingName, host: hostname, expoAccessToken: env.EXPO_ACCESS_TOKEN };
         try {
-          await pollAllActive({ db, key: bindingName, host: hostname }, { geocode: true });
+          await pollAllActive(tenant, { geocode: true });
         } catch (err) {
           console.error(`Scheduled poll failed for ${hostname} ("${bindingName}"):`, String(err));
+        }
+        try {
+          await checkAppPushReceipts(tenant);
+        } catch (err) {
+          console.error(`Push receipt check failed for ${hostname} ("${bindingName}"):`, String(err));
         }
       }
     })());

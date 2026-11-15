@@ -2,6 +2,7 @@ import { Tenant } from './types';
 import { checkPublicHttpsUrl } from './safe-fetch';
 import { loadSettings } from './settings';
 import { toKnots, toFeet, formatLocalDateTime } from './shared/format';
+import { sendAppPushes, subscribedDevices } from './app-push';
 
 interface BaseNotificationEvent {
   tracker_id: number;
@@ -97,7 +98,8 @@ function formatSpeedAlt(velocity_kmh: number | null, elevation_m: number | null)
   return parts.length > 0 ? parts.join(', ') : null;
 }
 
-export function eventMessage(event: NotificationEvent, timezone: string): string {
+/** links: false leaves out the MapShare and tracker links (an app push opens the app instead). */
+export function eventMessage(event: NotificationEvent, timezone: string, { links: withLinks = true } = {}): string {
   const coords = `${event.lat.toFixed(3)}, ${event.lon.toFixed(3)}`;
   const loc = event.location_label ? `${event.location_label} (${coords})` : coords;
   const time = formatLocalDateTime(event.time, timezone);
@@ -107,34 +109,62 @@ export function eventMessage(event: NotificationEvent, timezone: string): string
     event.mapshare_url ? `MapShare: ${event.mapshare_url}` : null,
     `Tracker: ${event.instance_url}`,
   ].filter(Boolean).join(' — ');
+  const linksSuffix = withLinks ? ` ${links}` : '';
 
   if (event.type === 'gap') {
-    return `No location update for ${event.gap_minutes} min while in flight (last seen ${time} near ${loc}${speedAltSuffix}). ${links}`;
+    return `No location update for ${event.gap_minutes} min while in flight (last seen ${time} near ${loc}${speedAltSuffix}).${linksSuffix}`;
   }
   if (event.type === 'gap_timeout') {
-    return `No location update for ${event.gap_minutes} min (last seen ${time} near ${loc}${speedAltSuffix}). Treating the flight as ended and stopping signal-gap alerts. ${links}`;
+    return `No location update for ${event.gap_minutes} min (last seen ${time} near ${loc}${speedAltSuffix}). Treating the flight as ended and stopping signal-gap alerts.${linksSuffix}`;
   }
   if (event.type === 'gap_resolved') {
-    return `Location updates resumed after a ${event.gap_minutes} min gap, near ${loc} at ${time}${speedAltSuffix}. ${links}`;
+    return `Location updates resumed after a ${event.gap_minutes} min gap, near ${loc} at ${time}${speedAltSuffix}.${linksSuffix}`;
   }
-  return `${event.type === 'takeoff' ? 'Takeoff' : 'Landing'} detected near ${loc} at ${time}${speedAltSuffix}. ${links}`;
+  return `${event.type === 'takeoff' ? 'Takeoff' : 'Landing'} detected near ${loc} at ${time}${speedAltSuffix}.${linksSuffix}`;
 }
 
 /**
- * Sends each event to every active target subscribed to its type. Takes the whole batch
- * so the webhooks table is read once per poll, not once per event (a short flight can
- * produce takeoff+landing in a single batch). Best-effort per-target: failures are
- * recorded, never thrown.
+ * Sends each event to every active target subscribed to its type, and as an app push to
+ * every subscribed user's devices. Takes the whole batch so the webhooks table is read once
+ * per poll, not once per event (a short flight can produce takeoff+landing in a single
+ * batch). Best-effort per-target: failures are recorded, never thrown, and neither delivery
+ * path can hold up or fail the other.
  */
 export async function dispatchNotifications(tenant: Tenant, events: NotificationEvent[]): Promise<void> {
   if (events.length === 0) return;
+  const { timezone } = await loadSettings(tenant);
+  const outcomes = await Promise.allSettled([
+    sendWebhooks(tenant, events, timezone),
+    sendEventPushes(tenant, events, timezone),
+  ]);
+  for (const o of outcomes) if (o.status === 'rejected') console.error('Notification delivery failed:', String(o.reason));
+}
 
+async function sendEventPushes(tenant: Tenant, events: NotificationEvent[], timezone: string): Promise<void> {
+  if (!tenant.expoAccessToken) return;
+  const pushes = [];
+  for (const event of events) {
+    const key = subscriptionKey(event.type);
+    const devices = await subscribedDevices(tenant, key, event.tracker_id);
+    if (devices.length === 0) continue;
+    pushes.push({
+      devices,
+      push: {
+        title: eventTitle(event),
+        body: eventMessage(event, timezone, { links: false }),
+        data: { type: event.type, tracker_id: event.tracker_id },
+        timeSensitive: key === 'gap',
+      },
+    });
+  }
+  await sendAppPushes(tenant, pushes);
+}
+
+async function sendWebhooks(tenant: Tenant, events: NotificationEvent[], timezone: string): Promise<void> {
   const { results } = await tenant.db.prepare(
     'SELECT id, type, url, pushover_user_key, events FROM webhooks WHERE active = 1'
   ).all<NotificationTarget>();
   if (results.length === 0) return;
-
-  const { timezone } = await loadSettings(tenant);
 
   const subscribed = (w: NotificationTarget, eventType: string): boolean => {
     try {
