@@ -192,11 +192,12 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
                 <HStack spacing={12}>
                   <Text modifiers={[font({ weight: 'bold' }), foregroundStyle(color)]}>{String(n)}</Text>
                   <VStack alignment="leading" spacing={2}>
-                    <Text modifiers={[foregroundStyle({ type: 'hierarchical', style: 'primary' })]}>
+                    {/* The text's own colors: a button's hierarchical styles take its blue tint, faint over the map. */}
+                    <Text modifiers={[foregroundStyle(t['text-primary'])]}>
                       {row.time + (row.duration ? ' ' + row.duration : '')}
                     </Text>
                     {[row.route, row.assignment].filter((s): s is string => !!s).map((s) => (
-                      <Text key={s} modifiers={[font({ textStyle: 'footnote' }), SECONDARY]}>{s}</Text>
+                      <Text key={s} modifiers={[font({ textStyle: 'footnote' }), foregroundStyle(t['text-muted'])]}>{s}</Text>
                     ))}
                   </VStack>
                 </HStack>

@@ -24,7 +24,8 @@ export default function TabsLayout() {
         <NativeTabs.Trigger name="flights">
           <NativeTabs.Trigger.Label>Flights</NativeTabs.Trigger.Label>
           <NativeTabs.Trigger.Icon sf="airplane" md="flight" />
-          <NativeTabs.Trigger.Badge hidden={!alerts?.length}>{String(alerts?.length ?? 0)}</NativeTabs.Trigger.Badge>
+          {/* A value always shows, even "0" and with hidden: none when there are no alerts. */}
+          <NativeTabs.Trigger.Badge hidden={!alerts?.length}>{alerts?.length ? String(alerts.length) : undefined}</NativeTabs.Trigger.Badge>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="duty">
           <NativeTabs.Trigger.Label>Duty</NativeTabs.Trigger.Label>
