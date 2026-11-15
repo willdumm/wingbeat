@@ -2,7 +2,7 @@ import { emptyFilterState } from '@wingbeat/core/filters';
 import type { FlightCorrection, FlightEdit } from '@wingbeat/core/flight-edits';
 import {
   assignmentChoices, assignmentRequest, filterChoices, flightDays, flightDetail, flightRow, flightTrack,
-  isFiltered, presetDateRange, toggled, type Flight,
+  customDateRange, isFiltered, presetDateRange, toggled, type Flight,
 } from '@/lib/flights';
 
 const TZ = 'America/Anchorage';
@@ -58,6 +58,9 @@ test('date presets count back from the operator day, today included', () => {
   expect(presetDateRange(TZ, now, 'all')).toEqual({ dateFrom: null, dateTo: null });
   expect(presetDateRange(TZ, now, 'today')).toEqual({ dateFrom: '2026-07-01', dateTo: null });
   expect(presetDateRange(TZ, now, '7d')).toEqual({ dateFrom: '2026-06-25', dateTo: null });
+  expect(presetDateRange(TZ, now, 'custom')).toEqual({});
+  expect(customDateRange(TZ, now, '7d')).toEqual({ dateFrom: '2026-06-25', dateTo: '2026-07-01' });
+  expect(customDateRange(TZ, now, 'all')).toEqual({ dateFrom: '2026-06-02', dateTo: '2026-07-01' });
   expect(isFiltered(emptyFilterState())).toBe(false);
   expect(isFiltered({ ...emptyFilterState(), pilotIds: ['__null__'] })).toBe(true);
   expect(toggled([1, 2], 2)).toEqual([1]);

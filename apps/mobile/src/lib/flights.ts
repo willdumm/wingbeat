@@ -115,14 +115,28 @@ export const DATE_PRESETS = [
   { id: '7d', label: 'Last 7 days', days: 7 },
   { id: '30d', label: 'Last 30 days', days: 30 },
   { id: '90d', label: 'Last 90 days', days: 90 },
+  { id: 'custom', label: 'Custom', days: null },
 ] as const;
 export type DatePresetId = (typeof DATE_PRESETS)[number]['id'];
 
-/** The operator days a preset covers as of now (Unix seconds): its last `days` days, today included. */
-export function presetDateRange(tz: string, now: number, id: DatePresetId): Pick<FilterState, 'dateFrom' | 'dateTo'> {
+/**
+ * The operator days a preset covers as of now (Unix seconds): its last `days` days, today
+ * included. Custom sets none: the filter's own From and To apply.
+ */
+export function presetDateRange(tz: string, now: number, id: DatePresetId): Partial<Pick<FilterState, 'dateFrom' | 'dateTo'>> {
+  if (id === 'custom') return {};
   const days = DATE_PRESETS.find((p) => p.id === id)?.days ?? null;
   if (days == null) return { dateFrom: null, dateTo: null };
   return { dateFrom: tzAddDays(unixToTzDateStr(tz, now), 1 - days), dateTo: null };
+}
+
+/**
+ * The filter's From and To when Custom is picked: the preset's range as it was, through
+ * today (the last 30 days from Any time).
+ */
+export function customDateRange(tz: string, now: number, from: DatePresetId): Pick<FilterState, 'dateFrom' | 'dateTo'> {
+  const today = unixToTzDateStr(tz, now);
+  return { dateFrom: presetDateRange(tz, now, from).dateFrom ?? tzAddDays(today, -29), dateTo: today };
 }
 
 /** Whether any filter is set. */
