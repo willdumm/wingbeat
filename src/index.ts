@@ -22,6 +22,7 @@ import { BaseHistoryQuery } from '@wingbeat/core/api/requests';
 import { AssignmentRequest, BulkFlagsRequest, CorrectionRequest } from '@wingbeat/core/api/corrections-requests';
 import { DefaultDutyRequest, DutyDaysClearRequest, DutyDaysRequest, DutyMethodRequest } from '@wingbeat/core/api/duty-requests';
 import { MAX_DEVICE_NAME_LENGTH, SessionRenameRequest, deviceNameLength } from '@wingbeat/core/api/me-requests';
+import { PushDeviceRequest, PushSubscriptionsRequest } from '@wingbeat/core/api/push-requests';
 import { PairRequest } from '@wingbeat/core/api/app-requests';
 import { API_VERSION, APP_VERSION_HEADER, MAX_APP_VERSION_LENGTH, MIN_CLIENT_LEVEL } from '@wingbeat/core/api/version';
 import { InviteRequest, UserUpdateRequest } from '@wingbeat/core/api/users-requests';
@@ -725,6 +726,58 @@ app.post('/api/me/ping', async (c) => {
     'UPDATE sessions SET last_seen_at = unixepoch() WHERE id = ?'
   ).bind(u.sessionId).run();
   return c.json({ ok: true });
+});
+
+// ── Push routes (any authenticated user): this device's push token and the user's subscriptions ──
+
+// Registers this session's device for push. The same token again is a no-op; a session keeps
+// one token (a reinstall's new one replaces it).
+app.post('/api/me/push-devices', valid('json', PushDeviceRequest), async (c) => {
+  const u = c.get('user');
+  const { kind, token } = c.req.valid('json');
+  const db = c.var.db;
+  await db.batch([
+    db.prepare('DELETE FROM push_devices WHERE session_id = ? AND endpoint != ?').bind(u.sessionId, token),
+    db.prepare('INSERT INTO push_devices (session_id, kind, endpoint) VALUES (?, ?, ?) ON CONFLICT (session_id, endpoint) DO NOTHING')
+      .bind(u.sessionId, kind, token),
+  ]);
+  const row = await db.prepare('SELECT id FROM push_devices WHERE session_id = ? AND endpoint = ?')
+    .bind(u.sessionId, token).first<{ id: number }>();
+  return c.json({ id: row!.id });
+});
+
+async function pushSubscriptionsOf(db: D1Database, userId: number) {
+  const { results } = await db.prepare(
+    'SELECT tracker_id, event FROM push_subscriptions WHERE user_id = ? ORDER BY event, tracker_id'
+  ).bind(userId).all<{ tracker_id: number | null; event: string }>();
+  return { subscriptions: results };
+}
+
+app.get('/api/me/push-subscriptions', async (c) => {
+  return c.json(await pushSubscriptionsOf(c.var.db, c.get('user').id));
+});
+
+// Replaces the user's subscriptions. A tracker's must name one that exists; alerts are for no
+// tracker in particular.
+app.put('/api/me/push-subscriptions', valid('json', PushSubscriptionsRequest), async (c) => {
+  const u = c.get('user');
+  const db = c.var.db;
+  const { subscriptions } = c.req.valid('json');
+  if (subscriptions.some((s) => s.event === 'alerts' && s.tracker_id !== null)) {
+    return c.json({ error: 'alerts subscriptions are for every tracker (tracker_id null)' }, 400);
+  }
+  const trackerIds = [...new Set(subscriptions.map((s) => s.tracker_id).filter((id): id is number => id !== null))];
+  if (trackerIds.length > 0) {
+    const known = new Set((await queryTrackers(db, false)).map((t) => t.id));
+    if (trackerIds.some((id) => !known.has(id))) return c.json({ error: 'Tracker not found' }, 404);
+  }
+  await db.batch([
+    db.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').bind(u.id),
+    ...subscriptions.map((s) => db.prepare(
+      'INSERT INTO push_subscriptions (user_id, tracker_id, event) VALUES (?, ?, ?) ON CONFLICT DO NOTHING'
+    ).bind(u.id, s.tracker_id, s.event)),
+  ]);
+  return c.json(await pushSubscriptionsOf(db, u.id));
 });
 
 // ── User management routes (admin only) ──────────────────────────────────────

@@ -24,6 +24,8 @@
     "./api/flights": "./src/api/flights.ts",
     "./api/me": "./src/api/me.ts",
     "./api/me-requests": "./src/api/me-requests.ts",
+    "./api/push": "./src/api/push.ts",
+    "./api/push-requests": "./src/api/push-requests.ts",
     "./api/named-points": "./src/api/named-points.ts",
     "./api/named-points-requests": "./src/api/named-points-requests.ts",
     "./api/overlays": "./src/api/overlays.ts",

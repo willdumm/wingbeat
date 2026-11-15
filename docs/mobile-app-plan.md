@@ -939,6 +939,11 @@ Subscriptions are per user, and every device a user has registered gets each pus
   phase 7 now that phase 2 is deferred, with `kind = 'expo'` only until Web Push exists.
   Phase 4's migration adds `sessions.app_version` (see "Versions and compatibility").
   Neither table has `edit_history` triggers.
+- **Done 2026-11-15 (phase 7, step 1):** `migrations/0006_push.sql` adds both tables, and
+  `push_tickets` (Expo's ticket per send, for the receipt check). A subscription's `event` is
+  also `alerts` (the alerts feed, `tracker_id` NULL). Routes: `POST /api/me/push-devices`
+  (one token per session; a new one replaces it), `GET`/`PUT /api/me/push-subscriptions` (the
+  whole set), in `@wingbeat/core/api/push` and compat level 1.
 - `dispatchNotifications()` gains a delivery path for `push_subscriptions` next to the
   `webhooks` targets. It reuses `eventTitle`/`eventMessage`, and `subscriptionKey()` already
   maps `gap_resolved`/`gap_timeout` onto `gap`. Today the function returns early when there

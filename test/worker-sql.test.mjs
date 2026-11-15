@@ -1265,6 +1265,66 @@ describe('the app’s requests, through the core client', async () => {
   });
 });
 
+// App push (migration 0006): a session's device and the user's subscriptions, through core's
+// client as the app calls them.
+describe('push devices and subscriptions, through the core client', async () => {
+  const { createApiClient, ApiHttpError } = await importCore('api/client');
+  const app = await importCore('api/app');
+  const me = await importCore('api/me');
+  const push = await importCore('api/push');
+  const paired = async () => {
+    const link = (await w.request('POST', '/api/me/device-link')).body.url.replace('/join/', '');
+    const { token, me: { session_id } } = await app.pair(createApiClient({ baseUrl: 'http://localhost', fetch: () => w.fetch }), { token: link });
+    return { session_id, client: createApiClient({ baseUrl: 'http://localhost', fetch: () => w.fetch, auth: { kind: 'bearer', token } }) };
+  };
+  const devices = (session) => w.all('SELECT kind, endpoint FROM push_devices WHERE session_id = ? ORDER BY id', session);
+
+  test('registerPushDevice: one token per session, the same one again a no-op; signing out drops it', async () => {
+    const { session_id, client } = await paired();
+    const first = await push.registerPushDevice(client, { kind: 'expo', token: 'ExponentPushToken[a]' });
+    assert.deepEqual(await push.registerPushDevice(client, { kind: 'expo', token: 'ExponentPushToken[a]' }), first);
+    assert.deepEqual(await devices(session_id), [{ kind: 'expo', endpoint: 'ExponentPushToken[a]' }]);
+    // A reinstall's new token replaces it.
+    await push.registerPushDevice(client, { kind: 'expo', token: 'ExponentPushToken[b]' });
+    assert.deepEqual(await devices(session_id), [{ kind: 'expo', endpoint: 'ExponentPushToken[b]' }]);
+    await me.deleteSession(client, session_id);
+    assert.deepEqual(await devices(session_id), []);
+  });
+
+  test('push subscriptions: replaced as a set, an unknown tracker refused, alerts only for every tracker', async () => {
+    const { client } = await paired();
+    const subs = [{ tracker_id: 2, event: 'landing' }, { tracker_id: null, event: 'takeoff' }, { tracker_id: null, event: 'alerts' }, { tracker_id: 2, event: 'landing' }];
+    const stored = [{ tracker_id: null, event: 'alerts' }, { tracker_id: 2, event: 'landing' }, { tracker_id: null, event: 'takeoff' }];
+    assert.deepEqual(await push.setPushSubscriptions(client, { subscriptions: subs }), { subscriptions: stored });
+    assert.deepEqual(await push.getPushSubscriptions(client), { subscriptions: stored });
+    await assert.rejects(push.setPushSubscriptions(client, { subscriptions: [{ tracker_id: 99, event: 'gap' }] }),
+      (e) => e instanceof ApiHttpError && e.status === 404);
+    await assert.rejects(push.setPushSubscriptions(client, { subscriptions: [{ tracker_id: 1, event: 'alerts' }] }),
+      (e) => e instanceof ApiHttpError && e.status === 400);
+    assert.deepEqual(await push.getPushSubscriptions(client), { subscriptions: stored });
+    assert.deepEqual(await push.setPushSubscriptions(client, { subscriptions: [] }), { subscriptions: [] });
+  });
+
+  test('request validation', async () => {
+    for (const [method, url, body] of [
+      ['POST', '/api/me/push-devices', { kind: 'web', token: 'x' }],
+      ['POST', '/api/me/push-devices', { kind: 'expo', token: '' }],
+      ['PUT', '/api/me/push-subscriptions', { subscriptions: [{ tracker_id: null, event: 'everything' }] }],
+      ['PUT', '/api/me/push-subscriptions', { subscriptions: [{ tracker_id: 1.5, event: 'gap' }] }],
+    ]) assert.equal((await w.request(method, url, body)).status, 400, url + ' ' + JSON.stringify(body));
+  });
+
+  test('deleting the account deletes its subscriptions and devices', async () => {
+    const { token: invite } = (await w.request('POST', '/api/invites', { name: 'Push Viewer', role: 'viewer' })).body;
+    const { token, me: { id, session_id } } = await app.pair(createApiClient({ baseUrl: 'http://localhost', fetch: () => w.fetch }), { token: invite });
+    const client = createApiClient({ baseUrl: 'http://localhost', fetch: () => w.fetch, auth: { kind: 'bearer', token } });
+    await push.registerPushDevice(client, { kind: 'expo', token: 'ExponentPushToken[gone]' });
+    await push.setPushSubscriptions(client, { subscriptions: [{ tracker_id: null, event: 'gap' }] });
+    await me.deleteMe(client);
+    assert.deepEqual([await devices(session_id), await w.all('SELECT * FROM push_subscriptions WHERE user_id = ?', id)], [[], []]);
+  });
+});
+
 // Every compat snapshot (packages/core/src/api/compat/<level>.ts, one per supported client
 // API level), against the routes' real responses: a server change that would break an app
 // still on an older level fails here. A level's new file joins by itself; a route it lists
@@ -1303,6 +1363,10 @@ describe('compat snapshots: the app’s routes, against every supported level', 
     await call('GET /api/me', '/api/me');
     await call('GET /api/me/sessions', '/api/me/sessions');
     await call('POST /api/me/ping', '/api/me/ping');
+    await call('POST /api/me/push-devices', '/api/me/push-devices', { kind: 'expo', token: 'ExponentPushToken[compat]' });
+    await call('PUT /api/me/push-subscriptions', '/api/me/push-subscriptions', { subscriptions: [{ tracker_id: 1, event: 'gap' }, { tracker_id: null, event: 'alerts' }] });
+    await call('GET /api/me/push-subscriptions', '/api/me/push-subscriptions');
+    await call('PUT /api/me/push-subscriptions', '/api/me/push-subscriptions', { subscriptions: [] });
 
     // Live and Flights: a tracked flight with its points, a correction and a manual flight.
     const t = next();

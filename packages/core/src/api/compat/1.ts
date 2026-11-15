@@ -23,6 +23,10 @@
  *   GET    /api/duty-days, GET /api/duty-methods
  *   PUT    /api/duty-days/:pilot, POST /api/duty-days/:pilot/clear
  *   PUT    /api/pilots/:id/default-duty, DELETE /api/pilots/:id/default-duty/:date
+ *
+ * and phase 7's push registration and subscriptions:
+ *
+ *   POST   /api/me/push-devices, GET /api/me/push-subscriptions, PUT /api/me/push-subscriptions
  */
 import * as z from 'zod/mini';
 
@@ -234,6 +238,14 @@ const DutyLogResponse = z.looseObject({
   last_history_id: num,
 });
 
+// ── push ──
+
+const PushDeviceResponse = z.looseObject({ id: num });
+
+const PushSubscriptionsResponse = z.looseObject({
+  subscriptions: z.array(z.looseObject({ tracker_id: nullableNum, event: z.enum(['takeoff', 'landing', 'gap', 'alerts']) })),
+});
+
 const DutyMethodsResponse = z.looseObject({
   methods: z.array(DutyMethodEntry),
   last_history_id: num,
@@ -249,6 +261,9 @@ export const responses = {
   'GET /api/me/sessions': SessionsResponse,
   'POST /api/me/ping': OkResponse,
   'DELETE /api/me': OkResponse,
+  'POST /api/me/push-devices': PushDeviceResponse,
+  'GET /api/me/push-subscriptions': PushSubscriptionsResponse,
+  'PUT /api/me/push-subscriptions': PushSubscriptionsResponse,
   'GET /api/flights/complete': FlightsCompleteResponse,
   'GET /api/flight-corrections': FlightCorrectionsResponse,
   'POST /api/flight-corrections': CorrectionWriteResponse,
