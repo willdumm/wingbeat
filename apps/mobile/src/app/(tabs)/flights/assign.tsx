@@ -21,7 +21,7 @@ export default function AssignScreen() {
   const { client } = useAccounts();
   const { store } = useFlights();
   const tab = useFlightsTab();
-  const flight = tab.ready ? tab.flights.find((f) => f.id === Number(id)) ?? null : null;
+  const flight = tab.ready ? tab.findFlight(Number(id)) : null;
   const [tail, setTail] = useState<string | null | undefined>(undefined);
   const [pilot, setPilot] = useState<number | null | undefined>(undefined);
   const [saving, setSaving] = useState(false);

@@ -84,7 +84,7 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
     });
   }, [dayKey, tz, flights, trackers, cards, live, t]);
   const shownId = flightId ?? chosen;
-  const flight = tab.ready && shownId != null ? tab.flights.find((f) => f.id === shownId) ?? null : null;
+  const flight = tab.ready && shownId != null ? tab.findFlight(shownId) : null;
   const track = useMemo(() => flight && flightTrack(flight, {
     track: (flight.tracker_id != null ? trackerColor(trackers, flight.tracker_id) : null) ?? t['accent'],
     start: t['success-dot'],

@@ -1,7 +1,8 @@
 /**
  * What the Flights tab's screens read: the active trackers' effective flights from the
  * flight store (getAll(), as the dashboard lists them: removed flights left out), the
- * operator's timezone and the bootstrap's roster. ready is false until there's a signed-in
+ * operator's timezone and the bootstrap's roster; findFlight also finds an inactive
+ * tracker's flight (a duty log's can be one). ready is false until there's a signed-in
  * account whose server answered the handshake with its settings.
  */
 import { useMemo } from 'react';
@@ -16,6 +17,8 @@ type Ready = {
   tz: string;
   bootstrap: BootstrapResponse;
   flights: Flight[];
+  /** The flight with this id: among flights, else among every tracker's; null if removed. */
+  findFlight: (id: number) => Flight | null;
   roster: Roster;
   isAdmin: boolean;
 };
@@ -40,6 +43,7 @@ export function useFlightsTab(): Ready | { ready: false } {
     tz: bootstrap.instance.timezone,
     bootstrap,
     flights,
+    findFlight: (id) => flights.find((f) => f.id === id) ?? (store.getAll() as Flight[]).find((f) => f.id === id) ?? null,
     roster: { hasAircraft: bootstrap.aircraft.length > 0, hasPilots: bootstrap.pilots.length > 0 },
     isAdmin: bootstrap.me.role === 'admin',
   };
