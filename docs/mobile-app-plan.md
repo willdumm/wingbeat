@@ -2066,7 +2066,7 @@ layers need no Android counterpart; only the chrome around the map does.
 | Month view, totals and limits | Done (the Duty tab: the pilot from the header's menu, else the user's own `users.pilot_id`) | dense RN rows like the flight list (days newest first as sticky headings, a flight opens its map), a bar per limit, Upcoming in the current month | the same RN views | `duty` (`computeDutyData`), app `duty.ts` |
 | Plan or edit a day (duty or rest, start and end, through, note, use the default) | Done (admins: a day's heading, an Upcoming row or the header's +; `duty/day.tsx`, fields in `duty-day-form.tsx`; a 409 offers Reload) | a `Form` with a segmented `Picker`, `DatePicker`s (`hourAndMinute`), `Toggle`s for Through and Duty Times (on: the default's times) | `SingleChoiceSegmentedButtonRow`, the Material time picker, `Switch` | `duty`, the duty request schemas |
 | Default duty, duty methods history | Phase 11 | `Form` | `ListItem`s | `duty` |
-| PDF export | Phase 6 (hidden WebView; see "Decided 2026-11-13") | `ShareLink` (share sheet) for the file | `Share.share` | the Typst template |
+| PDF export | Done (the header's Export PDF menu: the web's presets, and Custom… for any From and To months, `duty/export.tsx`; a hidden WebView compiles it, see "Decided 2026-11-13") | `ShareLink` (share sheet) for the file | `Share.share` | the Typst template |
 | Role-based first tab | Done (no Settings override yet) | `/` redirects to Duty for a user linked to a pilot, else Live | same | `users.pilot_id`, kept on the stored account from bootstrap's `me` |
 
 **Maintenance** (the web's aircraft info; phase 11)
@@ -2117,8 +2117,8 @@ layers need no Android counterpart; only the chrome around the map does.
   same change, and the app passes the source in from its own duty data. Done 2026-11-14:
   `@wingbeat/core/duty-pdf` (`dutyLogTypstSource`, `dutyLogPdfName`, and the compiler's and
   font's URLs), byte-for-byte the old builder's output. The app's side is
-  `apps/mobile/src/lib/duty-pdf.tsx`, from the Duty tab's Export PDF menu (the web's presets;
-  no Custom range yet). The WebView only
+  `apps/mobile/src/lib/duty-pdf.tsx`, from the Duty tab's Export PDF menu (the web's presets,
+  and Custom… for any months, `duty/export.tsx`). The WebView only
   compiles, and returns the PDF's bytes, which the app writes to a file and shares
   (`expo-file-system`, `expo-sharing`). Those three native modules go into the TestFlight
   binary (step 12), so phase 6 ships as an OTA update.
