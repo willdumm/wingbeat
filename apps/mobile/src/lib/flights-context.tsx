@@ -1,8 +1,10 @@
 /**
  * The active account's flight store (flight-cache.ts) for the screens: its cached copy as
  * soon as it's read, refreshed while the app is in the foreground on the dashboard's
- * adaptive schedule (core's nextLivePoll) and at once on return to the foreground. It
- * refreshes only when the handshake is 'ok'; otherwise the cached copy is all there is.
+ * adaptive schedule (core's nextLivePoll) and at once on return to the foreground, and, as
+ * the dashboard does, again 15 seconds after a new fix whose place name the server was still
+ * looking up. It refreshes only when the handshake is 'ok'; otherwise the cached copy is all
+ * there is.
  */
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
@@ -73,17 +75,31 @@ export function FlightsProvider({ children }: { children: ReactNode }) {
     if (!store || handshake !== 'ok') return;
     const ids = trackers.map((t) => t.id);
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let geocodeTimer: ReturnType<typeof setTimeout> | null = null;
     let lastKnownGarminTime: number | null = null;
     let stopped = false;
 
-    const stop = () => { if (timer) clearTimeout(timer); timer = null; };
+    const stop = () => {
+      if (timer) clearTimeout(timer);
+      if (geocodeTimer) clearTimeout(geocodeTimer);
+      timer = geocodeTimer = null;
+    };
     const poll = async () => {
       stop();
+      const before = trackerLiveData(trackers, store.getRaw, null);
       let result: RefreshResult | null = null;
       try { result = await store.refresh(ids); } catch { /* the next poll tries again */ }
       if (stopped) return;
       if (result) setLastRefresh(result);
       const live = trackerLiveData(trackers, store.getRaw, result);
+      // The place name follows the fix: fetch it once the server has had time to look it up.
+      const newFix = ids.some((id) => live[id]?.garmin_time && live[id]?.garmin_time !== before[id]?.garmin_time);
+      if (result?.geocodePending && newFix) {
+        geocodeTimer = setTimeout(() => {
+          geocodeTimer = null;
+          store.refresh(ids).then((r) => { if (!stopped) setLastRefresh(r); }).catch(() => {});
+        }, 15_000);
+      }
       const next = nextLivePoll(SPEED_THRESHOLD_KMH, Date.now() / 1000, live, lastKnownGarminTime);
       lastKnownGarminTime = next.lastKnownGarminTime;
       if (AppState.currentState === 'active') timer = setTimeout(poll, next.delayMs);

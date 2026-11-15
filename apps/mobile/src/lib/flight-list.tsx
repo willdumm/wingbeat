@@ -45,9 +45,11 @@ export function FlightRowView({ row, onPress }: { row: FlightRow; onPress: () =>
   );
 }
 
-export function FlightList({ days, empty, onSelect, onMapDay, onRefresh }: {
+export function FlightList({ days, empty, notice, onSelect, onMapDay, onRefresh }: {
   days: FlightDay[];
   empty: ReactElement;
+  /** Above the days: when the trackers were last polled. */
+  notice: string | null;
   onSelect: (id: number) => void;
   onMapDay: (dayKey: string) => void;
   onRefresh: () => Promise<void>;
@@ -67,6 +69,9 @@ export function FlightList({ days, empty, onSelect, onMapDay, onRefresh }: {
       contentContainerStyle={days.length ? undefined : { flexGrow: 1 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
       stickySectionHeadersEnabled
+      ListHeaderComponent={notice && days.length ? (
+        <Text style={{ fontSize: 13, color: t['text-muted'], textAlign: 'center', paddingBottom: px(t['space-2']) }}>{notice}</Text>
+      ) : undefined}
       renderSectionHeader={({ section }) => (
         <View style={{
           flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: t['surface-2'],

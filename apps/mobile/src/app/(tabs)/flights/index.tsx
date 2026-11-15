@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Stack, useRouter } from 'expo-router';
 import { emptyFilterState, matchesFlight } from '@wingbeat/core/filters';
-import { unixToTzDateStr } from '@wingbeat/core/time';
+import { relativeTime, unixToTzDateStr } from '@wingbeat/core/time';
 import { useFlightFilter } from '@/lib/flight-filter-context';
 import { EmptyState } from '@/lib/empty-state';
 import { FlightList } from '@/lib/flight-list';
@@ -14,7 +14,7 @@ import { useNow } from '@/lib/use-now';
 export default function FlightsScreen() {
   const router = useRouter();
   const tab = useFlightsTab();
-  const { refresh } = useFlights();
+  const { refresh, lastRefresh } = useFlights();
   const { filter, setFilter, preset, setPreset } = useFlightFilter();
   const now = useNow(60_000);
   const tz = tab.ready ? tab.tz : null;
@@ -38,6 +38,8 @@ export default function FlightsScreen() {
       </Stack.Toolbar>
       <FlightList
         days={days}
+        // The dashboard's "updated" time: when the server last polled the trackers.
+        notice={lastRefresh?.lastPolled ? 'Updated ' + relativeTime(now, lastRefresh.lastPolled) : null}
         onSelect={(id) => router.push({ pathname: '/flights/[id]', params: { id: String(id) } })}
         onMapDay={(day) => router.push({ pathname: '/flights/day', params: { day } })}
         onRefresh={refresh}
