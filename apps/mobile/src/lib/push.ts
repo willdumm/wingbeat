@@ -9,9 +9,11 @@ import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import type { ApiClient } from '@wingbeat/core/api/client';
-import { registerPushDevice } from '@wingbeat/core/api/push';
+import { registerPushDevice, type TrackerPushEvent } from '@wingbeat/core/api/push';
 import { useAccounts } from './accounts-context';
+import { parseTimeSensitive, TIME_SENSITIVE_KEY } from './prefs';
 import { pushRoute } from './push-route';
+import { readStored } from './stored-state';
 
 /** Shows a push that arrives while the app is open as it would otherwise. */
 export function initPush() {
@@ -28,11 +30,17 @@ export async function askPushPermission(): Promise<'granted' | 'denied'> {
   return (await Notifications.requestPermissionsAsync()).granted ? 'granted' : 'denied';
 }
 
-/** Registers this phone's Expo push token with the account's session. */
-export async function registerThisDevice(client: ApiClient): Promise<void> {
+/**
+ * Registers this phone's Expo push token, and its Time Sensitive events (by default the stored
+ * ones), with the account's session.
+ */
+export async function registerThisDevice(
+  client: ApiClient,
+  timeSensitive: TrackerPushEvent[] = readStored(TIME_SENSITIVE_KEY, parseTimeSensitive),
+): Promise<void> {
   const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
   const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
-  await registerPushDevice(client, { kind: 'expo', token });
+  await registerPushDevice(client, { kind: 'expo', token, time_sensitive: timeSensitive });
 }
 
 /**

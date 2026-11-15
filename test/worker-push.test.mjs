@@ -98,6 +98,27 @@ describe('app push through Expo', () => {
     assert.equal(expo.sends.length, sends + 1);
     assert.match((await w.first('SELECT last_error FROM push_devices WHERE id = 1')).last_error, /unexpected response/);
   });
+
+  test('each device chooses its Time Sensitive events; one that hasn’t said gets gap', async () => {
+    const register = (body) => w.request('POST', '/api/me/push-devices', { kind: 'expo', token: 'ExponentPushToken[admin]', ...body });
+    assert.equal((await register({ time_sensitive: ['takeoff', 'takeoff'] })).status, 200);
+    // Registering again without it (an older app) keeps the choice.
+    assert.equal((await register({})).status, 200);
+    assert.equal((await register({ time_sensitive: ['alerts'] })).status, 400);
+    assert.deepEqual(await w.all("SELECT time_sensitive FROM push_devices WHERE endpoint = 'ExponentPushToken[admin]'"),
+      [{ time_sensitive: '["takeoff"]' }]);
+    await w.run("INSERT INTO push_devices (session_id, kind, endpoint) VALUES (3, 'expo', 'ExponentPushToken[admin-2]')");
+
+    await silentTracker(w, 3);
+    expo.tickets = (messages) => messages.map((m) => ({ status: 'ok', id: 'ticket-' + m.to + '-' + Math.random() }));
+    const sends = expo.sends.length;
+    await w.scheduled();
+    const messages = expo.sends.slice(sends).flatMap((s) => s.messages).filter((m) => m.data.tracker_id === 3);
+    assert.deepEqual(messages.map((m) => [m.to, m.interruptionLevel ?? null]).sort(), [
+      ['ExponentPushToken[admin-2]', 'time-sensitive'],
+      ['ExponentPushToken[admin]', null],
+    ]);
+  });
 });
 
 describe('without EXPO_ACCESS_TOKEN', () => {

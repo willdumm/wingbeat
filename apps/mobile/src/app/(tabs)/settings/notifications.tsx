@@ -1,21 +1,27 @@
 /**
  * Settings → Notifications: the active account's push subscriptions. Turning the first one on
  * asks for permission and registers this phone (push.ts); each change saves the whole set.
+ * The Time Sensitive events are this phone's: a change is stored here and registered again
+ * with every signed-in account.
  */
 import { useEffect, useMemo, useState } from 'react';
+import * as Notifications from 'expo-notifications';
 import { Alert, Linking } from 'react-native';
 import { ApiHttpError, apiErrorMessage } from '@wingbeat/core/api/client';
-import { getPushSubscriptions, setPushSubscriptions } from '@wingbeat/core/api/push';
+import { getPushSubscriptions, setPushSubscriptions, type TrackerPushEvent } from '@wingbeat/core/api/push';
 import { useAccounts } from '@/lib/accounts-context';
 import { useBootstrap } from '@/lib/bootstrap-context';
 import { EmptyState } from '@/lib/empty-state';
 import { NotificationSettings } from '@/lib/notification-settings';
 import { Placeholder } from '@/lib/placeholder';
+import { parseTimeSensitive, TIME_SENSITIVE_KEY } from '@/lib/prefs';
 import { askPushPermission, registerThisDevice } from '@/lib/push';
 import { setSubscribed, type Subscription } from '@/lib/push-route';
+import { useStoredState } from '@/lib/stored-state';
 
 export default function NotificationsScreen() {
-  const { client } = useAccounts();
+  const { client, signedInClients } = useAccounts();
+  const [timeSensitive, setTimeSensitive] = useStoredState(TIME_SENSITIVE_KEY, parseTimeSensitive);
   const { bootstrap } = useBootstrap();
   const [subs, setSubs] = useState<Subscription[] | null>(null);
   const [unsupported, setUnsupported] = useState(false);
@@ -68,5 +74,23 @@ export default function NotificationsScreen() {
     }
   };
 
-  return <NotificationSettings trackers={trackers} subscriptions={subs} busy={busy} onChange={change} />;
+  const changeTimeSensitive = async (event: TrackerPushEvent, on: boolean) => {
+    const next = parseTimeSensitive(on ? [...timeSensitive, event] : timeSensitive.filter((e) => e !== event));
+    setTimeSensitive(next);
+    // Without permission there's no registration to update; the first one sends it.
+    if (!(await Notifications.getPermissionsAsync()).granted) return;
+    setBusy(true);
+    try {
+      await Promise.all((await signedInClients()).map((c) => registerThisDevice(c, next)));
+    } catch (err) {
+      Alert.alert('Couldn’t save notifications', apiErrorMessage(err, err instanceof Error ? err.message : String(err)));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <NotificationSettings trackers={trackers} subscriptions={subs} timeSensitive={timeSensitive} busy={busy}
+      onChange={change} onTimeSensitiveChange={changeTimeSensitive} />
+  );
 }

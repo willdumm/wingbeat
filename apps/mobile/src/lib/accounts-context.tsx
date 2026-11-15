@@ -28,6 +28,8 @@ interface AccountsValue extends AccountsState {
   signOut(id: string): Promise<void>;
   /** Stores the account's user as its server describes it, when that differs. */
   syncUser(id: string, user: AccountUser): void;
+  /** A client for each account that's signed in, the active one included. */
+  signedInClients(): Promise<ApiClient[]>;
 }
 
 const store = createAccountStore(secureKeyValue());
@@ -96,6 +98,13 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
     syncUser: (id, user) => {
       const account = state.accounts.find((a) => a.id === id);
       if (account && account.user.id === user.id && accountUserChanged(account.user, user)) store.updateUser(id, user).then(setState);
+    },
+    signedInClients: async () => {
+      const clients = await Promise.all(state.accounts.filter((a) => !a.signedOut).map(async (a) => {
+        const token = await store.token(a.id);
+        return token ? accountClient(a.host, token, () => { store.markSignedOut(a.id).then(setState); }) : null;
+      }));
+      return clients.filter((c) => c !== null);
     },
   }), [state, loaded, active, client, addAccount, signOut]);
 

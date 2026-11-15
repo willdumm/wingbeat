@@ -1011,8 +1011,14 @@ access token. Without it, anyone holding a device's push token can send to it.
 
 - **Android channels** per event type (Takeoff/Landing, Signal gap), so users control sound
   and importance in system settings.
-- **iOS Time Sensitive** interruption level for signal-gap alerts (entitlement), so they get
-  through Focus modes. Takeoff/landing stay at the normal level.
+- **iOS Time Sensitive** interruption level (entitlement, build 6), so they get through Focus
+  modes. Which tracker events (takeoff, landing, gap) are Time Sensitive is the phone's
+  choice, in Settings → Notifications ("Time Sensitive"), gap alone by default (decided
+  2026-11-15). The sender sets the level, so the Worker has to know: the app keeps the choice
+  locally and sends it as `time_sensitive` with each account's push registration
+  (`POST /api/me/push-devices`, stored on `push_devices`, migration 0007; left out, the
+  stored choice stays, and a device that never said gets gap). A change registers again with
+  every signed-in account. Alerts are never Time Sensitive.
 - **Notification categories with actions**, e.g. on a gap alert "Open MapShare" and "View on
   map".
 - Tapping a notification deep-links to the tracker or flight (`wingbeat://flight/123`).

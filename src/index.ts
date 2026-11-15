@@ -736,12 +736,15 @@ app.post('/api/me/ping', async (c) => {
 // one token (a reinstall's new one replaces it).
 app.post('/api/me/push-devices', valid('json', PushDeviceRequest), async (c) => {
   const u = c.get('user');
-  const { kind, token } = c.req.valid('json');
+  const { kind, token, time_sensitive } = c.req.valid('json');
   const db = c.var.db;
+  // Left out (an app from before the setting): the stored choice stays.
+  const timeSensitive = time_sensitive ? JSON.stringify([...new Set(time_sensitive)]) : null;
   await db.batch([
     db.prepare('DELETE FROM push_devices WHERE session_id = ? AND endpoint != ?').bind(u.sessionId, token),
-    db.prepare('INSERT INTO push_devices (session_id, kind, endpoint) VALUES (?, ?, ?) ON CONFLICT (session_id, endpoint) DO NOTHING')
-      .bind(u.sessionId, kind, token),
+    db.prepare(`INSERT INTO push_devices (session_id, kind, endpoint, time_sensitive) VALUES (?, ?, ?, ?)
+                ON CONFLICT (session_id, endpoint) DO UPDATE SET time_sensitive = COALESCE(excluded.time_sensitive, time_sensitive)`)
+      .bind(u.sessionId, kind, token, timeSensitive),
   ]);
   const row = await db.prepare('SELECT id FROM push_devices WHERE session_id = ? AND endpoint = ?')
     .bind(u.sessionId, token).first<{ id: number }>();

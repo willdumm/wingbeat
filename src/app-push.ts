@@ -1,3 +1,4 @@
+import { DEFAULT_TIME_SENSITIVE } from '@wingbeat/core/api/push-requests';
 import { Tenant } from './types';
 
 // App push through Expo's push service (docs/mobile-app-plan.md, "Step 2: app push for hosted
@@ -32,19 +33,28 @@ function expoHeaders(token: string): HeadersInit {
   return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
 }
 
+export interface PushDevice { id: number; endpoint: string; time_sensitive: string | null }
+
 /**
  * The expo devices whose user has a subscription matching `event` (a subscription key:
  * takeoff/landing/gap/alerts) for `trackerId`, or for every tracker (tracker_id NULL).
  * `trackerId` null matches only every-tracker subscriptions (the alerts feed).
  */
-export async function subscribedDevices(tenant: Tenant, event: string, trackerId: number | null): Promise<{ id: number; endpoint: string }[]> {
+export async function subscribedDevices(tenant: Tenant, event: string, trackerId: number | null): Promise<PushDevice[]> {
   const { results } = await tenant.db.prepare(
-    `SELECT DISTINCT d.id, d.endpoint FROM push_devices d
+    `SELECT DISTINCT d.id, d.endpoint, d.time_sensitive FROM push_devices d
      JOIN sessions s ON s.id = d.session_id
      JOIN push_subscriptions ps ON ps.user_id = s.user_id
      WHERE d.kind = 'expo' AND ps.event = ? AND (ps.tracker_id IS NULL OR ps.tracker_id = ?)`
-  ).bind(event, trackerId).all<{ id: number; endpoint: string }>();
+  ).bind(event, trackerId).all<PushDevice>();
   return results;
+}
+
+/** Whether the device gets `event` (a subscription key) as a Time Sensitive push. */
+export function wantsTimeSensitive(device: PushDevice, event: string): boolean {
+  let events: unknown = DEFAULT_TIME_SENSITIVE;
+  try { if (device.time_sensitive) events = JSON.parse(device.time_sensitive); } catch { /* the default */ }
+  return Array.isArray(events) && events.includes(event);
 }
 
 /**

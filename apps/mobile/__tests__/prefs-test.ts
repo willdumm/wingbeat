@@ -1,5 +1,5 @@
 import { emptyFilterState } from '@wingbeat/core/filters';
-import { accountPrefKey, parseElevationPref, parseFlightFilter, parseMapChoice, parseTheme, staleAccountPrefKeys, THEME_KEY } from '@/lib/prefs';
+import { accountPrefKey, parseElevationPref, parseFlightFilter, parseMapChoice, parseTheme, parseTimeSensitive, staleAccountPrefKeys, THEME_KEY } from '@/lib/prefs';
 
 const A = 'a.wingbeat.dummthings.dev';
 const B = 'b.wingbeat.dummthings.dev';
@@ -41,6 +41,12 @@ describe('parse functions', () => {
     expect(parseFlightFilter({ preset: '7d', filter: { pilotIds: [2] } }))
       .toEqual({ filter: { ...emptyFilterState(), pilotIds: [2] }, preset: '7d' });
     expect(parseFlightFilter({ preset: '365d' }).preset).toBe('all');
+  });
+
+  it('time sensitive: gap until chosen; known events once, in order', () => {
+    expect(parseTimeSensitive(undefined)).toEqual(['gap']);
+    expect(parseTimeSensitive([])).toEqual([]);
+    expect(parseTimeSensitive(['gap', 'alerts', 'takeoff', 'takeoff'])).toEqual(['takeoff', 'gap']);
   });
 });
 

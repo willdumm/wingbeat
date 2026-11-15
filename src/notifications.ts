@@ -2,7 +2,7 @@ import { Tenant } from './types';
 import { checkPublicHttpsUrl } from './safe-fetch';
 import { loadSettings } from './settings';
 import { toKnots, toFeet, formatLocalDateTime } from './shared/format';
-import { sendAppPushes, subscribedDevices } from './app-push';
+import { sendAppPushes, subscribedDevices, wantsTimeSensitive } from './app-push';
 
 interface BaseNotificationEvent {
   tracker_id: number;
@@ -146,17 +146,17 @@ async function sendEventPushes(tenant: Tenant, events: NotificationEvent[], time
   for (const event of events) {
     const key = subscriptionKey(event.type);
     const devices = await subscribedDevices(tenant, key, event.tracker_id);
-    if (devices.length === 0) continue;
-    pushes.push({
-      devices,
-      push: {
-        title: eventTitle(event),
-        body: eventMessage(event, timezone, { links: false }),
-        // host: which of the app's accounts it's for.
-        data: { type: event.type, tracker_id: event.tracker_id, host: tenant.host },
-        timeSensitive: key === 'gap',
-      },
-    });
+    const push = {
+      title: eventTitle(event),
+      body: eventMessage(event, timezone, { links: false }),
+      // host: which of the app's accounts it's for.
+      data: { type: event.type, tracker_id: event.tracker_id, host: tenant.host },
+    };
+    // Each device chooses which events are Time Sensitive (POST /api/me/push-devices).
+    for (const timeSensitive of [true, false]) {
+      const these = devices.filter((d) => wantsTimeSensitive(d, key) === timeSensitive);
+      if (these.length > 0) pushes.push({ devices: these, push: { ...push, timeSensitive } });
+    }
   }
   await sendAppPushes(tenant, pushes);
 }

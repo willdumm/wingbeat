@@ -1,11 +1,13 @@
 /**
- * What the app keeps between launches besides the accounts and the flights: the theme, and
+ * What the app keeps between launches besides the accounts and the flights: the theme, which
+ * tracker events this phone gets as Time Sensitive notifications, and
  * for each account the map's basemap and overlays, the Flights tab's filter, the Duty tab's
  * pilot and the last copy of each pilot's duty records it fetched. Each is a
  * JSON value in expo-sqlite/kv-store (stored-state.ts) under a key from here, and its parse
  * function turns whatever is stored (nothing, or an older version's value) into a valid one.
  */
 import { DutyLogResponse } from '@wingbeat/core/api/duty';
+import { DEFAULT_TIME_SENSITIVE, TRACKER_PUSH_EVENTS, type TrackerPushEvent } from '@wingbeat/core/api/push';
 import { normalizeFilterState, type FilterState } from '@wingbeat/core/filters';
 import { DATE_PRESETS, type DatePresetId } from './flights';
 
@@ -35,6 +37,16 @@ export const THEME_CHOICES: { value: ThemeChoice; label: string }[] = [
 ];
 
 export const parseTheme = (stored: unknown): ThemeChoice => (stored === 'light' || stored === 'dark' ? stored : 'system');
+
+// ── Notifications ──
+
+/** This phone's, for every account: sent with each account's push registration (push.ts). */
+export const TIME_SENSITIVE_KEY = 'prefs.time-sensitive';
+
+export function parseTimeSensitive(stored: unknown): TrackerPushEvent[] {
+  if (!Array.isArray(stored)) return DEFAULT_TIME_SENSITIVE;
+  return TRACKER_PUSH_EVENTS.filter((e) => stored.includes(e));
+}
 
 // ── Map ──
 
