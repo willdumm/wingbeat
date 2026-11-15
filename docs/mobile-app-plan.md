@@ -1057,6 +1057,9 @@ a limit, so an alert appearing is the advance warning.
   bootstrap, as the dashboard computes alerts, and through the cron, and checks the pushes
   are those alerts; then once-per-alert, an alert coming back, the five-minute check and the
   in-flight wait.
+- On staging (2026-11-15, the cron every minute and `EXPO_ACCESS_TOKEN` set): a landing
+  push reached the user's phone, and its receipt came back ok. Alert and gap pushes haven't
+  been seen on a device yet: the feed had no alerts when the token was set.
 
 ### Step 3, later: the push relay for self-hosted instances (phase 9)
 
@@ -2003,6 +2006,12 @@ update, which arrived with its stack resolved by the update's uploaded maps (AGE
 Connect's EU DSA trader status is unset; it matters only for an App Store release. The App Store
 Connect record, which EAS named "Wingbeat (0ea…)" ("Wingbeat" is taken, likely an unreleased
 reservation), is renamed "Wingbeat Flight Tracking" (2026-11-13). The name under the icon stays `app.config.ts`'s "Wingbeat".
+Build 6 (2026-11-15, on TestFlight): the Wingbeat logo icon and the Time Sensitive
+notifications entitlement for gap alerts. Build 5 failed signing: a new entitlement needs
+EAS to sync the App ID's capabilities and regenerate the profile, which only an interactive
+build with the user's Apple sign-in does. `eas.json`'s submit profiles now carry `ascAppId`,
+so `eas submit` no longer needs the sign-in. Updates publish from the tree as is (its
+fingerprint is build 6's).
 
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with

@@ -29,12 +29,14 @@
   "submit": {
     "production": {
       "ios": {
-        "appleTeamId": "W4MAPA8GZ7"
+        "appleTeamId": "W4MAPA8GZ7",
+        "ascAppId": "6834605241"
       }
     },
     "testflight": {
       "ios": {
-        "appleTeamId": "W4MAPA8GZ7"
+        "appleTeamId": "W4MAPA8GZ7",
+        "ascAppId": "6834605241"
       }
     }
   }
