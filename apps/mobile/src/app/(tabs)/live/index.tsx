@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWindowDimensions, View } from 'react-native';
-import { useIsFocused } from 'expo-router';
+import { useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
 import { locationDetails, trackerLiveData } from '@wingbeat/core/live';
 import { useAccounts } from '@/lib/accounts-context';
 import { origin } from '@/lib/api';
@@ -22,7 +22,8 @@ import { useNow } from '@/lib/use-now';
  * dot where it took off (the dashboard's default view), fitted each time the tab comes up, with the status cards along
  * the top; tapping one flies to it and opens its location details, a tap on the map near a
  * drawn track opens that track point's, and a long press anywhere the pressed spot's. A day's
- * flights at once (the dashboard's "Map all") are on the Flights tab's day headers.
+ * flights at once (the dashboard's "Map all") are on the Flights tab's day headers. A
+ * `tracker` param (a notification tap, push.ts) selects that tracker as its card would.
  */
 export default function LiveScreen() {
   const t = useTokens();
@@ -39,6 +40,8 @@ export default function LiveScreen() {
   useEffect(() => { if (focused) setVisits((v) => v + 1); }, [focused]);
   const [selected, setSelected] = useState<number | null>(null);
   const [picked, setPicked] = useState<PickedSpot | null>(null);
+  const router = useRouter();
+  const { tracker: trackerParam } = useLocalSearchParams<{ tracker?: string }>();
 
   const trackers = useMemo(() => bootstrap?.trackers.filter((tr) => tr.active && !tr.deleted) ?? [], [bootstrap]);
   const live = useMemo(
@@ -62,6 +65,20 @@ export default function LiveScreen() {
   const flights = tab.ready ? tab.flights : null;
   // What a tap on the map snaps to: the tracks drawn.
   const picks = useMemo(() => liveTrackPicks(cards, live, store?.getRaw ?? (() => [])), [cards, live, store, generation]);
+
+  const select = (c: (typeof cards)[number]) => {
+    // Centered above the location sheet, which opens at half the screen.
+    if (c.position) map.current?.flyTo(c.position, { bottom: sheetDetentHeight('medium', screen) });
+    setPicked(null);
+    setSelected(c.trackerId);
+  };
+  // Once its card is there; the param is cleared so a later visit doesn't select it again.
+  const paramCard = trackerParam ? cards.find((c) => String(c.trackerId) === trackerParam) : undefined;
+  useEffect(() => {
+    if (!paramCard) return;
+    router.setParams({ tracker: undefined });
+    select(paramCard);
+  }, [paramCard?.trackerId]);
 
   // The map waits for the bootstrap, which has the basemaps and the default view.
   if (!loaded || !active || active.signedOut || handshake === 'server-too-old' || !bootstrap) {
@@ -102,12 +119,7 @@ export default function LiveScreen() {
         }}
         onLongPress={(lngLat) => { if (tz) pick(spotDetails(tz, lngLat)); }}
         topBar={cards.length > 0 && (
-          <StatusCards cards={cards} onSelect={(c) => {
-            // Centered above the location sheet, which opens at half the screen.
-            if (c.position) map.current?.flyTo(c.position, { bottom: sheetDetentHeight('medium', screen) });
-            setPicked(null);
-            setSelected(c.trackerId);
-          }} />
+          <StatusCards cards={cards} onSelect={select} />
         )}
       />
       {/* A status card's tracker, or a tap on the map (the web's point picker): one sheet, so one replaces the other in place. */}

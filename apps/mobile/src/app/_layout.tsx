@@ -3,12 +3,14 @@ import { Stack } from 'expo-router';
 import { AccountsProvider, useAccounts } from '@/lib/accounts-context';
 import { BootstrapProvider, useBootstrap } from '@/lib/bootstrap-context';
 import { FlightsProvider } from '@/lib/flights-context';
+import { initPush, usePush } from '@/lib/push';
 import { initSentry, setInstanceTags, withSentry } from '@/lib/sentry';
 import { applyStoredTheme } from '@/lib/theme';
 import { ClientUpdateGate, useBackgroundUpdates } from '@/lib/updates';
 
 initSentry();
 applyStoredTheme();
+initPush();
 
 /** Keeps Sentry's instance tags on the active account's. */
 function SentryTags() {
@@ -29,6 +31,12 @@ function AccountUserSync() {
   return null;
 }
 
+/** Registers this phone for push and follows notification taps. */
+function Push() {
+  usePush();
+  return null;
+}
+
 function RootLayout() {
   useBackgroundUpdates();
   return (
@@ -36,6 +44,7 @@ function RootLayout() {
       <BootstrapProvider>
         <SentryTags />
         <AccountUserSync />
+        <Push />
         <FlightsProvider>
           <ClientUpdateGate>
             <Stack screenOptions={{ headerShown: false }}>

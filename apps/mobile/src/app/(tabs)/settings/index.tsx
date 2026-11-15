@@ -1,6 +1,6 @@
 /**
- * Settings: the accounts (switch, add, sign out), deleting the active account, clearing its
- * flight cache, the theme and a link to the docs site. The instance's own settings are on the web until the app has them natively
+ * Settings: the accounts (switch, add, sign out), the active account's notifications, deleting
+ * it, clearing its flight cache, the theme and a link to the docs site. The instance's own settings are on the web until the app has them natively
  * (docs/mobile-app-plan.md, phase 11); the app doesn't link there. Deleting the account is App Review's requirement for an app
  * where an account can be created (docs/mobile-app-plan.md, "Account deletion").
  */
@@ -110,6 +110,9 @@ export default function SettingsScreen() {
 
         {active && (
           <Section title={active.host}>
+            {!active.signedOut && (
+              <Button label="Notifications" systemImage="bell" onPress={() => router.push('/settings/notifications')} />
+            )}
             {!active.signedOut && (
               <Button role="destructive" label="Clear Flight Cache" modifiers={[disabled(!store)]} onPress={confirmClearCache} />
             )}

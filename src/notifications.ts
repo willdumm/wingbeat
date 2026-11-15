@@ -152,7 +152,8 @@ async function sendEventPushes(tenant: Tenant, events: NotificationEvent[], time
       push: {
         title: eventTitle(event),
         body: eventMessage(event, timezone, { links: false }),
-        data: { type: event.type, tracker_id: event.tracker_id },
+        // host: which of the app's accounts it's for.
+        data: { type: event.type, tracker_id: event.tracker_id, host: tenant.host },
         timeSensitive: key === 'gap',
       },
     });

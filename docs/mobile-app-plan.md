@@ -1001,7 +1001,7 @@ access token. Without it, anyone holding a device's push token can send to it.
 - **Done 2026-11-15 (phase 7, step 2):** `src/app-push.ts`. `dispatchNotifications()` runs
   the webhooks and the app push side by side (`Promise.allSettled`), so neither can hold up
   the other. A push's body is `eventMessage` without the links; `data` is
-  `{ type, tracker_id }` (the events carry no flight id), and the gap types are Time
+  `{ type, tracker_id, host }` (the events carry no flight id; `host` picks the account), and the gap types are Time
   Sensitive. Tickets go to `push_tickets`; each cron tick checks those over 15 minutes old
   and drops ones with no receipt after a day. The token reaches the code as
   `Tenant.expoAccessToken`. Tests: `test/worker-push.test.mjs` (Expo mocked through
