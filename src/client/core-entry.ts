@@ -110,6 +110,7 @@ Object.assign(globalThis, {
   dutyDefaultHint: duty.dutyDefaultHint,
   dutyRestHint: (record: Parameters<typeof duty.dutyRestHint>[1]) => duty.dutyRestHint(tz(), record),
   dutyExportPresets: duty.dutyExportPresets,
+  dutyExportRangeError: duty.dutyExportRangeError,
   dutyExportEarliest: (flights: DutyInputFlight[], pilotId: number, shown: number, cur: number) =>
     duty.dutyExportEarliest(tz(), flights, pilotId, shown, cur),
   // ── duty-pdf: the duty log PDF's Typst source and file name ──

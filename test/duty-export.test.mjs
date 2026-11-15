@@ -1,13 +1,13 @@
-// The Export PDF form's period presets (dutyExportPresets, @wingbeat/core/duty) and the
-// PDF's Typst source (dutyLogTypstSource, @wingbeat/core/duty-pdf): warnings sit inside
-// their day's block, between day rules only.
+// The Export PDF form's period presets and range check (dutyExportPresets,
+// dutyExportRangeError, @wingbeat/core/duty) and the PDF's Typst source (dutyLogTypstSource,
+// @wingbeat/core/duty-pdf): warnings sit inside their day's block, between day rules only.
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { importCore, TZ } from './core.mjs';
 import { fixtures } from './duty-fixtures.mjs';
 
-const { dutyExportPresets, dutyExportEarliest } = await importCore('duty');
+const { dutyExportPresets, dutyExportEarliest, dutyExportRangeError } = await importCore('duty');
 const { dutyLogTypstSource, dutyLogPdfName } = await importCore('duty-pdf');
 const { flight, duty, dutyMonth, nowSecs } = fixtures({ now: '2026-10-16 12:00' });
 const typstSource = input => dutyLogTypstSource(TZ, nowSecs, input, 'Test');
@@ -43,6 +43,17 @@ describe('export presets', () => {
     assert.deepEqual(r.quarter, [early, idx(2026, 3)]);
     assert.equal('prevQuarter' in r, false);
     assert.deepEqual(ranges(idx(2026, 8), cur, idx(2026, 8)).prevQuarter, undefined);
+  });
+});
+
+describe('a custom range', () => {
+  const cur = idx(2026, 10);
+
+  test('From after To, or more than 24 months, is refused', () => {
+    assert.equal(dutyExportRangeError(cur, cur), null);
+    assert.equal(dutyExportRangeError(cur - 23, cur), null);
+    assert.equal(dutyExportRangeError(cur, cur - 1), 'From has to be before To.');
+    assert.equal(dutyExportRangeError(cur - 24, cur), 'Export at most 24 months at a time.');
   });
 });
 

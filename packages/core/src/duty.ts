@@ -819,6 +819,16 @@ export function dutyExportPresets(shown: number, cur: number, earliest: number):
   return out;
 }
 
+/** An export covers at most this many months. */
+export const MAX_DUTY_EXPORT_MONTHS = 24;
+
+/** What's wrong with an export of the months from..to (month indexes), or null. */
+export function dutyExportRangeError(from: number, to: number): string | null {
+  if (from > to) return 'From has to be before To.';
+  if (to - from + 1 > MAX_DUTY_EXPORT_MONTHS) return 'Export at most ' + MAX_DUTY_EXPORT_MONTHS + ' months at a time.';
+  return null;
+}
+
 /**
  * "October 2026", "July – September 2026" or "November 2025 – October 2026" for the
  * months (computeDutyData results, in order) an export covers.

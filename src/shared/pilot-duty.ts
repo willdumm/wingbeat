@@ -784,9 +784,6 @@ export function pilotDutyScript(): string {
       ).join('') + '</ul>';
     }
 
-    // An export covers at most this many months.
-    const _DUTY_MAX_EXPORT_MONTHS = 24;
-
     // Export form: the months to export, from a preset (dutyExportPresets) or picked
     // From/To. One PDF, a section per month and a summary page per quarter
     // (dutyLogTypstSource, @wingbeat/core/duty-pdf).
@@ -839,11 +836,8 @@ export function pilotDutyScript(): string {
       modal.querySelector('[data-act="cancel"]').addEventListener('click', close);
       modal.querySelector('[data-act="export"]').addEventListener('click', () => {
         const from = Number(fromEl.value), to = Number(toEl.value);
-        if (from > to) { errorEl.textContent = 'From has to be before To.'; return; }
-        if (to - from + 1 > _DUTY_MAX_EXPORT_MONTHS) {
-          errorEl.textContent = 'Export at most ' + _DUTY_MAX_EXPORT_MONTHS + ' months at a time.';
-          return;
-        }
+        const error = dutyExportRangeError(from, to);
+        if (error) { errorEl.textContent = error; return; }
         const months = [];
         for (let i = from; i <= to; i++) {
           const [y, m] = ym(i);
