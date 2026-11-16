@@ -1,8 +1,8 @@
 /**
  * The day form's fields (the web's "Duty or rest", an admin's edit of a pilot's duty log):
  * the date and an optional Through date, duty or rest day, the duty times (a switch, since
- * a day may record none and use the default), the note, and Clear when the days have
- * records. A SwiftUI `Form`: compact `DatePicker`s, a segmented `Picker`, a `Toggle`.
+ * a day may record none and use the default), the note, Add Flight (a manual flight on the
+ * date), and Clear when the days have records. A SwiftUI `Form`: compact `DatePicker`s, a segmented `Picker`, a `Toggle`.
  * Android: the Material date and time pickers, `SingleChoiceSegmentedButtonRow`, `Switch`
  * (docs/mobile-design-principles.md, 2).
  *
@@ -22,7 +22,7 @@ function NoteField({ initial, onChange }: { initial: string; onChange: (note: st
   return <TextField text={note} placeholder="Note" axis="vertical" maxLength={MAX_DUTY_NOTE_LENGTH} onTextChange={onChange} />;
 }
 
-export function DutyDayFields({ form, fill, onChange, onFrom, onTimes, hint, onClear }: {
+export function DutyDayFields({ form, fill, onChange, onFrom, onTimes, hint, onAddFlight, onClear }: {
   form: DutyDayForm;
   /** Changed when the caller refills the form. */
   fill: number;
@@ -34,6 +34,8 @@ export function DutyDayFields({ form, fill, onChange, onFrom, onTimes, hint, onC
   onTimes: (on: boolean) => void;
   /** Under the day type: the rest designation, or the pilot's default duty. */
   hint: string | null;
+  /** Opens the flight form on the date. */
+  onAddFlight: () => void;
   /** null when none of the days has a record. */
   onClear: (() => void) | null;
 }) {
@@ -65,6 +67,9 @@ export function DutyDayFields({ form, fill, onChange, onFrom, onTimes, hint, onC
         </Section>
         <Section title="Note">
           <NoteField key={fill} initial={form.note} onChange={(note) => onChange({ note })} />
+        </Section>
+        <Section>
+          <Button label="Add Flight on This Day" onPress={onAddFlight} />
         </Section>
         {onClear && (
           <Section>
