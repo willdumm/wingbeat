@@ -1997,7 +1997,11 @@ The app sends both in an `X-Wingbeat-App` header on every request, as
 - **Privacy policy** on dummthings.dev (required by both stores before the first
   submission). It covers what the instance stores, what the relay stores, what Sentry
   receives, the presence data rules (Decision 5), account deletion, and users' emails
-  (once "Email sign-in, email invites and finding your instance" ships).
+  (once "Email sign-in, email invites and finding your instance" ships). Written at step 11
+  (2026-11-16): `site/content/docs/privacy.md`, served at
+  `https://wingbeat.dummthings.dev/docs/privacy/` (the store listings' privacy URL) and linked
+  from the home page's footer. Its location section describes passive matching as coming; update
+  it when presence ships in phase 8, and add emails when email sign-in ships.
 - **App Store privacy labels** and the **Play Data Safety form**: precise location (presence
   features only, opt-in), identifiers (push token), crash data (Sentry), and nothing used for
   tracking. Update both when presence ships in phase 8.
@@ -2239,8 +2243,11 @@ fingerprint is build 6's).
 
 Step 11 (2026-11-16, `demo-tenant`): the demo feed, the demo sign-in and the app's "Try the
 Demo" (JavaScript only, so it ships as an update), the seed script, and tests
-(`test/demo-feed.test.mjs`, `test/worker-demo.test.mjs`). Still to do: the staging and
-production `demo` customers and the privacy policy. Points on the demo tenant grow by about
+(`test/demo-feed.test.mjs`, `test/worker-demo.test.mjs`), and the privacy policy
+(`site/content/docs/privacy.md`). The staging `demo` customer runs this branch at
+`demo.staging.wingbeat.dummthings.dev` (hosting repo `customers/demo.json`, seeded and its
+history imported 2026-11-16). Still to do: the production `demo` customer (ask the user
+first). Every demo sign-in makes a session, and nothing prunes them. Points on the demo tenant grow by about
 2,000 a day with nothing pruning them, and the relief pilots have no default duty, so their
 days show "No duty times recorded"; both are accepted for now.
 
