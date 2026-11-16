@@ -6,7 +6,7 @@ import { useAccounts } from '@/lib/accounts-context';
 import { origin } from '@/lib/api';
 import { useBootstrap } from '@/lib/bootstrap-context';
 import { useFlights } from '@/lib/flights-context';
-import { groundTrailFeatures, initialView, latestTracks, liveBounds, liveTrackPicks, pickDetails, positionFeatures, spotDetails, statusCards, trackStarts, type PickedSpot } from '@/lib/live';
+import { groundTrailFeatures, initialView, latestTracks, liveBounds, liveTrackPicks, pickDetails, pickedFeature, positionFeatures, spotDetails, statusCards, trackStarts, type PickedSpot } from '@/lib/live';
 import { LiveMap, type LiveMapRef } from '@/lib/live-map';
 import { LocationSheet } from '@/lib/location-sheet';
 import { sheetDetentHeight } from '@/lib/map-sheet';
@@ -96,8 +96,7 @@ export default function LiveScreen() {
     setPicked(spot);
     if (spot) map.current?.reveal(spot.lngLat, { bottom: sheetDetentHeight('medium', screen) });
   };
-  const pickedDot: GeoJSON.Feature<GeoJSON.Point> | null = picked
-    && { type: 'Feature', id: 'picked', geometry: { type: 'Point', coordinates: picked.lngLat }, properties: { color: t['accent'] } };
+  const pickedDot = picked && pickedFeature(picked, t['accent']);
 
   return (
     <View style={{ flex: 1, backgroundColor: t['bg-base'] }}>

@@ -1,7 +1,8 @@
 /**
  * The map of the Live tab and the flight detail: the basemap and overlays the user picked
  * (map-style.ts), points in their colors (each tracker's position as a plane turned to its
- * course when `plane` is set, a ground trail's pilot as a hollow dot when `pilot` is, or a
+ * course when `plane` is set, a ground trail's pilot as a hollow dot when `pilot` is, a
+ * tapped track point as the web's arrow turned to its heading when `arrow` is, or a
  * flight's start and end, numbered when `label` is: end-markers.tsx) and tracks (each flight
  * in progress, a day's flights, or the one flight; dotted when `trail` is set: a ground trail). The map runs under the status bar, the header and the tab
  * bar; along its top go a full-width bar (the status cards) or a floating overlay (the day
@@ -39,8 +40,12 @@ export interface LiveMapRef {
   reveal(lngLat: [number, number], options?: { bottom?: number }): void;
 }
 
-/** The plane markers' image: a signed distance field, tinted per tracker (scripts/gen-plane-icon.mjs). */
-const IMAGES = { plane: { source: require('../../assets/plane.png'), sdf: true } };
+/** The plane markers' and the picked point's arrow's images: signed distance fields, tinted per
+ * marker (scripts/gen-map-icons.mjs). */
+const IMAGES = {
+  plane: { source: require('../../assets/plane.png'), sdf: true },
+  arrow: { source: require('../../assets/arrow.png'), sdf: true },
+};
 
 /** Room around fitted bounds, inside the overlay and the bars: clear of the tool column on the left. */
 const FIT_PADDING = { top: 24, right: 40, bottom: 24, left: 72 };
@@ -211,7 +216,7 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
             paint={{ 'line-color': ['get', 'color'], 'line-width': 3, 'line-opacity': 0.9, 'line-dasharray': [0.3, 2.3] }} />
         </GeoJSONSource>
         <GeoJSONSource id="positions" data={positions}>
-          <Layer id="positions" type="circle" filter={['all', ['!', ['has', 'label']], ['!', ['has', 'plane']]]} paint={{
+          <Layer id="positions" type="circle" filter={['all', ['!', ['has', 'label']], ['!', ['has', 'plane']], ['!', ['has', 'arrow']]]} paint={{
             'circle-color': ['case', ['has', 'pilot'], t['surface-1'], ['get', 'color']],
             'circle-radius': ['case', ['has', 'pilot'], 6, 7],
             'circle-stroke-color': ['case', ['has', 'pilot'], ['get', 'color'], t['surface-1']],
@@ -228,6 +233,19 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
             'icon-color': ['get', 'color'],
             'icon-halo-color': t['surface-1'],
             'icon-halo-width': 1.5,
+          }} />
+          {/* A tapped track point: the web's direction arrow, turned to its recorded heading. */}
+          <Layer id="arrows" type="symbol" filter={['has', 'arrow']} layout={{
+            'icon-image': 'arrow',
+            'icon-size': 1 / 3,
+            'icon-rotate': ['get', 'course'],
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          }} paint={{
+            'icon-color': ['get', 'color'],
+            'icon-halo-color': t['surface-1'],
+            'icon-halo-width': 2,
           }} />
         </GeoJSONSource>
         <EndMarkers ends={ends} groups={groups} />

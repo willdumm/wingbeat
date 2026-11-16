@@ -25,6 +25,9 @@ export interface Account {
   user: AccountUser;
   /** Its session was revoked or expired (a 401), so its token is gone; pair again. */
   signedOut: boolean;
+  /** The instance's name (its app_name setting, as in the web's top bar), from its last
+   * bootstrap; absent until one has loaded. */
+  appName?: string;
 }
 
 export interface KeyValue {
@@ -61,6 +64,7 @@ export interface AccountStore {
   setActive(id: string): Promise<AccountsState>;
   /** Keeps the account's user as its server last described it (bootstrap's me). */
   updateUser(id: string, user: AccountUser): Promise<AccountsState>;
+  setAppName(id: string, appName: string): Promise<AccountsState>;
 }
 
 export function createAccountStore(kv: KeyValue): AccountStore {
@@ -135,6 +139,11 @@ export function createAccountStore(kv: KeyValue): AccountStore {
     updateUser: serial(async (id: string, user: AccountUser) => {
       const state = await load();
       return save({ ...state, accounts: state.accounts.map((a) => (a.id === id ? { ...a, user: accountUser(user) } : a)) });
+    }),
+
+    setAppName: serial(async (id: string, appName: string) => {
+      const state = await load();
+      return save({ ...state, accounts: state.accounts.map((a) => (a.id === id ? { ...a, appName } : a)) });
     }),
   };
 }

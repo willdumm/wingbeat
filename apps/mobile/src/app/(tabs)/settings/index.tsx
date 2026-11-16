@@ -1,17 +1,19 @@
 /**
- * Settings: the accounts (switch, add, sign out), the active account's notifications, deleting
- * it, clearing its flight cache, the theme and a link to the docs site. The instance's own settings are on the web until the app has them natively
- * (docs/mobile-app-plan.md, phase 11); the app doesn't link there. Deleting the account is App Review's requirement for an app
+ * Settings: the accounts (switch, add, sign out), the active account's notifications, opening
+ * it on the web, deleting it, clearing its flight cache, the theme and a link to the docs site.
+ * The instance's own settings are on the web until the app has them natively
+ * (docs/mobile-app-plan.md, phase 11): "Open on the Web" opens it in the browser (not an
+ * in-app one, where the session wouldn't last), signed in by a device link. Deleting the account is App Review's requirement for an app
  * where an account can be created (docs/mobile-app-plan.md, "Account deletion").
  */
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Alert } from 'react-native';
+import { Alert, Linking } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { Button, ContextMenu, Form, HStack, Host, Image, Section, Spacer, Text, VStack } from '@expo/ui/swift-ui';
 import { disabled, font, foregroundStyle } from '@expo/ui/swift-ui/modifiers';
 import { apiErrorMessage } from '@wingbeat/core/api/client';
-import { deleteMe } from '@wingbeat/core/api/me';
+import { createDeviceLink, deleteMe } from '@wingbeat/core/api/me';
 import { docsHref } from '@wingbeat/core/docs';
 import { useAccounts } from '@/lib/accounts-context';
 import type { Account } from '@/lib/accounts';
@@ -23,8 +25,10 @@ import { useThemeChoice, useTokens } from '@/lib/theme';
 const PRIMARY = foregroundStyle({ type: 'hierarchical', style: 'primary' });
 const SECONDARY = foregroundStyle({ type: 'hierarchical', style: 'secondary' });
 
+const accountTitle = (a: Account) => a.appName ?? a.host;
+// The user's name too, since an instance can have several of the phone's accounts.
 const accountDetail = (a: Account) =>
-  a.host + (a.signedOut ? ' · signed out' : a.user.role === 'admin' ? ' · admin' : '');
+  `${a.host} · ${a.user.name}` + (a.signedOut ? ' · signed out' : a.user.role === 'admin' ? ' · admin' : '');
 
 export default function SettingsScreen() {
   const t = useTokens();
@@ -95,7 +99,7 @@ export default function SettingsScreen() {
                 <Button onPress={() => setActive(a.id)}>
                   <HStack>
                     <VStack alignment="leading" spacing={2}>
-                      <Text modifiers={[PRIMARY]}>{a.user.name}</Text>
+                      <Text modifiers={[PRIMARY]}>{accountTitle(a)}</Text>
                       <Text modifiers={[font({ textStyle: 'footnote' }), SECONDARY]}>{accountDetail(a)}</Text>
                     </VStack>
                     <Spacer />
@@ -109,7 +113,16 @@ export default function SettingsScreen() {
         </Section>
 
         {active && (
-          <Section title={active.host}>
+          <Section title={accountTitle(active)}>
+            {!active.signedOut && (
+              // A browser already signed in goes straight to the dashboard (/join/<token>); the
+              // unused link expires in 15 minutes.
+              <Button label="Open on the Web" systemImage="safari" modifiers={[disabled(!client)]}
+                onPress={() => run('Couldn’t open the web', async () => {
+                  const { url } = await createDeviceLink(client!);
+                  await Linking.openURL(`https://${active.host}${url}?from=app`);
+                })} />
+            )}
             {!active.signedOut && (
               <Button label="Notifications" systemImage="bell" onPress={() => router.push('/settings/notifications')} />
             )}

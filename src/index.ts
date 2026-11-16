@@ -522,7 +522,9 @@ app.get('/join/:token', async (c) => {
   const refusal = joinRefusal(row);
   if (refusal) return c.html(joinErrorHTML(refusal.message, appName), refusal.status);
 
-  const appLink = appPairLink(c.req.header('User-Agent') ?? '', new URL(c.req.url).host, token);
+  // ?from=app: the app's "Open on the Web" (Settings) sent this browser here, so it's not
+  // offered the app back.
+  const appLink = c.req.query('from') === 'app' ? null : appPairLink(c.req.header('User-Agent') ?? '', new URL(c.req.url).host, token);
   if (row.type === 'invite') {
     return c.html(joinHTML('invite', row.invited_name!, token, appName, appLink));
   }

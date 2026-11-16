@@ -309,6 +309,9 @@ describe('app connect (/app/connect)', () => {
     assert.ok(onPhone.body.includes(`href="wingbeat://pair?host=localhost&amp;token=${token}"`));
     const onMac = await w.request('GET', '/join/' + token, undefined, { as: null, headers: { 'user-agent': 'Mozilla/5.0 (Macintosh)' } });
     assert.doesNotMatch(onMac.body, /wingbeat:/);
+    const fromApp = await w.request('GET', '/join/' + token + '?from=app', undefined, { as: null, headers: iphone });
+    assert.equal(fromApp.status, 200);
+    assert.doesNotMatch(fromApp.body, /wingbeat:/);
   });
 });
 

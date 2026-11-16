@@ -181,7 +181,19 @@ export function flightTrackPicks(flights: Flight[]): TrackPick[] {
 }
 
 /** A picked spot: the location sheet's details, whether it's a track's point, and where it is (for the map's dot). */
-export type PickedSpot = LocationDetails & { snapped: boolean; lngLat: [number, number] };
+/** course: the snapped track point's recorded heading (degrees), null off route or unrecorded. */
+export type PickedSpot = LocationDetails & { snapped: boolean; lngLat: [number, number]; course: number | null };
+
+/**
+ * The map's marker for a picked spot (live-map.tsx): the web's direction arrow turned to the
+ * track point's heading (`arrow`), else a dot.
+ */
+export function pickedFeature(spot: PickedSpot, color: string): GeoJSON.Feature<GeoJSON.Point> {
+  return {
+    type: 'Feature', id: 'picked', geometry: { type: 'Point', coordinates: spot.lngLat },
+    properties: spot.course != null ? { color, arrow: true, course: spot.course } : { color },
+  };
+}
 
 /** The pick nearest a tap at lngLat on a map at zoom, within core's SNAP_PX on screen. */
 export function nearestPick(lngLat: [number, number], zoom: number, picks: TrackPick[]): TrackPick | undefined {
@@ -204,12 +216,12 @@ export function pickDetails(
   if (!pick) return null;
   const details = pickedPointDetails(tz, pick.point.lat, pick.point.lon, { time: pick.point.t, velocity_kmh: pick.point.v, elevation_m: pick.point.e },
     pick.trackerId != null ? trackerFor(pick.trackerId) : null, pick.pilotName);
-  return { ...details, snapped: true, lngLat: [pick.point.lon, pick.point.lat] };
+  return { ...details, snapped: true, lngLat: [pick.point.lon, pick.point.lat], course: pick.point.c };
 }
 
 /** What the location sheet shows for a long press at lngLat: the spot itself, on a track or not. */
 export function spotDetails(tz: string, lngLat: [number, number]): PickedSpot {
-  return { ...pickedPointDetails(tz, lngLat[1], lngLat[0], null, null, null), snapped: false, lngLat };
+  return { ...pickedPointDetails(tz, lngLat[1], lngLat[0], null, null, null), snapped: false, lngLat, course: null };
 }
 
 /** Where the map opens: the instance's default view, else the first position, else the world. */

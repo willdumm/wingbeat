@@ -17,7 +17,7 @@ import { origin } from './api';
 import { useFlightFilter } from './flight-filter-context';
 import { useFlights } from './flights-context';
 import { flightDetail, flightRow, flightTrack, presetDateRange } from './flights';
-import { dayMap, flightTrackPicks, mapDays, pickDetails, positionFeatures, spotDetails, statusCards, type PickedSpot } from './live';
+import { dayMap, flightTrackPicks, mapDays, pickDetails, pickedFeature, positionFeatures, spotDetails, statusCards, type PickedSpot } from './live';
 import { LiveMap, type LiveMapRef } from './live-map';
 import { LocationSections } from './location-sheet';
 import { MapSheet, sheetDetentHeight } from './map-sheet';
@@ -103,7 +103,7 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
     if (spot) map.current?.reveal(spot.lngLat, { bottom: sheetHeight });
   };
   const pickedDot = picked
-    ? [{ type: 'Feature' as const, id: 'picked', geometry: { type: 'Point' as const, coordinates: picked.lngLat }, properties: { color: t['accent'] } }]
+    ? [pickedFeature(picked, t['accent'])]
     : [];
   const iconButton = (label: string, systemImage: 'chevron.left' | 'chevron.right' | 'xmark', onPress: () => void, disabled = false) => (
     <Button label={label} systemImage={systemImage} onPress={onPress}

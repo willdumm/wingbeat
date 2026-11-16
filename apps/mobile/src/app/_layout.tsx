@@ -22,12 +22,15 @@ function SentryTags() {
   return null;
 }
 
-/** Keeps the active account's stored user (its pilot, for the first tab) on the server's. */
+/** Keeps the active account's stored user (its pilot, for the first tab) and instance name
+ * (for Settings' account list) on the server's. */
 function AccountUserSync() {
-  const { active, syncUser } = useAccounts();
+  const { active, syncUser, syncAppName } = useAccounts();
   const { bootstrap } = useBootstrap();
   const me = bootstrap?.me;
+  const appName = bootstrap?.instance?.app_name;
   useEffect(() => { if (active && me) syncUser(active.id, me); }, [active?.id, me]);
+  useEffect(() => { if (active && appName) syncAppName(active.id, appName); }, [active?.id, appName]);
   return null;
 }
 
