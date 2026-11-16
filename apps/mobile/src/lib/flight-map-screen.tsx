@@ -41,8 +41,9 @@ const FIT_PADDING = { top: 120, right: 40, bottom: 120, left: 40 };
 export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; flightId?: number; onDay?: (dayKey: string) => void }) {
   const t = useTokens();
   const router = useRouter();
-  // The tab whose stack the screen is in (Flights, or Duty from a flight in the log), for Edit.
-  const stack = useSegments()[1] === 'duty' ? 'duty' : 'flights';
+  // The stack the screen is in (Flights, or the duty log's in Duty or Settings), for Edit.
+  const segments = useSegments();
+  const stack = segments[1] === 'duty' ? 'duty' : segments[1] === 'settings' ? 'settings/duty' : 'flights';
   const focused = useIsFocused();
   const { active } = useAccounts();
   const { store, lastRefresh, generation } = useFlights();

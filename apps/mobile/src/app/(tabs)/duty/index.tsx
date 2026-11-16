@@ -10,6 +10,7 @@ import {
   type DutyExportOption,
 } from '@/lib/duty';
 import { DutyList } from '@/lib/duty-list';
+import { useDutyTab } from '@/lib/duty-tab';
 import { useDutyPdf } from '@/lib/duty-pdf';
 import { EmptyState } from '@/lib/empty-state';
 import { useFlights } from '@/lib/flights-context';
@@ -28,11 +29,13 @@ import { useNow } from '@/lib/use-now';
  * opens Custom (export.tsx) to pick the months. An admin plans or edits a day in the day
  * form (day.tsx): from a day, an Upcoming row, or the header's + (tomorrow, since rest is
  * designated ahead, as the web's Plan duty or rest).
- * The alerts screen opens a pilot's with params pilot, which picks them.
+ * The alerts screen opens a pilot's with params pilot, which picks them. It's in the Duty tab's
+ * stack, or in Settings' when that tab is hidden (duty-tab.ts).
  */
 export default function DutyScreen() {
   const router = useRouter();
   const tab = useFlightsTab();
+  const { base } = useDutyTab();
   const { active } = useAccounts();
   const { store, generation, refresh } = useFlights();
   const now = useNow(60_000);
@@ -71,7 +74,7 @@ export default function DutyScreen() {
   }
   const offered = dutyPilots(pilots, pilot.id);
   const openDay = tab.isAdmin && log
-    ? (date: string) => router.push({ pathname: '/duty/day', params: { pilot: String(pilot.id), date } }) : null;
+    ? (date: string) => router.push({ pathname: `${base}/day`, params: { pilot: String(pilot.id), date } }) : null;
   const notice = pdf.status ?? (failed
     ? (log ? 'Couldn’t refresh the duty records; showing the copy saved earlier.' : 'Couldn’t load the duty records. Pull down to try again.')
     : (log ? null : 'Loading…'));
@@ -101,7 +104,7 @@ export default function DutyScreen() {
               </Stack.Toolbar.MenuAction>
             ))}
             <Stack.Toolbar.MenuAction icon="calendar"
-              onPress={() => router.push({ pathname: '/duty/export', params: { pilot: String(pilot.id), shown: String(index) } })}>
+              onPress={() => router.push({ pathname: `${base}/export`, params: { pilot: String(pilot.id), shown: String(index) } })}>
               Custom…
             </Stack.Toolbar.MenuAction>
           </Stack.Toolbar.Menu>
@@ -122,7 +125,7 @@ export default function DutyScreen() {
         onPrev={() => setShown(index - 1)}
         onNext={index < current ? () => setShown(index + 1 >= current ? null : index + 1) : null}
         notice={notice}
-        onSelect={(id) => router.push({ pathname: '/duty/[id]', params: { id: String(id) } })}
+        onSelect={(id) => router.push({ pathname: `${base}/[id]`, params: { id: String(id) } })}
         onDay={openDay}
         onRefresh={() => Promise.all([refresh(), reload()]).then(() => {})}
       />

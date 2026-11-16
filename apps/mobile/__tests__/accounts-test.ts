@@ -64,15 +64,17 @@ test('updateUser keeps the server’s name, role and pilot; a pilot opens on the
   await store.add(A, { ...pat, session_id: 5 } as typeof pat, 'tok-a');
   let state = await store.load();
   expect(state.accounts[0].user).toEqual({ ...pat, pilot_id: null });
-  expect(firstTab(state.accounts[0])).toBe('/live');
+  expect(firstTab(state.accounts[0], null)).toBe('/live');
   const linked = { ...pat, pilot_id: 4 };
   expect(accountUserChanged(state.accounts[0].user, linked)).toBe(true);
   expect(accountUserChanged(state.accounts[0].user, pat)).toBe(false);
   state = await store.updateUser(`${A}.1`, linked);
   expect(state.accounts[0].user).toEqual(linked);
-  expect(firstTab(state.accounts[0])).toBe('/duty');
+  expect(firstTab(state.accounts[0], null)).toBe('/duty');
+  expect(firstTab(state.accounts[0], true)).toBe('/duty');
+  expect(firstTab(state.accounts[0], false)).toBe('/live');
   expect(await store.token(`${A}.1`)).toBe('tok-a');
-  expect(firstTab(null)).toBe('/live');
+  expect(firstTab(null, null)).toBe('/live');
 });
 
 test('setActive ignores an unknown id', async () => {

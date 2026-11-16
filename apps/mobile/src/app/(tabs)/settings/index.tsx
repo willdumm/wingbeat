@@ -1,6 +1,6 @@
 /**
- * Settings: the accounts (switch, add, sign out), the active account's notifications, opening
- * it on the web, deleting it, clearing its flight cache, the theme and a link to the docs site.
+ * Settings: the accounts (switch, add, sign out), the active account's notifications, its duty
+ * log and whether the Duty tab shows it (duty-tab.ts), opening it on the web, deleting it, clearing its flight cache, the theme and a link to the docs site.
  * The instance's own settings are on the web until the app has them natively
  * (docs/mobile-app-plan.md, phase 11): "Open on the Web" opens it in the browser (not an
  * in-app one, where the session wouldn't last), signed in by a device link. Deleting the account is App Review's requirement for an app
@@ -10,11 +10,12 @@ import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Alert, Linking } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
-import { Button, ContextMenu, Form, HStack, Host, Image, Section, Spacer, Text, VStack } from '@expo/ui/swift-ui';
+import { Button, ContextMenu, Form, HStack, Host, Image, Section, Spacer, Text, Toggle, VStack } from '@expo/ui/swift-ui';
 import { disabled, font, foregroundStyle } from '@expo/ui/swift-ui/modifiers';
 import { createDeviceLink, deleteMe } from '@wingbeat/core/api/me';
 import { docsHref } from '@wingbeat/core/docs';
 import { useAccounts } from '@/lib/accounts-context';
+import { useDutyTab } from '@/lib/duty-tab';
 import { errorText } from '@/lib/api';
 import type { Account } from '@/lib/accounts';
 import { useFlights } from '@/lib/flights-context';
@@ -36,6 +37,7 @@ export default function SettingsScreen() {
   const { accounts, active, client, setActive, remove, signOut } = useAccounts();
   const { store, clearCache } = useFlights();
   const [theme, setTheme] = useThemeChoice();
+  const dutyTab = useDutyTab();
   const [busy, setBusy] = useState(false);
 
   const run = async (failure: string, fn: () => Promise<void>) => {
@@ -129,6 +131,12 @@ export default function SettingsScreen() {
             )}
             {!active.signedOut && (
               <Button label="Notifications" systemImage="bell" onPress={() => router.push('/settings/notifications')} />
+            )}
+            {!active.signedOut && (
+              <Button label="Duty Log" systemImage="calendar.badge.clock" onPress={() => router.push('/settings/duty')} />
+            )}
+            {!active.signedOut && (
+              <Toggle label="Show Duty in Tab Bar" isOn={dutyTab.shown} onIsOnChange={dutyTab.setShown} />
             )}
             {!active.signedOut && (
               <Button role="destructive" label="Clear Flight Cache" modifiers={[disabled(!store)]} onPress={confirmClearCache} />

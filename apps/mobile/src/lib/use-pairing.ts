@@ -11,6 +11,7 @@ import { ApiHttpError, ApiNetworkError, ApiTimeoutError } from '@wingbeat/core/a
 import { APP_CONNECT_CALLBACK } from '@wingbeat/core/app-connect';
 import { firstTab } from './accounts';
 import { useAccounts } from './accounts-context';
+import { storedDutyTab } from './duty-tab';
 import { addressFailureMessage, connectCallbackToken, connectRequest, instanceHost } from './browser-sign-in';
 import { parseFailureMessage, parsePairingLink, type PairingTarget } from './pairing-link';
 
@@ -29,7 +30,8 @@ export function usePairing() {
   const redeem = useCallback(async (target: PairingTarget) => {
     setStatus({ kind: 'pairing', host: target.host });
     try {
-      router.dismissTo(firstTab(await addAccount(target)));
+      const account = await addAccount(target);
+      router.dismissTo(firstTab(account, storedDutyTab(account)));
     } catch (err) {
       setStatus({ kind: 'failed', message: pairingErrorMessage(err) });
     }

@@ -1,5 +1,5 @@
 import { emptyFilterState } from '@wingbeat/core/filters';
-import { accountPrefKey, parseElevationPref, parseFlightFilter, parseMapChoice, parseTheme, parseTimeSensitive, staleAccountPrefKeys, THEME_KEY } from '@/lib/prefs';
+import { accountPrefKey, dutyTabShown, parseDutyTab, parseElevationPref, parseFlightFilter, parseMapChoice, parseTheme, parseTimeSensitive, staleAccountPrefKeys, THEME_KEY } from '@/lib/prefs';
 
 const A = 'a.wingbeat.dummthings.dev';
 const B = 'b.wingbeat.dummthings.dev';
@@ -55,5 +55,23 @@ describe('parseElevationPref', () => {
     expect(parseElevationPref(undefined)).toEqual({ rangeM: 300, opacity: 55 });
     expect(parseElevationPref({ rangeM: 1000, opacity: 0 })).toEqual({ rangeM: 1000, opacity: 0 });
     expect(parseElevationPref({ rangeM: 9000, opacity: '70' })).toEqual({ rangeM: 300, opacity: 55 });
+  });
+});
+
+describe('the Duty tab', () => {
+  test('parses only a boolean', () => {
+    expect(parseDutyTab(true)).toBe(true);
+    expect(parseDutyTab(false)).toBe(false);
+    expect(parseDutyTab(undefined)).toBeNull();
+    expect(parseDutyTab('true')).toBeNull();
+  });
+
+  test('shows by default to an admin or a pilot; a stored pick wins', () => {
+    expect(dutyTabShown(null, { role: 'admin' })).toBe(true);
+    expect(dutyTabShown(null, { role: 'viewer', pilot_id: 3 })).toBe(true);
+    expect(dutyTabShown(null, { role: 'viewer', pilot_id: null })).toBe(false);
+    expect(dutyTabShown(null, { role: 'viewer' })).toBe(false);
+    expect(dutyTabShown(false, { role: 'admin', pilot_id: 3 })).toBe(false);
+    expect(dutyTabShown(true, { role: 'viewer' })).toBe(true);
   });
 });

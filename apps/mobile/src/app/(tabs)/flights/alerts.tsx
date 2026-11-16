@@ -1,6 +1,7 @@
 import { Stack, useRouter } from 'expo-router';
 import type { Alert } from '@wingbeat/core/alerts';
 import { AlertsList } from '@/lib/alerts-list';
+import { useDutyTab } from '@/lib/duty-tab';
 import { EmptyState } from '@/lib/empty-state';
 import { Placeholder } from '@/lib/placeholder';
 import { useAlerts } from '@/lib/use-alerts';
@@ -13,13 +14,14 @@ import { useAlerts } from '@/lib/use-alerts';
 export default function AlertsScreen() {
   const router = useRouter();
   const alerts = useAlerts();
+  const { base } = useDutyTab();
 
   const onPress = (alert: Alert): (() => void) | null => {
     if (alert.kind === 'unassigned_flight') {
       return () => { router.dismiss(); router.push({ pathname: '/flights/[id]', params: { id: String(alert.flight_id) } }); };
     }
     if (alert.kind === 'pilot_duty') {
-      return () => { router.dismiss(); router.navigate({ pathname: '/duty', params: { pilot: String(alert.pilot_id) } }); };
+      return () => { router.dismiss(); router.navigate({ pathname: base, params: { pilot: String(alert.pilot_id) } }); };
     }
     return null;
   };

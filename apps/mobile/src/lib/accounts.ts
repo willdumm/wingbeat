@@ -8,6 +8,7 @@
  * secureKeyValue() is the real one.
  */
 import * as SecureStore from 'expo-secure-store';
+import { dutyTabShown } from './prefs';
 
 export interface AccountUser {
   id: number;
@@ -158,9 +159,10 @@ export function accountUserChanged(stored: AccountUser, server: AccountUser): bo
   return stored.name !== server.name || stored.role !== server.role || (stored.pilot_id ?? null) !== (server.pilot_id ?? null);
 }
 
-/** The tab the app opens on: a pilot's own duty log, Live for everyone else. */
-export function firstTab(account: Account | null): '/duty' | '/live' {
-  return account?.user.pilot_id != null ? '/duty' : '/live';
+/** The tab the app opens on: a pilot's own duty log, unless the Duty tab is hidden (dutyTab,
+ * the account's stored pick: duty-tab.ts's storedDutyTab), Live for everyone else. */
+export function firstTab(account: Account | null, dutyTab: boolean | null): '/duty' | '/live' {
+  return account?.user.pilot_id != null && dutyTabShown(dutyTab, account.user) ? '/duty' : '/live';
 }
 
 function isAccount(a: unknown): a is Account {

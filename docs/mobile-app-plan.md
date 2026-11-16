@@ -1604,10 +1604,14 @@ The app uses the web's sync protocol unchanged, through `@wingbeat/core/flight-s
 
 ### Screens (v1)
 
-Pilots and dispatchers/owners are both first-class. Everyone gets the same tabs. Which one
-opens first, and what Live emphasizes, depends on the user. A user linked to a pilot
-(`users.pilot_id`, Decision 5) opens on **Duty log** with their own month and "my flights"
-first. Everyone else opens on **Live**. Either one can change it in Settings.
+Pilots and dispatchers/owners are both first-class. Everyone gets the same tabs, except that
+the Duty tab shows by default only to an admin or a user linked to a pilot. Settings → Show
+Duty in Tab Bar changes that per account (`duty-tab` in `prefs.ts`, `duty-tab.ts`), and
+Settings → Duty Log opens the same log in Settings' stack (`settings/duty/`), since a hidden
+tab can't be navigated to. Which tab opens first, and what Live emphasizes, depends on the
+user. A user linked to a pilot (`users.pilot_id`, Decision 5) opens on **Duty log** with their
+own month and "my flights" first, unless they've hidden the Duty tab. Everyone else opens on
+**Live**.
 
 Times follow the same rule as the web: the operator's timezone with its abbreviation, from
 core's `time`, whatever the phone's zone (see "Times and the operator's timezone"). For an
@@ -2317,7 +2321,7 @@ layers need no Android counterpart; only the chrome around the map does.
 
 | Feature | App | iOS | Android | Core / notes |
 |---|---|---|---|---|
-| Month view, totals and limits | Done (the Duty tab: the pilot from the header's menu, else the user's own `users.pilot_id`) | dense RN rows like the flight list (days newest first as sticky headings, a flight opens its map), a bar per limit, Upcoming in the current month | the same RN views | `duty` (`computeDutyData`), app `duty.ts` |
+| Month view, totals and limits | Done (the Duty tab, or Settings → Duty Log: the pilot from the header's menu, else the user's own `users.pilot_id`) | dense RN rows like the flight list (days newest first as sticky headings, a flight opens its map), a bar per limit, Upcoming in the current month | the same RN views | `duty` (`computeDutyData`), app `duty.ts` |
 | Plan or edit a day (duty or rest, start and end, through, note, use the default) | Done (admins: a day's heading, an Upcoming row or the header's +; `duty/day.tsx`, fields in `duty-day-form.tsx`; a 409 offers Reload) | a `Form` with a segmented `Picker`, `DatePicker`s (`hourAndMinute`), `Toggle`s for Through and Duty Times (on: the default's times) | `SingleChoiceSegmentedButtonRow`, the Material time picker, `Switch` | `duty`, the duty request schemas |
 | Default duty, duty methods history | Phase 11 | `Form` | `ListItem`s | `duty` |
 | PDF export | Done (the header's Export PDF menu: the web's presets, and Custom… for any From and To months, `duty/export.tsx`; a hidden WebView compiles it, see "Decided 2026-11-13") | `ShareLink` (share sheet) for the file | `Share.share` | the Typst template |

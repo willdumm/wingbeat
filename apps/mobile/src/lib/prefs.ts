@@ -1,8 +1,8 @@
 /**
  * What the app keeps between launches besides the accounts and the flights: the theme, which
  * tracker events this phone gets as Time Sensitive notifications, and
- * for each account the map's basemap and overlays, the Flights tab's filter, the Duty tab's
- * pilot and the last copy of each pilot's duty records it fetched. Each is a
+ * for each account the map's basemap and overlays, the Flights tab's filter, whether the Duty tab shows, the Duty
+ * log's pilot and the last copy of each pilot's duty records it fetched. Each is a
  * JSON value in expo-sqlite/kv-store (stored-state.ts) under a key from here, and its parse
  * function turns whatever is stored (nothing, or an older version's value) into a valid one.
  */
@@ -15,7 +15,7 @@ export const THEME_KEY = 'prefs.theme';
 
 const ACCOUNT_PREFIX = 'prefs.account.';
 
-export function accountPrefKey(host: string, userId: number, name: 'map' | 'flight-filter' | 'elevation' | 'duty-pilot' | `duty-log.${number}`): string {
+export function accountPrefKey(host: string, userId: number, name: 'map' | 'flight-filter' | 'elevation' | 'duty-tab' | 'duty-pilot' | `duty-log.${number}`): string {
   return `${ACCOUNT_PREFIX}${host}.${userId}.${name}`;
 }
 
@@ -97,6 +97,14 @@ export function parseFlightFilter(stored: unknown): FlightFilterPref {
 }
 
 // ── Duty ──
+
+/** Whether the Duty tab shows, as picked in Settings; null until one is picked (dutyTabShown's default). */
+export const parseDutyTab = (stored: unknown): boolean | null => (typeof stored === 'boolean' ? stored : null);
+
+/** The Duty tab shows by default to those who keep a duty log: an admin, or a pilot. Settings opens the log either way. */
+export const dutyTabShown = (stored: boolean | null, user: { role: string; pilot_id?: number | null }): boolean =>
+  stored ?? (user.role === 'admin' || user.pilot_id != null);
+
 
 /** The pilot the Duty tab shows; null until one is picked. */
 export const parseDutyPilot = (stored: unknown): number | null => (typeof stored === 'number' ? stored : null);
