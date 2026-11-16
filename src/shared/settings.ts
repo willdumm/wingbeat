@@ -2614,7 +2614,7 @@ export function settingsModalScript(): string {
             if (!user.is_env_admin && pilotList.length > 0) {
               const pilotBtn = document.createElement('button');
               pilotBtn.className = 'settings-action-btn';
-              pilotBtn.textContent = 'Pilot';
+              pilotBtn.textContent = 'Designate pilot';
               pilotBtn.addEventListener('click', () => settingsToggleUserPilot(row, user, userList));
               actions.appendChild(pilotBtn);
             }

@@ -1425,7 +1425,7 @@ them later if unassigned flights with evidence turn out to be common.
 - Phase 6: `users.pilot_id` (`REFERENCES pilots(id) ON DELETE SET NULL`, a partial unique
   index so only one user links to each pilot). Done: migration `0005_user_pilot.sql`, in
   `me` (bootstrap, GET /api/me, the pairing response) and GET /api/users, set with
-  `PATCH /api/users/:id` from Settings → Users → Pilot (admins).
+  `PATCH /api/users/:id` from Settings → Users → Designate pilot (admins).
 - Phase 8:
   - `trackers.current_pilot` (`REFERENCES pilots(id) ON DELETE SET NULL`) and
     `trackers.current_aircraft` (`REFERENCES aircraft(tail_number)`);
