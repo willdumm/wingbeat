@@ -34,6 +34,10 @@
       "ios": {
         "appleTeamId": "W4MAPA8GZ7",
         "ascAppId": "6834605241"
+      },
+      "android": {
+        "track": "internal",
+        "releaseStatus": "draft"
       }
     },
     "testflight": {
