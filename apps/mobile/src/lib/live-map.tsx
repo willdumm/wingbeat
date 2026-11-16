@@ -46,7 +46,9 @@ export interface LiveMapRef {
 }
 
 /** The plane markers' and the picked point's arrow's images: signed distance fields, tinted per
- * marker (scripts/gen-map-icons.mjs). */
+ * marker (scripts/gen-map-icons.mjs). The field reaches 6 image pixels out from the outline,
+ * and a halo-width counts halo-width / icon-size of them: at icon-size 1/3 a halo of 2 or more
+ * reaches the field's end and fills the whole image square, so the halos are 1.5. */
 const IMAGES = {
   plane: { source: require('../../assets/plane.png'), sdf: true },
   arrow: { source: require('../../assets/arrow.png'), sdf: true },
@@ -305,7 +307,7 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
           }} paint={{
             'icon-color': ['get', 'color'],
             'icon-halo-color': t['surface-1'],
-            'icon-halo-width': 2,
+            'icon-halo-width': 1.5,
           }} />
         </GeoJSONSource>
         <EndMarkers ends={ends} groups={groups} />
