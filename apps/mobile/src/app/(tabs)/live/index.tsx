@@ -12,7 +12,9 @@ import { LocationSheet } from '@/lib/location-sheet';
 import { sheetDetentHeight } from '@/lib/map-sheet';
 import { availableBasemaps } from '@/lib/map-style';
 import { Placeholder } from '@/lib/placeholder';
+import { accountPrefKey, parseLivePinned } from '@/lib/prefs';
 import { StatusCards } from '@/lib/status-cards';
+import { useStoredState } from '@/lib/stored-state';
 import { useTokens } from '@/lib/theme';
 import { useFlightsTab } from '@/lib/use-flights-tab';
 import { useNow } from '@/lib/use-now';
@@ -21,8 +23,8 @@ import { useNow } from '@/lib/use-now';
  * The live view: each tracker's position and the track of its current or latest flight, with a
  * dot where it took off (the dashboard's default view), fitted each time the tab comes up, again
  * when a new point comes in (once the map's been left alone a few seconds), and by the Fit all
- * tool, with the status cards along the top; tapping one flies to it and opens its location
- * details, a tap on the map near a drawn track opens that track point's, and a long press
+ * tool, with the status cards stacked along the top (the in-flight ones and the one pinned from
+ * the list of all; status-cards.tsx); tapping one flies to it and opens its location details, a tap on the map near a drawn track opens that track point's, and a long press
  * anywhere the pressed spot's. A day's flights at once (the dashboard's "Map all") are on the
  * Flights tab's day headers. A `tracker` param (a notification tap, push.ts) selects that
  * tracker as its card would.
@@ -42,6 +44,7 @@ export default function LiveScreen() {
   useEffect(() => { if (focused) setVisits((v) => v + 1); }, [focused]);
   const [selected, setSelected] = useState<number | null>(null);
   const [picked, setPicked] = useState<PickedSpot | null>(null);
+  const [pinned, setPinned] = useStoredState(active ? accountPrefKey(active.host, active.user.id, 'live-pinned') : null, parseLivePinned);
   const router = useRouter();
   const { tracker: trackerParam } = useLocalSearchParams<{ tracker?: string }>();
 
@@ -127,7 +130,7 @@ export default function LiveScreen() {
         }}
         onLongPress={(lngLat) => { if (tz) pick(spotDetails(tz, lngLat)); }}
         topBar={cards.length > 0 && (
-          <StatusCards cards={cards} onSelect={select} />
+          <StatusCards cards={cards} pinnedId={pinned} onSelect={select} onPin={setPinned} />
         )}
       />
       {/* A status card's tracker, or a tap on the map (the web's point picker): one sheet, so one replaces the other in place. */}

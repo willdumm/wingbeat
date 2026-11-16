@@ -69,7 +69,7 @@ interface LiveMapProps {
   tracks: GeoJSON.FeatureCollection;
   /** Tools after Layers. */
   tools?: MapTool[];
-  /** Shown along the top, below the status bar or the header. */
+  /** Shown at the top right, below the status bar or the header (clear of a back button). */
   overlay?: ReactNode;
   /**
    * A full-width bar along the top, on the floating surface (as the overlay's), running up
@@ -321,7 +321,7 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
           {topBar}
         </View>
       ) : overlay ? (
-        <View style={{ position: 'absolute', top, left: gutter, right: gutter, alignItems: 'center' }}
+        <View style={{ position: 'absolute', top, left: gutter, right: gutter, alignItems: 'flex-end' }} pointerEvents="box-none"
           onLayout={(ev) => setTopEdge(top + ev.nativeEvent.layout.height)}>
           {overlay}
         </View>
