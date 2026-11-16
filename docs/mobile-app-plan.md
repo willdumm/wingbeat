@@ -1697,6 +1697,139 @@ account whose operator is in another zone, that's the only correct reading of a 
   tenants are per hostname. The session list in web Settings already lets a user sign out a
   lost phone.
 
+### Email sign-in, email invites and finding your instance (proposed 2026-11-15)
+
+Proposed, for review; nothing here is built. It started from the user's note that typing the
+instance's address is "a little awkward for the app-first flow", and their follow-up: "I'll
+also want to be able to invite new users through email (so the existing admin user would be
+able to create a new user, enter their email, and the invite would be sent with a link that
+would verify that user's email and sign them in)", and "maybe the app signup flow should
+require the user to find their hosted instance by searching from a list of instances I host
+(or put in their own) before putting in their email, instead of having a central directory
+of user emails".
+
+**Why.** Today there's no sign-in form at all: a user gets in only through a link someone
+already signed in made (an invite, or a device link from Settings → Devices). Someone who
+loses every signed-in device needs an admin to send a new invite. A phone without a signed-in
+browser has only the scanner. Email gives each instance a way in that needs nothing but the
+user's inbox, and lets the app start from nothing.
+
+**The shape: each instance owns its users' emails; there's no central directory.** Every
+instance stores and checks its own users' addresses, exactly as it owns their sessions now.
+The app finds the instance first (a searchable list of the hosted instances that agree to be
+listed, or a typed address), then asks that instance for an email code. Nothing outside the
+tenant learns who has an account where, so no new store of personal data is shared across
+tenants. Self-hosted instances get the same flow once they configure email sending. The cost:
+someone on several instances adds each one separately. That's rare today (one customer), and
+the central directory below stays possible later without undoing any of this.
+
+#### 1. Emails on users, and email invites (web, admin)
+
+- **Migration `0009_`:** `users.email` (lowercased, nullable) with a partial unique index
+  (`WHERE email IS NOT NULL`), `users.email_verified_at` (set the first time the user proves
+  the inbox, by an invite link or a code), and `invite_tokens.invited_email`. `users` has no
+  `edit_history` trigger, so none needs recreating.
+- **Invite by email.** The admin's invite form gets an optional Email field
+  (`InviteRequest` in `packages/core/src/api/…-requests.ts` gains `email`, or the handler
+  never sees it). With one, `POST /api/invites` stores it in `invited_email` and the instance
+  emails the `https://<host>/join/<token>` link (default expiry 7 days, as now), along with
+  the inviter's name and the instance's name. Redeeming the invite creates the user with
+  that email, already verified, since opening the link proves the inbox, and signs them in.
+  It works through either redemption path: the web's `/join/<token>` (cookie) and the app's
+  `POST /api/app/pair` (an iPhone opening the link already gets "Open in Wingbeat app"). Both
+  use the same consumption code, so the email is set in one place. Without an email, invites
+  work as today (copy the link).
+- **A forwarded invite** signs in whoever opens it first, as a copied invite link does
+  today. It's single-use, and the new user shows up in the Users list.
+- **Emails on existing users.** An admin can add or change a user's email in the Users list.
+  It's unverified until the user signs in with it, and the list shows "not yet confirmed".
+  Codes go to an unverified address too: like an invite, an address the admin typed is
+  trusted. A mistyped address would let its owner sign in as that user, the same risk as
+  sending an invite link to the wrong address. A user changing their own email in Settings
+  confirms the new address with a code first. Only admins see other users' emails.
+
+#### 2. Sign in with an email code (web and app)
+
+- **A 6-digit code, not a magic link.** A code works when the email is read on a different
+  device from the one signing in, and needs no link routing into the app. iOS also offers
+  codes from Mail above the keyboard (`textContentType('oneTimeCode')`).
+- **Routes.** `POST /api/auth/email-code { email }` → `{ request_id }`, and
+  `POST /api/auth/email-verify { request_id, code, device_name? }`. The web's new `/login`
+  page uses both (a session cookie on success). The app uses both under `/api/app/…` and gets
+  the same response as `/api/app/pair`. Each gets request and response schemas in core and
+  shape tests in `test/worker-sql.test.mjs`.
+- **Table `email_codes`:** `user_id`, `request_id` (random, unique), `code`, `expires_at`
+  (10 minutes), `attempts`, `used`. A code is single-use, and 5 wrong tries end its request,
+  so guessing needs a new request, which the rate limits below cap.
+- **No account enumeration.** `email-code` answers the same way whether or not the address
+  has an account ("If that address has an account here, we've sent a code"). An unknown
+  address gets a `request_id` that can never verify.
+- **Rate limits:** a few codes per address per hour and a cap per IP, counted in D1 (or the
+  Workers rate-limiting binding).
+- **Sending:** Cloudflare Email Service through a `send_email` binding (check the current
+  docs when building; there's a `cloudflare-email-service` skill). Hosted instances send
+  from one address on dummthings.dev, which needs SPF/DKIM set up there. Self-hosted: the
+  email features (the invite Email field, `/login`'s form, the app's email option) appear
+  only when the binding is configured, so an instance without email keeps working as today.
+  Tests stub the binding in Miniflare.
+
+#### 3. The app: find your instance, then sign in
+
+The Add account screen becomes:
+
+1. **Find your Wingbeat:** a searchable list of the hosted instances that agree to be listed
+   (name and address), plus "Enter an address" for unlisted and, later, self-hosted ones.
+   Before building, check `@expo/ui` for `searchable`; otherwise use a `TextField` above a
+   `List`. Android: a `SearchBar` above a `LazyColumn`.
+2. **Sign in to <instance>:** an Email field and "Send Code" (instances with email), then a
+   code field. "Sign in with Browser" and "Scan a Code" stay as alternatives.
+
+**The list.** Customer names are their business, so listing is opt-in: a `listed` flag
+(default off) in the hosting repo's `customers/<slug>.json`, which already has `slug` and
+`name`. The hosting repo's deploy publishes the listed entries as a small JSON file, e.g.
+served by a static-assets Worker. Where exactly is open, below. The docs site can't serve
+it, since it deploys from this public repo. An unlisted customer types their address, as
+now. A deep link or an invite email names the instance anyway, so the list only matters
+when someone starts from the app with nothing.
+
+#### 4. Later, only if needed: one sign-in for several instances
+
+The user's first idea was a central place that knows all of someone's accounts. Two ways to
+build it, if people on several instances become common:
+
+- **Browser hub:** each instance, on sign-in, adds its address to a cookie on the parent
+  domain (addresses only, never session tokens, since that cookie reaches every tenant and
+  the docs site). A hub page lists them, and the app runs Sign in with Browser for each.
+  Each instance still needs its own Connect tap, since it can't trust the hub's word. It
+  misses home-screen web-app users (a separate cookie store) and anyone who signed in only
+  on a computer.
+- **Email directory:** the hub verifies the email once, then asks each hosted instance
+  whether it has that address (a fan-out, so no stored directory), and signs a short-lived
+  "this email is verified" statement that each instance checks with the hub's public key
+  before making a session. One code covers every account. It's the first service shared
+  across tenants, and the privacy policy would have to cover it.
+
+Not planned now: the instance list plus per-instance codes covers today's users.
+
+#### Order
+
+1. Migration 0009, emails on users, email invites, and Email Service setup on staging.
+2. Email code sign-in: the web's `/login`, then the app's email option.
+3. The instance list and the app's Find screen.
+
+Each is its own deploy to staging, and the web parts ship before the app depends on them,
+like the bearer middleware did. Emails are new personal data, so the privacy policy (Store
+review, below) covers them. Deleting the account (`DELETE /api/me`) already deletes the user
+row, which takes the email with it.
+
+#### Open questions
+
+- Where the instance list is served (a static-assets Worker from the hosting repo? which
+  hostname?), and whether Sea Hawk Air wants to be listed.
+- The sender address and display name for hosted email.
+- Whether the email also carries a link that fills in the code on the web, or the code alone.
+- Whether non-admin users may change their own email, or only admins.
+
 ### Account deletion
 
 Redeeming an invite in the app creates an account, so App Review (guideline 5.1.1(v)) needs
@@ -1807,7 +1940,8 @@ The app sends both in an `X-Wingbeat-App` header on every request, as
   declaration video.
 - **Privacy policy** on dummthings.dev (required by both stores before the first
   submission). It covers what the instance stores, what the relay stores, what Sentry
-  receives, the presence data rules (Decision 5), and account deletion.
+  receives, the presence data rules (Decision 5), account deletion, and users' emails
+  (once "Email sign-in, email invites and finding your instance" ships).
 - **App Store privacy labels** and the **Play Data Safety form**: precise location (presence
   features only, opt-in), identifiers (push token), crash data (Sentry), and nothing used for
   tracking. Update both when presence ships in phase 8.
