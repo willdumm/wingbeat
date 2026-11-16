@@ -17,6 +17,7 @@ import { origin } from './api';
 import { useAppliedFilter } from './flight-filter-context';
 import { useFlights } from './flights-context';
 import { flightDetail, flightRow, flightTrack } from './flights';
+import { DayLegend } from './day-legend';
 import { dayMap, flightTrackPicks, mapDays, pickDetails, pickedFeature, positionFeatures, spotDetails, statusCards, type PickedSpot } from './live';
 import { LiveMap, type LiveMapRef } from './live-map';
 import { LocationSections } from './location-sheet';
@@ -224,6 +225,8 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
         sheetHeight={sheetHeight}
         positions={{ type: 'FeatureCollection', features: positions }}
         tracks={one ? track!.line : day!.tracks}
+        // A day's trackers, when there are several (the web's legend).
+        overlay={!one && day!.legend.length > 0 ? <DayLegend entries={day!.legend} /> : undefined}
         picks={picks}
         // Away from the tracks, a tap goes back to the day or the flight.
         onPress={(lngLat, zoom) => pick(pickDetails(tab.tz, lngLat, zoom, picks, (tid) => tab.bootstrap.trackers.find((tr) => tr.id === tid) ?? null))}
