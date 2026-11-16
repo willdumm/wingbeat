@@ -1,4 +1,4 @@
-import { connectCallbackToken, connectRequest, instanceHost } from '@/lib/browser-sign-in';
+import { connectCallbackToken, connectRequest, demoInstance, instanceHost } from '@/lib/browser-sign-in';
 
 const TOKEN = 'ab'.repeat(32);
 const VERIFIER = 'cd'.repeat(32);
@@ -54,6 +54,15 @@ describe('connectCallbackToken', () => {
       'not a url',
     ]) {
       expect([url, connectCallbackToken(url, STATE)]).toEqual([url, null]);
+    }
+  });
+});
+
+describe('demoInstance', () => {
+  test('the production demo on the production channel, the staging one on every other build', () => {
+    expect(instanceHost(demoInstance('production'))).toEqual({ ok: true, host: 'demo.wingbeat.dummthings.dev' });
+    for (const channel of ['preview', 'development', null]) {
+      expect(instanceHost(demoInstance(channel))).toEqual({ ok: true, host: 'demo.staging.wingbeat.dummthings.dev' });
     }
   });
 });

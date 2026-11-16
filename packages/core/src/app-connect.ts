@@ -46,5 +46,8 @@ export function appConnectCallbackUrl(token: string, state: string): string {
  * it (demo_code, written by scripts/demo-seed.mjs from this constant).
  */
 export const DEMO_CODE = 'kodiak';
-/** The address the app's "Try the Demo" signs in to (the hosting repo's customers/demo.json). */
+/**
+ * The address the app's "Try the Demo" signs in to on the production channel (the hosting
+ * repo's customers/demo.json); other builds use its `.staging` (apps/mobile browser-sign-in.ts).
+ */
 export const DEMO_INSTANCE = 'demo';

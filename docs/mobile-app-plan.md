@@ -2246,8 +2246,10 @@ Demo" (JavaScript only, so it ships as an update), the seed script, and tests
 (`test/demo-feed.test.mjs`, `test/worker-demo.test.mjs`), and the privacy policy
 (`site/content/docs/privacy.md`). The staging `demo` customer runs this branch at
 `demo.staging.wingbeat.dummthings.dev` (hosting repo `customers/demo.json`, seeded and its
-history imported 2026-11-16). Still to do: the production `demo` customer (ask the user
-first). Every demo sign-in makes a session, and nothing prunes them. Points on the demo tenant grow by about
+history imported 2026-11-16). "Try the Demo" signs in to that staging demo on every build
+but the `production` channel's (`demoInstance` in `browser-sign-in.ts`), so TestFlight's
+`preview` builds have a working demo before production does. Still to do: the production
+`demo` customer (ask the user first), which the `production` channel's builds need. Every demo sign-in makes a session, and nothing prunes them. Points on the demo tenant grow by about
 2,000 a day with nothing pruning them, and the relief pilots have no default duty, so their
 days show "No duty times recorded"; both are accepted for now.
 
