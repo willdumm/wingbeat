@@ -90,6 +90,12 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
   }, [dayKey, tz, flights, trackers, cards, live, t, hidden]);
   const shownId = flightId ?? chosen;
   const flight = tab.ready && shownId != null ? tab.findFlight(shownId) : null;
+  // A flight's own screen whose flight is gone (deleted from its Edit) closes when it's shown again.
+  const shown = useRef(false);
+  if (flight) shown.current = true;
+  useEffect(() => {
+    if (focused && flightId != null && shown.current && !flight && router.canGoBack()) router.back();
+  }, [focused, flight]);
   const track = useMemo(() => flight && flightTrack(flight, {
     track: (flight.tracker_id != null ? trackerColor(trackers, flight.tracker_id) : null) ?? t['accent'],
     start: t['success-dot'],
@@ -118,7 +124,8 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
   // One flight: from the list, or from the day.
   const one = flight && track && (() => {
     const detail = flightDetail(tab.tz, flight, tab.roster);
-    const edit = () => router.push({ pathname: `/${stack}/assign`, params: { id: String(flight.id) } });
+    // A manual flight's whole form; a tracked flight's aircraft and pilot.
+    const edit = () => router.push({ pathname: `/${stack}/${flight.tracker_id == null ? 'flight' : 'assign'}`, params: { id: String(flight.id) } });
     const notes = [detail.manual && 'Manual entry', !track.line.features.length && 'No track recorded'].filter(Boolean).join(' · ');
     const sections = (
       <>

@@ -6,6 +6,7 @@
  */
 import { flightFormTimes, flightTrackedTimes, FLIGHT_MAX_SECS } from './flight-edits';
 import type { EffectiveFlight, FlightFormTimes } from './flight-edits';
+import { unixToTzDateStr, unixToTzTime } from './time';
 import type { AssignmentRequest, BulkFlagsRequest, CorrectionRequest, FlightRef } from './api/corrections-requests';
 
 /**
@@ -68,6 +69,29 @@ export interface TrackerOriginal {
 export type FlightFormTarget =
   | { tracked: true; orig: TrackerOriginal }
   | { tracked: false; entryId: number | null };
+
+/** What the form edits for flight f: a tracked flight with its tracker's own values, or a manual flight's row. */
+export function flightFormTarget(f: EffectiveFlight): FlightFormTarget {
+  if (f.tracker_id == null) return { tracked: false, entryId: f.edit?.entry.id ?? null };
+  return { tracked: true, orig: { ...f, ...f.edit?.original } as TrackerOriginal };
+}
+
+/** The form's fields filled from flight f, its times in tz, as the web's form opens it. */
+export function flightFormFieldsOf(tz: string, f: EffectiveFlight): FlightFormFields {
+  const edit = f.edit;
+  return {
+    date: unixToTzDateStr(tz, f.start_time),
+    dep: unixToTzTime(tz, f.start_time),
+    arr: unixToTzTime(tz, f.end_time ?? f.start_time),
+    origin: f.origin_label || '',
+    dest: f.destination_label || '',
+    aircraft: (f.aircraft_tail as string | null | undefined) || '',
+    pilot: f.pilot_id == null ? '' : String(f.pilot_id),
+    part: edit?.part91 ? '91' : '135',
+    pay: edit?.unpaid ? 'unpaid' : 'paid',
+    remark: edit?.remark || '',
+  };
+}
 
 /** The form's values, read. */
 export interface FlightFormValues {

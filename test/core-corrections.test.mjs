@@ -130,6 +130,24 @@ describe('the flight form', () => {
     assert.equal(same.body.assign, undefined);
   });
 
+  test('filled from a flight: a manual flight with its marks, a tracked one with its tracker’s values', () => {
+    const m = { ...manualFlight(8, '2026-07-01 22:15', '2026-07-02 00:05'), origin_label: 'PAKN', destination_label: null,
+      aircraft_tail: 'N2' };
+    m.edit = { ...m.edit, part91: true, unpaid: true, remark: 'Training' };
+    assert.deepEqual(corrections.flightFormFieldsOf(TZ, m), {
+      date: '2026-07-01', dep: '22:15', arr: '00:05', origin: 'PAKN', dest: '', aircraft: 'N2', pilot: '1',
+      part: '91', pay: 'unpaid', remark: 'Training',
+    });
+    assert.deepEqual(corrections.flightFormTarget(m), { tracked: false, entryId: 8 });
+    const t = trackedFlight(5, '2026-07-01 09:10', '2026-07-01 10:30',
+      { entry: { id: 9 }, manual: false, part91: false, unpaid: false, remark: null, original: { start_time: at('2026-07-01 09:00') } });
+    assert.equal(corrections.flightFormFieldsOf(TZ, t).part, '135');
+    const target = corrections.flightFormTarget(t);
+    assert.equal(target.tracked, true);
+    assert.equal(target.orig.start_time, at('2026-07-01 09:00'));
+    assert.equal(target.orig.end_time, at('2026-07-01 10:30'));
+  });
+
   test('the page’s globals bind the operator timezone', () => {
     assert.deepEqual(plain(engine.readFlightForm(fields(), tracked)), plain(corrections.readFlightForm(TZ, fields(), tracked)));
     assert.deepEqual(plain(engine.flightFormTimesOf(fields())), plain(corrections.flightFormTimesOf(TZ, fields())));

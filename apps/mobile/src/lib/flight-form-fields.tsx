@@ -3,8 +3,9 @@
  * date and Dep/Arr times in the operator's zone (an arrival before the departure is the next
  * day, said under them), origin and destination (any text, with the named points that match
  * it suggested under the field, as the web's field with its suggestions), aircraft and pilot,
- * Part 135 or 91 and, for Part 91, pay, and the remark. A SwiftUI `Form`: compact
- * `DatePicker`s, menu and segmented `Picker`s, `TextField`s, a suggestion's `Button`.
+ * Part 135 or 91 and, for Part 91, pay, the remark and, for an edited manual flight, Delete.
+ * A SwiftUI `Form`: compact `DatePicker`s, menu and segmented `Picker`s, `TextField`s, a
+ * suggestion's `Button`.
  * Android: the Material date and time pickers, `ExposedDropdownMenuBox`,
  * `SingleChoiceSegmentedButtonRow`, `TextField` (docs/mobile-design-principles.md, 2).
  *
@@ -62,7 +63,7 @@ function PlaceField({ label, places, initial, onChange }: {
   );
 }
 
-export function FlightFormFields({ fields, fill, choices, places, timesHint, onChange }: {
+export function FlightFormFields({ fields, fill, choices, places, timesHint, onChange, onDelete = null }: {
   fields: Fields;
   /** Changed when the caller refills the form. */
   fill: number;
@@ -73,6 +74,8 @@ export function FlightFormFields({ fields, fill, choices, places, timesHint, onC
   timesHint: string;
   /** Applied to the form as it is then. */
   onChange: (patch: Partial<Fields>) => void;
+  /** Deletes the flight (an edited manual flight's), or null. */
+  onDelete?: (() => void) | null;
 }) {
   return (
     <Host style={{ flex: 1 }}>
@@ -102,6 +105,11 @@ export function FlightFormFields({ fields, fill, choices, places, timesHint, onC
         <Section title="Remark">
           <RemarkField key={fill} initial={fields.remark} onChange={(remark) => onChange({ remark })} />
         </Section>
+        {onDelete && (
+          <Section>
+            <Button role="destructive" label="Delete Flight" onPress={onDelete} />
+          </Section>
+        )}
       </Form>
     </Host>
   );
