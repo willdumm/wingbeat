@@ -1,13 +1,17 @@
 /**
  * The flight form's app-side logic (the web's flight editor, src/shared/flight-editor.ts):
  * a new manual flight's fields, the pickers' choices, and the named points suggested for the
- * origin and destination as they're typed (they take any text, as the web's field does). Reading and validating the fields, and the save's request,
- * are core's (corrections.ts: readFlightForm, flightSaveRequest).
+ * origin and destination as they're typed (they take any text, as the web's field does), and
+ * a tracked flight's notes on what its tracker recorded. Filling, reading and validating the
+ * fields, and the save's request, are core's (corrections.ts: flightFormFieldsOf,
+ * readFlightForm, flightSaveRequest).
  */
 import type { Aircraft } from '@wingbeat/core/api/aircraft';
 import type { NamedPointsResponse } from '@wingbeat/core/api/named-points';
 import type { Pilot } from '@wingbeat/core/api/pilots';
-import type { FlightFormFields } from '@wingbeat/core/corrections';
+import type { FlightFormFields, TrackerOriginal } from '@wingbeat/core/corrections';
+import { FLIGHT_EDIT_FIELD_NAMES, flightFieldEdited, flightOriginalText, type FlightEdit, type FlightEditField } from '@wingbeat/core/flight-edits';
+import { tzDateLabel, unixToTzDateStr, unixToTzTime } from '@wingbeat/core/time';
 import type { FilterChoice } from './flights';
 
 /** A named point, as the form picks it. */
@@ -85,5 +89,22 @@ export function flightFormChoices(
       ...(tracked ? [{ value: '', label: 'Unknown Pilot' }] : fields.pilot === '' ? [{ value: '', label: 'Choose…' }] : []),
       ...pilots.filter((p) => p.active || String(p.id) === fields.pilot).map((p) => ({ value: String(p.id), label: p.name })),
     ],
+  };
+}
+
+/**
+ * A tracked flight's notes, as the web's form gives them: the tracker's own flight (by Revert
+ * to Tracker), and under the times and the places the tracker's value of each one corrected,
+ * e.g. "Tracker Dep: 09:00".
+ */
+export function trackerNotes(tz: string, f: { edit?: FlightEdit | null }, orig: TrackerOriginal): { flight: string; times: string[]; places: string[] } {
+  const was = (fields: FlightEditField[]) => fields.filter((field) => flightFieldEdited(f, field))
+    .map((field) => 'Tracker ' + FLIGHT_EDIT_FIELD_NAMES[field] + ': ' + flightOriginalText(tz, field, f.edit!.original[field]));
+  return {
+    flight: 'Corrections show everywhere except the recorded track. Tracker: ' + tzDateLabel(unixToTzDateStr(tz, orig.start_time)) +
+      ', ' + unixToTzTime(tz, orig.start_time) + '–' + unixToTzTime(tz, orig.end_time) + ', ' +
+      (orig.origin_label || '—') + ' → ' + (orig.destination_label || '—') + '.',
+    times: was(['start_time', 'end_time']),
+    places: was(['origin_label', 'destination_label']),
   };
 }

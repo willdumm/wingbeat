@@ -1,5 +1,6 @@
 import { flightFormTimesOf, flightSaveRequest, readFlightForm, type FlightFormTarget } from '@wingbeat/core/corrections';
-import { flightFormChoices, newFlightFields, placeCoords, placesOf, placeSuggestions, type Place } from '@/lib/flight-form';
+import { tzLocalToEpoch } from '@wingbeat/core/time';
+import { flightFormChoices, newFlightFields, placeCoords, placesOf, placeSuggestions, trackerNotes, type Place } from '@/lib/flight-form';
 
 const TZ = 'America/Anchorage';
 const NEW: FlightFormTarget = { tracked: false, entryId: null };
@@ -103,5 +104,20 @@ describe('a new manual flight\'s save', () => {
     const v = readFlightForm(TZ, { ...newFlightFields('2026-07-01', null), arr: '09:00' }, NEW);
     if (typeof v === 'string') throw new Error(v);
     expect(flightSaveRequest(v, NEW, { removed: false, baseHistoryId: 0, coords: () => [null, null] })).toBe('Choose a pilot.');
+  });
+});
+
+describe('trackerNotes', () => {
+  const at = (hhmm: string) => tzLocalToEpoch(TZ, '2026-07-01', hhmm);
+  const orig = { tracker_id: 3, start_time: at('09:00'), end_time: at('10:30'), origin_label: 'Kodiak', destination_label: null };
+  test('the tracker’s flight, and its value of each corrected field', () => {
+    const edit = { entry: { id: 9 } as never, manual: false, part91: false, unpaid: false, remark: null, excluded: false,
+      original: { start_time: at('09:00'), destination_label: null } };
+    expect(trackerNotes(TZ, { edit }, orig)).toEqual({
+      flight: 'Corrections show everywhere except the recorded track. Tracker: Wed Jul 1, 09:00–10:30, Kodiak → —.',
+      times: ['Tracker Dep: 09:00'],
+      places: ['Tracker Dest: (none)'],
+    });
+    expect(trackerNotes(TZ, { edit: null }, orig)).toMatchObject({ times: [], places: [] });
   });
 });

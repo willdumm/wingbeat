@@ -3,9 +3,9 @@
  * date and Dep/Arr times in the operator's zone (an arrival before the departure is the next
  * day, said under them), origin and destination (any text, with the named points that match
  * it suggested under the field, as the web's field with its suggestions), aircraft and pilot,
- * Part 135 or 91 and, for Part 91, pay, the remark and, for an edited manual flight, Delete.
- * A SwiftUI `Form`: compact `DatePicker`s, menu and segmented `Picker`s, `TextField`s, a
- * suggestion's `Button`.
+ * Part 135 or 91 and, for Part 91, pay, the remark and, for a flight being edited, its actions
+ * (Remove from Log, Revert to Tracker, Delete Flight). A SwiftUI `Form`: compact
+ * `DatePicker`s, menu and segmented `Picker`s, `TextField`s, a suggestion's `Button`.
  * Android: the Material date and time pickers, `ExposedDropdownMenuBox`,
  * `SingleChoiceSegmentedButtonRow`, `TextField` (docs/mobile-design-principles.md, 2).
  *
@@ -63,7 +63,14 @@ function PlaceField({ label, places, initial, onChange }: {
   );
 }
 
-export function FlightFormFields({ fields, fill, choices, places, timesHint, onChange, onDelete = null }: {
+/** A button under the form. */
+export interface FlightFormAction {
+  label: string;
+  destructive?: boolean;
+  onPress: () => void;
+}
+
+export function FlightFormFields({ fields, fill, choices, places, timesHint, placesHint = '', onChange, actions = [], actionsHint = '' }: {
   fields: Fields;
   /** Changed when the caller refills the form. */
   fill: number;
@@ -72,10 +79,13 @@ export function FlightFormFields({ fields, fill, choices, places, timesHint, onC
   places: Place[];
   /** Under the times: "Arrives the next day" and the like, or ''. */
   timesHint: string;
+  /** Under the places, or ''. */
+  placesHint?: string;
   /** Applied to the form as it is then. */
   onChange: (patch: Partial<Fields>) => void;
-  /** Deletes the flight (an edited manual flight's), or null. */
-  onDelete?: (() => void) | null;
+  /** The buttons under the form (none while saving), and the text under them. */
+  actions?: FlightFormAction[];
+  actionsHint?: string;
 }) {
   return (
     <Host style={{ flex: 1 }}>
@@ -88,7 +98,7 @@ export function FlightFormFields({ fields, fill, choices, places, timesHint, onC
           <DatePicker title="Arrival" selection={dateOfTime(fields.arr)} displayedComponents={['hourAndMinute']}
             onDateChange={(d) => onChange({ arr: timeOfDate(d) })} />
         </Section>
-        <Section>
+        <Section footer={placesHint ? <Text>{placesHint}</Text> : undefined}>
           <PlaceField key={'origin' + fill} label="Origin" places={places} initial={fields.origin} onChange={(origin) => onChange({ origin })} />
           <PlaceField key={'dest' + fill} label="Destination" places={places} initial={fields.dest} onChange={(dest) => onChange({ dest })} />
         </Section>
@@ -105,9 +115,11 @@ export function FlightFormFields({ fields, fill, choices, places, timesHint, onC
         <Section title="Remark">
           <RemarkField key={fill} initial={fields.remark} onChange={(remark) => onChange({ remark })} />
         </Section>
-        {onDelete && (
-          <Section>
-            <Button role="destructive" label="Delete Flight" onPress={onDelete} />
+        {(actions.length > 0 || actionsHint) && (
+          <Section footer={actionsHint ? <Text>{actionsHint}</Text> : undefined}>
+            {actions.map((a) => (
+              <Button key={a.label} role={a.destructive ? 'destructive' : undefined} label={a.label} onPress={a.onPress} />
+            ))}
           </Section>
         )}
       </Form>

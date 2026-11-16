@@ -124,8 +124,8 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
   // One flight: from the list, or from the day.
   const one = flight && track && (() => {
     const detail = flightDetail(tab.tz, flight, tab.roster);
-    // A manual flight's whole form; a tracked flight's aircraft and pilot.
-    const edit = () => router.push({ pathname: `/${stack}/${flight.tracker_id == null ? 'flight' : 'assign'}`, params: { id: String(flight.id) } });
+    // The flight form; a flight in progress only its aircraft and pilot (its times aren't known yet).
+    const edit = () => router.push({ pathname: `/${stack}/${flight.end_time == null ? 'assign' : 'flight'}`, params: { id: String(flight.id) } });
     const notes = [detail.manual && 'Manual entry', !track.line.features.length && 'No track recorded'].filter(Boolean).join(' · ');
     const sections = (
       <>
