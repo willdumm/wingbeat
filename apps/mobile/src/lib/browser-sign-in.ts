@@ -29,11 +29,11 @@ export function instanceHost(input: string): AddressResult {
 
 /**
  * The instance "Try the Demo" signs in to on an update channel (Updates.channel): the
- * production demo on the production channel, the staging one on every other build (preview,
- * development).
+ * production demo on the store builds' channels (production, and preview for TestFlight, whose
+ * external testers go through Beta App Review), the staging one on development builds.
  */
 export function demoInstance(channel: string | null): string {
-  return channel === 'production' ? DEMO_INSTANCE : DEMO_INSTANCE + '.staging';
+  return channel === 'production' || channel === 'preview' ? DEMO_INSTANCE : DEMO_INSTANCE + '.staging';
 }
 
 /** What the Add account screen says for an address it can't use. */

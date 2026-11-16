@@ -59,9 +59,11 @@ describe('connectCallbackToken', () => {
 });
 
 describe('demoInstance', () => {
-  test('the production demo on the production channel, the staging one on every other build', () => {
-    expect(instanceHost(demoInstance('production'))).toEqual({ ok: true, host: 'demo.wingbeat.dummthings.dev' });
-    for (const channel of ['preview', 'development', null]) {
+  test('the production demo on the store builds\' channels, the staging one on development builds', () => {
+    for (const channel of ['production', 'preview']) {
+      expect(instanceHost(demoInstance(channel))).toEqual({ ok: true, host: 'demo.wingbeat.dummthings.dev' });
+    }
+    for (const channel of ['development', null]) {
       expect(instanceHost(demoInstance(channel))).toEqual({ ok: true, host: 'demo.staging.wingbeat.dummthings.dev' });
     }
   });
