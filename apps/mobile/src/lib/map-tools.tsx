@@ -38,7 +38,9 @@ export function SFIcon({ name, fallback, size, color }: { name: SFSymbol; fallba
   );
 }
 
-const BUTTON = 44;
+/** A tool button's size. */
+export const TOOL_SIZE = 44;
+const BUTTON = TOOL_SIZE;
 
 /** left and bottom: where the column sits on the map (bottom clear of the tab bar). */
 export function MapTools({ tools, left, bottom }: { tools: MapTool[]; left: number; bottom: number }) {

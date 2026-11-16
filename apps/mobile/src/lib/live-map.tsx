@@ -27,7 +27,7 @@ import { ChoicePicker, ToggleSection } from './choice-list';
 import { ElevationChrome, ElevationLayers, useElevationTool } from './elevation-tool';
 import { EndMarkers, endMarkerGroups, groupsKey, type EndMarker } from './end-markers';
 import { followWait, type TrackPick } from './live';
-import { MapTools, type MapTool } from './map-tools';
+import { MapTools, TOOL_SIZE, type MapTool } from './map-tools';
 import { defaultBasemapId, defaultOverlayIds, liveMapStyle, type MapBasemap } from './map-style';
 import { accountPrefKey, parseMapChoice } from './prefs';
 import { useStoredState } from './stored-state';
@@ -71,6 +71,8 @@ interface LiveMapProps {
   tools?: MapTool[];
   /** Shown at the top right, below the status bar or the header (clear of a back button). */
   overlay?: ReactNode;
+  /** Beside the tools' bottom, as Maps puts its logo (the Wingbeat lockup); it takes no touches. */
+  watermark?: ReactNode;
   /**
    * A full-width bar along the top, on the floating surface (as the overlay's), running up
    * under the status bar.
@@ -101,7 +103,7 @@ interface LiveMapProps {
   ref?: Ref<LiveMapRef>;
 }
 
-export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, topBar, sheetHeight, fit, fitKey, followKey = null, onPress, onLongPress, picks = [], ref }: LiveMapProps) {
+export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, watermark, topBar, sheetHeight, fit, fitKey, followKey = null, onPress, onLongPress, picks = [], ref }: LiveMapProps) {
   const t = useTokens();
   const camera = useRef<CameraRef>(null);
   const mapRef = useRef<MapRef>(null);
@@ -328,6 +330,11 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
       ) : null}
       <ElevationChrome tool={elevation} center={crosshair} top={Math.max(top, topEdge) + px(t['space-2'])} side={gutter} onReadoutHeight={setReadoutHeight} />
       {toolsShown && <MapTools tools={[...(basemaps.length + overlays.length > 1 ? [layersTool] : []), elevation.tool, ...tools]} left={gutter} bottom={toolsBottom} />}
+      {toolsShown && watermark && (
+        <View pointerEvents="none" style={{ position: 'absolute', left: gutter + TOOL_SIZE + px(t['space-2']), bottom: toolsBottom, height: TOOL_SIZE, justifyContent: 'center' }}>
+          {watermark}
+        </View>
+      )}
     </View>
   );
 }

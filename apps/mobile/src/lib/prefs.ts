@@ -64,9 +64,10 @@ export function parseMapChoice(stored: unknown): MapChoice {
   };
 }
 
-/** The Live tab's pinned status card's tracker, or null. */
-export function parseLivePinned(stored: unknown): number | null {
-  return typeof stored === 'number' && Number.isInteger(stored) ? stored : null;
+/** The Live tab's pinned status cards' trackers (one stored as a number by an earlier version). */
+export function parseLivePinned(stored: unknown): number[] {
+  const ids = Array.isArray(stored) ? stored : [stored];
+  return ids.filter((id): id is number => typeof id === 'number' && Number.isInteger(id));
 }
 
 // ── Elevation tool ──

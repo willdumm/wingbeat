@@ -34,8 +34,10 @@ describe('parse functions', () => {
     expect(parseMapChoice(undefined)).toEqual({ basemap: null, overlays: null });
     expect(parseMapChoice({ basemap: 'esri', overlays: [3, 'x', 5] })).toEqual({ basemap: 'esri', overlays: [3, 5] });
     expect(parseMapChoice({ basemap: 7, overlays: 'all' })).toEqual({ basemap: null, overlays: null });
-    expect(parseLivePinned(4)).toBe(4);
-    for (const v of [undefined, null, '4', 1.5]) expect(parseLivePinned(v)).toBeNull();
+    expect(parseLivePinned([4, 7])).toEqual([4, 7]);
+    expect(parseLivePinned(4)).toEqual([4]);
+    expect(parseLivePinned([4, '5', 1.5])).toEqual([4]);
+    for (const v of [undefined, null, '4', 1.5]) expect(parseLivePinned(v)).toEqual([]);
   });
 
   test('flight filter: a known preset and every field of the filter', () => {

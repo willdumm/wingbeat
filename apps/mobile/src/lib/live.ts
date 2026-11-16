@@ -66,30 +66,23 @@ export function statusCards(
   });
 }
 
-/** The most in-flight cards the Live tab's collapsed bar stacks. */
-export const STACKED_IN_FLIGHT = 4;
-
 export interface CardStack {
   shown: StatusCard[];
-  /** In-flight cards past STACKED_IN_FLIGHT, which only the open list shows. */
+  /** In-flight cards not shown, which the open list has. */
   moreInFlight: number;
 }
 
 /**
  * The Live tab's status cards, as its top bar stacks them. Open: every card. Collapsed: the
- * in-flight ones (at most STACKED_IN_FLIGHT) and the pinned one after them; with neither, the
- * card that last reported.
+ * pinned ones, in the cards' order; with none, the card that last reported.
  */
-export function cardStack(cards: StatusCard[], pinnedId: number | null, open: boolean): CardStack {
+export function cardStack(cards: StatusCard[], pinnedIds: number[], open: boolean): CardStack {
   if (open) return { shown: cards, moreInFlight: 0 };
-  const inFlight = cards.filter((c) => c.inFlight);
-  const shown = inFlight.slice(0, STACKED_IN_FLIGHT);
-  const pinned = cards.find((c) => c.trackerId === pinnedId);
-  if (pinned && !shown.includes(pinned)) shown.push(pinned);
+  const shown = cards.filter((c) => pinnedIds.includes(c.trackerId));
   if (!shown.length && cards.length) {
     shown.push(cards.reduce((a, b) => ((b.gpsTime ?? -Infinity) > (a.gpsTime ?? -Infinity) ? b : a)));
   }
-  return { shown, moreInFlight: Math.max(0, inFlight.length - STACKED_IN_FLIGHT) };
+  return { shown, moreInFlight: cards.filter((c) => c.inFlight && !shown.includes(c)).length };
 }
 
 /**

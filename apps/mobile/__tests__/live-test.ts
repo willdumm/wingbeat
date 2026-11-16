@@ -3,7 +3,7 @@ import { TRACKER_COLORS, type LiveData } from '@wingbeat/core/live';
 import type { Flight } from '@/lib/flights';
 import {
   cardStack, dayMap, flightTrackPicks, followWait, groundTrailFeatures, initialView, latestTracks, liveBounds, liveTrackPicks, mapDays,
-  pickDetails, positionFeatures, spotDetails, STACKED_IN_FLIGHT, statusCards, trackStarts, type StatusCard,
+  pickDetails, positionFeatures, spotDetails, statusCards, trackStarts, type StatusCard,
 } from '@/lib/live';
 
 const NOW = 1_793_739_600;
@@ -45,26 +45,21 @@ describe('cardStack', () => {
     metrics: null, location: null, position: null,
   });
   const ids = (s: { shown: StatusCard[] }) => s.shown.map((c) => c.trackerId);
-  test('collapsed: the in-flight cards, then the pinned one', () => {
+  test('collapsed: the pinned cards, in the cards’ order; the in-flight ones not shown counted', () => {
     const cards = [card(1, false), card(2, true), card(3, false), card(4, true)];
-    expect(ids(cardStack(cards, null, false))).toEqual([2, 4]);
-    expect(ids(cardStack(cards, 3, false))).toEqual([2, 4, 3]);
-    // Pinned and in flight: once, in its place.
-    expect(ids(cardStack(cards, 4, false))).toEqual([2, 4]);
+    expect(cardStack(cards, [3, 2], false)).toEqual({ shown: [cards[1], cards[2]], moreInFlight: 1 });
     // A pinned tracker that's gone.
-    expect(ids(cardStack(cards, 9, false))).toEqual([2, 4]);
+    expect(ids(cardStack(cards, [9, 4], false))).toEqual([4]);
   });
-  test('collapsed with nothing in flight or pinned: the card that last reported', () => {
-    expect(ids(cardStack([card(1, false, 100), card(2, false, 300), card(3, false)], null, false))).toEqual([2]);
-    expect(ids(cardStack([card(1, false)], null, false))).toEqual([1]);
-    expect(ids(cardStack([], null, false))).toEqual([]);
+  test('collapsed with nothing pinned: the card that last reported', () => {
+    expect(cardStack([card(1, true, 100), card(2, false, 300), card(3, false)], [], false))
+      .toEqual({ shown: [expect.objectContaining({ trackerId: 2 })], moreInFlight: 1 });
+    expect(ids(cardStack([card(1, false)], [9], false))).toEqual([1]);
+    expect(ids(cardStack([], [], false))).toEqual([]);
   });
-  test('at most STACKED_IN_FLIGHT in flight, the rest counted; open: every card', () => {
-    const cards = Array.from({ length: STACKED_IN_FLIGHT + 2 }, (_, i) => card(i + 1, true)).concat(card(99, false));
-    const stack = cardStack(cards, 99, false);
-    expect(ids(stack)).toEqual([1, 2, 3, 4, 99]);
-    expect(stack.moreInFlight).toBe(2);
-    expect(cardStack(cards, 99, true)).toEqual({ shown: cards, moreInFlight: 0 });
+  test('open: every card', () => {
+    const cards = [card(1, true), card(2, false)];
+    expect(cardStack(cards, [2], true)).toEqual({ shown: cards, moreInFlight: 0 });
   });
 });
 

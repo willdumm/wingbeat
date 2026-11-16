@@ -128,10 +128,13 @@ interactive. Decide when Android is built, and keep `MapSheet`'s props the same 
 - The status card: the tail on a pill in the tracker's color; IN FLIGHT / ON GROUND and the GPS
   age; altitude, speed and place on the first line when they fit. That's measured off-screen
   (an unseen copy), so where the text goes can't change what's measured and the layout can't
-  oscillate. The cards stack down the top bar (no sideways scroll): the in-flight ones and a
-  pinned one, with "All Aircraft" under them to open the rest.
+  oscillate. The cards stack down the top bar (no sideways scroll): the pinned ones, or the one
+  that last reported, with "All Aircraft" under them to open the rest. Each card's pin button is
+  always visible (outlined until pinned), so pinning needs no explaining.
 - Small chrome that doesn't need the full width (the day map's legend) goes at the top right,
-  clear of the back button.
+  clear of the back button. Anything tappable in it is a full 44-point row.
+- The brand: a small Wingbeat lockup (`brand.tsx`) beside the map tools' bottom, as Maps puts
+  its logo; it takes no touches.
 
 ## 6. Native-layout lessons
 
