@@ -1998,9 +1998,11 @@ The app sends both in an `X-Wingbeat-App` header on every request, as
   submission). It covers what the instance stores, what the relay stores, what Sentry
   receives, the presence data rules (Decision 5), account deletion, and users' emails
   (once "Email sign-in, email invites and finding your instance" ships). Written at step 11
-  (2026-11-16): `site/content/docs/privacy.md`, served at
-  `https://wingbeat.dummthings.dev/docs/privacy/` (the store listings' privacy URL) and linked
-  from the home page's footer. Its location section describes passive matching as coming; update
+  (2026-11-16), then merged (the same day) into Dumm Software's company-wide policy, the one
+  privacy URL: `https://dummthings.dev/privacy` (source: the `dummthings-site` repo's
+  `site/content/privacy.md`), whose Wingbeat section is `#wingbeat`. The store listings use it;
+  the docs site's footer links there and its old `/docs/privacy/` redirects there
+  (`site/static/_redirects`). Its location section describes passive matching as coming; update
   it when presence ships in phase 8, and add emails when email sign-in ships.
 - **App Store privacy labels** and the **Play Data Safety form**: precise location (presence
   features only, opt-in), identifiers (push token), crash data (Sentry), and nothing used for
@@ -2244,7 +2246,7 @@ fingerprint is build 6's).
 Step 11 (2026-11-16, `demo-tenant`): the demo feed, the demo sign-in and the app's "Try the
 Demo" (JavaScript only, so it ships as an update), the seed script, and tests
 (`test/demo-feed.test.mjs`, `test/worker-demo.test.mjs`), and the privacy policy
-(`site/content/docs/privacy.md`). The staging `demo` customer runs this branch at
+(now the Wingbeat section of `https://dummthings.dev/privacy`). The staging `demo` customer runs this branch at
 `demo.staging.wingbeat.dummthings.dev` (hosting repo `customers/demo.json`, seeded and its
 history imported 2026-11-16). "Try the Demo" signs in to the production demo
 (`demo.wingbeat.dummthings.dev`) on the `production` and `preview` channels, since
