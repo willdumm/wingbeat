@@ -19,8 +19,9 @@ import { useNow } from '@/lib/use-now';
 
 /**
  * The live view: each tracker's position and the track of its current or latest flight, with a
- * dot where it took off (the dashboard's default view), fitted each time the tab comes up, with the status cards along
- * the top; tapping one flies to it and opens its location details, a tap on the map near a
+ * dot where it took off (the dashboard's default view), fitted each time the tab comes up, again
+ * when a new point comes in (once the map's been left alone a few seconds), and by the Fit all
+ * tool, with the status cards along the top; tapping one flies to it and opens its location details, a tap on the map near a
  * drawn track opens that track point's, and a long press anywhere the pressed spot's. A day's
  * flights at once (the dashboard's "Map all") are on the Flights tab's day headers. A
  * `tracker` param (a notification tap, push.ts) selects that tracker as its card would.
@@ -60,6 +61,8 @@ export default function LiveScreen() {
     features: [...latest.features, ...groundTrailFeatures(cards, live).features],
   }), [latest, cards, live]);
   const bounds = useMemo(() => liveBounds(tracks, positions), [tracks, positions]);
+  // Changes with each tracker's newest fix: the map refits to take it in.
+  const fixes = Object.values(live).map((d) => d?.garmin_time ?? '').join(',');
 
   const tz = tab.ready ? tab.tz : null;
   const flights = tab.ready ? tab.flights : null;
@@ -111,6 +114,9 @@ export default function LiveScreen() {
         fit={bounds}
         // Again once the tracks load, if the positions came first.
         fitKey={visits + ':' + (tracks.features.length > 0)}
+        // Not while a sheet's open: it would pan away from what the sheet is about.
+        followKey={picked || selectedCard ? null : fixes}
+        tools={bounds ? [{ id: 'fit', icon: 'arrow.up.left.and.arrow.down.right', label: 'Fit all', onPress: () => map.current?.fitBounds(bounds) }] : []}
         picks={picks}
         onPress={(lngLat, zoom) => {
           // Away from a track, a tap closes the sheet, as in Maps.

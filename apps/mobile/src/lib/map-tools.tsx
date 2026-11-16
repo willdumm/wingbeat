@@ -1,12 +1,12 @@
 /**
  * The map's tools: a column of round glass buttons at its bottom left, each a native menu
- * (SwiftUI, through @expo/ui). A tool's button shows as on (prominent, in the accent) while its
+ * (SwiftUI, through @expo/ui), or a plain button when the tool has `onPress` instead. A tool's button shows as on (prominent, in the accent) while its
  * `active` is set (the Day tool while a day is mapped). Also the bits of native chrome the
  * map's overlays share: SF Symbol icons and shadows.
  */
 import type { ReactNode } from 'react';
 import { Platform, Text } from 'react-native';
-import { GlassEffectContainer, Host, Image, Menu, VStack } from '@expo/ui/swift-ui';
+import { Button, GlassEffectContainer, Host, Image, Menu, VStack } from '@expo/ui/swift-ui';
 import { accessibilityLabel, buttonBorderShape, buttonStyle, controlSize, frame, menuStyle, tint } from '@expo/ui/swift-ui/modifiers';
 import type { SFSymbol } from 'sf-symbols-typescript';
 import { px, useTokens } from './theme';
@@ -18,7 +18,9 @@ export interface MapTool {
   label: string;
   active?: boolean;
   /** The menu's items: SwiftUI Buttons, Toggles, Pickers and Sections. */
-  menu: ReactNode;
+  menu?: ReactNode;
+  /** A button without a menu: what a tap does. */
+  onPress?: () => void;
 }
 
 /**
@@ -48,22 +50,23 @@ export function MapTools({ tools, left, bottom }: { tools: MapTool[]; left: numb
     <Host matchContents style={{ position: 'absolute', left, bottom }}>
       <GlassEffectContainer spacing={px(t['space-2'])}>
         <VStack spacing={px(t['space-2'])}>
-          {tools.map((tool) => (
-            <Menu
-              key={tool.id}
-              label={<Image systemName={tool.icon} size={19} modifiers={[frame({ width: BUTTON - 16, height: BUTTON - 16 })]} />}
-              modifiers={[
-                accessibilityLabel(tool.label),
-                menuStyle('button'),
-                buttonStyle(tool.active ? 'glassProminent' : 'glass'),
-                buttonBorderShape('circle'),
-                controlSize('large'),
-                ...(tool.active ? [tint(t['accent-solid'])] : []),
-              ]}
-            >
-              {tool.menu}
-            </Menu>
-          ))}
+          {tools.map((tool) => {
+            const label = <Image systemName={tool.icon} size={19} modifiers={[frame({ width: BUTTON - 16, height: BUTTON - 16 })]} />;
+            const modifiers = [
+              accessibilityLabel(tool.label),
+              buttonStyle(tool.active ? 'glassProminent' : 'glass'),
+              buttonBorderShape('circle'),
+              controlSize('large'),
+              ...(tool.active ? [tint(t['accent-solid'])] : []),
+            ];
+            return tool.onPress ? (
+              <Button key={tool.id} onPress={tool.onPress} modifiers={modifiers}>{label}</Button>
+            ) : (
+              <Menu key={tool.id} label={label} modifiers={[menuStyle('button'), ...modifiers]}>
+                {tool.menu}
+              </Menu>
+            );
+          })}
         </VStack>
       </GlassEffectContainer>
     </Host>

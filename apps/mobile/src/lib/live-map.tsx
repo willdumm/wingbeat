@@ -10,12 +10,14 @@
  * over its bottom (a flight's details: map-sheet.tsx). The tools start with Layers, which picks
  * the basemap and toggles the overlays; picking a basemap resets the overlays to that
  * basemap's defaults, as on the web. Then Elevation (elevation-tool.tsx), which takes the
- * map's taps while it's on. Each account keeps its choice, between
+ * map's taps while it's on, then any the screen adds (Live's Fit all). With `followKey`, the
+ * map refits whenever it changes, unless the user moved the map in the last few seconds, in
+ * which case it refits once they stop. Each account keeps its choice, between
  * launches too (prefs.ts), and the Live tab and the flight detail share it.
  */
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 import { PixelRatio, StyleSheet, View } from 'react-native';
-import { Camera, GeoJSONSource, Images, Layer, Map, type CameraRef, type InitialViewState, type MapRef, type ViewState } from '@maplibre/maplibre-react-native';
+import { Camera, GeoJSONSource, Images, Layer, Map, type CameraRef, type InitialViewState, type MapRef, type ViewState, type ViewStateChangeEvent } from '@maplibre/maplibre-react-native';
 import type { TileOverlay } from '@wingbeat/core/api/bootstrap';
 import { Picker, Section, Text as SwiftText, Toggle } from '@expo/ui/swift-ui';
 import { pickerStyle, tag } from '@expo/ui/swift-ui/modifiers';
@@ -50,6 +52,9 @@ const IMAGES = {
 /** Room around fitted bounds, inside the overlay and the bars: clear of the tool column on the left. */
 const FIT_PADDING = { top: 24, right: 40, bottom: 24, left: 72 };
 
+/** How long after the user last moved the map a follow refit waits. */
+const FOLLOW_IDLE_MS = 10_000;
+
 interface LiveMapProps {
   basemaps: MapBasemap[];
   overlays: TileOverlay[];
@@ -74,10 +79,15 @@ interface LiveMapProps {
   /** Bounds to fit once the bars and the panel are measured (a flight's track), and again whenever fitKey changes. */
   fit?: [number, number, number, number] | null;
   fitKey?: unknown;
+  /**
+   * Fits `fit` again whenever this changes (a new point on Live), once the user has left the
+   * map alone for a few seconds; null holds off (a sheet is open) without dropping the change.
+   */
+  followKey?: unknown;
   ref?: Ref<LiveMapRef>;
 }
 
-export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, topBar, sheetHeight, fit, fitKey, onPress, onLongPress, picks = [], ref }: LiveMapProps) {
+export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, topBar, sheetHeight, fit, fitKey, followKey = null, onPress, onLongPress, picks = [], ref }: LiveMapProps) {
   const t = useTokens();
   const camera = useRef<CameraRef>(null);
   const mapRef = useRef<MapRef>(null);
@@ -131,6 +141,18 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
     fitted.current = { key: fitKey };
   }, [fit, measured, fitKey]);
 
+  // Following: the latest fit and fitBounds for a timer that fires later, and when the user last
+  // moved the map (a gesture, not a fit or a fly).
+  const latest = useRef({ fit, fitBounds });
+  latest.current = { fit, fitBounds };
+  const touched = useRef(0);
+  const followed = useRef(followKey);
+  const owed = useRef(false);
+  const followTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onGesture = ({ nativeEvent: v }: { nativeEvent: ViewStateChangeEvent }) => {
+    if (v.userInteraction) touched.current = Date.now();
+  };
+
   const layersTool: MapTool = {
     id: 'layers',
     icon: 'square.3.layers.3d',
@@ -174,6 +196,28 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
       return lngLat ? { lngLat: [lngLat[0], lngLat[1]], zoom: zoom.current } : null;
     },
   });
+  // A change owes a refit, paid once the map's been left alone (and the elevation tool, whose
+  // reference sits under the crosshair, is off); a gesture in the meantime puts it off again.
+  useEffect(() => {
+    if (followKey == null || elevation.on || !measured) {
+      if (followTimer.current) clearTimeout(followTimer.current);
+      followTimer.current = null;
+      return;
+    }
+    if (followKey !== followed.current) owed.current = true;
+    followed.current = followKey;
+    const pay = () => {
+      followTimer.current = null;
+      const wait = touched.current + FOLLOW_IDLE_MS - Date.now();
+      if (wait > 0) { followTimer.current = setTimeout(pay, wait); return; }
+      const { fit: bounds, fitBounds: fitTo } = latest.current;
+      if (bounds) fitTo(bounds, 800);
+      owed.current = false;
+    };
+    if (owed.current && !followTimer.current) pay();
+  }, [followKey, elevation.on, measured]);
+  useEffect(() => () => { if (followTimer.current) clearTimeout(followTimer.current); }, []);
+
   const onView = ({ nativeEvent: v }: { nativeEvent: ViewState }) => {
     zoom.current = v.zoom;
     elevation.readCenter();
@@ -202,7 +246,7 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
           the sheet isn't part of the map's safe area. */}
       <Map ref={mapRef} style={StyleSheet.absoluteFill} mapStyle={mapStyle} logo={false}
         compass compassPosition={{ top: Math.max(top, topEdge) - insets.top + px(t['space-2']) + (elevation.on ? readoutHeight + px(t['space-2']) : 0), right: gutter }}
-        attributionPosition={sheetHeight ? { top: Math.max(top, topEdge) - insets.top + px(t['space-2']), left: gutter } : { bottom: px(t['space-2']), right: gutter }} onRegionIsChanging={onView} onRegionDidChange={onView}
+        attributionPosition={sheetHeight ? { top: Math.max(top, topEdge) - insets.top + px(t['space-2']), left: gutter } : { bottom: px(t['space-2']), right: gutter }} onRegionWillChange={onGesture} onRegionIsChanging={(e) => { onGesture(e); onView(e); }} onRegionDidChange={(e) => { onGesture(e); onView(e); }}
         onPress={(e) => (elevation.on ? elevation.press(e.nativeEvent.lngLat, zoom.current) : onPress?.(e.nativeEvent.lngLat, zoom.current))}
         onLongPress={onLongPress && ((e) => onLongPress(e.nativeEvent.lngLat))}>
         <Camera ref={camera} initialViewState={initialView} />
