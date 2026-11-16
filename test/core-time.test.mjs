@@ -181,6 +181,7 @@ describe('core relativeTime', () => {
     assert.equal(time.relativeTime(now, now - 60), '1 min ago');
     assert.equal(time.relativeTime(now + 0.9, now - 3599), '59 min ago');
     assert.equal(time.relativeTime(now, now - 7200), '2 hr ago');
+    assert.equal(time.relativeTime(now, now - 86400), '1 day ago');
     assert.equal(time.relativeTime(now, now - 3 * 86400), '3 days ago');
   });
 });

@@ -1,8 +1,11 @@
 import type { DutyLogResponse } from '@wingbeat/core/api/duty';
+import { dutyExportEarliest, dutyMonthIndex, dutyMonthOf } from '@wingbeat/core/duty';
 import type { FlightCorrection, FlightEdit } from '@wingbeat/core/flight-edits';
+import { MAX_DUTY_DAYS_PER_REQUEST } from '@wingbeat/core/record-limits';
+import { dateOfDayKey, dateOfTime, dayKeyOfDate, timeOfDate } from '@/lib/date-pickers';
 import {
-  dateOfDayKey, dateOfTime, dayKeyOfDate, dutyDayFormOf, dutyDayRequest, dutyDaysRecorded, dutyTimesSuggested, timeOfDate,
-  dutyExportMonths, dutyExportOptions, dutyMonth, dutyMonthIndex, dutyMonthOf, dutyMonths, dutyMonthView, dutyPilots, dutyPilotShown,
+  dutyDayFormOf, dutyDayRequest, dutyDaysRecorded, dutyTimesSuggested,
+  dutyExportMonths, dutyExportOptions, dutyMonth, dutyMonths, dutyMonthView, dutyPilots, dutyPilotShown,
 } from '@/lib/duty';
 import type { Flight } from '@/lib/flights';
 import { parseDutyLog, parseDutyPilot } from '@/lib/prefs';
@@ -18,8 +21,12 @@ const flight = (over: Partial<Flight>): Flight => ({
   origin_label: 'Kodiak', destination_label: 'Larsen Bay', aircraft_tail: 'N123AB', pilot_id: 3, pilot_name: 'Jane Pilot',
   ...over,
 });
+const correction = (over: Partial<FlightCorrection>): FlightCorrection => ({
+  id: 9, tracker_id: 7, flight_start_time: null, start_time: null, end_time: null, origin_label: null, destination_label: null,
+  part91: 0, unpaid: 0, excluded: 0, remark: null, pilot_id: null, aircraft_tail: null, ...over,
+});
 const edit = (over: Partial<FlightEdit>): FlightEdit => ({
-  entry: { id: 9 } as FlightCorrection, manual: false, part91: false, unpaid: false, remark: null, excluded: false, original: {}, ...over,
+  entry: correction({}), manual: false, part91: false, unpaid: false, remark: null, excluded: false, original: {}, ...over,
 });
 const log = (over: Partial<DutyLogResponse> = {}): DutyLogResponse => ({
   days: [], default_duties: [], duty_methods: [], last_history_id: 0, ...over,
@@ -71,10 +78,12 @@ test('totals as meters: hours toward their limits, rest days toward the quarter�
 
 test('a warning row, and a correction whose flight is gone', () => {
   const long = flight({ end_time: JUL1_0800 + 9 * 3600 });
-  const gone = { id: 5, tracker_id: 7, flight_start_time: JUL1_0800 + 36000, pilot_id: 3, part91: 1 } as unknown as FlightCorrection;
+  const gone = correction({ id: 5, flight_start_time: JUL1_0800 + 36000, pilot_id: 3, part91: 1 });
   const view = dutyMonthView(TZ, dutyMonth(TZ, NOW, [long], [gone], PILOT, 2026, 7, log()));
   const jul1 = view.days.at(-1)!;
-  expect(jul1.data.some((i) => i.kind === 'warning')).toBe(true);
+  expect(jul1.data.find((i) => i.kind === 'warning')).toMatchObject({
+    text: '9:00 flight time in the 24 h to 17:00 (§135.267(b) limit 8:00)',
+  });
   expect(jul1.data.find((i) => i.kind === 'unmatched')).toEqual({
     kind: 'unmatched', key: 'u5', text: 'Tracked flight from 18:00 no longer found; its corrections (Part 91) aren’t counted.',
   });
@@ -125,6 +134,14 @@ test('the Export PDF menu: the shown month, its quarter so far, the quarter befo
   ]);
 });
 
+test('a Custom export reaches back to the pilot’s first flight', () => {
+  const cur = dutyMonthIndex(2026, 7);
+  const early = flight({ start_time: Date.UTC(2024, 9, 15, 20) / 1000 });
+  const earliest = dutyExportEarliest(TZ, [early, flight({})], PILOT.id, cur, cur);
+  expect(dutyMonthOf(earliest)).toEqual([2024, 10]);
+  expect(dutyExportMonths(earliest, cur).at(-1)).toEqual({ value: earliest, label: 'October 2024' });
+});
+
 test('a Custom export offers the months newest first', () => {
   const cur = dutyMonthIndex(2026, 7);
   expect(dutyExportMonths(cur - 2, cur)).toEqual([
@@ -157,6 +174,10 @@ test('the day form’s request: a rest day sends no times, and a bad range or ti
   expect(dutyDayRequest({ ...form, rest: true })).toMatchObject({ body: { duty_start: null, duty_end: null, rest: true } });
   expect(dutyDayRequest({ ...form, through: '2026-07-01' })).toBe('The Through date is before the date.');
   expect(dutyDayRequest({ ...form, times: { start: '08:00', end: '08:00' } })).toBe('The duty end must differ from its start.');
+  // Times on a rest day aren't sent, so they aren't checked either.
+  expect(dutyDayRequest({ ...form, rest: true, times: { start: '08:00', end: '08:00' } })).toMatchObject({ body: { rest: true } });
+  const past = dayKeyOfDate(new Date(2026, 6, 4 + MAX_DUTY_DAYS_PER_REQUEST, 12));
+  expect(dutyDayRequest({ ...form, through: past })).toBe('Enter at most ' + MAX_DUTY_DAYS_PER_REQUEST + ' days at a time.');
 });
 
 test('Duty Times starts from the pilot’s default on the date', () => {

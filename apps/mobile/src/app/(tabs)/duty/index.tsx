@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { currentDutyMonth, dutyPeriodLabel, type DutyInputFlight } from '@wingbeat/core/duty';
+import { currentDutyMonth, dutyMonthIndex, dutyMonthOf, dutyPeriodLabel } from '@wingbeat/core/duty';
 import { tzAddDays, unixToTzDateStr } from '@wingbeat/core/time';
 import { useAccounts } from '@/lib/accounts-context';
+import { errorText } from '@/lib/api';
 import {
-  dutyExportOptions, dutyMonth, dutyMonthIndex, dutyMonthOf, dutyMonthView, dutyPdfOf, dutyPilots, dutyPilotShown,
+  completedFlights, dutyExportOptions, dutyMonth, dutyMonthView, dutyPdfOf, dutyPilots, dutyPilotShown,
   type DutyExportOption,
 } from '@/lib/duty';
 import { DutyList } from '@/lib/duty-list';
@@ -13,6 +14,7 @@ import { useDutyPdf } from '@/lib/duty-pdf';
 import { EmptyState } from '@/lib/empty-state';
 import { useFlights } from '@/lib/flights-context';
 import { Placeholder } from '@/lib/placeholder';
+import { intParam } from '@/lib/route-params';
 import { accountPrefKey, parseDutyPilot } from '@/lib/prefs';
 import { useStoredState } from '@/lib/stored-state';
 import { useDutyLog } from '@/lib/use-duty-log';
@@ -23,9 +25,9 @@ import { useNow } from '@/lib/use-now';
  * A pilot's duty log (the web's, from Settings → Pilots): the pilot picked from the header's
  * menu (kept per account), else the user's own, a month at a time up to this one. The
  * header's Export PDF menu shares the web's PDF of the month, a quarter or 12 months, or
- * opens Custom (export.tsx) to pick the months. An
- * admin plans or edits a day in the day form (day.tsx): from a day, an Upcoming row, or the
- * header's + (tomorrow, since rest is designated ahead, as the web's Plan duty or rest).
+ * opens Custom (export.tsx) to pick the months. An admin plans or edits a day in the day
+ * form (day.tsx): from a day, an Upcoming row, or the header's + (tomorrow, since rest is
+ * designated ahead, as the web's Plan duty or rest).
  * The alerts screen opens a pilot's with params pilot, which picks them.
  */
 export default function DutyScreen() {
@@ -43,8 +45,9 @@ export default function DutyScreen() {
   const [shown, setShown] = useState<number | null>(null);
   // From an alert: the pilot's log at the current month, where their totals are.
   useEffect(() => {
-    if (!params.pilot) return;
-    setPicked(Number(params.pilot));
+    const pilotId = intParam(params.pilot);
+    if (pilotId == null) return;
+    setPicked(pilotId);
     setShown(null);
     router.setParams({ pilot: undefined });
   }, [params.pilot]);
@@ -55,11 +58,10 @@ export default function DutyScreen() {
   const [year, month] = dutyMonthOf(index);
   const view = useMemo(() => {
     if (!tz || !store || !pilot || !log) return null;
-    const flights = store.getCompleted() as DutyInputFlight[];
-    return dutyMonthView(tz, dutyMonth(tz, now, flights, store.getUnmatched(), pilot, year, month, log));
+    return dutyMonthView(tz, dutyMonth(tz, now, completedFlights(store), store.getUnmatched(), pilot, year, month, log));
   }, [tz, store, generation, pilot?.id, pilot?.name, log, year, month, now]);
   const exportOptions = useMemo(() => (tz && store && pilot && log
-    ? dutyExportOptions(tz, store.getCompleted() as DutyInputFlight[], pilot.id, index, current) : []),
+    ? dutyExportOptions(tz, completedFlights(store), pilot.id, index, current) : []),
   [tz, store, generation, pilot?.id, log, index, current]);
   const pdf = useDutyPdf();
 
@@ -77,10 +79,10 @@ export default function DutyScreen() {
   const exportPeriod = (o: DutyExportOption) => {
     if (!store || !log) return;
     const at = Math.floor(Date.now() / 1000);
-    const { source, name } = dutyPdfOf(tab.tz, at, store.getCompleted() as DutyInputFlight[], store.getUnmatched(), pilot,
+    const { source, name } = dutyPdfOf(tab.tz, at, completedFlights(store), store.getUnmatched(), pilot,
       o.from, o.to, log, tab.bootstrap.instance?.app_name ?? 'Wingbeat');
     pdf.exportPdf(source, name).catch((e: unknown) => {
-      Alert.alert('PDF export failed', e instanceof Error ? e.message : String(e));
+      Alert.alert('PDF export failed', errorText(e));
     });
   };
   return (

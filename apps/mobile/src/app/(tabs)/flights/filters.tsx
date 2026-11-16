@@ -1,16 +1,20 @@
 import { Stack, useRouter } from 'expo-router';
 import { DatePicker, Form, Host, Section } from '@expo/ui/swift-ui';
 import { emptyFilterState } from '@wingbeat/core/filters';
+import { activeTrackers } from '@wingbeat/core/live';
 import { ChoicePicker, ToggleSection } from '@/lib/choice-list';
+import { dateOfDayKey, dayKeyOfDate } from '@/lib/date-pickers';
 import { useFlightFilter } from '@/lib/flight-filter-context';
-import { dateOfDayKey, dayKeyOfDate } from '@/lib/duty';
 import { customDateRange, DATE_PRESETS, filterChoices, toggled, type DatePresetId } from '@/lib/flights';
 import { Placeholder } from '@/lib/placeholder';
 import { useFlightsTab } from '@/lib/use-flights-tab';
 
 const DATE_CHOICES = DATE_PRESETS.map((p) => ({ value: p.id, label: p.label }));
 
-/** The filter sheet: a date preset (Custom: From and To), and any of the aircraft, pilots and trackers (none: all). */
+/**
+ * The filter sheet: a date preset (Custom: From and To), and any of the aircraft, pilots and
+ * trackers (none: all).
+ */
 export default function FlightFiltersScreen() {
   const router = useRouter();
   const tab = useFlightsTab();
@@ -19,11 +23,11 @@ export default function FlightFiltersScreen() {
   const { bootstrap, tz } = tab;
   // Custom starts from the range the preset showed.
   const pickPreset = (p: DatePresetId) => {
-    if (p === 'custom' && preset !== 'custom') setFilter({ ...filter, ...customDateRange(tz, Date.now() / 1000, preset) });
+    if (p === 'custom' && preset !== 'custom') setFilter({ ...filter, ...customDateRange(tz, Math.floor(Date.now() / 1000), preset) });
     setPreset(p);
   };
   const choices = filterChoices(tab.flights, {
-    trackers: bootstrap.trackers.filter((tr) => tr.active && !tr.deleted),
+    trackers: activeTrackers(bootstrap.trackers),
     pilots: bootstrap.pilots,
     aircraft: bootstrap.aircraft,
   });

@@ -6,8 +6,7 @@
 import { Text, View } from 'react-native';
 import { Marker, type ViewState } from '@maplibre/maplibre-react-native';
 import { END_MARKER, groupEndMarkers, mercatorPixel } from '@wingbeat/core/live';
-import { shadow } from './map-tools';
-import { useTokens } from './theme';
+import { shadow, useTokens } from './theme';
 
 export interface EndMarker {
   id: string;

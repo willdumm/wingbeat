@@ -258,7 +258,9 @@ describe('app connect (/app/connect)', () => {
     assert.ok(r.body.includes(`value="${challenge}"`) && r.body.includes(`value="${state}"`));
     assert.match(r.headers.get('content-security-policy'), /form-action 'self' wingbeat:/);
     // Only this page may hand off to the app.
-    assert.match((await w.request('GET', '/')).headers.get('content-security-policy'), /form-action 'self'$/);
+    const elsewhere = (await w.request('GET', '/')).headers.get('content-security-policy');
+    assert.match(elsewhere, /form-action 'self'(;|$)/);
+    assert.ok(!elsewhere.includes('wingbeat:'));
     // Nothing was made by looking.
     assert.equal((await w.first('SELECT COUNT(*) AS n FROM invite_tokens WHERE code_challenge = ?', challenge)).n, 0);
   });

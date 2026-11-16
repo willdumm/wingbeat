@@ -2,8 +2,8 @@
  * What the Live tab shows, from the flight store and the last refresh: one status card per
  * active tracker (what the dashboard's buildAircraftCard() shows), each tracker's position,
  * and the track of its current or latest flight (the dashboard's default view), with the
- * bounds the map fits to them; or a day's flights at once (dayMap, the Flights tab's day map). Colors are
- * core's trackerColor(), or the caller's faint color for a tracker without one.
+ * bounds the map fits to them; or a day's flights at once (dayMap, the Flights tab's day
+ * map). Colors are core's trackerColor(), or the caller's faint color for a tracker without one.
  */
 import type { InstanceSettings } from '@wingbeat/core/api/bootstrap';
 import type { FlightPoint, TrackedFlight } from '@wingbeat/core/api/flights';
@@ -146,10 +146,21 @@ export function trackStarts(tracks: GeoJSON.FeatureCollection<GeoJSON.LineString
   };
 }
 
-/** What the Live map fits on opening: every coordinate of the collections (tracks and positions); null when there are none. */
+/**
+ * What the Live map fits on opening: every coordinate of the collections (tracks and
+ * positions); null when there are none.
+ */
 export function liveBounds(...collections: GeoJSON.FeatureCollection<GeoJSON.Point | GeoJSON.LineString>[]): [number, number, number, number] | null {
   return bboxOf(collections.flatMap((c) => c.features.flatMap((f) =>
     (f.geometry.type === 'Point' ? [f.geometry.coordinates] : f.geometry.coordinates) as [number, number][])));
+}
+
+/**
+ * How long a follow refit still waits (ms) for a map the user last moved at touchedAt: until
+ * they've left it alone for idleMs; 0 to fit now.
+ */
+export function followWait({ touchedAt, now, idleMs }: { touchedAt: number; now: number; idleMs: number }): number {
+  return Math.max(0, touchedAt + idleMs - now);
 }
 
 // ── The point picker: a tap on the map, snapped to a drawn track's point ──
@@ -300,7 +311,7 @@ export function dayMap(
     const coords = f.points.map((p) => [p.lon, p.lat] as [number, number]);
     const color = colorFor(f.tracker_id);
     drawn.push({ flight: f, n, color });
-    all.push(...coords);
+    for (const c of coords) all.push(c);
     tracks.push({ type: 'Feature', id: f.id, geometry: { type: 'LineString', coordinates: coords }, properties: { color } });
     points.push({ type: 'Feature', id: 'start-' + f.id, geometry: { type: 'Point', coordinates: coords[0] }, properties: { color, inFlight: false } });
     if (!inProgress(f)) {
@@ -308,13 +319,11 @@ export function dayMap(
     }
   });
   const trackerIds = [...new Set(day.filter((_, i) => numbers[i] != null).map((f) => f.tracker_id))];
-  const lons = all.map((c) => c[0]);
-  const lats = all.map((c) => c[1]);
   return {
     tracks: { type: 'FeatureCollection', features: tracks },
     points: { type: 'FeatureCollection', features: points },
     flights: drawn,
     legend: trackerIds.length > 1 ? trackerIds.map((id) => ({ label: labelFor(id), color: colorFor(id) })) : [],
-    bounds: all.length ? [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)] : null,
+    bounds: bboxOf(all),
   };
 }

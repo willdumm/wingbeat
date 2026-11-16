@@ -85,7 +85,10 @@ export async function checkAlerts(tenant: Tenant, scheduledTime: number): Promis
   const current = new Map<string, Alert>();
   for (const alert of computeAlerts(timezone, now, lists)) {
     if (alert.kind === 'unassigned_flight' && airborne.has(alert.flight_id)) continue;
-    current.set(alertKey(alert, flightsById), alert);
+    // One bad alert skips itself, not every subscriber's run.
+    let key: string;
+    try { key = alertKey(alert, flightsById); } catch (err) { console.error('checkAlerts: skipping an alert:', err); continue; }
+    current.set(key, alert);
   }
   const seen = new Set(seenRows.results.map(r => r.key));
   const appeared = [...current].filter(([key]) => !seen.has(key));

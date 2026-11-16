@@ -197,5 +197,6 @@ export function relativeTime(now: number, epoch: number | null): string {
   if (sec < 60) return 'just now';
   if (sec < 3600) return Math.floor(sec / 60) + ' min ago';
   if (sec < 86400) return Math.floor(sec / 3600) + ' hr ago';
-  return Math.floor(sec / 86400) + ' days ago';
+  const days = Math.floor(sec / 86400);
+  return days + (days === 1 ? ' day ago' : ' days ago');
 }

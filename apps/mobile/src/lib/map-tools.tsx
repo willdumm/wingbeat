@@ -1,8 +1,8 @@
 /**
  * The map's tools: a column of round glass buttons at its bottom left, each a native menu
- * (SwiftUI, through @expo/ui), or a plain button when the tool has `onPress` instead. A tool's button shows as on (prominent, in the accent) while its
- * `active` is set (the Day tool while a day is mapped). Also the bits of native chrome the
- * map's overlays share: SF Symbol icons and shadows.
+ * (SwiftUI, through @expo/ui), or a plain button when the tool has `onPress` instead. A
+ * tool's button shows as on (prominent, in the accent) while its `active` is set (the Day
+ * tool while a day is mapped). Also the SF Symbol icon the map's overlays share.
  */
 import type { ReactNode } from 'react';
 import { Platform, Text } from 'react-native';
@@ -11,17 +11,18 @@ import { accessibilityLabel, buttonBorderShape, buttonStyle, controlSize, frame,
 import type { SFSymbol } from 'sf-symbols-typescript';
 import { px, useTokens } from './theme';
 
-export interface MapTool {
+export type MapTool = {
   id: string;
   icon: SFSymbol;
   /** The button's accessibility label. */
   label: string;
   active?: boolean;
+} & (
   /** The menu's items: SwiftUI Buttons, Toggles, Pickers and Sections. */
-  menu?: ReactNode;
+  | { menu: ReactNode; onPress?: never }
   /** A button without a menu: what a tap does. */
-  onPress?: () => void;
-}
+  | { onPress: () => void; menu?: never }
+);
 
 /**
  * An SF Symbol, for inside a Pressable (which takes the touch, not SwiftUI). Android has no
@@ -36,9 +37,6 @@ export function SFIcon({ name, fallback, size, color }: { name: SFSymbol; fallba
     <Text style={{ fontSize: size * 0.85, fontWeight: '700', color }}>{fallback}</Text>
   );
 }
-
-// A shadow token as boxShadow (dark mode's are 'none').
-export const shadow = (token: string) => (token === 'none' ? undefined : token);
 
 const BUTTON = 44;
 

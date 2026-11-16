@@ -50,8 +50,8 @@ export interface MapStyleOptions {
   background: string;
 }
 
-export const basemapSourceId = (id: string) => 'basemap-' + id;
-export const overlaySourceId = (id: number) => 'overlay-' + id;
+const basemapSourceId = (id: string) => 'basemap-' + id;
+const overlaySourceId = (id: number) => 'overlay-' + id;
 
 export function liveMapStyle({ basemap, overlays, origin, pixelRatio, background }: MapStyleOptions): StyleSpecification {
   const style: StyleSpecification = {

@@ -1,6 +1,10 @@
+import type { FlightPoint, TrackedFlight } from '@wingbeat/core/api/flights';
 import { TRACKER_COLORS, type LiveData } from '@wingbeat/core/live';
 import type { Flight } from '@/lib/flights';
-import { dayMap, flightTrackPicks, groundTrailFeatures, initialView, latestTracks, liveBounds, mapDays, pickDetails, positionFeatures, spotDetails, statusCards, trackStarts } from '@/lib/live';
+import {
+  dayMap, flightTrackPicks, followWait, groundTrailFeatures, initialView, latestTracks, liveBounds, liveTrackPicks, mapDays,
+  pickDetails, positionFeatures, spotDetails, statusCards, trackStarts,
+} from '@/lib/live';
 
 const NOW = 1_793_739_600;
 const trackers = [
@@ -11,6 +15,13 @@ const trackers = [
 const liveData = (over: Partial<LiveData>): LiveData => ({
   lat: 57.8, lon: -152.4, velocity_kmh: 0, elevation_m: 30, course_deg: 90, garmin_time: NOW - 600,
   last_point_time: null, ground_trail: [], location_label: null, last_polled: NOW - 30, ...over,
+});
+const pt = (lon: number, lat: number, over: Partial<FlightPoint> = {}): FlightPoint =>
+  ({ t: 0, lat, lon, v: 0, e: 0, c: 0, ...over });
+const tracked = (id: number, tracker_id: number, points: FlightPoint[]): TrackedFlight => ({
+  id, tracker_id, start_time: NOW - 3600, end_time: null, modified_at: NOW, aircraft_tail: null, pilot_id: null,
+  pilot_name: 'Sam', origin_label: null, destination_label: null, start_lat: null, start_lon: null, end_lat: null,
+  end_lon: null, points,
 });
 const live = {
   1: liveData({ velocity_kmh: 180, elevation_m: 300, garmin_time: NOW - 120, location_label: 'Kodiak' }),
@@ -30,11 +41,11 @@ test('one card per tracker, as the dashboard builds it', () => {
 test('positions for trackers with one; each tracker\'s latest track, in flight or not, and the bounds of all', () => {
   const cards = statusCards(trackers, live, NOW, 'faint');
   expect(positionFeatures(cards, live).features.map((f) => f.id)).toEqual([1, 2]);
-  const raw: Record<number, { points: { lat: number; lon: number }[] }[]> = {
-    1: [{ points: [{ lat: 1, lon: 2 }] }, { points: [{ lat: 57, lon: -152 }, { lat: 57.8, lon: -152.4 }] }],
-    2: [{ points: [{ lat: 1, lon: 2 }, { lat: 3, lon: 4 }] }],
+  const raw: Record<number, TrackedFlight[]> = {
+    1: [tracked(10, 1, [pt(2, 1)]), tracked(11, 1, [pt(-152, 57), pt(-152.4, 57.8)])],
+    2: [tracked(20, 2, [pt(2, 1), pt(4, 3)])],
   };
-  const tracks = latestTracks(cards, ([id]: number[]) => (raw[id] ?? []) as never);
+  const tracks = latestTracks(cards, ([id]: number[]) => raw[id] ?? []);
   expect(tracks.features.map((f) => f.geometry.coordinates)).toEqual([[[-152, 57], [-152.4, 57.8]], [[2, 1], [4, 3]]]);
   expect(trackStarts(tracks).features.map((f) => [f.id, f.geometry.coordinates, f.properties])).toEqual([
     ['start-1', [-152, 57], { color: TRACKER_COLORS[0], inFlight: false }],
@@ -70,10 +81,9 @@ test("the map opens on the instance's view, else the first position", () => {
 
 describe('a day’s flights', () => {
   const TZ = 'America/Anchorage';
-  const pt = (lon: number, lat: number) => ({ t: 0, lat, lon, v: 0, e: 0, c: 0 });
   // 2026-11-03 09:00 and 13:00 AKST, then 2026-11-04 10:00.
-  const flight = (id: number, start: number, tracker_id: number | null, points = [pt(-152, 57), pt(-153, 58)]) =>
-    ({ id, start_time: start, end_time: start + 3600, tracker_id, points }) as unknown as Flight;
+  const flight = (id: number, start: number, tracker_id: number | null, points = [pt(-152, 57), pt(-153, 58)]): Flight =>
+    ({ id, start_time: start, end_time: start + 3600, tracker_id, points });
   const flights = [
     flight(1, 1_793_728_800, 1),
     flight(2, 1_793_743_200, 2, [pt(-150, 59), pt(-151, 60)]),
@@ -100,3 +110,45 @@ describe('a day’s flights', () => {
   });
 });
 
+
+describe('the point picker', () => {
+  const TZ = 'America/Anchorage';
+  const picks = flightTrackPicks([{
+    id: 1, start_time: NOW, end_time: NOW + 600, tracker_id: 1, pilot_name: 'Sam',
+    points: [pt(-152, 57, { t: NOW, v: 185.2, e: 304.8, c: 45 }), pt(-151, 57.5, { t: NOW + 600, c: 90 })],
+  }]);
+  const trackerFor = (id: number) => trackers.find((t) => t.id === id) ?? null;
+
+  test('the picks: each drawn point with its tracker and pilot', () => {
+    expect(picks.map((p) => [p.point.lon, p.trackerId, p.pilotName])).toEqual([[-152, 1, 'Sam'], [-151, 1, 'Sam']]);
+    const cards = statusCards(trackers, live, NOW, 'faint');
+    const latest = liveTrackPicks(cards, live, (ids) => (ids[0] === 1 ? [tracked(10, 1, [pt(-152, 57)])] : []));
+    expect(latest.map((p) => [p.point.lon, p.trackerId, p.pilotName])).toEqual([[-152, 1, 'Sam']]);
+  });
+
+  test('a tap within 30 px snaps to the nearest point, with its heading', () => {
+    // At zoom 10 a degree of longitude is about 730 px: 0.01° is about 7 px.
+    const spot = pickDetails(TZ, [-152.01, 57], 10, picks, trackerFor);
+    expect(spot).toMatchObject({ snapped: true, lngLat: [-152, 57], course: 45, coords: '57.000000, -152.000000' });
+    expect(spot?.rows.slice(0, 3)).toEqual([['Tracker', 'Tracker 1'], ['Aircraft', 'N123AB'], ['Pilot', 'Sam']]);
+  });
+
+  test('a tap far from a track picks nothing; a long press is the spot itself', () => {
+    expect(pickDetails(TZ, [-152.1, 57], 10, picks, trackerFor)).toBeNull();
+    expect(spotDetails(TZ, [-152.1, 57])).toMatchObject({ snapped: false, lngLat: [-152.1, 57], course: null, rows: [] });
+  });
+});
+
+test('a follow refit waits until the map has been left alone', () => {
+  expect(followWait({ touchedAt: 0, now: 50_000, idleMs: 10_000 })).toBe(0);
+  expect(followWait({ touchedAt: 45_000, now: 50_000, idleMs: 10_000 })).toBe(5_000);
+  expect(followWait({ touchedAt: 50_000, now: 50_000, idleMs: 10_000 })).toBe(10_000);
+});
+
+test('a one-spot day still opens at a sensible zoom', () => {
+  const one: Flight = { id: 1, start_time: 1_793_728_800, end_time: 1_793_732_400, tracker_id: 1, points: [pt(-152, 57)] };
+  const d = dayMap('America/Anchorage', '2026-11-03', [one], { colorFor: () => 'c', labelFor: () => 'T', inProgress: () => false });
+  const [w, s, e, n] = d.bounds!;
+  expect(e - w).toBeCloseTo(0.05);
+  expect(n - s).toBeCloseTo(0.05);
+});

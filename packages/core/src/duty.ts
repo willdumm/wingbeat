@@ -784,8 +784,24 @@ export function dutyRemarksText(f: { remarks: string[] }): string {
   return f.remarks.length ? 'Remarks: ' + f.remarks.join(' · ') : '';
 }
 
+/** A month as one number (year * 12 + month - 1), to step through months: a month index. */
+export function dutyMonthIndex(year: number, month: number): number {
+  return year * 12 + month - 1;
+}
+
+/** A month index's [year, month]. */
+export function dutyMonthOf(index: number): [number, number] {
+  return [Math.floor(index / 12), (index % 12) + 1];
+}
+
+/** A month index as dutyRangeLabel takes it. */
+export function dutyMonthYm(index: number): { year: number; month: number } {
+  const [year, month] = dutyMonthOf(index);
+  return { year, month };
+}
+
 /**
- * The first month (year * 12 + month - 1) an export offers: the month of the pilot's first
+ * The first month (a month index) an export offers: the month of the pilot's first
  * flight, and at least the shown month and the 12 months through this one (cur).
  */
 export function dutyExportEarliest(tz: string, flights: { pilot_id?: number | null; start_time: number }[], pilotId: number,
@@ -794,23 +810,32 @@ export function dutyExportEarliest(tz: string, flights: { pilot_id?: number | nu
   for (const f of flights) {
     if (f.pilot_id !== pilotId) continue;
     const [y, m] = unixToTzDateStr(tz, f.start_time).split('-').map(Number);
-    earliest = Math.min(earliest, y * 12 + m - 1);
+    earliest = Math.min(earliest, dutyMonthIndex(y, m));
   }
   return earliest;
 }
 
+export type DutyExportPresetKey = 'month' | 'quarter' | 'prevQuarter' | 'year';
+
+export interface DutyExportPreset {
+  key: DutyExportPresetKey;
+  label: string;
+  from: number;
+  to: number;
+}
+
 /**
  * The Export PDF form's period presets as { key, label, from, to } (month indexes,
- * year * 12 + month - 1): the shown month, its calendar quarter (through this month,
+ * dutyMonthIndex's): the shown month, its calendar quarter (through this month,
  * cur), the quarter before it (the usual quarterly sign-off), and the last 12 months.
  * Each is clamped to earliest..cur, the months the From/To selects offer; a quarter
  * wholly before earliest is left out. The labels are short so that five segments (with
  * Custom) fit a 320px phone; the From/To selects show the months a preset picked.
  */
-export function dutyExportPresets(shown: number, cur: number, earliest: number): { key: string; label: string; from: number; to: number }[] {
+export function dutyExportPresets(shown: number, cur: number, earliest: number): DutyExportPreset[] {
   const qStart = shown - (shown % 12) % 3;
   const clamp = (from: number, to: number) => [Math.max(from, earliest), Math.min(to, cur)];
-  const out = [{ key: 'month', label: 'Month', from: shown, to: shown }];
+  const out: DutyExportPreset[] = [{ key: 'month', label: 'Month', from: shown, to: shown }];
   for (const [key, label, start] of [['quarter', 'This qtr', qStart], ['prevQuarter', 'Last qtr', qStart - 3]] as const) {
     const [from, to] = clamp(start, start + 2);
     if (from <= to) out.push({ key, label, from, to });

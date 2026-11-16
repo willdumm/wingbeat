@@ -4,36 +4,39 @@
  * course when `plane` is set, a ground trail's pilot as a hollow dot when `pilot` is, a
  * tapped track point as the web's arrow turned to its heading when `arrow` is, or a
  * flight's start and end, numbered when `label` is: end-markers.tsx) and tracks (each flight
- * in progress, a day's flights, or the one flight; dotted when `trail` is set: a ground trail). The map runs under the status bar, the header and the tab
- * bar; along its top go a full-width bar (the status cards) or a floating overlay (the day
- * banner), and the tools (map-tools.tsx) at its bottom left, clear of them and of a sheet
- * over its bottom (a flight's details: map-sheet.tsx). The tools start with Layers, which picks
- * the basemap and toggles the overlays; picking a basemap resets the overlays to that
- * basemap's defaults, as on the web. Then Elevation (elevation-tool.tsx), which takes the
- * map's taps while it's on, then any the screen adds (Live's Fit all). With `followKey`, the
- * map refits whenever it changes, unless the user moved the map in the last few seconds, in
- * which case it refits once they stop. Each account keeps its choice, between
- * launches too (prefs.ts), and the Live tab and the flight detail share it.
+ * in progress, a day's flights, or the one flight; dotted when `trail` is set: a ground
+ * trail). The map runs under the status bar, the header and the tab bar; along its top go a
+ * full-width bar (the status cards) or a floating overlay (the day banner), and the tools
+ * (map-tools.tsx) at its bottom left, clear of them and of a sheet over its bottom (a
+ * flight's details: map-sheet.tsx). The tools start with Layers, which picks the basemap and
+ * toggles the overlays; picking a basemap resets the overlays to that basemap's defaults, as
+ * on the web. Then Elevation (elevation-tool.tsx), which takes the map's taps while it's on,
+ * then any the screen adds (Live's Fit all). With `followKey`, the map refits whenever it
+ * changes, unless the user moved the map in the last few seconds, in which case it refits
+ * once they stop. Each account keeps its choice, between launches too (prefs.ts), and the
+ * Live tab and the flight detail share it.
  */
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 import { PixelRatio, StyleSheet, View } from 'react-native';
 import { Camera, GeoJSONSource, Images, Layer, Map, type CameraRef, type InitialViewState, type MapRef, type ViewState, type ViewStateChangeEvent } from '@maplibre/maplibre-react-native';
 import type { TileOverlay } from '@wingbeat/core/api/bootstrap';
-import { Picker, Section, Text as SwiftText, Toggle } from '@expo/ui/swift-ui';
-import { pickerStyle, tag } from '@expo/ui/swift-ui/modifiers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SafeAreaView } from 'react-native-screens/experimental';
 import { useAccounts } from './accounts-context';
+import { ChoicePicker, ToggleSection } from './choice-list';
 import { ElevationChrome, ElevationLayers, useElevationTool } from './elevation-tool';
 import { EndMarkers, endMarkerGroups, groupsKey, type EndMarker } from './end-markers';
-import type { TrackPick } from './live';
-import { MapTools, shadow, type MapTool } from './map-tools';
+import { followWait, type TrackPick } from './live';
+import { MapTools, type MapTool } from './map-tools';
 import { defaultBasemapId, defaultOverlayIds, liveMapStyle, type MapBasemap } from './map-style';
 import { accountPrefKey, parseMapChoice } from './prefs';
 import { useStoredState } from './stored-state';
-import { px, useTokens } from './theme';
+import { px, shadow, useTokens } from './theme';
 
-/** bottom: how much of the map's bottom a sheet covers (map-sheet.tsx's sheetDetentHeight), to keep the view above it. */
+/**
+ * bottom: how much of the map's bottom a sheet covers (map-sheet.tsx's sheetDetentHeight), to
+ * keep the view above it.
+ */
 export interface LiveMapRef {
   flyTo(center: [number, number], options?: { bottom?: number }): void;
   /** [west, south, east, north] */
@@ -66,9 +69,15 @@ interface LiveMapProps {
   tools?: MapTool[];
   /** Shown along the top, below the status bar or the header. */
   overlay?: ReactNode;
-  /** A full-width bar along the top, on the floating surface (as the overlay's), running up under the status bar. */
+  /**
+   * A full-width bar along the top, on the floating surface (as the overlay's), running up
+   * under the status bar.
+   */
   topBar?: ReactNode;
-  /** The height of a sheet over the map's bottom (map-sheet.tsx), as it moves: the tools ride on top of it. */
+  /**
+   * The height of a sheet over the map's bottom (map-sheet.tsx), as it moves: the tools ride
+   * on top of it.
+   */
   sheetHeight?: number;
   /** A tap on the map, where and at what zoom (the point picker). */
   onPress?: (lngLat: [number, number], zoom: number) => void;
@@ -76,7 +85,10 @@ interface LiveMapProps {
   onLongPress?: (lngLat: [number, number]) => void;
   /** The track points drawn, which the elevation tool's reference snaps to. */
   picks?: TrackPick[];
-  /** Bounds to fit once the bars and the panel are measured (a flight's track), and again whenever fitKey changes. */
+  /**
+   * Bounds to fit once the bars and the panel are measured (a flight's track), and again
+   * whenever fitKey changes.
+   */
   fit?: [number, number, number, number] | null;
   fitKey?: unknown;
   /**
@@ -160,18 +172,17 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
     menu: (
       <>
         {basemaps.length > 1 && (
-          <Picker label="Basemap" selection={basemap?.id ?? null} modifiers={[pickerStyle('inline')]}
-            onSelectionChange={(id: string | null) => setChoice({ basemap: id, overlays: null })}>
-            {basemaps.map((b) => <SwiftText key={b.id} modifiers={[tag(b.id)]}>{b.label}</SwiftText>)}
-          </Picker>
+          <ChoicePicker label="Basemap" style="inline" value={basemap?.id ?? null}
+            onChange={(id) => setChoice({ basemap: id, overlays: null })}
+            choices={basemaps.map((b) => ({ value: b.id, label: b.label }))} />
         )}
         {overlays.length > 0 && (
-          <Section title="Overlays">
-            {overlays.map((o) => (
-              <Toggle key={o.id} label={o.label} isOn={onIds.includes(o.id)}
-                onIsOnChange={(on) => setChoice({ basemap: basemap?.id ?? null, overlays: on ? [...onIds, o.id] : onIds.filter((id) => id !== o.id) })} />
-            ))}
-          </Section>
+          <ToggleSection title="Overlays" choices={overlays.map((o) => ({ value: o.id, label: o.label }))}
+            isOn={(id) => onIds.includes(id)}
+            onToggle={(id) => setChoice({
+              basemap: basemap?.id ?? null,
+              overlays: onIds.includes(id) ? onIds.filter((o) => o !== id) : [...onIds, id],
+            })} />
         )}
       </>
     ),
@@ -208,7 +219,7 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
     followed.current = followKey;
     const pay = () => {
       followTimer.current = null;
-      const wait = touched.current + FOLLOW_IDLE_MS - Date.now();
+      const wait = followWait({ touchedAt: touched.current, now: Date.now(), idleMs: FOLLOW_IDLE_MS });
       if (wait > 0) { followTimer.current = setTimeout(pay, wait); return; }
       const { fit: bounds, fitBounds: fitTo } = latest.current;
       if (bounds) fitTo(bounds, 800);
@@ -246,7 +257,12 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
           the sheet isn't part of the map's safe area. */}
       <Map ref={mapRef} style={StyleSheet.absoluteFill} mapStyle={mapStyle} logo={false}
         compass compassPosition={{ top: Math.max(top, topEdge) - insets.top + px(t['space-2']) + (elevation.on ? readoutHeight + px(t['space-2']) : 0), right: gutter }}
-        attributionPosition={sheetHeight ? { top: Math.max(top, topEdge) - insets.top + px(t['space-2']), left: gutter } : { bottom: px(t['space-2']), right: gutter }} onRegionWillChange={onGesture} onRegionIsChanging={(e) => { onGesture(e); onView(e); }} onRegionDidChange={(e) => { onGesture(e); onView(e); }}
+        attributionPosition={sheetHeight
+          ? { top: Math.max(top, topEdge) - insets.top + px(t['space-2']), left: gutter }
+          : { bottom: px(t['space-2']), right: gutter }}
+        onRegionWillChange={onGesture}
+        onRegionIsChanging={(e) => { onGesture(e); onView(e); }}
+        onRegionDidChange={(e) => { onGesture(e); onView(e); }}
         onPress={(e) => (elevation.on ? elevation.press(e.nativeEvent.lngLat, zoom.current) : onPress?.(e.nativeEvent.lngLat, zoom.current))}
         onLongPress={onLongPress && ((e) => onLongPress(e.nativeEvent.lngLat))}>
         <Camera ref={camera} initialViewState={initialView} />

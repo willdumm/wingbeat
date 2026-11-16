@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { Alert } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { currentDutyMonth, dutyExportEarliest, dutyExportRangeError, dutyRangeLabel, type DutyInputFlight } from '@wingbeat/core/duty';
-import { dutyExportMonths, dutyMonthIndex, dutyMonthOf, dutyPdfOf } from '@/lib/duty';
+import { currentDutyMonth, dutyExportEarliest, dutyExportRangeError, dutyMonthIndex, dutyMonthYm, dutyRangeLabel } from '@wingbeat/core/duty';
+import { errorText } from '@/lib/api';
+import { completedFlights, dutyExportMonths, dutyPdfOf } from '@/lib/duty';
 import { DutyExportFields } from '@/lib/duty-export-form';
 import { useDutyPdf } from '@/lib/duty-pdf';
 import { useFlights } from '@/lib/flights-context';
 import { Placeholder } from '@/lib/placeholder';
+import { intParam } from '@/lib/route-params';
 import { useDutyLog } from '@/lib/use-duty-log';
 import { useFlightsTab } from '@/lib/use-flights-tab';
 import { useNow } from '@/lib/use-now';
@@ -23,47 +25,55 @@ const HINT = 'One section per month. A longer export adds a summary page for eac
 export default function DutyExportScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ pilot: string; shown: string }>();
-  const pilotId = Number(params.pilot);
-  const shown = Number(params.shown);
+  const pilotId = intParam(params.pilot);
   const tab = useFlightsTab();
   const { store } = useFlights();
-  const { log } = useDutyLog(pilotId);
+  const { log, failed } = useDutyLog(pilotId);
   const now = useNow(60_000);
-  const [from, setFrom] = useState(shown);
-  const [to, setTo] = useState(shown);
+  const cur = tab.ready ? dutyMonthIndex(...currentDutyMonth(tab.tz, now)) : 0;
+  // A missing or later month opens at this one.
+  const shown = Math.min(intParam(params.shown) ?? cur, cur);
+  const [from, setFrom] = useState<number | null>(null);
+  const [to, setTo] = useState<number | null>(null);
   const pdf = useDutyPdf();
 
+  const cancel = (
+    <Stack.Toolbar placement="left">
+      <Stack.Toolbar.Button onPress={() => router.back()}>Cancel</Stack.Toolbar.Button>
+    </Stack.Toolbar>
+  );
   const pilot = tab.ready ? tab.bootstrap.pilots.find((p) => p.id === pilotId) : undefined;
-  if (!tab.ready || !store || !log || !pilot) return <Placeholder />;
+  if (tab.ready && !pilot) return <>{cancel}<Placeholder text="This pilot isn’t on the list any more." /></>;
+  if (!log && failed) return <>{cancel}<Placeholder text="Couldn’t load the duty records." /></>;
+  if (!tab.ready || !store || !log || !pilot) return <>{cancel}<Placeholder /></>;
   const tz = tab.tz;
-  const flights = store.getCompleted() as DutyInputFlight[];
-  const cur = dutyMonthIndex(...currentDutyMonth(tz, now));
-  const months = dutyExportMonths(dutyExportEarliest(tz, flights, pilotId, shown, cur), cur);
-  const error = dutyExportRangeError(from, to);
-  const ym = (i: number) => { const [year, month] = dutyMonthOf(i); return { year, month }; };
-  const footer = pdf.status ?? error ?? dutyRangeLabel(from === to ? [ym(from)] : [ym(from), ym(to)]) + '. ' + HINT;
+  const flights = completedFlights(store);
+  const months = dutyExportMonths(dutyExportEarliest(tz, flights, pilot.id, shown, cur), cur);
+  const fromI = from ?? shown;
+  const toI = to ?? shown;
+  const error = dutyExportRangeError(fromI, toI);
+  const footer = pdf.status ?? error
+    ?? dutyRangeLabel(fromI === toI ? [dutyMonthYm(fromI)] : [dutyMonthYm(fromI), dutyMonthYm(toI)]) + '. ' + HINT;
 
   const exportRange = async () => {
     if (error) { Alert.alert('Can’t Export', error); return; }
-    const { source, name } = dutyPdfOf(tz, Math.floor(Date.now() / 1000), flights, store.getUnmatched(), pilot, from, to, log,
+    const { source, name } = dutyPdfOf(tz, Math.floor(Date.now() / 1000), flights, store.getUnmatched(), pilot, fromI, toI, log,
       tab.bootstrap.instance?.app_name ?? 'Wingbeat');
     try {
       await pdf.exportPdf(source, name);
       router.back();
     } catch (e) {
-      Alert.alert('PDF export failed', e instanceof Error ? e.message : String(e));
+      Alert.alert('PDF export failed', errorText(e));
     }
   };
 
   return (
     <>
-      <Stack.Toolbar placement="left">
-        <Stack.Toolbar.Button onPress={() => router.back()}>Cancel</Stack.Toolbar.Button>
-      </Stack.Toolbar>
+      {cancel}
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button variant="done" disabled={pdf.status != null} onPress={exportRange}>Export</Stack.Toolbar.Button>
       </Stack.Toolbar>
-      <DutyExportFields months={months} from={from} to={to} onFrom={setFrom} onTo={setTo} footer={footer} />
+      <DutyExportFields months={months} from={fromI} to={toI} onFrom={setFrom} onTo={setTo} footer={footer} />
       {pdf.compiler}
     </>
   );

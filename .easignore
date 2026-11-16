@@ -34,6 +34,7 @@
 # From .gitignore and apps/mobile/.gitignore. Secrets first: with this file present, nothing
 # else keeps them out of the upload.
 .dev.vars
+.dev.vars.*
 .env
 .env.*
 node_modules/

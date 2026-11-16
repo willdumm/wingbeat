@@ -78,6 +78,18 @@ describe('locationDetails', () => {
     assert.deepEqual(plain(live.locationDetails(NOW, null, bare, null).rows), [['GPS fix', '5 min ago']]);
     assert.equal(live.locationDetails(NOW, null, null, null), null);
   });
+  test('a position on the equator is still a position', () => {
+    assert.equal(live.locationDetails(NOW, null, { ...d, lat: 0 }, null).coords, '0.000000, -152.400000');
+  });
+});
+
+describe('cardinalDir', () => {
+  test('wraps headings outside 0–360', () => {
+    assert.equal(live.cardinalDir(0), 'N');
+    assert.equal(live.cardinalDir(359), 'N');
+    assert.equal(live.cardinalDir(-90), 'W');
+    assert.equal(live.cardinalDir(405), 'NE');
+  });
 });
 
 describe('nearestPointIdx', () => {

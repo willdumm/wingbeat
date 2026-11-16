@@ -8,12 +8,13 @@
 import type { DutyDaysRequest, DutyLogResponse } from '@wingbeat/core/api/duty';
 import type { Pilot } from '@wingbeat/core/api/pilots';
 import {
-  computeDutyData, dutyDayKeys, dutyDayText, dutyDefaultOn, dutyExportEarliest, dutyExportPresets, dutyPeriodLabel,
-  dutyRangeLabel, dutyRemarksText, dutyTimesError,
-  type DutyData, type DutyFlight, type DutyInputFlight,
+  computeDutyData, dutyDayKeys, dutyDayText, dutyDefaultOn, dutyExportEarliest, dutyExportPresets, dutyMonthOf,
+  dutyMonthYm, dutyPeriodLabel, dutyRangeLabel, dutyRemarksText, dutyTimesError,
+  type DutyData, type DutyExportPresetKey, type DutyFlight, type DutyInputFlight,
 } from '@wingbeat/core/duty';
 import { dutyLogPdfName, dutyLogTypstSource } from '@wingbeat/core/duty-pdf';
 import { flightEntrySummary, flightFieldEdited, type FlightCorrection } from '@wingbeat/core/flight-edits';
+import type { FlightStore } from '@wingbeat/core/flight-store';
 import { fmtDuration, fmtTzTime, tzShortDate, unixToTzTime } from '@wingbeat/core/time';
 import type { FilterChoice, FlightRow } from './flights';
 
@@ -83,13 +84,9 @@ export function dutyPilotShown(pilots: Pick<Pilot, 'id' | 'name' | 'active'>[], 
   return pilots.find((p) => p.id === picked) ?? pilots.find((p) => p.id === own) ?? pilots.find((p) => p.active) ?? null;
 }
 
-/** A month as one number (year * 12 + month - 1), to step through months. */
-export function dutyMonthIndex(year: number, month: number): number {
-  return year * 12 + month - 1;
-}
-
-export function dutyMonthOf(index: number): [number, number] {
-  return [Math.floor(index / 12), (index % 12) + 1];
+/** The flight store's completed flights, as the duty log takes them. */
+export function completedFlights(store: FlightStore): DutyInputFlight[] {
+  return store.getCompleted() as DutyInputFlight[];
 }
 
 /**
@@ -103,9 +100,9 @@ export function dutyMonth(tz: string, now: number, flights: DutyInputFlight[], u
   });
 }
 
-/** A period the Export PDF menu offers: from..to are month indexes (dutyMonthIndex). */
+/** A period the Export PDF menu offers: from..to are month indexes (core's dutyMonthIndex). */
 export interface DutyExportOption {
-  key: string;
+  key: DutyExportPresetKey;
   title: string;
   /** "July – September 2026" */
   subtitle: string;
@@ -113,7 +110,7 @@ export interface DutyExportOption {
   to: number;
 }
 
-const EXPORT_TITLES: Record<string, string> = {
+const EXPORT_TITLES: Record<DutyExportPresetKey, string> = {
   month: 'Month', quarter: 'Quarter', prevQuarter: 'Previous quarter', year: 'Last 12 months',
 };
 
@@ -123,11 +120,10 @@ const EXPORT_TITLES: Record<string, string> = {
  */
 export function dutyExportOptions(tz: string, flights: DutyInputFlight[], pilotId: number, shown: number, cur: number): DutyExportOption[] {
   const earliest = dutyExportEarliest(tz, flights, pilotId, shown, cur);
-  const ym = (i: number) => { const [year, month] = dutyMonthOf(i); return { year, month }; };
   return dutyExportPresets(shown, cur, earliest).map((p) => ({
     key: p.key,
-    title: EXPORT_TITLES[p.key] ?? p.label,
-    subtitle: dutyRangeLabel(p.from === p.to ? [ym(p.from)] : [ym(p.from), ym(p.to)]),
+    title: EXPORT_TITLES[p.key],
+    subtitle: dutyRangeLabel(p.from === p.to ? [dutyMonthYm(p.from)] : [dutyMonthYm(p.from), dutyMonthYm(p.to)]),
     from: p.from,
     to: p.to,
   }));
@@ -137,8 +133,7 @@ export function dutyExportOptions(tz: string, flights: DutyInputFlight[], pilotI
 export function dutyExportMonths(earliest: number, cur: number): FilterChoice<number>[] {
   const out: FilterChoice<number>[] = [];
   for (let i = cur; i >= earliest; i--) {
-    const [year, month] = dutyMonthOf(i);
-    out.push({ value: i, label: dutyPeriodLabel({ year, month }) });
+    out.push({ value: i, label: dutyPeriodLabel(dutyMonthYm(i)) });
   }
   return out;
 }
@@ -273,26 +268,4 @@ export function dutyDayRequest(form: DutyDayForm): { keys: string[]; body: Omit<
 export function dutyDaysRecorded(log: DutyLogResponse, form: Pick<DutyDayForm, 'from' | 'through'>): boolean {
   const keys = dutyDayKeys(form.from, form.through ?? '');
   return typeof keys !== 'string' && log.days.some((d) => keys.includes(d.date));
-}
-
-// The native date pickers take and give Dates on the phone's clock; the form's dates and
-// times are the operator's wall-clock values, so they go through the phone's local time
-// unconverted (noon, and a day without a DST change, keep a date and time as typed).
-
-export function dateOfDayKey(key: string): Date {
-  const [y, m, d] = key.split('-').map(Number);
-  return new Date(y, m - 1, d, 12);
-}
-
-export function dayKeyOfDate(d: Date): string {
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-}
-
-export function dateOfTime(hhmm: string): Date {
-  const [h, m] = hhmm.split(':').map(Number);
-  return new Date(2000, 0, 1, h, m);
-}
-
-export function timeOfDate(d: Date): string {
-  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }

@@ -47,7 +47,7 @@ const ACTIVE_KEY = 'accounts.active';
 // Secure-store keys allow only [A-Za-z0-9._-]; a host's ':port' becomes '_port'.
 const tokenKey = (id: string) => 'account-token.' + id.replace(/[^A-Za-z0-9._-]/g, '_');
 
-export function accountId(host: string, userId: number): string {
+function accountId(host: string, userId: number): string {
   return host + '.' + userId;
 }
 
@@ -149,7 +149,7 @@ export function createAccountStore(kv: KeyValue): AccountStore {
 }
 
 /** The fields an account keeps of a user (a bootstrap's me has more). */
-export function accountUser(user: AccountUser): AccountUser {
+function accountUser(user: AccountUser): AccountUser {
   return { id: user.id, name: user.name, role: user.role, pilot_id: user.pilot_id ?? null };
 }
 

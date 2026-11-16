@@ -12,10 +12,10 @@ import { Alert, Linking } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { Button, ContextMenu, Form, HStack, Host, Image, Section, Spacer, Text, VStack } from '@expo/ui/swift-ui';
 import { disabled, font, foregroundStyle } from '@expo/ui/swift-ui/modifiers';
-import { apiErrorMessage } from '@wingbeat/core/api/client';
 import { createDeviceLink, deleteMe } from '@wingbeat/core/api/me';
 import { docsHref } from '@wingbeat/core/docs';
 import { useAccounts } from '@/lib/accounts-context';
+import { errorText } from '@/lib/api';
 import type { Account } from '@/lib/accounts';
 import { useFlights } from '@/lib/flights-context';
 import { ChoicePicker } from '@/lib/choice-list';
@@ -43,7 +43,7 @@ export default function SettingsScreen() {
     try {
       await fn();
     } catch (err) {
-      Alert.alert(failure, apiErrorMessage(err, err instanceof Error ? err.message : String(err)));
+      Alert.alert(failure, errorText(err));
     } finally {
       setBusy(false);
     }
@@ -53,7 +53,7 @@ export default function SettingsScreen() {
   const confirmSignOut = (a: Account) => a.signedOut
     ? Alert.alert('Remove this account?', `${a.user.name} on ${a.host}.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => remove(a.id) },
+      { text: 'Remove', style: 'destructive', onPress: () => run('Couldn’t remove the account', () => remove(a.id)) },
     ])
     : Alert.alert('Sign out?', `${a.user.name} on ${a.host}. You can add it again with Sign in with Browser or a new code.`, [
       { text: 'Cancel', style: 'cancel' },
@@ -67,10 +67,14 @@ export default function SettingsScreen() {
     [
       { text: 'Cancel', style: 'cancel' },
       {
+        // Deleted on the server, then removed from the phone: each step's failure says which.
         text: 'Delete', style: 'destructive', onPress: () => run('Couldn’t delete your account', async () => {
-          await deleteMe(client!);
-          await remove(a.id);
-          Alert.alert('Account deleted', `${a.user.name} on ${a.host} is deleted.`);
+          if (!client) throw new Error('This account isn’t signed in.');
+          await deleteMe(client);
+          await run('Your account is deleted, but couldn’t be removed from this phone', async () => {
+            await remove(a.id);
+            Alert.alert('Account deleted', `${a.user.name} on ${a.host} is deleted.`);
+          });
         }),
       },
     ],

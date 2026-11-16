@@ -10,7 +10,7 @@ import type { BootstrapResponse } from '@wingbeat/core/api/bootstrap';
  * The oldest server API level this bundle works with. A server without api_version predates
  * the handshake (and the app routes), so it's too old too.
  */
-export const MIN_SERVER_API_VERSION = 1;
+const MIN_SERVER_API_VERSION = 1;
 
 export type Handshake = 'ok' | 'client-too-old' | 'server-too-old';
 

@@ -9,6 +9,7 @@ import { useAccounts } from '@/lib/accounts-context';
 import { dutyDayFormOf, dutyDayRequest, dutyDaysRecorded, dutyTimesSuggested, type DutyDayForm } from '@/lib/duty';
 import { DutyDayFields } from '@/lib/duty-day-form';
 import { Placeholder } from '@/lib/placeholder';
+import { dayParam, intParam } from '@/lib/route-params';
 import { useDutyLog } from '@/lib/use-duty-log';
 import { useFlightsTab } from '@/lib/use-flights-tab';
 
@@ -32,10 +33,11 @@ const confirm = (title: string, message: string, ok: string) => new Promise<bool
 export default function DutyDayScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ pilot: string; date: string }>();
-  const pilotId = Number(params.pilot);
+  const pilotId = intParam(params.pilot);
+  const date = dayParam(params.date);
   const { client } = useAccounts();
   const tab = useFlightsTab();
-  const { log, reload } = useDutyLog(pilotId);
+  const { log, failed, reload } = useDutyLog(pilotId);
   const [form, setForm] = useState<DutyDayForm | null>(null);
   // The log's history id the form was filled as of, and a count of the fills (which resets
   // the note field).
@@ -51,11 +53,22 @@ export default function DutyDayScreen() {
     setFill((n) => n + 1);
   };
   useEffect(() => {
-    if (log && (!form || (!changed && log.last_history_id !== base))) refill(form?.from ?? params.date, form?.through ?? null);
+    const from = form?.from ?? date;
+    if (log && from && (!form || (!changed && log.last_history_id !== base))) refill(from, form?.through ?? null);
   }, [log?.last_history_id]);
 
-  if (!tab.ready || !client || !log || !form) return <Placeholder />;
-  if (!tab.isAdmin) return <Placeholder text="Only an admin can edit the duty log." />;
+  // Before any placeholder, so there's always a way out.
+  const cancel = (
+    <Stack.Toolbar placement="left">
+      <Stack.Toolbar.Button disabled={saving} onPress={() => router.back()}>Cancel</Stack.Toolbar.Button>
+    </Stack.Toolbar>
+  );
+  const placeholder = (text?: string) => <>{cancel}<Placeholder text={text} /></>;
+  if (!tab.ready || !client) return placeholder();
+  if (!tab.isAdmin) return placeholder('Only an admin can edit the duty log.');
+  if (pilotId == null || !date) return placeholder('This link doesn’t name a pilot and a day.');
+  if (!log && failed) return placeholder('Couldn’t load the duty records.');
+  if (!log || !form) return placeholder();
   const tz = tab.tz;
 
   const edit = (patch: Partial<DutyDayForm>) => {
@@ -102,9 +115,7 @@ export default function DutyDayScreen() {
 
   return (
     <>
-      <Stack.Toolbar placement="left">
-        <Stack.Toolbar.Button disabled={saving} onPress={() => router.back()}>Cancel</Stack.Toolbar.Button>
-      </Stack.Toolbar>
+      {cancel}
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button variant="done" disabled={saving} onPress={save}>{saving ? 'Saving…' : 'Save'}</Stack.Toolbar.Button>
       </Stack.Toolbar>

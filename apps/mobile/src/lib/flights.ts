@@ -78,13 +78,16 @@ function assignment(f: Flight, { hasAircraft, hasPilots }: Roster): string | nul
   return parts.length ? parts.join(' · ') : null;
 }
 
+/** A flight's length ("1.5 hr"); null while it's in progress. */
+const flightHours = (f: Flight) => (f.end_time ? ((f.end_time - f.start_time) / 3600).toFixed(1) + ' hr' : null);
+
 /** One flight in the list, as the dashboard's buildFlightItem() shows it. */
 export function flightRow(tz: string, f: Flight, roster: Roster): FlightRow {
   return {
     id: f.id,
     time: fmtTzTime(tz, f.start_time),
     timesEdited: flightFieldEdited(f, 'start_time') || flightFieldEdited(f, 'end_time'),
-    duration: f.end_time ? '(' + ((f.end_time - f.start_time) / 3600).toFixed(1) + ' hr)' : null,
+    duration: f.end_time ? '(' + flightHours(f) + ')' : null,
     route: route(f),
     routeEdited: flightFieldEdited(f, 'origin_label') || flightFieldEdited(f, 'destination_label'),
     manual: !!f.edit?.manual,
@@ -194,7 +197,8 @@ export function flightDetail(tz: string, f: Flight, roster: Roster): { title: st
     { label: FLIGHT_EDIT_FIELD_NAMES.start_time, value: fmtTzTime(tz, f.start_time), ...edited('start_time') },
     { label: FLIGHT_EDIT_FIELD_NAMES.end_time, value: f.end_time ? fmtTzTime(tz, f.end_time) : 'In progress', ...edited('end_time') },
   ];
-  if (f.end_time) fields.push({ label: 'Duration', value: ((f.end_time - f.start_time) / 3600).toFixed(1) + ' hr' });
+  const duration = flightHours(f);
+  if (duration) fields.push({ label: 'Duration', value: duration });
   fields.push(
     { label: FLIGHT_EDIT_FIELD_NAMES.origin_label, value: f.origin_label || '—', ...edited('origin_label') },
     { label: FLIGHT_EDIT_FIELD_NAMES.destination_label, value: f.destination_label || '—', ...edited('destination_label') },
@@ -205,7 +209,7 @@ export function flightDetail(tz: string, f: Flight, roster: Roster): { title: st
     title: tzLongDateLabel(unixToTzDateStr(tz, f.start_time)),
     summary: [
       (f.origin_label || '—') + ' → ' + (f.destination_label || '—'),
-      f.end_time ? fields[2].value : 'In progress',
+      duration ?? 'In progress',
     ].join(' · '),
     fields,
     remarks: flightRemarks(f),
@@ -213,23 +217,29 @@ export function flightDetail(tz: string, f: Flight, roster: Roster): { title: st
   };
 }
 
-/**
- * The flight's track as a line, and its start and end as points (a manual flight's
- * named-point coordinates when it has no track), for the detail's map. bounds spans at
- * least MIN_BOUNDS_DEG, so a single point doesn't open at the map's full zoom; it's null
- * when there's nothing to show.
- */
+// The least a fit spans, so a single point doesn't open at the map's full zoom.
 const MIN_BOUNDS_DEG = 0.05;
 
-/** The bounds of coords, widened to at least MIN_BOUNDS_DEG each way; null when there are none. */
+/**
+ * The bounds of coords, widened to at least MIN_BOUNDS_DEG each way; null when there are none.
+ * A loop, not Math.min(...coords): a long track's spread passes Hermes' argument limit.
+ */
 export function bboxOf(coords: [number, number][]): [number, number, number, number] | null {
   if (!coords.length) return null;
-  const lons = coords.map((c) => c[0]);
-  const lats = coords.map((c) => c[1]);
+  let [w, s, e, n] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const [lon, lat] of coords) {
+    w = Math.min(w, lon); e = Math.max(e, lon);
+    s = Math.min(s, lat); n = Math.max(n, lat);
+  }
   const pad = (lo: number, hi: number) => Math.max(0, (MIN_BOUNDS_DEG - (hi - lo)) / 2);
-  const [w, e, s, n] = [Math.min(...lons), Math.max(...lons), Math.min(...lats), Math.max(...lats)];
   return [w - pad(w, e), s - pad(s, n), e + pad(w, e), n + pad(s, n)];
 }
+
+/**
+ * The flight's track as a line, and its start and end as points (a manual flight's
+ * named-point coordinates when it has no track), for the detail's map. bounds is bboxOf's;
+ * it's null when there's nothing to show.
+ */
 
 export function flightTrack(f: Flight, colors: { track: string; start: string; end: string }): {
   line: GeoJSON.FeatureCollection<GeoJSON.LineString>;

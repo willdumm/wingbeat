@@ -21,6 +21,9 @@ export function useTokens(): Tokens {
 /** A length token ('10px') as React Native's number. */
 export const px = (token: string) => parseFloat(token);
 
+/** A shadow token as boxShadow (dark mode's are 'none'). */
+export const shadow = (token: string) => (token === 'none' ? undefined : token);
+
 const applyTheme = (choice: ThemeChoice) => Appearance.setColorScheme(choice === 'system' ? 'auto' : choice);
 
 /** Applies the stored theme; called once at launch, before the first render. */

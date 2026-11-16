@@ -29,7 +29,7 @@ export function AlertsList({ alerts, onPress, footer }: {
           color={alert.urgency === 'immediate' ? t['danger'] : t['warning-fg']} />
         <VStack alignment="leading" spacing={2}>
           <Text modifiers={[PRIMARY]}>{text}</Text>
-          {detail && <Text modifiers={[font({ textStyle: 'footnote' }), SECONDARY]}>{detail}</Text>}
+          {!!detail && <Text modifiers={[font({ textStyle: 'footnote' }), SECONDARY]}>{detail}</Text>}
         </VStack>
         <Spacer />
         {action && <Image systemName="chevron.right" size={13} color={t['text-faint']} />}

@@ -6,7 +6,7 @@
  */
 import * as Device from 'expo-device';
 import * as Updates from 'expo-updates';
-import { ApiHttpError, createApiClient, type ApiClient } from '@wingbeat/core/api/client';
+import { ApiHttpError, apiErrorMessage, createApiClient, type ApiClient } from '@wingbeat/core/api/client';
 import { pair } from '@wingbeat/core/api/app';
 import { APP_VERSION_HEADER, appVersionHeaderValue } from '@wingbeat/core/api/version';
 import type { AccountUser } from './accounts';
@@ -38,3 +38,6 @@ export async function pairWith(target: PairingTarget): Promise<{ token: string; 
   const { token, me } = await pair(client, { token: target.token, device_name: Device.deviceName, code_verifier: target.codeVerifier });
   return { token, user: me };
 }
+
+/** What an Alert says went wrong: the server's message for an API error, else the error's own. */
+export const errorText = (err: unknown) => apiErrorMessage(err, err instanceof Error ? err.message : String(err));

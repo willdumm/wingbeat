@@ -10,7 +10,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { AppState } from 'react-native';
 import Storage from 'expo-sqlite/kv-store';
 import type { FlightStore, RefreshResult } from '@wingbeat/core/flight-store';
-import { nextLivePoll, trackerLiveData } from '@wingbeat/core/live';
+import { activeTrackers, nextLivePoll, trackerLiveData } from '@wingbeat/core/live';
 import { SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
 import { useAccounts } from './accounts-context';
 import { useBootstrap } from './bootstrap-context';
@@ -67,9 +67,9 @@ export function FlightsProvider({ children }: { children: ReactNode }) {
 
   // Keyed by the ids, so a bootstrap reloaded on return to the foreground doesn't restart the
   // poll. The poll reads only the ids (trackerLiveData), so the rest going stale here is fine.
-  const activeTrackers = bootstrap?.trackers.filter((t) => t.active && !t.deleted) ?? [];
-  const trackerIdsKey = activeTrackers.map((t) => t.id).join(',');
-  const trackers = useMemo(() => activeTrackers, [trackerIdsKey]);
+  const onTrackers = activeTrackers(bootstrap?.trackers ?? []);
+  const trackerIdsKey = onTrackers.map((t) => t.id).join(',');
+  const trackers = useMemo(() => onTrackers, [trackerIdsKey]);
   useEffect(() => { if (store && bootstrap) store.setPilots(bootstrap.pilots); }, [store, bootstrap]);
 
   useEffect(() => {

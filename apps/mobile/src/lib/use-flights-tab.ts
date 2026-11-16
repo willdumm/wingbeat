@@ -7,6 +7,7 @@
  */
 import { useMemo } from 'react';
 import type { BootstrapResponse } from '@wingbeat/core/api/bootstrap';
+import { activeTrackers } from '@wingbeat/core/live';
 import { useAccounts } from './accounts-context';
 import { useBootstrap } from './bootstrap-context';
 import { useFlights } from './flights-context';
@@ -28,7 +29,7 @@ export function useFlightsTab(): Ready | { ready: false } {
   const { bootstrap, handshake } = useBootstrap();
   const { store, generation } = useFlights();
   const trackerIds = useMemo(
-    () => bootstrap?.trackers.filter((t) => t.active && !t.deleted).map((t) => t.id) ?? [],
+    () => activeTrackers(bootstrap?.trackers ?? []).map((t) => t.id),
     [bootstrap],
   );
   const flights = useMemo(

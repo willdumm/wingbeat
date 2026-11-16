@@ -28,7 +28,7 @@ function MonthBar({ title, total, onPrev, onNext }: { title: string; total: stri
       {arrow('chevron.left', '‹', 'Previous month', onPrev)}
       <View style={{ flex: 1, alignItems: 'center' }}>
         <Text style={{ fontSize: 17, fontWeight: '600', color: t['text-primary'] }}>{title}</Text>
-        {total && <Text style={{ fontSize: 13, color: t['text-muted'], fontVariant: ['tabular-nums'] }}>{total}</Text>}
+        {!!total && <Text style={{ fontSize: 13, color: t['text-muted'], fontVariant: ['tabular-nums'] }}>{total}</Text>}
       </View>
       {arrow('chevron.right', '›', 'Next month', onNext)}
     </View>
@@ -44,7 +44,7 @@ function Card({ title, subtitle, children }: { title: string; subtitle?: string;
     }}>
       <View>
         <Text style={{ fontSize: 15, fontWeight: '700', color: t['text-primary'] }}>{title}</Text>
-        {subtitle && <Text style={{ fontSize: 12, color: t['text-muted'] }}>{subtitle}</Text>}
+        {!!subtitle && <Text style={{ fontSize: 12, color: t['text-muted'] }}>{subtitle}</Text>}
       </View>
       {children}
     </View>
@@ -79,7 +79,7 @@ function Item({ item, onSelect }: { item: DutyItem; onSelect: (id: number) => vo
       flexDirection: 'row', gap: 6, paddingVertical: px(t['space-2']), paddingHorizontal: px(t['space-4']),
       backgroundColor: warning ? t['danger-surface'] : t['surface-1'], borderBottomWidth: 1, borderBottomColor: t['border-subtle'],
     }}>
-      {warning && <SFIcon name="exclamationmark.triangle.fill" fallback="!" size={13} color={t['danger-fg']} />}
+      {!!warning && <SFIcon name="exclamationmark.triangle.fill" fallback="!" size={13} color={t['danger-fg']} />}
       <Text style={{ flex: 1, fontSize: 13, color: warning ? t['danger-fg'] : t['text-secondary'] }}>{item.text}</Text>
     </View>
   );
@@ -104,14 +104,15 @@ export function DutyList({ view, period, onPrev, onNext, notice, onSelect, onDay
   const [refreshing, setRefreshing] = useState(false);
   const refresh = () => {
     setRefreshing(true);
-    onRefresh().finally(() => setRefreshing(false));
+    // A failed refresh keeps what's shown; the screen's notice says so where it can tell.
+    onRefresh().catch(() => {}).finally(() => setRefreshing(false));
   };
   const muted = { fontSize: 13, color: t['text-muted'] };
 
   const header = (
     <View style={{ paddingBottom: px(t['space-1']) }}>
       <MonthBar title={period} total={view?.monthTotal ?? null} onPrev={onPrev} onNext={onNext} />
-      {notice && <Text style={{ ...muted, textAlign: 'center', paddingHorizontal: px(t['space-4']), paddingBottom: px(t['space-2']) }}>{notice}</Text>}
+      {!!notice && <Text style={{ ...muted, textAlign: 'center', paddingHorizontal: px(t['space-4']), paddingBottom: px(t['space-2']) }}>{notice}</Text>}
       {view && (
         <Card title={view.totalsTitle} subtitle={view.limitsLabel}>
           {view.meters.map((m) => <Meter key={m.label} meter={m} />)}
@@ -125,7 +126,7 @@ export function DutyList({ view, period, onPrev, onNext, notice, onSelect, onDay
               <Text style={{ width: 92, fontSize: 14, fontWeight: '600', color: t['text-primary'] }}>{u.title}</Text>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 14, color: t['text-secondary'], fontStyle: u.rest ? 'italic' : 'normal' }}>{u.duty}</Text>
-                {u.note && <Text style={muted}>{u.note}</Text>}
+                {!!u.note && <Text style={muted}>{u.note}</Text>}
               </View>
             </Pressable>
           )) : <Text style={muted}>Nothing planned after today.</Text>}
@@ -153,9 +154,9 @@ export function DutyList({ view, period, onPrev, onNext, notice, onSelect, onDay
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
             <Text style={{ fontSize: 14, fontWeight: '700', color: t['text-primary'] }}>{section.title}</Text>
             <Text style={{ flex: 1, fontSize: 13, color: t['text-secondary'], fontStyle: section.rest ? 'italic' : 'normal' }}>{section.duty}</Text>
-            {section.total && <Text style={{ fontSize: 13, fontWeight: '600', color: t['text-primary'], fontVariant: ['tabular-nums'] }}>{section.total}</Text>}
+            {!!section.total && <Text style={{ fontSize: 13, fontWeight: '600', color: t['text-primary'], fontVariant: ['tabular-nums'] }}>{section.total}</Text>}
           </View>
-          {section.note && <Text style={{ ...muted, fontStyle: 'italic' }}>{section.note}</Text>}
+          {!!section.note && <Text style={{ ...muted, fontStyle: 'italic' }}>{section.note}</Text>}
         </Pressable>
       )}
       renderItem={({ item }) => <Item item={item} onSelect={onSelect} />}

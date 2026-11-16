@@ -7,9 +7,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as Notifications from 'expo-notifications';
 import { Alert, Linking } from 'react-native';
-import { ApiHttpError, apiErrorMessage } from '@wingbeat/core/api/client';
+import { ApiHttpError } from '@wingbeat/core/api/client';
 import { getPushSubscriptions, setPushSubscriptions, type TrackerPushEvent } from '@wingbeat/core/api/push';
+import { activeTrackers } from '@wingbeat/core/live';
 import { useAccounts } from '@/lib/accounts-context';
+import { errorText } from '@/lib/api';
 import { useBootstrap } from '@/lib/bootstrap-context';
 import { EmptyState } from '@/lib/empty-state';
 import { NotificationSettings } from '@/lib/notification-settings';
@@ -38,14 +40,14 @@ export default function NotificationsScreen() {
         if (!current) return;
         // A server from before app push.
         if (err instanceof ApiHttpError && err.status === 404) setUnsupported(true);
-        else Alert.alert('Couldn’t load notifications', apiErrorMessage(err, String(err)));
+        else Alert.alert('Couldn’t load notifications', errorText(err));
       },
     );
     return () => { current = false; };
   }, [client]);
 
   const trackers = useMemo(
-    () => bootstrap?.trackers.filter((tr) => tr.active && !tr.deleted).map((tr) => ({ id: tr.id, label: tr.assigned_aircraft || tr.name })) ?? [],
+    () => activeTrackers(bootstrap?.trackers ?? []).map((tr) => ({ id: tr.id, label: tr.assigned_aircraft || tr.name })),
     [bootstrap],
   );
 
@@ -69,22 +71,25 @@ export default function NotificationsScreen() {
       }
       setSubs((await setPushSubscriptions(client, { subscriptions: setSubscribed(subs, sub, on) })).subscriptions);
     } catch (err) {
-      Alert.alert('Couldn’t save notifications', apiErrorMessage(err, err instanceof Error ? err.message : String(err)));
+      Alert.alert('Couldn’t save notifications', errorText(err));
     } finally {
       setBusy(false);
     }
   };
 
   const changeTimeSensitive = async (event: TrackerPushEvent, on: boolean) => {
+    if (busy) return;
+    const before = timeSensitive;
     const next = parseTimeSensitive(on ? [...timeSensitive, event] : timeSensitive.filter((e) => e !== event));
     setTimeSensitive(next);
-    // Without permission there's no registration to update; the first one sends it.
-    if (!(await Notifications.getPermissionsAsync()).granted) return;
     setBusy(true);
     try {
+      // Without permission there's no registration to update; the first one sends it.
+      if (!(await Notifications.getPermissionsAsync()).granted) return;
       await Promise.all((await signedInClients()).map((c) => registerThisDevice(c, next)));
     } catch (err) {
-      Alert.alert('Couldn’t save notifications', apiErrorMessage(err, err instanceof Error ? err.message : String(err)));
+      setTimeSensitive(before);
+      Alert.alert('Couldn’t save notifications', errorText(err));
     } finally {
       setBusy(false);
     }

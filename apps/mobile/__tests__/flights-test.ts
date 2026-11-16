@@ -45,10 +45,12 @@ test('days are operator days, newest first', () => {
     flight({ id: 2, start_time: JUL1_0800 + 15.5 * 3600 }),
     flight({ id: 3, start_time: JUL1_0800 + 24 * 3600 }),
   ];
+  // A day with a tracked flight can be mapped.
+  flights[1].points = [{ t: JUL1_0800, lat: 57, lon: -152, v: 0, e: 0, c: 0 }];
   const days = flightDays(TZ, flights, roster);
-  expect(days.map((d) => [d.dayKey, d.title, d.data.map((r) => r.id)])).toEqual([
-    ['2026-07-02', 'Thu, Jul 2, 2026', [3]],
-    ['2026-07-01', 'Wed, Jul 1, 2026', [2, 1]],
+  expect(days.map((d) => [d.dayKey, d.title, d.data.map((r) => r.id), d.mappable])).toEqual([
+    ['2026-07-02', 'Thu, Jul 2, 2026', [3], false],
+    ['2026-07-01', 'Wed, Jul 1, 2026', [2, 1], true],
   ]);
 });
 

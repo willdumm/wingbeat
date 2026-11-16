@@ -8,7 +8,7 @@ import { createFlightStore, type FlightStore, type KeyValueStorage } from '@wing
 import { SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
 import type { ApiClient } from '@wingbeat/core/api/client';
 
-export const FLIGHT_CACHE_FORMAT = 1;
+const FLIGHT_CACHE_FORMAT = 1;
 
 const PREFIX = 'flights.';
 

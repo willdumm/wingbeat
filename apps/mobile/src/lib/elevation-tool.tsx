@@ -8,18 +8,18 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
-import { GeoJSONSource, Layer, RasterDEMSource } from '@maplibre/maplibre-react-native';
-import { Button, Picker, Section, Text as SwiftText, Toggle } from '@expo/ui/swift-ui';
-import { pickerStyle, tag } from '@expo/ui/swift-ui/modifiers';
+import { GeoJSONSource, Layer, RasterDEMSource, type ColorReliefLayerSpecification } from '@maplibre/maplibre-react-native';
+import { Button, Section, Toggle } from '@expo/ui/swift-ui';
 import { DEM_MAX_ZOOM, DEM_PMTILES_URL, elevationRampStops } from '@wingbeat/core/elevation';
 import { toFeet } from '@wingbeat/core/format';
 import { useAccounts } from './accounts-context';
+import { ChoicePicker } from './choice-list';
 import { ElevationReader, type ElevationReaderRef } from './elevation-reader';
 import { nearestPick, type TrackPick } from './live';
-import { shadow, type MapTool } from './map-tools';
+import type { MapTool } from './map-tools';
 import { accountPrefKey, ELEVATION_OPACITIES, ELEVATION_RANGES_M, parseElevationPref } from './prefs';
 import { useStoredState } from './stored-state';
-import { px, useTokens } from './theme';
+import { px, shadow, useTokens } from './theme';
 
 interface Reference {
   lngLat: [number, number];
@@ -41,33 +41,47 @@ export function useElevationTool({ picks, center }: {
   const [readout, setReadout] = useState<number | null | undefined>(undefined);
   const reader = useRef<ElevationReaderRef>(null);
 
-  // One read at a time while the map moves; the last move's read runs after the one in flight.
-  const reading = useRef<'idle' | 'busy' | 'again'>('idle');
+  // run: bumped each time the tool turns on or off, so a read or tap from before is dropped.
+  const run = useRef(0);
+  // One read at a time while the map moves; a move during a read reads again after it.
+  const busy = useRef(false);
+  const again = useRef(false);
   const readCenter = async () => {
     if (!on) return;
-    if (reading.current !== 'idle') { reading.current = 'again'; return; }
+    if (busy.current) { again.current = true; return; }
+    const mine = run.current;
+    busy.current = true;
     try {
       do {
-        reading.current = 'busy';
+        again.current = false;
         const c = await center();
         const m = c && await reader.current?.elevationAt(c.lngLat, c.zoom);
+        if (run.current !== mine) return;
         setReadout(m ?? null);
-      } while ((reading.current as string) === 'again');
+      } while (again.current);
     } finally {
-      reading.current = 'idle';
+      if (run.current === mine) busy.current = false;
     }
   };
-  useEffect(() => { if (on) readCenter(); else setReadout(undefined); }, [on]);
+  useEffect(() => {
+    run.current++;
+    busy.current = again.current = false;
+    if (on) readCenter(); else setReadout(undefined);
+  }, [on]);
 
+  // The latest tap wins, even when an earlier one's DEM read answers after it.
+  const taps = useRef(0);
   /** A tap on the map while the tool is on: sets the reference. */
   const press = async (lngLat: [number, number], zoom: number) => {
+    const tap = ++taps.current;
+    const mine = run.current;
     const pick = nearestPick(lngLat, zoom, picks);
     if (pick?.point.e != null) {
       setReference({ lngLat: [pick.point.lon, pick.point.lat], m: pick.point.e });
       return;
     }
     const m = await reader.current?.elevationAt(lngLat, zoom);
-    if (m != null) setReference({ lngLat, m });
+    if (m != null && taps.current === tap && run.current === mine) setReference({ lngLat, m });
   };
 
   const tool: MapTool = {
@@ -80,14 +94,10 @@ export function useElevationTool({ picks, center }: {
         <Toggle label="Elevation Tint" isOn={on} onIsOnChange={setOn} />
         {on && (
           <Section>
-            <Picker label="Range" selection={pref.rangeM} modifiers={[pickerStyle('menu')]}
-              onSelectionChange={(rangeM: number) => setPref({ ...pref, rangeM })}>
-              {ELEVATION_RANGES_M.map((m) => <SwiftText key={m} modifiers={[tag(m)]}>{'±' + toFeet(m)}</SwiftText>)}
-            </Picker>
-            <Picker label="Opacity" selection={pref.opacity} modifiers={[pickerStyle('menu')]}
-              onSelectionChange={(opacity: number) => setPref({ ...pref, opacity })}>
-              {ELEVATION_OPACITIES.map((o) => <SwiftText key={o} modifiers={[tag(o)]}>{o + '%'}</SwiftText>)}
-            </Picker>
+            <ChoicePicker label="Range" value={pref.rangeM} onChange={(rangeM) => setPref({ ...pref, rangeM })}
+              choices={ELEVATION_RANGES_M.map((m) => ({ value: m, label: '±' + toFeet(m) }))} />
+            <ChoicePicker label="Opacity" value={pref.opacity} onChange={(opacity) => setPref({ ...pref, opacity })}
+              choices={ELEVATION_OPACITIES.map((o) => ({ value: o, label: o + '%' }))} />
             {reference && <Button label="Clear Reference" systemImage="xmark.circle" onPress={() => setReference(null)} />}
           </Section>
         )}
@@ -100,11 +110,13 @@ export function useElevationTool({ picks, center }: {
 
 export type ElevationTool = ReturnType<typeof useElevationTool>;
 
+type ColorReliefPaint = NonNullable<ColorReliefLayerSpecification['paint']>;
+
 /** The tint and the reference's dot, inside the Map (under the tracks). */
 export function ElevationLayers({ tool }: { tool: ElevationTool }) {
   const t = useTokens();
   if (!tool.on || !tool.reference) return null;
-  const color = ['interpolate', ['linear'], ['elevation'], ...elevationRampStops(tool.reference.m, tool.pref.rangeM).flatMap(([m, rgb]) =>
+  const color: ColorReliefPaint['color-relief-color'] = ['interpolate', ['linear'], ['elevation'], ...elevationRampStops(tool.reference.m, tool.pref.rangeM).flatMap(([m, rgb]) =>
     [m, rgb ? `rgb(${rgb.join(',')})` : 'rgba(0,0,0,0)'])];
   return (
     <>
@@ -113,7 +125,7 @@ export function ElevationLayers({ tool }: { tool: ElevationTool }) {
       <RasterDEMSource id="elevation" tiles={['pmtiles://' + DEM_PMTILES_URL]} maxzoom={DEM_MAX_ZOOM} tileSize={512} encoding="terrarium">
         <Layer id="elevation" type="color-relief" paint={{
           // The ramp, rebuilt around each reference.
-          'color-relief-color': color as never,
+          'color-relief-color': color,
           'color-relief-opacity': tool.pref.opacity / 100,
         }} />
       </RasterDEMSource>

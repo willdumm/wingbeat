@@ -7,7 +7,7 @@ import { useTokens } from './theme';
 
 /** What a tab says when the active account's server is older than this app supports; the
  * built tabs keep showing their cached data under it. */
-export const serverTooOld = (host: string) => `${host} needs an update to work with this version of the app.`;
+const serverTooOld = (host: string) => `${host} needs an update to work with this version of the app.`;
 
 /** A tab's body while it loads (no text) or when it has nothing to show, or the way to add
  * an account when there's no signed-in one. */

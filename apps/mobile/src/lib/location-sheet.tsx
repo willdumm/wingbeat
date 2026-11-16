@@ -5,6 +5,7 @@
  * Maps and Garmin MapShare links.
  */
 import { useEffect, useState } from 'react';
+import { Alert } from 'react-native';
 import { BottomSheet, Button, Form, Group, HStack, Host, LabeledContent, Link, Section, ShareLink, Spacer, Text } from '@expo/ui/swift-ui';
 import { buttonStyle, font, labelStyle, presentationBackgroundInteraction, presentationDetents, presentationDragIndicator, textSelection } from '@expo/ui/swift-ui/modifiers';
 import type { LocationDetails } from '@wingbeat/core/live';
@@ -49,7 +50,7 @@ export function LocationSections({ title, details }: { title?: string; details: 
       </Section>
       <Section>
         <LinkRow label="Open in Google Maps" url={details.googleMapsUrl} />
-        {details.mapshareUrl && <LinkRow label="Open Garmin MapShare" url={details.mapshareUrl} />}
+        {!!details.mapshareUrl && <LinkRow label="Open Garmin MapShare" url={details.mapshareUrl} />}
       </Section>
     </>
   );
@@ -67,7 +68,7 @@ function CopyButton({ text }: { text: string }) {
   const copy = copyText;
   return (
     <Button label={copied ? 'Copied' : 'Copy'} systemImage={copied ? 'checkmark' : 'doc.on.doc'} modifiers={[buttonStyle('borderless')]}
-      onPress={() => { copy(text).then(() => setCopied(true)); }} />
+      onPress={() => { copy(text).then(() => setCopied(true), () => Alert.alert('Couldn’t copy')); }} />
   );
 }
 

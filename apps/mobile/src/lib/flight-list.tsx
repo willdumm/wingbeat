@@ -26,11 +26,11 @@ export function FlightRowView({ row, onPress }: { row: FlightRow; onPress: () =>
     >
       <Text style={{ fontSize: 16, fontWeight: '600', color: t['text-primary'] }}>
         {row.time}{row.timesEdited ? ' †' : ''}
-        {row.duration && <Text style={{ fontWeight: '400', color: t['text-muted'] }}> {row.duration}</Text>}
+        {!!row.duration && <Text style={{ fontWeight: '400', color: t['text-muted'] }}> {row.duration}</Text>}
       </Text>
       {(row.route || row.manual) && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          {row.route && <Text style={{ fontSize: 15, color: t['text-secondary'] }}>{row.route}{row.routeEdited ? ' †' : ''}</Text>}
+          {!!row.route && <Text style={{ fontSize: 15, color: t['text-secondary'] }}>{row.route}{row.routeEdited ? ' †' : ''}</Text>}
           {row.manual && (
             <Text style={{
               fontSize: 11, fontWeight: '700', color: t['accent-text'], backgroundColor: t['accent-surface'],
@@ -39,7 +39,7 @@ export function FlightRowView({ row, onPress }: { row: FlightRow; onPress: () =>
           )}
         </View>
       )}
-      {row.assignment && <Text style={dim}>{row.assignment}</Text>}
+      {!!row.assignment && <Text style={dim}>{row.assignment}</Text>}
       {row.remarks.map((r, i) => <Text key={i} style={{ ...dim, fontStyle: 'italic' }}>{r}</Text>)}
     </Pressable>
   );
@@ -58,7 +58,8 @@ export function FlightList({ days, empty, notice, onSelect, onMapDay, onRefresh 
   const [refreshing, setRefreshing] = useState(false);
   const refresh = () => {
     setRefreshing(true);
-    onRefresh().finally(() => setRefreshing(false));
+    // A failed refresh keeps what's shown; the screen's notice says so where it can tell.
+    onRefresh().catch(() => {}).finally(() => setRefreshing(false));
   };
   return (
     <SectionList

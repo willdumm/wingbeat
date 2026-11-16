@@ -156,7 +156,7 @@ hand-built lists, the RN header buttons, the missing pull to refresh and the RN 
 were fixed on 2026-11-13 (`choice-list.tsx` is now `ChoicePicker` and `ToggleSection` in a
 `Form`; `Stack.Toolbar`; `FlightList`'s `onRefresh`; `EmptyState`).
 
-- **Screens importing SwiftUI directly** (`live/index.tsx`'s Day menu, `flights/[id].tsx`'s
-  form, `live-map.tsx`'s Layers menu, the `Form`s of Settings, the filter and the assignment
-  edit): move each behind a shared component with an
-  `.android.tsx` twin when Android starts.
+- **Screens importing SwiftUI directly** (the `Form`s of Settings, the filter, the
+  assignment edit and Add Account, and the pairing screen's progress view): move each behind
+  a shared component with an `.android.tsx` twin when Android starts. (As of 2026-11-16; the
+  Day menu, the flight form and the Layers menu are already in shared components.)

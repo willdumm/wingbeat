@@ -23,6 +23,11 @@ export const LIVE_POLL_IDLE_MS = 60_000;
 /** The trackers' colors on the map and the status cards (ColorBrewer Dark2), by position. */
 export const TRACKER_COLORS: readonly string[] = ['#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02', '#a6761d', '#666666'];
 
+/** The trackers that are on (active and not deleted), in order: what trackerColor() takes. */
+export function activeTrackers<T extends { active: number | boolean; deleted: number | boolean }>(trackers: T[]): T[] {
+  return trackers.filter((t) => t.active && !t.deleted);
+}
+
 /**
  * A tracker's color: its position among the active trackers, so colors stay put as long as
  * the tracker list does. null for a tracker not among them (the caller's faint text color).
@@ -281,7 +286,7 @@ export function nearestPointIdx<P>(
 /** A compass heading's 16-point direction ("NNE"). */
 export function cardinalDir(deg: number): string {
   const dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
-  return dirs[Math.round(deg / 22.5) % 16];
+  return dirs[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
 }
 
 /** What a tracker's location details show (the dashboard's location popup, the app's sheet). */
@@ -295,37 +300,45 @@ export interface LocationDetails {
   rows: [string, string][];
 }
 
-/**
- * A tracker's location details from its live data. pilotName: its latest flight's pilot.
- * null without a position.
- */
-export function locationDetails(
-  now: number,
-  tracker: { name: string; assigned_aircraft?: string | null; mapshare_url?: string | null } | null,
-  d: LiveData | null | undefined,
-  pilotName: string | null | undefined,
-): LocationDetails | null {
-  if (!d || !d.lat) return null;
-  const lat = d.lat.toFixed(6);
-  const lon = d.lon.toFixed(6);
+type DetailsTracker = { name: string; assigned_aircraft?: string | null };
+
+/** The coordinates as copied, and their Google Maps link. */
+function coordsAndLinks(lat: number, lon: number): Pick<LocationDetails, 'coords' | 'googleMapsUrl'> {
+  const latStr = lat.toFixed(6);
+  const lonStr = lon.toFixed(6);
+  return { coords: latStr + ', ' + lonStr, googleMapsUrl: 'https://www.google.com/maps?q=' + latStr + ',' + lonStr };
+}
+
+/** The tracker, aircraft and pilot rows. */
+function trackerRows(tracker: DetailsTracker | null, pilotName: string | null | undefined): [string, string][] {
   const rows: [string, string][] = [];
   if (tracker) {
     rows.push(['Tracker', tracker.name]);
     if (tracker.assigned_aircraft) rows.push(['Aircraft', tracker.assigned_aircraft]);
   }
   if (pilotName) rows.push(['Pilot', pilotName]);
+  return rows;
+}
+
+/**
+ * A tracker's location details from its live data. pilotName: its latest flight's pilot.
+ * null without a position.
+ */
+export function locationDetails(
+  now: number,
+  tracker: (DetailsTracker & { mapshare_url?: string | null }) | null,
+  d: LiveData | null | undefined,
+  pilotName: string | null | undefined,
+): LocationDetails | null {
+  if (d?.lat == null || d.lon == null) return null;
+  const rows = trackerRows(tracker, pilotName);
   if (d.elevation_m != null) rows.push(['Altitude', toFeet(d.elevation_m)]);
   if (d.velocity_kmh != null) rows.push(['Speed', toKnots(d.velocity_kmh)]);
   if (d.course_deg != null) rows.push(['Heading', Math.round(d.course_deg) + '° ' + cardinalDir(d.course_deg)]);
   if (d.location_label) rows.push(['Location', d.location_label]);
   const gpsTime = d.last_point_time ?? d.garmin_time;
   if (gpsTime) rows.push(['GPS fix', relativeTime(now, gpsTime)]);
-  return {
-    coords: lat + ', ' + lon,
-    googleMapsUrl: 'https://www.google.com/maps?q=' + lat + ',' + lon,
-    mapshareUrl: tracker?.mapshare_url ?? null,
-    rows,
-  };
+  return { ...coordsAndLinks(d.lat, d.lon), mapshareUrl: tracker?.mapshare_url ?? null, rows };
 }
 
 /** A track point the point picker snapped to (its time in Unix seconds). */
@@ -344,26 +357,14 @@ export function pickedPointDetails(
   lat: number,
   lon: number,
   point: PickedPoint | null,
-  tracker: { name: string; assigned_aircraft?: string | null } | null,
+  tracker: DetailsTracker | null,
   pilotName: string | null | undefined,
 ): LocationDetails {
-  const latStr = lat.toFixed(6);
-  const lonStr = lon.toFixed(6);
-  const rows: [string, string][] = [];
+  const rows = point ? trackerRows(tracker, pilotName) : [];
   if (point) {
-    if (tracker) {
-      rows.push(['Tracker', tracker.name]);
-      if (tracker.assigned_aircraft) rows.push(['Aircraft', tracker.assigned_aircraft]);
-    }
-    if (pilotName) rows.push(['Pilot', pilotName]);
     if (point.time) rows.push(['Time', fmtTzPointTime(tz, point.time)]);
     if (point.velocity_kmh != null) rows.push(['Speed', toKnots(point.velocity_kmh)]);
     if (point.elevation_m != null) rows.push(['Altitude', toFeet(point.elevation_m)]);
   }
-  return {
-    coords: latStr + ', ' + lonStr,
-    googleMapsUrl: 'https://www.google.com/maps?q=' + latStr + ',' + lonStr,
-    mapshareUrl: null,
-    rows,
-  };
+  return { ...coordsAndLinks(lat, lon), mapshareUrl: null, rows };
 }

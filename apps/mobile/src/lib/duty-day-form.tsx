@@ -12,7 +12,8 @@
 import { Button, DatePicker, Form, Host, Section, Text, TextField, Toggle, useNativeState } from '@expo/ui/swift-ui';
 import { MAX_DUTY_NOTE_LENGTH } from '@wingbeat/core/record-limits';
 import { ChoicePicker } from './choice-list';
-import { dateOfDayKey, dateOfTime, dayKeyOfDate, timeOfDate, type DutyDayForm } from './duty';
+import { dateOfDayKey, dateOfTime, dayKeyOfDate, timeOfDate } from './date-pickers';
+import type { DutyDayForm } from './duty';
 
 const KINDS = [{ value: false, label: 'Duty' }, { value: true, label: 'Rest Day' }];
 

@@ -4,7 +4,7 @@
  * web's version) and hands back one pixel's RGBA; core's decodeTerrarium turns it into meters.
  * The page keeps the last few decoded tiles, so panning within one reads without a fetch.
  */
-import { useImperativeHandle, useRef, type Ref } from 'react';
+import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
 import { View } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { DEM_PMTILES_URL, DEM_TILE_SIZE, decodeTerrarium, demZoomFor, latLngToTilePixel } from '@wingbeat/core/elevation';
@@ -27,6 +27,8 @@ const PAGE = `<!doctype html><meta charset="utf-8">
 <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js" integrity="sha384-QfbOCebHNw8pQiPAOd2IFee2v2A5VYZxBk0+JGZ5H+3mfzVIp6zsQNkTsfGJot93" crossorigin="anonymous"></script>
 <script>
 const archive = new pmtiles.PMTiles(${JSON.stringify(DEM_PMTILES_URL)});
+// Only once pmtiles.js has loaded (the line above throws if it didn't).
+window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ready' }));
 const tiles = new Map();  // "z/x/y" -> Promise<Uint8ClampedArray | null>, oldest first
 function tile(z, x, y) {
   const key = z + '/' + x + '/' + y;
@@ -47,35 +49,55 @@ function tile(z, x, y) {
 }
 window.readPixel = (id, z, x, y, px, py) => tile(z, x, y).then((data) => {
   const i = (py * ${DEM_TILE_SIZE} + px) * 4;
-  window.ReactNativeWebView.postMessage(JSON.stringify({ id, rgba: data ? Array.from(data.slice(i, i + 4)) : null }));
+  window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'pixel', id, rgba: data ? Array.from(data.slice(i, i + 4)) : null }));
 });
 </script>`;
+
+interface Pending {
+  resolve: (m: number | null) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
 
 /** Renders nothing visible; mount it while the elevation tool is on. */
 export function ElevationReader({ ref }: { ref: Ref<ElevationReaderRef> }) {
   const web = useRef<InstanceType<typeof Web>>(null);
-  const loaded = useRef(false);
+  const ready = useRef(false);
   const queued = useRef<string[]>([]);
-  const pending = useRef(new Map<number, (m: number | null) => void>());
+  const pending = useRef(new Map<number, Pending>());
   const nextId = useRef(0);
+
+  const settle = (id: number, m: number | null) => {
+    const p = pending.current.get(id);
+    if (!p) return;
+    clearTimeout(p.timer);
+    pending.current.delete(id);
+    p.resolve(m);
+  };
+
+  // Unmounted (the tool turned off): the page is gone, so nothing in flight will answer.
+  useEffect(() => () => { for (const id of [...pending.current.keys()]) settle(id, null); }, []);
 
   useImperativeHandle(ref, () => ({
     elevationAt: ([lng, lat], zoom) => new Promise((resolve) => {
       const z = demZoomFor(zoom);
       const { x, y, px, py } = latLngToTilePixel(lat, lng, z);
       const id = nextId.current++;
-      pending.current.set(id, resolve);
-      setTimeout(() => { pending.current.get(id)?.(null); pending.current.delete(id); }, READ_TIMEOUT_MS);
+      pending.current.set(id, { resolve, timer: setTimeout(() => settle(id, null), READ_TIMEOUT_MS) });
       const call = `readPixel(${id}, ${z}, ${x}, ${y}, ${px}, ${py}); true;`;
-      if (loaded.current) web.current?.injectJavaScript(call);
+      if (ready.current) web.current?.injectJavaScript(call);
       else queued.current.push(call);
     }),
   }), []);
 
   const onMessage = (e: WebViewMessageEvent) => {
-    const { id, rgba } = JSON.parse(e.nativeEvent.data) as { id: number; rgba: number[] | null };
-    pending.current.get(id)?.(rgba ? decodeTerrarium(rgba)[0] : null);
-    pending.current.delete(id);
+    let m: { type?: unknown; id?: unknown; rgba?: unknown } | undefined;
+    try { m = JSON.parse(e.nativeEvent.data); } catch { return; }
+    if (m?.type === 'ready') {
+      ready.current = true;
+      for (const call of queued.current.splice(0)) web.current?.injectJavaScript(call);
+    } else if (m?.type === 'pixel' && typeof m.id === 'number') {
+      settle(m.id, Array.isArray(m.rgba) ? decodeTerrarium(m.rgba)[0] : null);
+    }
   };
 
   // The WebView's own container is flex: 1 (containerStyle, not style): unsized, it covers the
@@ -84,11 +106,7 @@ export function ElevationReader({ ref }: { ref: Ref<ElevationReaderRef> }) {
     <View pointerEvents="none" style={{ position: 'absolute', width: 1, height: 1, opacity: 0 }}>
       <Web ref={web} source={{ html: PAGE, baseUrl: 'https://localhost/' }} originWhitelist={['*']}
         containerStyle={{ width: 1, height: 1, flex: 0 }} style={{ width: 1, height: 1 }}
-        onMessage={onMessage}
-        onLoadEnd={() => {
-          loaded.current = true;
-          for (const call of queued.current.splice(0)) web.current?.injectJavaScript(call);
-        }} />
+        onMessage={onMessage} />
     </View>
   );
 }

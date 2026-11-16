@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWindowDimensions, View } from 'react-native';
 import { useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
-import { locationDetails, trackerLiveData } from '@wingbeat/core/live';
+import { activeTrackers, locationDetails, trackerLiveData } from '@wingbeat/core/live';
 import { useAccounts } from '@/lib/accounts-context';
 import { origin } from '@/lib/api';
 import { useBootstrap } from '@/lib/bootstrap-context';
@@ -21,10 +21,11 @@ import { useNow } from '@/lib/use-now';
  * The live view: each tracker's position and the track of its current or latest flight, with a
  * dot where it took off (the dashboard's default view), fitted each time the tab comes up, again
  * when a new point comes in (once the map's been left alone a few seconds), and by the Fit all
- * tool, with the status cards along the top; tapping one flies to it and opens its location details, a tap on the map near a
- * drawn track opens that track point's, and a long press anywhere the pressed spot's. A day's
- * flights at once (the dashboard's "Map all") are on the Flights tab's day headers. A
- * `tracker` param (a notification tap, push.ts) selects that tracker as its card would.
+ * tool, with the status cards along the top; tapping one flies to it and opens its location
+ * details, a tap on the map near a drawn track opens that track point's, and a long press
+ * anywhere the pressed spot's. A day's flights at once (the dashboard's "Map all") are on the
+ * Flights tab's day headers. A `tracker` param (a notification tap, push.ts) selects that
+ * tracker as its card would.
  */
 export default function LiveScreen() {
   const t = useTokens();
@@ -44,7 +45,7 @@ export default function LiveScreen() {
   const router = useRouter();
   const { tracker: trackerParam } = useLocalSearchParams<{ tracker?: string }>();
 
-  const trackers = useMemo(() => bootstrap?.trackers.filter((tr) => tr.active && !tr.deleted) ?? [], [bootstrap]);
+  const trackers = useMemo(() => activeTrackers(bootstrap?.trackers ?? []), [bootstrap]);
   const live = useMemo(
     () => (store ? trackerLiveData(trackers, store.getRaw, lastRefresh) : {}),
     [store, trackers, lastRefresh, generation],
@@ -75,13 +76,15 @@ export default function LiveScreen() {
     setPicked(null);
     setSelected(c.trackerId);
   };
-  // Once its card is there; the param is cleared so a later visit doesn't select it again.
+  // Once its card is there; the param is cleared so a later visit doesn't select it again. A
+  // tracker with no card (gone, or turned off since the notification) is dropped once the
+  // cards are in.
   const paramCard = trackerParam ? cards.find((c) => String(c.trackerId) === trackerParam) : undefined;
   useEffect(() => {
-    if (!paramCard) return;
+    if (!trackerParam || (!paramCard && !cards.length)) return;
     router.setParams({ tracker: undefined });
-    select(paramCard);
-  }, [paramCard?.trackerId]);
+    if (paramCard) select(paramCard);
+  }, [trackerParam, paramCard?.trackerId, cards.length]);
 
   // The map waits for the bootstrap, which has the basemaps and the default view.
   if (!loaded || !active || active.signedOut || handshake === 'server-too-old' || !bootstrap) {

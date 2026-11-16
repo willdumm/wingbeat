@@ -10,13 +10,13 @@ import { Stack, useIsFocused, useRouter, useSegments } from 'expo-router';
 import { Button, Form, Host, HStack, LabeledContent, Section, Text, VStack } from '@expo/ui/swift-ui';
 import { buttonStyle, disabled as disabledIf, font, foregroundStyle, labelStyle } from '@expo/ui/swift-ui/modifiers';
 import { matchesFlight } from '@wingbeat/core/filters';
-import { isFlightInProgress, trackerColor, trackerLiveData } from '@wingbeat/core/live';
+import { activeTrackers, isFlightInProgress, trackerColor, trackerLiveData } from '@wingbeat/core/live';
 import { SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
 import { useAccounts } from './accounts-context';
 import { origin } from './api';
-import { useFlightFilter } from './flight-filter-context';
+import { useAppliedFilter } from './flight-filter-context';
 import { useFlights } from './flights-context';
-import { flightDetail, flightRow, flightTrack, presetDateRange } from './flights';
+import { flightDetail, flightRow, flightTrack } from './flights';
 import { dayMap, flightTrackPicks, mapDays, pickDetails, pickedFeature, positionFeatures, spotDetails, statusCards, type PickedSpot } from './live';
 import { LiveMap, type LiveMapRef } from './live-map';
 import { LocationSections } from './location-sheet';
@@ -46,7 +46,6 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
   const { active } = useAccounts();
   const { store, lastRefresh, generation } = useFlights();
   const tab = useFlightsTab();
-  const { filter, preset } = useFlightFilter();
   const now = useNow(30_000);
   const map = useRef<LiveMapRef>(null);
   const { height: screen } = useWindowDimensions();
@@ -60,13 +59,13 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
   useEffect(() => { if (!focused) setEditing(false); }, [focused]);
 
   const tz = tab.ready ? tab.tz : null;
-  const trackers = useMemo(() => (tab.ready ? tab.bootstrap.trackers.filter((tr) => tr.active && !tr.deleted) : []), [tab.ready && tab.bootstrap]);
+  const trackers = useMemo(() => (tab.ready ? activeTrackers(tab.bootstrap.trackers) : []), [tab.ready && tab.bootstrap]);
   // The list's flights: its filter and date preset.
-  const flights = useMemo(() => {
-    if (!tab.ready) return null;
-    const applied = { ...filter, ...presetDateRange(tab.tz, now, preset) };
-    return tab.flights.filter((f) => matchesFlight(tab.tz, f, applied));
-  }, [tab.ready && tab.flights, tz, filter, preset]);
+  const applied = useAppliedFilter(tz, now);
+  const flights = useMemo(
+    () => (tab.ready ? tab.flights.filter((f) => matchesFlight(tab.tz, f, applied)) : null),
+    [tab.ready && tab.flights, tz, applied],
+  );
   const live = useMemo(
     () => (store ? trackerLiveData(trackers, store.getRaw, lastRefresh) : {}),
     [store, trackers, lastRefresh, generation],

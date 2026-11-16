@@ -5,8 +5,9 @@
  */
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import type { FilterState } from '@wingbeat/core/filters';
+import { unixToTzDateStr } from '@wingbeat/core/time';
 import { useAccounts } from './accounts-context';
-import type { DatePresetId } from './flights';
+import { presetDateRange, type DatePresetId } from './flights';
 import { accountPrefKey, parseFlightFilter } from './prefs';
 import { useStoredState } from './stored-state';
 
@@ -35,4 +36,14 @@ export function useFlightFilter(): FlightFilterValue {
   const v = useContext(FlightFilterContext);
   if (!v) throw new Error('useFlightFilter outside FlightFilterProvider');
   return v;
+}
+
+/**
+ * The filter with its preset's dates as of now (Unix seconds) in tz, the operator's timezone;
+ * recomputed when the operator's day changes, so "Today" moves at midnight.
+ */
+export function useAppliedFilter(tz: string | null, now: number): FilterState {
+  const { filter, preset } = useFlightFilter();
+  const today = tz ? unixToTzDateStr(tz, now) : null;
+  return useMemo(() => (tz ? { ...filter, ...presetDateRange(tz, now, preset) } : filter), [filter, preset, tz, today]);
 }
