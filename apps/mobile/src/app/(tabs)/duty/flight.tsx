@@ -19,8 +19,8 @@ const NEW: FlightFormTarget = { tracked: false, entryId: null };
 /**
  * An admin's new manual flight (the web's Add flight: POST /api/flight-corrections), from the
  * Duty header's + or the day form, on params date for params pilot (the duty log's). The
- * origin and destination are picked from the named points, fetched when the form opens, and
- * saved with their coordinates. A long flight asks first, as on the web. Saving refreshes the
+ * origin and destination take any text and suggest the named points, fetched when the form
+ * opens; one that is a named point is saved with its coordinates. A long flight asks first, as on the web. Saving refreshes the
  * flight store, which puts the flight in the duty log.
  */
 export default function AddFlightScreen() {
@@ -55,7 +55,7 @@ export default function AddFlightScreen() {
   if (!places) return placeholder();
   const tz = tab.tz;
   const times = flightFormTimesOf(tz, fields);
-  const choices = flightFormChoices(fields, tab.bootstrap.aircraft, tab.bootstrap.pilots, places, false);
+  const choices = flightFormChoices(fields, tab.bootstrap.aircraft, tab.bootstrap.pilots, false);
 
   const send = async () => {
     const v = readFlightForm(tz, fields, NEW);
@@ -90,7 +90,7 @@ export default function AddFlightScreen() {
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button variant="done" disabled={saving} onPress={save}>{saving ? 'Saving…' : 'Save'}</Stack.Toolbar.Button>
       </Stack.Toolbar>
-      <FlightFormFields fields={fields} fill={0} choices={choices} timesHint={times?.hint ?? ''}
+      <FlightFormFields fields={fields} fill={0} choices={choices} places={places} timesHint={times?.hint ?? ''}
         onChange={(patch) => setFields((f) => (f ? { ...f, ...patch } : f))} />
     </>
   );

@@ -1,5 +1,5 @@
 import { flightFormTimesOf, flightSaveRequest, readFlightForm, type FlightFormTarget } from '@wingbeat/core/corrections';
-import { flightFormChoices, newFlightFields, OTHER_PLACE, placeChoiceOf, placeCoords, placesOf } from '@/lib/flight-form';
+import { flightFormChoices, newFlightFields, placeCoords, placesOf, placeSuggestions, type Place } from '@/lib/flight-form';
 
 const TZ = 'America/Anchorage';
 const NEW: FlightFormTarget = { tracked: false, entryId: null };
@@ -41,23 +41,38 @@ describe('newFlightFields', () => {
 describe('flightFormChoices', () => {
   const places = placesOf(POINTS);
   test('active aircraft and pilots, the form\'s own inactive one, and Choose… until a manual flight has a pilot', () => {
-    const c = flightFormChoices(newFlightFields('2026-07-01', null), AIRCRAFT, PILOTS, places, false);
+    const c = flightFormChoices(newFlightFields('2026-07-01', null), AIRCRAFT, PILOTS, false);
     expect(c.aircraft.map((a) => a.value)).toEqual(['', 'N123AB']);
     expect(c.aircraft[1].label).toBe('N123AB – Beaver');
     expect(c.pilots).toEqual([{ value: '', label: 'Choose…' }, { value: '3', label: 'Jane Pilot' }]);
-    const own = flightFormChoices({ ...newFlightFields('2026-07-01', 4), aircraft: 'N9OLD' }, AIRCRAFT, PILOTS, places, false);
+    const own = flightFormChoices({ ...newFlightFields('2026-07-01', 4), aircraft: 'N9OLD' }, AIRCRAFT, PILOTS, false);
     expect(own.aircraft.map((a) => a.value)).toEqual(['', 'N123AB', 'N9OLD']);
     expect(own.pilots.map((p) => p.value)).toEqual(['3', '4']);
-    expect(flightFormChoices(newFlightFields('2026-07-01', 3), AIRCRAFT, PILOTS, places, true).pilots[0])
+    expect(flightFormChoices(newFlightFields('2026-07-01', 3), AIRCRAFT, PILOTS, true).pilots[0])
       .toEqual({ value: '', label: 'Unknown Pilot' });
   });
-  test('None, the named points and Other…; a label that isn\'t a named point is Other…', () => {
-    const c = flightFormChoices(newFlightFields('2026-07-01', 3), AIRCRAFT, PILOTS, places, false);
-    expect(c.places.map((o) => o.value)).toEqual(['', 'Kodiak', 'Larsen Bay', OTHER_PLACE]);
-    expect(c.places.at(-1)?.label).toBe('Other…');
-    expect(placeChoiceOf(c.places, '')).toBe('');
-    expect(placeChoiceOf(c.places, 'Kodiak')).toBe('Kodiak');
-    expect(placeChoiceOf(c.places, 'Uyak')).toBe(OTHER_PLACE);
+});
+
+describe('placeSuggestions', () => {
+  const at = (...names: string[]): Place[] => names.sort().map((name) => ({ name, lat: 0, lon: 0 }));
+  const places = at('Kodiak', 'Old Harbor', 'Port Lions', 'Larsen Bay', 'Akhiok', 'Kodiak Airport (PADQ)', 'Uganik Bay', 'Bayside');
+  test('names starting with the text, then a word starting with it, then containing it, ignoring case', () => {
+    expect(placeSuggestions(places, 'bay')).toEqual(['Bayside', 'Larsen Bay', 'Uganik Bay']);
+    expect(placeSuggestions(places, ' KO')).toEqual(['Kodiak', 'Kodiak Airport (PADQ)']);
+    expect(placeSuggestions(places, 'padq')).toEqual(['Kodiak Airport (PADQ)']);
+    expect(placeSuggestions(places, 'ion')).toEqual(['Port Lions']);
+  });
+  test('nothing for empty text, a named point\'s exact name or text no name has', () => {
+    expect(placeSuggestions(places, '')).toEqual([]);
+    expect(placeSuggestions(places, '  ')).toEqual([]);
+    expect(placeSuggestions(places, 'Old Harbor')).toEqual([]);
+    expect(placeSuggestions(places, 'Uyak')).toEqual([]);
+    // Not the exact name: the named point is offered, to save it with its coordinates.
+    expect(placeSuggestions(places, 'old harbor')).toEqual(['Old Harbor']);
+  });
+  test('at most limit', () => {
+    expect(placeSuggestions(places, 'a', 2)).toEqual(['Akhiok', 'Kodiak Airport (PADQ)']);
+    expect(placeSuggestions(places, 'a')).toHaveLength(5);
   });
 });
 
