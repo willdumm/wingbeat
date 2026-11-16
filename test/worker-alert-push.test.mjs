@@ -81,10 +81,11 @@ describe('alert notifications', () => {
     await w.run('INSERT INTO poll_state (tracker_id, last_polled, last_point_time) VALUES (1, ?, ?)', NOW + D, NOW + D);
     await w.run("INSERT INTO pilots (id, name) VALUES (1, 'Pat'), (2, 'Quinn')");
     // N1: Hobbs 100 ten days ago, so the oil change (due at 105) is overdue after the
-    // flights since; the annual is due in 15 days; the prop needs a tach reading.
+    // flights since; the annual is overdue (a calendar item comes due at its month's end, so
+    // 400 days back is overdue on any date); the prop needs a tach reading.
     const schedule = [
       { id: 'oil', name: 'Oil change', schedule_type: 'hobbs', interval_hours: 50, last_done_value: 55 },
-      { id: 'annual', name: 'Annual', schedule_type: 'calendar', interval_months: 12, last_done_at: NOW - 350 * D },
+      { id: 'annual', name: 'Annual', schedule_type: 'calendar', interval_months: 12, last_done_at: NOW - 400 * D },
       { id: 'prop', name: 'Prop', schedule_type: 'tach', interval_hours: 100, last_done_value: 0 },
     ];
     await w.run("INSERT INTO aircraft (tail_number, name, hobbs_time, hobbs_recorded_at, maintenance_schedule) VALUES ('N1', 'Cub', 100, ?, ?)",
