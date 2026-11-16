@@ -223,12 +223,10 @@ plan, it moves to the org.
 The EAS credentials (distribution certificate, APNs key, provisioning profiles) belong to the
 Apple team, so the Wingbeat project uses the same team as cud.
 
-### Google Play: wait for the D-U-N-S number, then create an organization account
+### Google Play: an organization account (created 2026-11-16)
 
-No account exists yet. Create it as an **organization** account for Dumm Software LLC
-($25 one-time fee; uses the same D-U-N-S number), once the number arrives. Until then, put
-Android testers on **EAS internal distribution** (an APK download link from EAS, no Play
-account needed), so Android development isn't blocked. iOS ships to the store first. An
+The Play Console account is an **organization** account for Dumm Software LLC ($25 one-time
+fee; the same D-U-N-S number), with `apps@dummthings.dev` as its contact email. An
 organization account has two concrete advantages over a personal one:
 
 - **No mandatory closed test.** Personal accounts created since late 2023 must run a closed
@@ -236,6 +234,38 @@ organization account has two concrete advantages over a personal one:
   Organization accounts are exempt.
 - **The listing shows the LLC as the developer**, and the account covers Android's developer
   verification requirement for the LLC.
+
+**The app record** (Wingbeat, free, `dev.dummthings.wingbeat`) exists, and a placeholder
+build (0.1.0, versionCode 2, from the `production` profile) is on the internal testing
+track to claim the package. Play asks for the package name when the app is created, and a
+title isn't unique on Play: only the package is. That build hasn't been tested on Android
+and isn't rolled out to anyone. Until Android ships, its testers use **EAS internal
+distribution** (an APK download link from EAS). iOS ships to the store first.
+
+**`eas submit -p android`** signs in as the Google service account
+`eas-submit@wingbeat-play-514905.iam.gserviceaccount.com` (Cloud project
+`wingbeat-play-514905`, with the Google Play Android Developer API enabled), which has
+release access to the app in Play Console (Users and permissions). Its JSON key is stored
+only on EAS (`eas credentials -p android` → production → Google Service Account), so
+`eas.json` names no key file. The `production` submit profile sends a draft to the
+internal track: until the app has passed its first review, Play's API only accepts draft
+releases. Drop `releaseStatus` after that.
+
+**A new key** (to rotate it, or if EAS loses it): the Cloud organization enforces
+`iam.disableServiceAccountKeyCreation`, so override it on the project, create the key,
+upload it with `eas credentials`, then delete the local copy and the override. `gcloud` is
+in the hosting repo's dev shell. The override takes a minute or two to apply, and editing
+org policies needs the Organization Policy Administrator role, which an organization admin
+doesn't have by default.
+
+```bash
+# policy.yaml: name: projects/wingbeat-play-514905/policies/iam.disableServiceAccountKeyCreation
+#              spec: { rules: [ { enforce: false } ] }
+gcloud org-policies set-policy policy.yaml
+gcloud iam service-accounts keys create key.json \
+  --iam-account=eas-submit@wingbeat-play-514905.iam.gserviceaccount.com
+gcloud org-policies delete iam.disableServiceAccountKeyCreation --project=wingbeat-play-514905
+```
 
 Background location (Decision 5) needs a **Permissions declaration** in Play Console with a
 video of the feature. Plan time for that review.
@@ -2561,8 +2591,9 @@ were, so references elsewhere in this doc stay valid.
    is deferred), `POST /api/me/push-devices`, subscriptions in the app, Expo delivery in
    `dispatchNotifications()` (ahead of its no-webhooks early return, isolated from the
    webhook and Pushover sends) and receipt checks, channels, categories, Time Sensitive gap alerts and deep links. Alert notifications (maintenance due, duty near its limits, …) from a Worker cron that calls core's `computeAlerts`, the same code the web and the app run (see "Feature parity with the web", "Decided 2026-11-13"). First App Store
-   release (iOS, individual account). Android goes to Play once the Play organization account
-   exists; until then it stays on EAS internal distribution. Then move the operators you
+   release (iOS, individual account). Android goes to Play once it's been tested on a device (the
+   Play account and app record exist, see Decision 1); until then it stays on EAS internal
+   distribution. Then move the operators you
    host off Pushover and retire it (see "Retiring Pushover").
 8. **Passive matching** (a planned native release): the presence module from the probe
    (CoreLocation on iOS, AltBeacon on Android), location fixes around beacons, the offline
