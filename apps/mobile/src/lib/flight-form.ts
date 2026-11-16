@@ -1,7 +1,7 @@
 /**
  * The flight form's app-side logic (the web's flight editor, src/shared/flight-editor.ts):
  * a new manual flight's fields, the pickers' choices, and the named points the origin and
- * destination are picked from. Reading and validating the fields, and the save's request,
+ * destination are picked from (or Other…, any text, as the web's field takes). Reading and validating the fields, and the save's request,
  * are core's (corrections.ts: readFlightForm, flightSaveRequest).
  */
 import type { Aircraft } from '@wingbeat/core/api/aircraft';
@@ -40,17 +40,25 @@ export function newFlightFields(date: string, pilotId: number | null): FlightFor
   };
 }
 
+/** The origin and destination pickers' Other… (a label typed in). */
+export const OTHER_PLACE = '\u0000other';
+
+/** A label's choice among the place choices (FlightFormChoices.places): None (''), a named point, or OTHER_PLACE. */
+export function placeChoiceOf(choices: FilterChoice<string>[], label: string): string {
+  return !label || choices.some((c) => c.value === label && c.value !== OTHER_PLACE) ? label : OTHER_PLACE;
+}
+
 export interface FlightFormChoices {
   aircraft: FilterChoice<string>[];
   pilots: FilterChoice<string>[];
-  origins: FilterChoice<string>[];
-  dests: FilterChoice<string>[];
+  /** The origin and destination pickers': None, the named points, Other…. */
+  places: FilterChoice<string>[];
 }
 
 /**
  * The pickers' choices: the active aircraft and pilots (and the form's own, if inactive), and
- * the named points (and the form's label, if it isn't one). A manual flight's pilot can't be
- * unknown, so it has Choose… only until one is picked; a tracked flight's can (tracked).
+ * the named points with None and Other…. A manual flight's pilot can't be unknown, so it has
+ * Choose… only until one is picked; a tracked flight's can (tracked).
  */
 export function flightFormChoices(
   fields: FlightFormFields,
@@ -59,11 +67,6 @@ export function flightFormChoices(
   places: Place[],
   tracked: boolean,
 ): FlightFormChoices {
-  const placeChoices = (label: string) => [
-    { value: '', label: 'None' },
-    ...(label && !places.some((p) => p.name === label) ? [{ value: label, label }] : []),
-    ...places.map((p) => ({ value: p.name, label: p.name })),
-  ];
   return {
     aircraft: [
       { value: '', label: 'Unknown Aircraft' },
@@ -74,7 +77,10 @@ export function flightFormChoices(
       ...(tracked ? [{ value: '', label: 'Unknown Pilot' }] : fields.pilot === '' ? [{ value: '', label: 'Choose…' }] : []),
       ...pilots.filter((p) => p.active || String(p.id) === fields.pilot).map((p) => ({ value: String(p.id), label: p.name })),
     ],
-    origins: placeChoices(fields.origin),
-    dests: placeChoices(fields.dest),
+    places: [
+      { value: '', label: 'None' },
+      ...places.map((p) => ({ value: p.name, label: p.name })),
+      { value: OTHER_PLACE, label: 'Other…' },
+    ],
   };
 }

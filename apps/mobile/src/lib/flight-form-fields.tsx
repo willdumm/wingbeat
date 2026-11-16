@@ -1,21 +1,24 @@
 /**
  * The flight form's fields (the web's flight editor: an admin's add or edit of a flight): the
  * date and Dep/Arr times in the operator's zone (an arrival before the departure is the next
- * day, said under them), origin and destination from the named points, aircraft and pilot,
+ * day, said under them), origin and destination (a named point, or Other… and a typed label,
+ * as the web's field with its suggestions takes any text), aircraft and pilot,
  * Part 135 or 91 and, for Part 91, pay, and the remark. A SwiftUI `Form`: compact
  * `DatePicker`s, menu and segmented `Picker`s, a `TextField`. Android: the Material date and
  * time pickers, `ExposedDropdownMenuBox`, `SingleChoiceSegmentedButtonRow`, `TextField`
  * (docs/mobile-design-principles.md, 2).
  *
- * The remark's text lives in a native state, so a caller that refills the form passes a new
- * fill to reset it.
+ * The typed labels' and the remark's text live in native states, so a caller that refills the
+ * form passes a new fill to reset them.
  */
+import { useState } from 'react';
 import { DatePicker, Form, Host, Section, Text, TextField, useNativeState } from '@expo/ui/swift-ui';
+import type { FilterChoice } from './flights';
 import type { FlightFormFields as Fields } from '@wingbeat/core/corrections';
 import { MAX_FLIGHT_TEXT_LENGTH } from '@wingbeat/core/record-limits';
 import { ChoicePicker } from './choice-list';
 import { dateOfDayKey, dateOfTime, dayKeyOfDate, timeOfDate } from './date-pickers';
-import type { FlightFormChoices } from './flight-form';
+import { OTHER_PLACE, placeChoiceOf, type FlightFormChoices } from './flight-form';
 
 const PARTS: { value: Fields['part']; label: string }[] = [{ value: '135', label: 'Part 135' }, { value: '91', label: 'Part 91' }];
 const PAYS: { value: Fields['pay']; label: string }[] = [{ value: 'paid', label: 'Paid' }, { value: 'unpaid', label: 'Unpaid' }];
@@ -23,6 +26,33 @@ const PAYS: { value: Fields['pay']; label: string }[] = [{ value: 'paid', label:
 function RemarkField({ initial, onChange }: { initial: string; onChange: (remark: string) => void }) {
   const remark = useNativeState(initial);
   return <TextField text={remark} placeholder="e.g. Training" maxLength={MAX_FLIGHT_TEXT_LENGTH} onTextChange={onChange} />;
+}
+
+/**
+ * A place's picker and, on Other…, its text field. Other… stays picked while its text is
+ * empty or names a named point, until another choice is picked.
+ */
+function PlaceField({ label, choices, value, onChange }: {
+  label: string;
+  choices: FilterChoice<string>[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [other, setOther] = useState(() => placeChoiceOf(choices, value) === OTHER_PLACE);
+  const text = useNativeState(other ? value : '');
+  const pick = (v: string) => {
+    setOther(v === OTHER_PLACE);
+    text.set('');
+    onChange(v === OTHER_PLACE ? '' : v);
+  };
+  return (
+    <>
+      <ChoicePicker label={label} choices={choices} value={other ? OTHER_PLACE : value} onChange={pick} />
+      {other && (
+        <TextField text={text} placeholder={label + ' Name'} maxLength={MAX_FLIGHT_TEXT_LENGTH} onTextChange={onChange} />
+      )}
+    </>
+  );
 }
 
 export function FlightFormFields({ fields, fill, choices, timesHint, onChange }: {
@@ -47,8 +77,8 @@ export function FlightFormFields({ fields, fill, choices, timesHint, onChange }:
             onDateChange={(d) => onChange({ arr: timeOfDate(d) })} />
         </Section>
         <Section>
-          <ChoicePicker label="Origin" choices={choices.origins} value={fields.origin} onChange={(origin) => onChange({ origin })} />
-          <ChoicePicker label="Destination" choices={choices.dests} value={fields.dest} onChange={(dest) => onChange({ dest })} />
+          <PlaceField key={'origin' + fill} label="Origin" choices={choices.places} value={fields.origin} onChange={(origin) => onChange({ origin })} />
+          <PlaceField key={'dest' + fill} label="Destination" choices={choices.places} value={fields.dest} onChange={(dest) => onChange({ dest })} />
         </Section>
         <Section>
           <ChoicePicker label="Aircraft" choices={choices.aircraft} value={fields.aircraft} onChange={(aircraft) => onChange({ aircraft })} />

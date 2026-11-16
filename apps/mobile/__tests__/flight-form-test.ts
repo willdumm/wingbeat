@@ -1,5 +1,5 @@
 import { flightFormTimesOf, flightSaveRequest, readFlightForm, type FlightFormTarget } from '@wingbeat/core/corrections';
-import { flightFormChoices, newFlightFields, placeCoords, placesOf } from '@/lib/flight-form';
+import { flightFormChoices, newFlightFields, OTHER_PLACE, placeChoiceOf, placeCoords, placesOf } from '@/lib/flight-form';
 
 const TZ = 'America/Anchorage';
 const NEW: FlightFormTarget = { tracked: false, entryId: null };
@@ -51,10 +51,13 @@ describe('flightFormChoices', () => {
     expect(flightFormChoices(newFlightFields('2026-07-01', 3), AIRCRAFT, PILOTS, places, true).pilots[0])
       .toEqual({ value: '', label: 'Unknown Pilot' });
   });
-  test('named points, and a label that isn\'t one', () => {
-    const c = flightFormChoices({ ...newFlightFields('2026-07-01', 3), dest: 'Uyak' }, AIRCRAFT, PILOTS, places, false);
-    expect(c.origins.map((o) => o.value)).toEqual(['', 'Kodiak', 'Larsen Bay']);
-    expect(c.dests.map((o) => o.value)).toEqual(['', 'Uyak', 'Kodiak', 'Larsen Bay']);
+  test('None, the named points and Other…; a label that isn\'t a named point is Other…', () => {
+    const c = flightFormChoices(newFlightFields('2026-07-01', 3), AIRCRAFT, PILOTS, places, false);
+    expect(c.places.map((o) => o.value)).toEqual(['', 'Kodiak', 'Larsen Bay', OTHER_PLACE]);
+    expect(c.places.at(-1)?.label).toBe('Other…');
+    expect(placeChoiceOf(c.places, '')).toBe('');
+    expect(placeChoiceOf(c.places, 'Kodiak')).toBe('Kodiak');
+    expect(placeChoiceOf(c.places, 'Uyak')).toBe(OTHER_PLACE);
   });
 });
 
