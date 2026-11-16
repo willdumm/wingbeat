@@ -37,16 +37,6 @@ export function themeVars(): string {
   `;
 }
 
-/**
- * A token's light-mode value, for output that isn't themed and can't read CSS custom
- * properties (the duty log's PDF).
- */
-export function lightThemeToken(name: string): string {
-  const value = (lightTokens as Record<string, string>)[name.replace(/^--/, '')];
-  if (value === undefined) throw new Error(`No light theme token ${name}`);
-  return value;
-}
-
 /** Google Fonts stand-ins for Manrope / IBM Plex Sans / IBM Plex Mono (see readme in the design system export — no licensed font binaries were supplied). */
 export function themeFontImport(): string {
   return `@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap");`;

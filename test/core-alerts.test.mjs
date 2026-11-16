@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { importCore, plain, TZ } from './core.mjs';
 import { loadEngine } from './harness.mjs';
 
-const { computeAlerts, sortAlerts } = await importCore('alerts');
+const { alertText, alertTitle, computeAlerts, sortAlerts } = await importCore('alerts');
 const time = await importCore('time');
 const at = (s) => time.tzLocalToEpoch(TZ, ...s.split(' '));
 const NOW = at('2026-11-03 12:00');
@@ -124,6 +124,42 @@ describe('pilot duty', () => {
       pct: 0.9375, urgency: 'due_soon',
     }]);
   });
+});
+
+test('alertText: each kind’s line, and an unassigned flight’s time and route under it', () => {
+  const flights = [
+    flight('2026-11-02 23:30', 1, { pilot_id: null }),
+    flight('2026-11-02 10:00', 1, { aircraft_tail: null, origin_label: null }),
+    flight('2026-11-03 01:00', 7.5, { pilot_id: 2, tracker_id: null }),
+  ];
+  const schedule = [
+    { id: 'prop', name: 'Prop', schedule_type: 'hobbs', interval_hours: 500, last_done_value: 400 },
+    { id: '100h', name: '100 hour', schedule_type: 'tach', interval_hours: 100, last_done_value: 0 },
+    { id: 'elt', name: 'ELT', schedule_type: 'calendar', interval_months: 12 },
+    { id: 'ann', name: 'Annual', schedule_type: 'calendar', interval_months: 12 },
+  ];
+  const ac = [aircraft('N1', { name: 'Cub', hobbs_time: 1005, hobbs_recorded_at: NOW, maintenance_schedule: schedule })];
+  assert.deepEqual(computeAlerts(TZ, NOW, lists({ flights, aircraft: ac })).map(alertText), [
+    { text: 'Nov 2 · no aircraft', detail: '10:00 AKST' },
+    { text: 'Nov 2 · N1 · no pilot', detail: '23:30 AKST · Kodiak → Larsen Bay' },
+    { text: 'N1 · Cub · Tach not recorded (100 hour)', detail: null },
+    { text: 'N1 · Cub · Last service date not set (ELT, Annual)', detail: null },
+    { text: 'N1 · Cub · Prop · Overdue 105.0 hr', detail: null },
+    { text: 'Quinn · 7.5/8 hr (Last 24 h)', detail: null },
+  ]);
+});
+
+test('alertTitle: each kind’s notification title, maintenance by urgency', () => {
+  const schedule = [
+    { id: 'prop', name: 'Prop', schedule_type: 'hobbs', interval_hours: 500, last_done_value: 400 },
+    { id: 'oil', name: 'Oil', schedule_type: 'hobbs', interval_hours: 50, last_done_value: 960 },
+    { id: '100h', name: '100 hour', schedule_type: 'tach', interval_hours: 100, last_done_value: 0 },
+  ];
+  const ac = [aircraft('N1', { hobbs_time: 1005, hobbs_recorded_at: NOW, maintenance_schedule: schedule })];
+  const flights = [flight('2026-11-02 23:30', 1, { pilot_id: null }), flight('2026-11-03 01:00', 7.5, { pilot_id: 2, tracker_id: null })];
+  assert.deepEqual(computeAlerts(TZ, NOW, lists({ flights, aircraft: ac })).map(alertTitle), [
+    'Unassigned flight', 'Maintenance record needed', 'Maintenance overdue', 'Maintenance due soon', 'Near a duty limit',
+  ]);
 });
 
 test('sortAlerts: immediate (unassigned oldest first, readings by tail, maintenance soonest), then due soon (maintenance, pilots highest share)', () => {

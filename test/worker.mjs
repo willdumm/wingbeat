@@ -72,10 +72,13 @@ export function splitSql(sql) {
  *   adminFetch(url, init)                 fetch as the signed-in admin, for @wingbeat/core's API client
  *   fetch(url, init)                      fetch with no session cookie, for the app's client (bearer or none)
  * startWorker({ bindings }) overrides Worker bindings (a value of undefined leaves one unset).
+ * startWorker({ outbound }) answers the Worker's own fetches: outbound(request) → Response.
+ *   scheduled({ scheduledTime })          runs the cron handler once (polls, receipt checks, alerts), at
+ *                                         scheduledTime (a Date, default now)
  *   db                                    the D1 binding, for seeding and checking rows
  *   all(sql, ...params) / first(sql, ...params) / run(sql, ...params)  shorthands on it
  */
-export async function startWorker({ bindings: overrides = {} } = {}) {
+export async function startWorker({ bindings: overrides = {}, outbound } = {}) {
   const bundle = await build({
     entryPoints: [path.join(ROOT, 'src/index.ts')],
     bundle: true,
@@ -96,6 +99,7 @@ export async function startWorker({ bindings: overrides = {} } = {}) {
     compatibilityDate: '2024-11-01',
     d1Databases: ['DB'],
     bindings,
+    ...(outbound ? { outboundService: outbound } : {}),
   });
   try {
     const db = await mf.getD1Database('DB');
@@ -142,6 +146,7 @@ export async function startWorker({ bindings: overrides = {} } = {}) {
       all: async (sql, ...params) => (await stmt(sql, params).all()).results,
       first: (sql, ...params) => stmt(sql, params).first(),
       run: (sql, ...params) => stmt(sql, params).run(),
+      scheduled: async ({ scheduledTime = new Date() } = {}) => (await mf.getWorker()).scheduled({ cron: '* * * * *', scheduledTime }),
       dispose: () => mf.dispose(),
     };
   } catch (err) {

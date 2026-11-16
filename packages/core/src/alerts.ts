@@ -1,7 +1,9 @@
 /**
  * The dashboard's alerts feed: flights missing an aircraft or pilot, maintenance due or
  * overdue, meter readings or service dates a schedule needs, and pilots near a §135.267
- * limit, sorted by urgency. The rows are HTML on the web side (dashboard/scripts/alerts.ts).
+ * limit, sorted by urgency, and the words each one shows (alertText, alertTitle). The rows
+ * are HTML on the web side (dashboard/scripts/alerts.ts), a list on the app's, and app
+ * pushes from the Worker (src/alert-push.ts).
  *
  * Takes the operator's timezone (`tz`), the clock (`now`, Unix seconds) and the page's
  * lists (effective flights, aircraft, pilots, trackers) as parameters.
@@ -235,4 +237,45 @@ export function sortAlerts(alerts: Alert[]): Alert[] {
   const dsPilot = of(dueSoon, 'pilot_duty').sort((a, b) => b.pct - a.pct);
 
   return [...immUnassigned, ...immTimer, ...immMaint, ...dsMaint, ...dsPilot];
+}
+
+/**
+ * An alert's row: its line ("N123 · Annual · due in 12 days") and, for an unassigned flight,
+ * its time and route under it. The web's alerts strip, the app's alerts screen and their
+ * notifications show the same words.
+ */
+export function alertText(alert: Alert): { text: string; detail: string | null } {
+  const aircraftOf = (a: { aircraft_tail: string; aircraft_name: string | null }) =>
+    a.aircraft_name ? a.aircraft_tail + ' · ' + a.aircraft_name : a.aircraft_tail;
+  switch (alert.kind) {
+    case 'unassigned_flight': {
+      const parts: string[] = [];
+      if (alert.flight_time_str) parts.push(alert.flight_time_str);
+      if (alert.flight_origin) parts.push(alert.flight_origin + (alert.flight_destination ? ' → ' + alert.flight_destination : ''));
+      return { text: alert.flight_label, detail: parts.length > 0 ? parts.join(' · ') : null };
+    }
+    case 'maintenance':
+      return { text: aircraftOf(alert) + ' · ' + alert.item.name + ' · ' + alert.status.due_label, detail: null };
+    case 'timer_not_recorded': {
+      const what = alert.timer_type === 'calendar'
+        ? 'Last service date not set'
+        : (alert.timer_type === 'hobbs' ? 'Hobbs' : 'Tach') + ' not recorded';
+      return { text: aircraftOf(alert) + ' · ' + what + ' (' + alert.needed_for + ')', detail: null };
+    }
+    case 'pilot_duty':
+      return {
+        text: alert.pilot_name + ' · ' + alert.hours_flown.toFixed(1) + '/' + alert.limit_hours + ' hr (' + alert.window_label + ')',
+        detail: null,
+      };
+  }
+}
+
+/** An alert's notification title (its body is alertText's line, and its detail under it). */
+export function alertTitle(alert: Alert): string {
+  switch (alert.kind) {
+    case 'unassigned_flight': return 'Unassigned flight';
+    case 'maintenance': return alert.urgency === 'immediate' ? 'Maintenance overdue' : 'Maintenance due soon';
+    case 'timer_not_recorded': return 'Maintenance record needed';
+    case 'pilot_duty': return 'Near a duty limit';
+  }
 }

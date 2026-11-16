@@ -1,4 +1,5 @@
 import { toKnots, toFeet } from '../../shared/format';
+import { relativeTime } from '@wingbeat/core/time';
 
 /** Pure utility functions shared across multiple modules. */
 export function dashboardScriptsHelpers(): string {
@@ -11,11 +12,6 @@ export function dashboardScriptsHelpers(): string {
         Math.sin(dLon) * Math.cos(lat2),
         Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon)
       ) * 180 / Math.PI + 360) % 360;
-    }
-
-    function cardinalDir(deg) {
-      const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-      return dirs[Math.round(deg / 22.5) % 16];
     }
 
     // A flight list day is an operator day (the date filter's days), whatever the
@@ -36,13 +32,10 @@ export function dashboardScriptsHelpers(): string {
 
     ${toFeet.toString()}
 
+    ${relativeTime.toString()}
+
     function relTime(epoch) {
-      if (!epoch) return 'never';
-      const sec = Math.floor(Date.now() / 1000) - epoch;
-      if (sec < 60) return 'just now';
-      if (sec < 3600) return Math.floor(sec / 60) + ' min ago';
-      if (sec < 86400) return Math.floor(sec / 3600) + ' hr ago';
-      return Math.floor(sec / 86400) + ' days ago';
+      return relativeTime(Date.now() / 1000, epoch);
     }
 
     function copyToClipboard(text, btnEl, labelEl) {

@@ -1,10 +1,13 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
-import { Env, Tenant, Point, Flight, FlightRecord, FlightPoint, Tracker, Aircraft, Pilot, InviteToken, Webhook, TileOverlay, FlightCorrection, DutyDay, DefaultDuty, DutyMethodEntry } from './types';
+import { Env, Tenant, Point, Flight, FlightRecord, FlightPoint, InviteToken, Webhook, TileOverlay, FlightCorrection, DutyDay, DefaultDuty, DutyMethodEntry } from './types';
 import { maybePoll, pollAllActive, pollAllActiveForce, testFeed } from './poller';
 import { checkPublicHttpsUrl } from './safe-fetch';
 import { mapshareUrl } from './notifications';
+import { queryAircraft, queryPilots, queryTrackers } from './queries';
+import { checkAppPushReceipts } from './app-push';
+import { checkAlerts } from './alert-push';
 import { resegment } from './segmentation';
 import { geocodePendingPoints, geocodeLivePoint, invalidateNamedPointsCache, computeLiveLabel, resolveRefPoint } from './geocoding';
 import { haversineMiles, SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
@@ -12,18 +15,21 @@ import { flightCorrectionKey } from '@wingbeat/core/flight-store';
 import { coreBundle, coreBundlePath } from './shared/core-bundle';
 import { dashboardHTML } from './dashboard';
 import { analyticsHTML } from './analytics';
-import { generateToken, sha256Hex, deviceNameFromUA, pairedDeviceName, noAccessHTML, joinHTML, joinErrorHTML } from './auth';
+import { generateToken, sha256Hex, deviceNameFromUA, pairedDeviceName, noAccessHTML, joinHTML, joinErrorHTML, appPairLink, appConnectHTML, appConnectSignedOutHTML } from './auth';
 import { loadSettings, invalidateSettingsCache, settingsAsInstance } from './settings';
-import { keyedBasemapPreset, readEnvSecret, substituteTileUrl } from './shared/map-controls';
+import { envBasemapPresets, readEnvSecret } from './shared/map-controls';
+import { keyedBasemapPreset, substituteTileUrl, TILE_SUBDOMAINS } from '@wingbeat/core/basemaps';
 import { lookupTileMetadata, sanitizeAttribution } from './tile-metadata';
 import { MAX_DUTY_DAYS_PER_REQUEST, MAX_FLIGHT_TEXT_LENGTH, MAX_DUTY_NOTE_LENGTH, MAX_FLIGHT_SECS } from '@wingbeat/core/record-limits';
 import { BaseHistoryQuery } from '@wingbeat/core/api/requests';
 import { AssignmentRequest, BulkFlagsRequest, CorrectionRequest } from '@wingbeat/core/api/corrections-requests';
 import { DefaultDutyRequest, DutyDaysClearRequest, DutyDaysRequest, DutyMethodRequest } from '@wingbeat/core/api/duty-requests';
 import { MAX_DEVICE_NAME_LENGTH, SessionRenameRequest, deviceNameLength } from '@wingbeat/core/api/me-requests';
+import { PushDeviceRequest, PushSubscriptionsRequest } from '@wingbeat/core/api/push-requests';
 import { PairRequest } from '@wingbeat/core/api/app-requests';
+import { APP_CONNECT_PATH, appConnectCallbackUrl, base64url, isCodeChallenge, isCodeVerifier, isConnectState } from '@wingbeat/core/app-connect';
 import { API_VERSION, APP_VERSION_HEADER, MAX_APP_VERSION_LENGTH, MIN_CLIENT_LEVEL } from '@wingbeat/core/api/version';
-import { InviteRequest } from '@wingbeat/core/api/users-requests';
+import { InviteRequest, UserUpdateRequest } from '@wingbeat/core/api/users-requests';
 import { ApplyAssignmentRequest, TestFeedRequest, TrackerCreateRequest, TrackerUpdateRequest } from '@wingbeat/core/api/trackers-requests';
 import { OverlayRequest } from '@wingbeat/core/api/overlays-requests';
 import { AircraftCreateRequest, AircraftUpdateRequest } from '@wingbeat/core/api/aircraft-requests';
@@ -44,7 +50,7 @@ const SESSION_IDLE_SECS = 90 * 24 * 3600;
 const SESSION_TOUCH_SECS = 3600;
 const DEVICE_LINK_TTL_SECS = 15 * 60;
 
-type AuthUser = { id: number; name: string; role: string; sessionId: number; device_name: string | null };
+type AuthUser = { id: number; name: string; role: string; pilot_id: number | null; sessionId: number; device_name: string | null };
 type Variables = { user: AuthUser; db: D1Database; tenant: Tenant; cspNonce: string };
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -82,7 +88,7 @@ app.onError((err, c) => {
   return c.text('Internal Server Error', 500);
 });
 
-type SessionLookup = { id: number; user_id: number; name: string; role: string; device_name: string | null; last_seen_at: number; token_hashed: number; app_version: string | null };
+type SessionLookup = { id: number; user_id: number; name: string; role: string; pilot_id: number | null; device_name: string | null; last_seen_at: number; token_hashed: number; app_version: string | null };
 
 // Finds the live session for a cookie value. New rows store sha256(cookie) with
 // token_hashed = 1; legacy rows hold the raw cookie with token_hashed = 0. The token_hashed
@@ -93,7 +99,7 @@ async function lookupSession(c: Context<{ Bindings: Env; Variables: Variables }>
   const hash = await sha256Hex(raw);
   const db = c.var.db;
   const row = await db.prepare(
-    `SELECT s.id, s.user_id, u.name, u.role, s.device_name, s.last_seen_at, s.token_hashed, s.app_version
+    `SELECT s.id, s.user_id, u.name, u.role, u.pilot_id, s.device_name, s.last_seen_at, s.token_hashed, s.app_version
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE (s.token = ?1 AND s.token_hashed = 1) OR (s.token = ?2 AND s.token_hashed = 0)`
   ).bind(hash, raw).first<SessionLookup>();
@@ -119,7 +125,7 @@ async function lookupSession(c: Context<{ Bindings: Env; Variables: Variables }>
 }
 
 function sessionUser(row: SessionLookup): AuthUser {
-  return { id: row.user_id, name: row.name, role: row.role, sessionId: row.id, device_name: row.device_name };
+  return { id: row.user_id, name: row.name, role: row.role, pilot_id: row.pilot_id, sessionId: row.id, device_name: row.device_name };
 }
 
 const requireAdmin: MiddlewareHandler<{ Bindings: Env; Variables: Variables }> = async (c, next) => {
@@ -131,46 +137,7 @@ const _defaultTrackerIdCache = new Map<string, number | null>();
 function invalidateTrackerCache(tenantKey: string) { _defaultTrackerIdCache.delete(tenantKey); }
 
 function meJson(u: AuthUser) {
-  return { id: u.id, name: u.name, role: u.role, device_name: u.device_name, session_id: u.sessionId };
-}
-
-// The feed URL (source_url) can embed a share id/key that lets whoever holds it poll the
-// live feed directly, so only admins (who edit it in Settings) get it. Everyone gets the
-// derived MapShare page URL, which is what the UI links to.
-async function queryTrackers(db: D1Database, isAdmin: boolean): Promise<Tracker[]> {
-  const { results } = await db.prepare(
-    'SELECT id, name, type, source_url, active, deleted, assigned_aircraft, assigned_pilot FROM trackers ORDER BY id ASC'
-  ).all<Omit<Tracker, 'mapshare_url'> & { source_url: string }>();
-  return results.map(({ source_url, ...t }) => ({
-    ...t,
-    ...(isAdmin ? { source_url } : {}),
-    mapshare_url: t.type === 'inreach' ? mapshareUrl(source_url) : null,
-  }));
-}
-
-async function queryAircraft(db: D1Database, activeOnly = false) {
-  const query = activeOnly
-    ? 'SELECT tail_number, name, active, hobbs_time, hobbs_recorded_at, hobbs_correction, tach_time, tach_recorded_at, tach_correction, maintenance_schedule FROM aircraft WHERE active = 1 ORDER BY tail_number ASC'
-    : 'SELECT tail_number, name, active, hobbs_time, hobbs_recorded_at, hobbs_correction, tach_time, tach_recorded_at, tach_correction, maintenance_schedule FROM aircraft ORDER BY tail_number ASC';
-  const { results } = await db.prepare(query).all<Aircraft & { maintenance_schedule: string | null }>();
-  return results.map(r => ({ ...r, maintenance_schedule: r.maintenance_schedule ? JSON.parse(r.maintenance_schedule) : null }));
-}
-
-// Pilots with their dated default duties (default_duties, oldest first; migration 0002),
-// for the pilot list's "Default duty" line.
-async function queryPilots(db: D1Database, activeOnly = false): Promise<Pilot[]> {
-  const query = activeOnly
-    ? 'SELECT id, name, active FROM pilots WHERE active = 1 ORDER BY name ASC'
-    : 'SELECT id, name, active FROM pilots ORDER BY name ASC';
-  const [pilots, defaults] = await db.batch([
-    db.prepare(query),
-    db.prepare('SELECT pilot_id, effective_date, duty_start, duty_end FROM pilot_default_duty ORDER BY pilot_id, effective_date'),
-  ]);
-  const byPilot = new Map<number, DefaultDuty[]>();
-  for (const { pilot_id, ...entry } of defaults.results as (DefaultDuty & { pilot_id: number })[]) {
-    byPilot.set(pilot_id, [...byPilot.get(pilot_id) ?? [], entry]);
-  }
-  return (pilots.results as Omit<Pilot, 'default_duties'>[]).map(p => ({ ...p, default_duties: byPilot.get(p.id) ?? [] }));
+  return { id: u.id, name: u.name, role: u.role, pilot_id: u.pilot_id, device_name: u.device_name, session_id: u.sessionId };
 }
 
 async function queryTileOverlays(db: D1Database) {
@@ -252,7 +219,7 @@ function tenantDb(env: Env, bindingName: string): D1Database | undefined {
 //   - Referrer-Policy strict-origin-when-cross-origin: browsers fetch the keyless basemap tiles
 //     (OpenTopoMap, USGS, Esri) directly and some providers want a Referer, so the origin is
 //     still sent cross-origin; path and query (e.g. /join/<token>) never leave the site.
-function buildCsp(nonce: string): string {
+function buildCsp(nonce: string, path: string): string {
   return [
     "default-src 'self'",
     `script-src 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval' 'unsafe-eval' https://unpkg.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net`,
@@ -264,7 +231,8 @@ function buildCsp(nonce: string): string {
     "object-src 'none'",
     "base-uri 'none'",
     "frame-ancestors 'none'",
-    "form-action 'self'",
+    // wingbeat: is POST /app/connect's redirect back to the app, so only that page allows it.
+    path === '/app/connect' ? "form-action 'self' wingbeat:" : "form-action 'self'",
   ].join('; ');
 }
 
@@ -285,7 +253,7 @@ app.use('*', async (c, next) => {
     c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
   if ((c.res.headers.get('Content-Type') ?? '').startsWith('text/html')) {
-    c.header('Content-Security-Policy', buildCsp(nonce));
+    c.header('Content-Security-Policy', buildCsp(nonce, c.req.path));
   }
 });
 
@@ -314,7 +282,7 @@ app.use('*', async (c, next) => {
   }
 
   c.set('db', db);
-  c.set('tenant', { db, key: bindingName, host });
+  c.set('tenant', { db, key: bindingName, host, expoAccessToken: c.env.EXPO_ACCESS_TOKEN });
   return next();
 });
 
@@ -355,6 +323,8 @@ app.use('*', async (c, next) => {
 
   if (path === '/login' || path === '/location') return next();
   if (path.startsWith('/join/') || path === '/api/app/pair') return next();
+  // Reads the session cookie itself, to say "not signed in" there rather than redirect.
+  if (path === APP_CONNECT_PATH) return next();
 
   // Admin routes take the bearer token, never a session cookie.
   if (isAdminPath(path)) return requireBearer(c, next);
@@ -431,9 +401,13 @@ app.post('/logout', async (c) => {
 // A device that already has a session here doesn't need another one: opening a device
 // link (e.g. again, or from an old deployment's "moved" screen) just takes it to the app.
 async function hasSession(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<boolean> {
+  return (await cookieSession(c)) !== null;
+}
+
+/** This browser's session, from its cookie alone, or null. */
+async function cookieSession(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<SessionLookup | null> {
   const token = getCookie(c, SESSION_COOKIE);
-  if (!token) return false;
-  return (await lookupSession(c, token)) !== null;
+  return token ? lookupSession(c, token) : null;
 }
 
 const findJoinToken = (db: D1Database, token: string) =>
@@ -457,7 +431,7 @@ function joinRefusal(row: InviteToken): JoinRefusal | null {
   return null;
 }
 
-type Redeemed = { sessionToken: string; sessionId: number; userId: number; name: string; role: string };
+type Redeemed = { sessionToken: string; sessionId: number; userId: number; name: string; role: string; pilotId: number | null };
 
 /**
  * Redeems a join token for a new session named deviceName: the web's POST /join/:token
@@ -476,7 +450,7 @@ async function redeemJoinToken(db: D1Database, row: InviteToken, deviceName: str
   const consume = db.prepare('UPDATE invite_tokens SET used = 1 WHERE id = ? AND used = 0 AND expires_at >= ?').bind(row.id, now);
   // Last, in the same transaction: the new session and its user, for the caller's response.
   const created = db.prepare(
-    `SELECT s.id, s.user_id, u.name, u.role FROM sessions s JOIN users u ON u.id = s.user_id
+    `SELECT s.id, s.user_id, u.name, u.role, u.pilot_id FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token = ? AND s.token_hashed = 1`
   ).bind(sessionHash);
   const batch = row.type === 'invite'
@@ -493,10 +467,10 @@ async function redeemJoinToken(db: D1Database, row: InviteToken, deviceName: str
         .bind(row.user_id!, sessionHash, deviceName),
       created,
     ]);
-  const session = batch.at(-1)!.results[0] as { id: number; user_id: number; name: string; role: string } | undefined;
+  const session = batch.at(-1)!.results[0] as { id: number; user_id: number; name: string; role: string; pilot_id: number | null } | undefined;
   // Lost: joinRefusal looks at the clock again, so a link that expired meanwhile says so.
   if (!session) return { ok: false, refusal: joinRefusal(row) ?? usedRefusal(row) };
-  return { ok: true, session: { sessionToken, sessionId: session.id, userId: session.user_id, name: session.name, role: session.role } };
+  return { ok: true, session: { sessionToken, sessionId: session.id, userId: session.user_id, name: session.name, role: session.role, pilotId: session.pilot_id } };
 }
 
 app.get('/join/:token', async (c) => {
@@ -504,26 +478,31 @@ app.get('/join/:token', async (c) => {
   const [row, settings] = await Promise.all([findJoinToken(c.var.db, token), loadSettings(c.var.tenant)]);
 
   const appName = settings.app_name;
-  if (!row) return c.html(joinErrorHTML(INVALID_LINK.message, appName), INVALID_LINK.status);
+  // A "Sign in with Browser" token is only for the app that holds its verifier.
+  if (!row || row.code_challenge) return c.html(joinErrorHTML(INVALID_LINK.message, appName), INVALID_LINK.status);
   if (row.type === 'device_link' && await hasSession(c)) return c.redirect('/');
   const refusal = joinRefusal(row);
   if (refusal) return c.html(joinErrorHTML(refusal.message, appName), refusal.status);
 
+  // ?from=app: the app's "Open on the Web" (Settings) sent this browser here, so it's not
+  // offered the app back.
+  const appLink = c.req.query('from') === 'app' ? null : appPairLink(c.req.header('User-Agent') ?? '', new URL(c.req.url).host, token);
   if (row.type === 'invite') {
-    return c.html(joinHTML('invite', row.invited_name!, token, appName));
+    return c.html(joinHTML('invite', row.invited_name!, token, appName, appLink));
   }
 
   const user = await c.var.db.prepare('SELECT name FROM users WHERE id = ?')
     .bind(row.user_id).first<{ name: string }>();
   if (!user) return c.html(joinErrorHTML('This link is no longer valid.', appName), 404);
-  return c.html(joinHTML('device_link', user.name, token, appName));
+  return c.html(joinHTML('device_link', user.name, token, appName, appLink));
 });
 
 app.post('/join/:token', async (c) => {
   const [row, settings] = await Promise.all([findJoinToken(c.var.db, c.req.param('token')), loadSettings(c.var.tenant)]);
 
   const appName = settings.app_name;
-  if (!row) return c.html(joinErrorHTML(INVALID_LINK.message, appName), INVALID_LINK.status);
+  // A "Sign in with Browser" token is only for the app that holds its verifier.
+  if (!row || row.code_challenge) return c.html(joinErrorHTML(INVALID_LINK.message, appName), INVALID_LINK.status);
   if (row.type === 'device_link' && await hasSession(c)) return c.redirect('/');
   const refusal = joinRefusal(row);
   if (refusal) return c.html(joinErrorHTML(refusal.message, appName), refusal.status);
@@ -544,13 +523,61 @@ app.post('/api/app/pair', valid('json', PairRequest), async (c) => {
   if (!row) return c.json({ error: INVALID_LINK.message }, INVALID_LINK.status);
   const refusal = joinRefusal(row);
   if (refusal) return c.json({ error: refusal.message }, refusal.status);
+  // A "Sign in with Browser" token goes only to the app that made its challenge.
+  if (row.code_challenge && !(isCodeVerifier(body.code_verifier) && await codeChallengeOf(body.code_verifier) === row.code_challenge)) {
+    return c.json({ error: INVALID_LINK.message }, INVALID_LINK.status);
+  }
 
   const deviceName = pairedDeviceName(body.device_name, c.req.header('User-Agent') ?? '');
   const redeemed = await redeemJoinToken(c.var.db, row, deviceName);
   if (!redeemed.ok) return c.json({ error: redeemed.refusal.message }, redeemed.refusal.status);
   // The app's X-Wingbeat-App header is recorded from its next request, not this one.
-  const { sessionToken, sessionId, userId, name, role } = redeemed.session;
-  return c.json({ token: sessionToken, me: meJson({ id: userId, name, role, sessionId, device_name: deviceName }) });
+  const { sessionToken, sessionId, userId, name, role, pilotId } = redeemed.session;
+  return c.json({ token: sessionToken, me: meJson({ id: userId, name, role, pilot_id: pilotId, sessionId, device_name: deviceName }) });
+});
+
+/** A PKCE verifier's S256 challenge. */
+async function codeChallengeOf(verifier: string): Promise<string> {
+  return base64url(new Uint8Array(await sha256(verifier)));
+}
+
+// "Sign in with Browser" (docs/mobile-app-plan.md, "Auth and pairing"): the app's auth
+// session opens this page in the phone's browser, which shares Safari's cookies. A signed-in
+// browser asks before connecting; the POST makes a device link bound to the app's PKCE
+// challenge and sends it back to the app, which redeems it at /api/app/pair with its verifier.
+app.get(APP_CONNECT_PATH, async (c) => {
+  const challenge = c.req.query('challenge');
+  const state = c.req.query('state');
+  const [session, settings] = await Promise.all([cookieSession(c), loadSettings(c.var.tenant)]);
+  const appName = settings.app_name;
+  if (!isCodeChallenge(challenge) || !isConnectState(state)) {
+    return c.html(joinErrorHTML('This sign-in request is invalid. Go back to the app and try again.', appName), 400);
+  }
+  if (!session) return c.html(appConnectSignedOutHTML(appName));
+  return c.html(appConnectHTML(session.name, challenge, state, appName));
+});
+
+app.post(APP_CONNECT_PATH, async (c) => {
+  const form = await c.req.parseBody();
+  const { challenge, state } = form;
+  const [session, settings] = await Promise.all([cookieSession(c), loadSettings(c.var.tenant)]);
+  const appName = settings.app_name;
+  if (!isCodeChallenge(challenge) || !isConnectState(state)) {
+    return c.html(joinErrorHTML('This sign-in request is invalid. Go back to the app and try again.', appName), 400);
+  }
+  if (!session) return c.html(appConnectSignedOutHTML(appName), 401);
+
+  // Each press makes a row, so this user's spent ones (used or expired) go first.
+  const token = generateToken();
+  const now = Math.floor(Date.now() / 1000);
+  await c.var.db.batch([
+    c.var.db.prepare('DELETE FROM invite_tokens WHERE user_id = ? AND code_challenge IS NOT NULL AND (used = 1 OR expires_at < ?)')
+      .bind(session.user_id, now),
+    c.var.db.prepare(
+      `INSERT INTO invite_tokens (token, type, user_id, expires_at, code_challenge) VALUES (?, 'device_link', ?, ?, ?)`
+    ).bind(token, session.user_id, now + DEVICE_LINK_TTL_SECS, challenge),
+  ]);
+  return c.redirect(appConnectCallbackUrl(token, state), 303);
 });
 
 // ── Page routes ───────────────────────────────────────────────────────────────
@@ -577,12 +604,11 @@ app.get('/location', async (c) => {
 
 // ── Tile proxy route (keyed basemap providers) ───────────────────────────────
 //
-// Only presets with `secretEnvVar` set (see BASEMAP_PRESETS in shared/map-controls.ts)
+// Only presets with `secretEnvVar` set (see BASEMAP_PRESETS in @wingbeat/core/basemaps)
 // route through here — keyless presets are fetched by the browser directly from the
 // upstream CDN, unchanged. This is the only route allowed to build an upstream tile
 // URL or read a tile-provider secret.
 
-const TILE_SUBDOMAINS = ['a', 'b', 'c']; // matches Leaflet's default `subdomains` option
 const TILE_Y_FILE = /^(\d+)(@2x)?\.png$/;
 
 app.get('/api/tiles/:providerId/:z/:x/:yFile', async (c) => {
@@ -653,7 +679,8 @@ app.get('/api/bootstrap', async (c) => {
     loadSettings(c.var.tenant),
   ]);
   return c.json({
-    me: meJson(c.get('user')), trackers, aircraft, pilots, overlays, instance: settingsAsInstance(settings),
+    me: meJson(c.get('user')), trackers, aircraft, pilots, overlays, basemaps: envBasemapPresets(c.env),
+    instance: settingsAsInstance(settings),
     api_version: API_VERSION, min_client_level: MIN_CLIENT_LEVEL,
   });
 });
@@ -726,18 +753,105 @@ app.post('/api/me/ping', async (c) => {
   return c.json({ ok: true });
 });
 
+// ── Push routes (any authenticated user): this device's push token and the user's subscriptions ──
+
+// Registers this session's device for push. The same token again is a no-op; a session keeps
+// one token (a reinstall's new one replaces it), and a token belongs to one session of a user (the
+// newest to register it).
+app.post('/api/me/push-devices', valid('json', PushDeviceRequest), async (c) => {
+  const u = c.get('user');
+  const { kind, token, time_sensitive } = c.req.valid('json');
+  const db = c.var.db;
+  // Left out (an app from before the setting): the stored choice stays.
+  const timeSensitive = time_sensitive ? JSON.stringify([...new Set(time_sensitive)]) : null;
+  await db.batch([
+    db.prepare('DELETE FROM push_devices WHERE session_id = ? AND endpoint != ?').bind(u.sessionId, token),
+    // The same phone under an older session of this user (paired again without signing out):
+    // it would get every push twice.
+    db.prepare(`DELETE FROM push_devices WHERE endpoint = ? AND session_id != ?
+                AND session_id IN (SELECT id FROM sessions WHERE user_id = ?)`).bind(token, u.sessionId, u.id),
+    db.prepare(`INSERT INTO push_devices (session_id, kind, endpoint, time_sensitive) VALUES (?, ?, ?, ?)
+                ON CONFLICT (session_id, endpoint) DO UPDATE SET time_sensitive = COALESCE(excluded.time_sensitive, time_sensitive)`)
+      .bind(u.sessionId, kind, token, timeSensitive),
+  ]);
+  const row = await db.prepare('SELECT id FROM push_devices WHERE session_id = ? AND endpoint = ?')
+    .bind(u.sessionId, token).first<{ id: number }>();
+  return c.json({ id: row!.id });
+});
+
+async function pushSubscriptionsOf(db: D1Database, userId: number) {
+  const { results } = await db.prepare(
+    'SELECT tracker_id, event FROM push_subscriptions WHERE user_id = ? ORDER BY event, tracker_id'
+  ).bind(userId).all<{ tracker_id: number | null; event: string }>();
+  return { subscriptions: results };
+}
+
+app.get('/api/me/push-subscriptions', async (c) => {
+  return c.json(await pushSubscriptionsOf(c.var.db, c.get('user').id));
+});
+
+// Replaces the user's subscriptions. A tracker's must name one that exists; alerts are for no
+// tracker in particular.
+app.put('/api/me/push-subscriptions', valid('json', PushSubscriptionsRequest), async (c) => {
+  const u = c.get('user');
+  const db = c.var.db;
+  const { subscriptions } = c.req.valid('json');
+  if (subscriptions.some((s) => s.event === 'alerts' && s.tracker_id !== null)) {
+    return c.json({ error: 'alerts subscriptions are for every tracker (tracker_id null)' }, 400);
+  }
+  const trackerIds = [...new Set(subscriptions.map((s) => s.tracker_id).filter((id): id is number => id !== null))];
+  if (trackerIds.length > 0) {
+    const known = new Set((await queryTrackers(db, false)).map((t) => t.id));
+    if (trackerIds.some((id) => !known.has(id))) return c.json({ error: 'Tracker not found' }, 404);
+  }
+  await db.batch([
+    db.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').bind(u.id),
+    ...subscriptions.map((s) => db.prepare(
+      'INSERT INTO push_subscriptions (user_id, tracker_id, event) VALUES (?, ?, ?) ON CONFLICT DO NOTHING'
+    ).bind(u.id, s.tracker_id, s.event)),
+  ]);
+  return c.json(await pushSubscriptionsOf(db, u.id));
+});
+
 // ── User management routes (admin only) ──────────────────────────────────────
 
 app.get('/api/users', requireAdmin, async (c) => {
   const { results } = await c.var.db.prepare(`
-    SELECT u.id, u.name, u.role, u.is_env_admin, u.created_at,
+    SELECT u.id, u.name, u.role, u.is_env_admin, u.pilot_id, u.created_at,
            COUNT(s.id) AS device_count
     FROM users u
     LEFT JOIN sessions s ON s.user_id = u.id
     GROUP BY u.id
     ORDER BY u.created_at ASC
-  `).all<{ id: number; name: string; role: string; is_env_admin: number; created_at: number; device_count: number }>();
+  `).all<{ id: number; name: string; role: string; is_env_admin: number; pilot_id: number | null; created_at: number; device_count: number }>();
   return c.json({ users: results });
+});
+
+// Links a user to the pilot they are (or unlinks them, with null): the app opens a linked
+// user's own duty log first. A pilot links to one user at most (the users_pilot index).
+app.patch('/api/users/:id', requireAdmin, valid('json', UserUpdateRequest), async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  if (isNaN(id)) return c.json({ error: 'Invalid user id' }, 400);
+  const body = c.req.valid('json');
+  if (body.pilot_id === undefined) return c.json({ error: 'Nothing to update' }, 400);
+  const db = c.var.db;
+  const user = await db.prepare('SELECT id FROM users WHERE id = ?').bind(id).first();
+  if (!user) return c.json({ error: 'User not found' }, 404);
+  if (body.pilot_id !== null) {
+    const pilot = await db.prepare('SELECT id FROM pilots WHERE id = ?').bind(body.pilot_id).first();
+    if (!pilot) return c.json({ error: 'Pilot not found' }, 404);
+  }
+  // The check is part of the UPDATE, so two admins linking one pilot at once get a 409, not
+  // the index's error.
+  const { meta } = await db.prepare(
+    'UPDATE users SET pilot_id = ?1 WHERE id = ?2 AND (?1 IS NULL OR NOT EXISTS (SELECT 1 FROM users WHERE pilot_id = ?1 AND id != ?2))'
+  ).bind(body.pilot_id, id).run();
+  if (meta.changes === 0) {
+    const other = await db.prepare('SELECT name FROM users WHERE pilot_id = ? AND id != ?')
+      .bind(body.pilot_id, id).first<{ name: string }>();
+    return c.json({ error: `That pilot is already linked to ${other?.name ?? 'another user'}` }, 409);
+  }
+  return c.json({ ok: true });
 });
 
 /**
@@ -2768,7 +2882,7 @@ app.delete('/api/webhooks/:id', requireAdmin, async (c) => {
 export default {
   fetch: app.fetch,
 
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const routing = parseRouting(env);
     if (!routing) {
       console.error('CUSTOMER_ROUTING is not valid JSON; skipping scheduled poll');
@@ -2794,10 +2908,21 @@ export default {
           console.error(`Binding "${bindingName}" not found for host ${hostname}; skipping`);
           continue;
         }
+        const tenant: Tenant = { db, key: bindingName, host: hostname, expoAccessToken: env.EXPO_ACCESS_TOKEN };
         try {
-          await pollAllActive({ db, key: bindingName, host: hostname }, { geocode: true });
+          await pollAllActive(tenant, { geocode: true });
         } catch (err) {
           console.error(`Scheduled poll failed for ${hostname} ("${bindingName}"):`, String(err));
+        }
+        try {
+          await checkAppPushReceipts(tenant);
+        } catch (err) {
+          console.error(`Push receipt check failed for ${hostname} ("${bindingName}"):`, String(err));
+        }
+        try {
+          await checkAlerts(tenant, event.scheduledTime);
+        } catch (err) {
+          console.error(`Alert check failed for ${hostname} ("${bindingName}"):`, String(err));
         }
       }
     })());

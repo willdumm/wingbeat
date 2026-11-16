@@ -80,6 +80,35 @@ describe('elevationColorFor', () => {
   });
 });
 
+describe('elevationRampStops', () => {
+  // Linear interpolation between the stops, clamped at the ends (MapLibre's interpolate).
+  const colorAt = (stops, m) => {
+    if (m <= stops[0][0]) return stops[0][1];
+    const i = stops.findIndex(([at]) => at >= m);
+    if (i === -1) return stops.at(-1)[1];
+    const [[a, ca], [b, cb]] = [stops[i - 1], stops[i]];
+    if (!ca) return null;
+    return ca.map((c, k) => Math.round(c + (cb[k] - c) * (m - a) / (b - a)));
+  };
+
+  test('interpolated, they give elevationColorFor', () => {
+    for (const [ref, range] of [[500, 300], [0, 300], [100, 50], [3000, 2000]]) {
+      const stops = elevation.elevationRampStops(ref, range);
+      assert.deepEqual(stops.map(([m]) => m), [...stops.map(([m]) => m)].sort((x, y) => x - y));
+      for (const m of [-10, 1, 2, 50, 150, 200, 350, 500, 650, 800, 900, 1200, 4000, 6000]) {
+        const want = elevation.elevationColorFor(m, ref, range);
+        const got = colorAt(stops, m);
+        if (want == null) assert.equal(got, null, `${ref}±${range} at ${m}`);
+        else got.forEach((c, k) => assert.ok(Math.abs(c - want[k]) <= 1, `${ref}±${range} at ${m}: ${got} vs ${want}`));
+      }
+    }
+  });
+
+  test('transparent through the water mask', () => {
+    assert.deepEqual(plain(elevation.elevationRampStops(500, 300)[0]), [5 / 3.28084, null]);
+  });
+});
+
 test('paintElevationTint: each DEM pixel of the sub-rectangle covers scale² map pixels; water stays transparent', () => {
   const elev = new Float32Array(SIZE * SIZE);   // all sea level
   elev[300] = 500;                             // row 0, column 300

@@ -68,14 +68,14 @@ const EXPORTS = [
   'flightEditedMark', 'flightRemarksHtml',
   // the core bundle (@wingbeat/core/duty)
   'computeDutyData',
-  // pilot-duty.ts
-  '_buildTypstSource',
+  // the core bundle (@wingbeat/core/duty-pdf)
+  'dutyLogTypstSource',
   // the core bundle (@wingbeat/core/corrections, edit-history)
   'readFlightForm', 'flightFormTimesOf', 'lastEditText',
   // filters.ts
   'filterStore',
   // the core bundle (@wingbeat/core/live, maintenance, alerts)
-  'isInFlight', 'isGpsFresh', 'nextLivePoll', '_maintenanceStatus', '_estimatedMeter', 'computeAlertsFor',
+  'isInFlight', 'isGpsFresh', 'nextLivePoll', 'nearestPointIdx', 'pickedPointDetails', '_maintenanceStatus', '_estimatedMeter', 'computeAlertsFor',
   // the core bundle (@wingbeat/core/regions, accounting, analytics)
   'haversineKm', 'homeBaseNamesIn', 'computeRegionHoursIn', 'computeMonthlyAccountingIn', 'tzLongMonthLabel',
   'sgGenerateBuckets', 'sgComputeDataIn', 'interpolateRoutePoints', 'endpointHeatPointsIn',

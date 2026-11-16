@@ -12,9 +12,9 @@ export interface MaintenanceItem {
   id: string;
   name: string;
   schedule_type: 'hobbs' | 'tach' | 'calendar';
-  interval_hours?: number;
-  last_done_value?: number;
-  interval_months?: number;
+  interval_hours?: number | null;
+  last_done_value?: number | null;
+  interval_months?: number | null;
   last_done_at?: number | null;
 }
 

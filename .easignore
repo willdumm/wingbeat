@@ -1,0 +1,60 @@
+# What EAS Build uploads for apps/mobile. The builds run with EAS_PROJECT_ROOT set to this
+# directory, so the archive includes packages/core (the app's `file:` dependency), and
+# with this file present EAS ignores every .gitignore. Upload only the app and core (EAS
+# can't re-include a path with `!`, so the rest of the root is listed). The root
+# package.json and lockfile stay out too, so the build installs from apps/mobile's own.
+/.claude/
+/.dev.vars.example
+/.github/
+/.gitignore
+/.jj/
+/.wrangler/
+/build/
+/docs/
+/migrations/
+/nix/
+/scripts/
+/site/
+/src/
+/test/
+/CLA.md
+/CLAUDE.md
+/COMMERCIAL_LICENSE.md
+/LICENSE
+/LICENSE-docs
+/README.md
+/logo.svg
+/logo_plain.svg
+/package.json
+/package-lock.json
+/tsconfig.json
+/wrangler.example.toml
+/wrangler.toml
+
+# From .gitignore and apps/mobile/.gitignore. Secrets first: with this file present, nothing
+# else keeps them out of the upload.
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.pem
+*.mobileprovision
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+*.tsbuildinfo
+/apps/mobile/ios
+/apps/mobile/android

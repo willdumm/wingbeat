@@ -23,6 +23,10 @@
  *   GET    /api/duty-days, GET /api/duty-methods
  *   PUT    /api/duty-days/:pilot, POST /api/duty-days/:pilot/clear
  *   PUT    /api/pilots/:id/default-duty, DELETE /api/pilots/:id/default-duty/:date
+ *
+ * and phase 7's push registration and subscriptions:
+ *
+ *   POST   /api/me/push-devices, GET /api/me/push-subscriptions, PUT /api/me/push-subscriptions
  */
 import * as z from 'zod/mini';
 
@@ -39,6 +43,7 @@ const Me = z.looseObject({
   id: num,
   name: z.string(),
   role: z.enum(['admin', 'viewer']),
+  pilot_id: optionalNum,
   device_name: nullableStr,
   session_id: num,
 });
@@ -101,12 +106,22 @@ const TileOverlay = z.looseObject({
   default_enabled_by_basemap: z.nullable(z.record(z.string(), z.boolean())),
 });
 
+const Basemap = z.looseObject({
+  id: z.string(),
+  label: z.string(),
+  url: z.string(),
+  attribution: z.string(),
+  maxZoom: num,
+  detectRetina: z.optional(z.boolean()),
+});
+
 const BootstrapResponse = z.looseObject({
   me: Me,
   trackers: z.array(Tracker),
   aircraft: z.array(Aircraft),
   pilots: z.array(Pilot),
   overlays: z.array(TileOverlay),
+  basemaps: z.optional(z.array(Basemap)),
   instance: z.optional(z.looseObject({
     app_name: z.string(),
     timezone: z.string(),
@@ -223,6 +238,14 @@ const DutyLogResponse = z.looseObject({
   last_history_id: num,
 });
 
+// ── push ──
+
+const PushDeviceResponse = z.looseObject({ id: num });
+
+const PushSubscriptionsResponse = z.looseObject({
+  subscriptions: z.array(z.looseObject({ tracker_id: nullableNum, event: z.enum(['takeoff', 'landing', 'gap', 'alerts']) })),
+});
+
 const DutyMethodsResponse = z.looseObject({
   methods: z.array(DutyMethodEntry),
   last_history_id: num,
@@ -238,6 +261,9 @@ export const responses = {
   'GET /api/me/sessions': SessionsResponse,
   'POST /api/me/ping': OkResponse,
   'DELETE /api/me': OkResponse,
+  'POST /api/me/push-devices': PushDeviceResponse,
+  'GET /api/me/push-subscriptions': PushSubscriptionsResponse,
+  'PUT /api/me/push-subscriptions': PushSubscriptionsResponse,
   'GET /api/flights/complete': FlightsCompleteResponse,
   'GET /api/flight-corrections': FlightCorrectionsResponse,
   'POST /api/flight-corrections': CorrectionWriteResponse,

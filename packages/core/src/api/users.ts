@@ -6,16 +6,20 @@
  */
 import * as z from 'zod/mini';
 import { OkResponse, type ApiClient } from './client';
-import type { InviteRequest } from './users-requests';
+import type { InviteRequest, UserUpdateRequest } from './users-requests';
 
-export type { InviteRequest } from './users-requests';
+export type { InviteRequest, UserUpdateRequest } from './users-requests';
 
-/** A user. is_env_admin is SQLite's 0/1 (the shared account, which can't be removed). */
+/**
+ * A user. is_env_admin is SQLite's 0/1 (the shared account, which can't be removed).
+ * pilot_id is the pilot they are (absent from servers older than the link).
+ */
 export const User = z.looseObject({
   id: z.number(),
   name: z.string(),
   role: z.enum(['admin', 'viewer']),
   is_env_admin: z.number(),
+  pilot_id: z.nullish(z.number()),
   created_at: z.number(),
   device_count: z.number(),
 });
@@ -47,6 +51,11 @@ export type InviteCreateResponse = z.infer<typeof InviteCreateResponse>;
 /** Every user. */
 export function getUsers(client: ApiClient): Promise<UsersResponse> {
   return client.get('/api/users', UsersResponse);
+}
+
+/** Links a user to the pilot they are (pilot_id null unlinks them). */
+export function updateUser(client: ApiClient, id: number, body: UserUpdateRequest): Promise<OkResponse> {
+  return client.write('PATCH', '/api/users/' + id, body, OkResponse);
 }
 
 /** Removes a user and their sessions. */

@@ -236,6 +236,8 @@ export interface InviteToken {
   user_id: number | null;
   expires_at: number;
   used: number;
+  /** The app's PKCE S256 challenge, on a device link from POST /app/connect; null otherwise. */
+  code_challenge: string | null;
 }
 
 export interface Env {
@@ -245,6 +247,9 @@ export interface Env {
   // never per-tenant D1 data. Optional: a preset naming an unset var here simply drops
   // out of the basemap picker rather than erroring.
   CARTO_API_KEY?: string;
+  // The app publisher's Expo access token, for app push (see app-push.ts). Set only on
+  // hosted instances; without it the Worker sends no app push.
+  EXPO_ACCESS_TOKEN?: string;
 }
 
 /**
@@ -257,4 +262,6 @@ export interface Tenant {
   db: D1Database;
   key: string;
   host: string;
+  /** Env.EXPO_ACCESS_TOKEN, when set. */
+  expoAccessToken?: string;
 }

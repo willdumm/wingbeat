@@ -1,7 +1,13 @@
 # Plan: Wingbeat mobile app (Expo)
 
-**Status: phase 1 done**, released as wingbeat v0.3.0 (2026-11-08). Next: phase 4, the API
-for the app. The app is built whether or not the beacon probe passes, and Web Push (phase 2)
+**Status: phases 1 and 4 done.** Phase 1 was released as wingbeat v0.3.0 (2026-11-08), and
+phase 4, the API for the app, as v0.4.0 (in production since 2026-11-11; see "Phase 4
+progress"). **Phase 5, the app shell, is under way** on `app-shell`: steps 1–9 are done, plus
+the native map work after them, and step 10 has its iOS development build (see "Phase 5
+progress"). Its Android build and Maestro flows are deferred ("iOS only for now"); steps 11
+and 12 (the `demo` tenant, TestFlight) are next. What the app has against the web, feature by
+feature, with the native element each uses, is "Feature parity with the web"; the UI rules
+are in `docs/mobile-design-principles.md`. The app is built whether or not the beacon probe passes, and Web Push (phase 2)
 is deferred while Pushover works (both decided 2026-11-08; see "Phases").
 Done in phase 1: the foundation (`packages/core`, the browser bundle as a
 Text module, the nonce test, the theme tokens), step 1, `time` (core time with zone
@@ -48,7 +54,9 @@ the v0.3.0 releases have logged no mismatches. All open questions are answered.
 
 1. **Native look.** Use platform UI everywhere it exists (navigation, tabs, sheets, lists,
    menus, pickers, switches) so the app reads as an iOS app on iOS and an Android app on
-   Android, not as a web page in a shell.
+   Android, not as a web page in a shell. Use the native control rather than imitate it, and
+   name each choice's Android counterpart even while only iOS ships: the rules are in
+   `docs/mobile-design-principles.md`.
 2. **Replace Pushover** with push from the app. Web Push from the dashboard, which works on
    every instance without the app, is deferred while Pushover works (phase 2).
 3. **Reuse the web dashboard's logic**, so a rule (duty limits, flight corrections, time
@@ -57,8 +65,17 @@ the v0.3.0 releases have logged no mismatches. All open questions are answered.
    flights automatically (phone location, Bluetooth iBeacons in aircraft) in the background,
    without the pilot opening the app.
 
-Non-goals for v1: admin configuration (trackers, users, regions, overlays, tile layers,
-global settings). The web stays the admin console, and the app links to it.
+5. **Eventually, everything the web does** (decided 2026-11-11): every flight edit, every
+   setting, and the other pages, with as much code shared as possible so a feature is
+   maintained once. Logic, validation and request shapes live in core, and only the UI is
+   written twice (goal 1). Each feature comes when it can be done well in the app, not all
+   in v1: see phase 11.
+
+Not in v1: admin configuration (trackers, users, regions, overlays, tile layers, global
+settings) and the flight edits other than assignment. Until phase 11 brings them, the app
+can't make them, and it doesn't link to the web for them (decided 2026-11-11: a link would
+add a browser session to the Devices list each time a phone signs one in, and land on the
+dashboard, not its Settings).
 
 ## What exists today
 
@@ -922,6 +939,11 @@ Subscriptions are per user, and every device a user has registered gets each pus
   phase 7 now that phase 2 is deferred, with `kind = 'expo'` only until Web Push exists.
   Phase 4's migration adds `sessions.app_version` (see "Versions and compatibility").
   Neither table has `edit_history` triggers.
+- **Done 2026-11-15 (phase 7, step 1):** `migrations/0006_push.sql` adds both tables, and
+  `push_tickets` (Expo's ticket per send, for the receipt check). A subscription's `event` is
+  also `alerts` (the alerts feed, `tracker_id` NULL). Routes: `POST /api/me/push-devices`
+  (one token per session; a new one replaces it), `GET`/`PUT /api/me/push-subscriptions` (the
+  whole set), in `@wingbeat/core/api/push` and compat level 1.
 - `dispatchNotifications()` gains a delivery path for `push_subscriptions` next to the
   `webhooks` targets. It reuses `eventTitle`/`eventMessage`, and `subscriptionKey()` already
   maps `gap_resolved`/`gap_timeout` onto `gap`. Today the function returns early when there
@@ -976,13 +998,27 @@ access token. Without it, anyone holding a device's push token can send to it.
 - Users subscribe in the app (per tracker, per event; `GET`/`PUT /api/me/push-subscriptions`).
   With phase 2 deferred, this is the first subscriptions UI; if Web Push comes later, its
   Settings → Notifications is the same controls in web form.
+- **Done 2026-11-15 (phase 7, step 2):** `src/app-push.ts`. `dispatchNotifications()` runs
+  the webhooks and the app push side by side (`Promise.allSettled`), so neither can hold up
+  the other. A push's body is `eventMessage` without the links; `data` is
+  `{ type, tracker_id, host }` (the events carry no flight id; `host` picks the account), and the gap types are Time
+  Sensitive. Tickets go to `push_tickets`; each cron tick checks those over 15 minutes old
+  and drops ones with no receipt after a day. The token reaches the code as
+  `Tenant.expoAccessToken`. Tests: `test/worker-push.test.mjs` (Expo mocked through
+  Miniflare's `outboundService`, the tick through `scheduled()`).
 
 ### Native details
 
 - **Android channels** per event type (Takeoff/Landing, Signal gap), so users control sound
   and importance in system settings.
-- **iOS Time Sensitive** interruption level for signal-gap alerts (entitlement), so they get
-  through Focus modes. Takeoff/landing stay at the normal level.
+- **iOS Time Sensitive** interruption level (entitlement, build 6), so they get through Focus
+  modes. Which tracker events (takeoff, landing, gap) are Time Sensitive is the phone's
+  choice, in Settings → Notifications ("Time Sensitive"), gap alone by default (decided
+  2026-11-15). The sender sets the level, so the Worker has to know: the app keeps the choice
+  locally and sends it as `time_sensitive` with each account's push registration
+  (`POST /api/me/push-devices`, stored on `push_devices`, migration 0007; left out, the
+  stored choice stays, and a device that never said gets gap). A change registers again with
+  every signed-in account. Alerts are never Time Sensitive.
 - **Notification categories with actions**, e.g. on a gap alert "Open MapShare" and "View on
   map".
 - Tapping a notification deep-links to the tracker or flight (`wingbeat://flight/123`).
@@ -997,6 +1033,41 @@ access token. Without it, anyone holding a device's push token can send to it.
   pushes go to APNs directly (Expo's push service doesn't send ActivityKit updates), so the
   APNs key goes wherever the Expo access token is held: the hosted instances' secrets, or the
   relay once it exists. Worth it, but after v1.
+
+### Alert notifications
+
+The alerts feed (unassigned flights, maintenance due, records needed, pilots near a duty
+limit) notifies the users subscribed to `alerts` when an alert first appears, not as a
+digest: core's `computeAlerts` already flags maintenance before it's due and duty at 90% of
+a limit, so an alert appearing is the advance warning.
+
+- **Done 2026-11-15 (phase 7):** `src/alert-push.ts`. On every fifth minute's cron tick
+  (`ALERT_CHECK_MINUTES`, from the tick's scheduled time, so no stored timestamp) and only
+  with `EXPO_ACCESS_TOKEN`, `checkAlerts()` builds the page's `AlertLists` from D1 (the
+  effective flights of active trackers and the manual ones through `applyFlightEdits`, as the
+  flight store's `getAll()`, and the bootstrap's aircraft, pilots and trackers), runs
+  `computeAlerts`, and pushes each alert whose key isn't in `alerts_seen` (migration 0006).
+  Title from core's `alertTitle`, body `alertText`'s line and detail, `data:
+  { type: 'alert', host }` (the app opens the alerts screen).
+- Keys: an unassigned flight's is its tracker and tracked start (it survives the poller
+  rewriting the flight under a new id); maintenance's is tail, item and status (due soon,
+  then overdue, notifies twice); records needed, tail and meter; duty, pilot and window.
+- `alerts_seen` holds the keys present at the last check. An alert that goes (a pilot
+  assigned, an item signed off) drops its key, so it notifies again if it comes back. It's
+  kept only while someone is subscribed to `alerts`: with no subscriber the check clears it
+  and reads nothing else, and the first check with one records the alerts present (and a
+  `baseline` row) without pushing. So subscribing, or adding the Expo token, doesn't replay
+  the alerts already present (the alerts screen lists them).
+- An unassigned flight still in the air (its tracker's `poll_state` is `in_flight`) waits
+  until it lands: its pilot is usually set after the flight.
+- A failed send isn't retried (the key is recorded first), as with tracker events.
+- Tests: `test/worker-alert-push.test.mjs` runs one fixture through the flight store and the
+  bootstrap, as the dashboard computes alerts, and through the cron, and checks the pushes
+  are those alerts; then once-per-alert, an alert coming back, the five-minute check and the
+  in-flight wait.
+- On staging (2026-11-15, the cron every minute and `EXPO_ACCESS_TOKEN` set): a landing
+  push reached the user's phone, and its receipt came back ok. Alert and gap pushes haven't
+  been seen on a device yet: the feed had no alerts when the token was set.
 
 ### Step 3, later: the push relay for self-hosted instances (phase 9)
 
@@ -1352,7 +1423,9 @@ them later if unassigned flights with evidence turn out to be common.
 ### Schema
 
 - Phase 6: `users.pilot_id` (`REFERENCES pilots(id) ON DELETE SET NULL`, a partial unique
-  index so only one user links to each pilot).
+  index so only one user links to each pilot). Done: migration `0005_user_pilot.sql`, in
+  `me` (bootstrap, GET /api/me, the pairing response) and GET /api/users, set with
+  `PATCH /api/users/:id` from Settings → Users → Designate pilot (admins).
 - Phase 8:
   - `trackers.current_pilot` (`REFERENCES pilots(id) ON DELETE SET NULL`) and
     `trackers.current_aircraft` (`REFERENCES aircraft(tail_number)`);
@@ -1391,6 +1464,16 @@ Use `expo-location` for the location fixes instead of reimplementing them.
 
 - iOS "Always" location and Android background location both get extra store review. The
   purpose strings and the Play declaration video must describe exactly this feature.
+- **Decided (2026-11-15): the "Always" purpose strings change in phase 8's native build, not
+  before.** The first binary's three location strings in `apps/mobile/app.config.ts` all say
+  "Wingbeat shows your position on the map.", which is right for "While using" (kept) but not
+  for "Always". In phase 8's build, `locationAlwaysAndWhenInUsePermission` and
+  `locationAlwaysPermission` become: "Wingbeat uses your location in the background, only
+  near your aircraft, to log the flights you fly to you automatically. You can turn this off
+  in Settings." The setting it names is the auto-log switch below. Any change to these strings
+  changes the fingerprint, so it waits for that build to keep OTA updates reaching the current
+  one. Passive matching ships before the first App Store review, so the review sees strings
+  that match what the app does.
 - Ask for permission at the point of use (the "auto-log my flights" switch), never at first
   launch. The app must work fully with "While using" permission or none. Without location,
   only trackers with a fixed pilot or aircraft can be auto-assigned.
@@ -1531,24 +1614,29 @@ The app uses the web's sync protocol unchanged, through `@wingbeat/core/flight-s
 
 ### Screens (v1)
 
-Pilots and dispatchers/owners are both first-class. Everyone gets the same tabs. Which one
-opens first, and what Live emphasizes, depends on the user. A user linked to a pilot
-(`users.pilot_id`, Decision 5) opens on **Duty log** with their own month and "my flights"
-first. Everyone else opens on **Live**. Either one can change it in Settings.
+Pilots and dispatchers/owners are both first-class. Everyone gets the same tabs, except that
+the Duty tab shows by default only to an admin or a user linked to a pilot. Settings → Show
+Duty in Tab Bar changes that per account (`duty-tab` in `prefs.ts`, `duty-tab.ts`), and
+Settings → Duty Log opens the same log in Settings' stack (`settings/duty/`), since a hidden
+tab can't be navigated to. Which tab opens first, and what Live emphasizes, depends on the
+user. A user linked to a pilot (`users.pilot_id`, Decision 5) opens on **Duty log** with their
+own month and "my flights" first, unless they've hidden the Duty tab. Everyone else opens on
+**Live**.
 
 Times follow the same rule as the web: the operator's timezone with its abbreviation, from
 core's `time`, whatever the phone's zone (see "Times and the operator's timezone"). For an
 account whose operator is in another zone, that's the only correct reading of a duty log.
 
-- **Live:** map with tracker positions and in-flight tracks, and the status cards as a native
-  list (from the same data the dashboard's `aircraft-cards` uses).
+- **Live:** map with tracker positions and in-flight tracks, and the status cards in a bar
+  along its top (from the same data the dashboard's `aircraft-cards` uses).
 - **Flights:** list with day grouping and filters, and a flight detail with its track on the
   map, times, labels and assignment. Admins can edit assignment.
 - **Duty log:** month view and totals from `@wingbeat/core/duty`, with day planning for the
-  signed-in pilot. PDF opens the web export.
+  signed-in pilot. The PDF is compiled in a hidden WebView from core's Typst source and
+  shared (decided 2026-11-13; see "Feature parity with the web").
 - **Settings:** accounts (instances), notification subscriptions, auto-logging and
-  permissions, theme, a link to the web admin settings, and **Delete my account** (see
-  "Account deletion").
+  permissions, theme, and **Delete my account** (see "Account deletion"). The instance's
+  settings come later, natively (phase 11).
 
 ### Auth and pairing
 
@@ -1565,7 +1653,10 @@ account whose operator is in another zone, that's the only correct reading of a 
   invalid bearer (`401`), a cookie-only request to an API path without a valid session (`401`,
   as today), and one to a page (the redirect, as today). So nothing in front of an instance
   may add an `Authorization` header (HTTP basic auth on staging, say): every browser request
-  would then be a `401`. Neither staging nor the hosting layer adds one.
+  would then be a `401`. Neither staging nor the hosting layer adds one. (Considered and
+  declined 2026-11-11: letting a header that isn't `Bearer` fall back to the cookie. It would
+  only matter for basic auth in front of an instance, and one rule is simpler to reason about
+  and test.)
 - The middleware change ships as **its own deploy**, ahead of `/api/app/pair` and
   `DELETE /api/me`, so if web sign-in breaks, the cause is obvious and the revert is small.
 - **Session lifetime:** app sessions use the existing sliding expiry unchanged (90 days idle,
@@ -1585,13 +1676,207 @@ account whose operator is in another zone, that's the only correct reading of a 
   single-use and expires in 15 minutes, and a stolen pairing shows up in the Devices list.
   Universal Links / App Links would be exclusive, but they can't cover self-hosted domains,
   since the app's associated domains are fixed at build time. So the scanner stays primary.
-- **Hosted instances only, until phase 9.** Before pairing, the app checks the host against a
-  list of hosted instances published on dummthings.dev (generated by the hosting repo). A
-  host that isn't listed gets "Self-hosted instances aren't supported yet", not a paywall.
-  In phase 9 the relay's `hosted` / `self-hosted` answer (Decision 6) replaces the list.
+- **Sign in with the browser (added 2026-11-15).** Someone signed in to the web in Safari on
+  the same phone has no second screen to scan from. The Add account screen's "Sign in with
+  Browser" button covers that, and is the main path on a phone:
+  1. The user types their Wingbeat address (`seahawkair`, or the whole host or URL). A bare
+     name gets `.wingbeat.dummthings.dev` appended, and the hosted-only check below applies.
+  2. The app makes a PKCE `code_verifier` (two native `uuidv4`s, 244 random bits), its
+     S256 `challenge`, and a `state`, and opens
+     `https://<host>/app/connect?challenge=…&state=…` with `expo-web-browser`'s
+     `openAuthSessionAsync(url, 'wingbeat://connect')`. That's `ASWebAuthenticationSession`
+     on iOS: not ephemeral, so it shares Safari's cookies, and the callback goes only to the
+     app that opened it, never through the OS's URL routing.
+  3. `GET /app/connect` (outside the auth middleware: it reads the session cookie itself).
+     Signed in: "Connect the Wingbeat app to <name>'s account?" and a Connect button. Not
+     signed in: says so and how to sign in on the web first (there's no login form, only
+     links). Connecting is always a tap, a `POST`, never silent.
+  4. `POST /app/connect` makes a device-link token as `/api/me/device-link` does, with the
+     challenge stored in `invite_tokens.code_challenge` (migration 0008), and redirects
+     (`303`) to `wingbeat://connect?token=…&state=…`. The CSP's `form-action` allows
+     `wingbeat:` for this redirect.
+  5. The app checks `state` and redeems the token with `POST /api/app/pair` plus
+     `code_verifier`. A token with a challenge is refused without the matching verifier, and
+     by `/join/:token` altogether, so a token caught on its way to the app is useless.
+
+  iOS keeps a home-screen web app's cookies apart from Safari's, so someone who only uses
+  Wingbeat from the home screen isn't signed in as far as this flow sees. For them, and as a
+  second path, the web's sign-in link card (Settings → Devices → add a phone) has an "Open in
+  Wingbeat app" button on phones: it opens `wingbeat://pair?host=…&token=…`, which the app
+  confirms before signing in, like any opened link.
+- **Hosted instances only, until phase 9.** Before pairing, the app checks that the host is
+  a subdomain of `wingbeat.dummthings.dev`, where every hosted instance lives (decided
+  2026-11-11, instead of a published list, since no customer has its own domain). A host that
+  isn't gets "Self-hosted instances aren't supported yet", not a paywall. In phase 9 the
+  relay's `hosted` / `self-hosted` answer (Decision 6) replaces the check.
 - The app keeps a list of `{ host, token, user }` accounts in `expo-secure-store`, since
   tenants are per hostname. The session list in web Settings already lets a user sign out a
   lost phone.
+
+### Email sign-in, email invites and finding your instance (proposed 2026-11-15)
+
+Proposed; nothing here is built. The user reviewed it on 2026-11-15, settled most of the open
+questions ("Decided" at the end), and said to hold off: "I don't want to implement this now,
+just write it up." It started from the user's note that typing the
+instance's address is "a little awkward for the app-first flow", and their follow-up: "I'll
+also want to be able to invite new users through email (so the existing admin user would be
+able to create a new user, enter their email, and the invite would be sent with a link that
+would verify that user's email and sign them in)", and "maybe the app signup flow should
+require the user to find their hosted instance by searching from a list of instances I host
+(or put in their own) before putting in their email, instead of having a central directory
+of user emails".
+
+**Why.** Today there's no sign-in form at all: a user gets in only through a link someone
+already signed in made (an invite, or a device link from Settings → Devices). Someone who
+loses every signed-in device needs an admin to send a new invite. A phone without a signed-in
+browser has only the scanner. Email gives each instance a way in that needs nothing but the
+user's inbox, and lets the app start from nothing.
+
+**The shape: each instance owns its users' emails; there's no central directory.** Every
+instance stores and checks its own users' addresses, exactly as it owns their sessions now.
+The app finds the instance first (a typed address, as now, or a searchable list of the hosted
+instances if that's built, see 3), then asks that instance for an email code. Nothing outside the
+tenant learns who has an account where, so no new store of personal data is shared across
+tenants. Self-hosted instances get the same flow once they configure email sending. The cost:
+someone on several instances adds each one separately. That's rare today (one customer), and
+the central directory below stays possible later without undoing any of this.
+
+#### 1. Emails on users, and email invites (web, admin)
+
+- **Migration `0009_`** (or whatever number is next when this is built): `users.email`
+  (lowercased, nullable, verified addresses only) with a partial unique index
+  (`WHERE email IS NOT NULL`), `users.pending_email` (an address waiting for its code), the
+  `email_codes` table (2), and `invite_tokens.invited_email`. `users` has no `edit_history`
+  trigger, so none needs recreating.
+- **Invite by email.** The admin's invite form gets an optional Email field
+  (`InviteRequest` in `packages/core/src/api/…-requests.ts` gains `email`, or the handler
+  never sees it). With one, `POST /api/invites` stores it in `invited_email` and the instance
+  emails the `https://<host>/join/<token>` link (default expiry 7 days, as now), along with
+  the inviter's name and the instance's name. Redeeming the invite creates the user with
+  that email, already verified, since opening the link proves the inbox, and signs them in.
+  It works through either redemption path: the web's `/join/<token>` (cookie) and the app's
+  `POST /api/app/pair` (an iPhone opening the link already gets "Open in Wingbeat app"). Both
+  use the same consumption code, so the email is set in one place. Without an email, invites
+  work as today (copy the link).
+- **A forwarded invite** signs in whoever opens it first, as a copied invite link does
+  today. It's single-use, and the new user shows up in the Users list.
+- **Every email is verified before it signs anyone in** ("all emails should require
+  verification by code"). The invite email's link counts, since it carries the secret; every
+  other address is confirmed with a code entered by the user while signed in. Email sign-in
+  (2) only ever matches a verified address.
+- **Changing an email.** A user can change their own in Settings: the instance emails a
+  code to the new address, and the change takes effect once they enter it there. The old
+  address keeps working until then. An admin can also add or change a user's email in the
+  Users list, which shows it as "not yet confirmed": it's stored as pending, and the user
+  sees a "Confirm your email" prompt (with Send Code) the next time they're signed in. So
+  an address the admin mistyped can't sign anyone in: its owner gets a code that only works
+  for someone already signed in as that user. Only admins see other users' emails.
+
+#### 2. Sign in with an email code (web and app)
+
+- **A 6-digit code and a link that does the whole sign-in**, in the same email ("The email
+  should absolutely carry a link that does the whole sign-in"). The code covers reading the
+  email on a different device from the one signing in. iOS offers it from Mail above the
+  keyboard (`textContentType('oneTimeCode')`).
+- **The link** is `https://<host>/login/email?request=<request_id>&code=<code>`, and signs
+  in the browser that opens it. Its `GET` only shows a "Sign In" button, and the `POST`
+  behind it signs in. Mail scanners (Outlook's Safe Links, say) fetch links in advance, and
+  a `GET` that consumed the code would sign the scanner in or use the code up. On an iPhone
+  the page also offers "Open in Wingbeat app", as `/join/<token>` does, opening
+  `wingbeat://login?host=…&request=…&code=…`. The app confirms it, as `pair.tsx` does, and
+  redeems it with `email-verify`. The request records whether the app or the web asked for
+  the code, and the page leads with that button. The custom-scheme risk is the same as the
+  `wingbeat://pair` fallback's: the code is single-use and expires in 10 minutes. The
+  verification email for a changed address carries the same kind of link, which confirms the
+  address only in a browser already signed in as that user.
+- **Routes.** `POST /api/auth/email-code { email }` → `{ request_id }`, and
+  `POST /api/auth/email-verify { request_id, code, device_name? }`. The web's new `/login`
+  page uses both (a session cookie on success). The app uses both under `/api/app/…` and gets
+  the same response as `/api/app/pair`. Each gets request and response schemas in core and
+  shape tests in `test/worker-sql.test.mjs`.
+- **Table `email_codes`:** `user_id`, `request_id` (random, unique), `code`, `purpose`
+  (`sign_in` or `verify`, the latter for `pending_email`), `origin` (`app` or `web`, for the
+  link's page), `expires_at` (10 minutes), `attempts`, `used`. A code is single-use, and 5
+  wrong tries end its request, so guessing needs a new request, which the rate limits below
+  cap. A `verify` code is accepted only from a session of its user.
+- **No account enumeration.** `email-code` answers the same way whether or not the address
+  has an account ("If that address has an account here, we've sent a code"). An unknown
+  address gets a `request_id` that can never verify.
+- **Rate limits:** a few codes per address per hour and a cap per IP, counted in D1 (or the
+  Workers rate-limiting binding).
+- **Sending:** Cloudflare Email Service through a `send_email` binding (check the current
+  docs when building; there's a `cloudflare-email-service` skill). Hosted instances send
+  from one address, `wingbeat@dummthings.dev` or `accounts@wingbeat.dummthings.dev` (not yet
+  chosen), which needs SPF/DKIM set up for its domain. Self-hosted: the
+  email features (the invite Email field, `/login`'s form, the app's email option) appear
+  only when the binding is configured, so an instance without email keeps working as today.
+  Tests stub the binding in Miniflare.
+
+#### 3. The app: find your instance, then sign in
+
+Undecided ("I'm not sure if I want to move forward with the instance list"). Without it,
+step 1 below stays the address field the Add account screen has now, and step 2 is the same.
+With it, the Add account screen becomes:
+
+1. **Find your Wingbeat:** a searchable list of the hosted instances that agree to be listed
+   (name and address), plus "Enter an address" for unlisted and, later, self-hosted ones.
+   Before building, check `@expo/ui` for `searchable`; otherwise use a `TextField` above a
+   `List`. Android: a `SearchBar` above a `LazyColumn`.
+2. **Sign in to <instance>:** an Email field and "Send Code" (instances with email), then a
+   code field. "Sign in with Browser" and "Scan a Code" stay as alternatives.
+
+**The list.** Customer names are their business, so listing is opt-in: a `listed` flag
+(default off) in the hosting repo's `customers/<slug>.json`, which already has `slug` and
+`name`. A Worker deployed from the hosting repo serves the listed entries as a small JSON
+file (decided; its hostname isn't). The docs site can't serve it, since it deploys from this
+public repo. An unlisted customer types their address, as
+now. A deep link or an invite email names the instance anyway, so the list only matters
+when someone starts from the app with nothing.
+
+#### 4. Later, only if needed: one sign-in for several instances
+
+The user's first idea was a central place that knows all of someone's accounts. Two ways to
+build it, if people on several instances become common:
+
+- **Browser hub:** each instance, on sign-in, adds its address to a cookie on the parent
+  domain (addresses only, never session tokens, since that cookie reaches every tenant and
+  the docs site). A hub page lists them, and the app runs Sign in with Browser for each.
+  Each instance still needs its own Connect tap, since it can't trust the hub's word. It
+  misses home-screen web-app users (a separate cookie store) and anyone who signed in only
+  on a computer.
+- **Email directory:** the hub verifies the email once, then asks each hosted instance
+  whether it has that address (a fan-out, so no stored directory), and signs a short-lived
+  "this email is verified" statement that each instance checks with the hub's public key
+  before making a session. One code covers every account. It's the first service shared
+  across tenants, and the privacy policy would have to cover it.
+
+Not planned now: the instance list plus per-instance codes covers today's users.
+
+#### Order
+
+1. Migration 0009, emails on users, email invites, and Email Service setup on staging.
+2. Email code sign-in: the web's `/login`, then the app's email option.
+3. If wanted: the instance list and the app's Find screen.
+
+Each is its own deploy to staging, and the web parts ship before the app depends on them,
+like the bearer middleware did. Emails are new personal data, so the privacy policy (Store
+review, below) covers them. Deleting the account (`DELETE /api/me`) already deletes the user
+row, which takes the email with it.
+
+#### Decided (the user, 2026-11-15)
+
+- Not to implement it yet: "just write it up".
+- The email carries a link that does the whole sign-in, as well as the code (2).
+- Users can change their own email, and every address is verified, by a code or the
+  invite's link, before it signs anyone in (1).
+- The instance list, if built, is served by a Worker deployed from the hosting repo.
+
+#### Still open
+
+- Whether to build the instance list at all, its hostname, and whether Sea Hawk Air wants
+  to be listed.
+- The sender address: `wingbeat@dummthings.dev`, `accounts@wingbeat.dummthings.dev`, or
+  similar, and its display name.
 
 ### Account deletion
 
@@ -1703,7 +1988,8 @@ The app sends both in an `X-Wingbeat-App` header on every request, as
   declaration video.
 - **Privacy policy** on dummthings.dev (required by both stores before the first
   submission). It covers what the instance stores, what the relay stores, what Sentry
-  receives, the presence data rules (Decision 5), and account deletion.
+  receives, the presence data rules (Decision 5), account deletion, and users' emails
+  (once "Email sign-in, email invites and finding your instance" ships).
 - **App Store privacy labels** and the **Play Data Safety form**: precise location (presence
   features only, opt-in), identifiers (push token), crash data (Sentry), and nothing used for
   tracking. Update both when presence ships in phase 8.
@@ -1730,6 +2016,8 @@ no other way to read the timezone (`GET /api/settings` is admins only); level 1 
 Then three review rounds (pairing builds its response from the redeem batch, one device-name
 rule counted in code points, `deleteUserAccount` deletes first and reads why only on a
 refusal). The reviewed branch is on staging since 2026-11-08.
+Released as v0.4.0 (PR #9) on 2026-11-11. Production got step 1 alone first, then migration
+0004, then the rest, each checked with curl and `wrangler tail`.
 
 1. **Bearer sessions** (its own staging deploy, then its own production deploy, ahead of the
    rest; see "Auth and pairing"). The session middleware takes `Authorization: Bearer
@@ -1751,14 +2039,385 @@ refusal). The reviewed branch is on staging since 2026-11-08.
    phase's one migration), written at most when it changes.
 4. **`DELETE /api/me`** and the web's "Delete my account" in Settings (see "Account
    deletion"): refuses the env admin and the last admin, deletes the `users` row and
-   relies on the cascades. `push_subscriptions`, `presence_events` and `users.pilot_id`
-   don't exist yet; the phases that add them extend the route.
+   relies on the cascades. `push_subscriptions` and `presence_events` don't exist yet; the
+   phases that add them extend the route (`users.pilot_id`, phase 6, goes with the row).
 5. **The first compat snapshot**: `packages/core/src/api/compat/1.ts` freezes the response
    schemas of the routes the app calls at level 1, and `test/worker-sql.test.mjs` checks
    each of those routes' real responses against every snapshot.
 
 Strict parsing in the web client isn't a step here: it waits on production staying quiet
 (phase 1's leftovers), and issue #8 comes before it.
+
+### Phase 5 progress
+
+Phase 5 builds the app on the `app-shell` branch, one commit per step, in this order. No
+probe app exists, so `apps/mobile` is new, and the presence module joins it in phase 8.
+Settled at the start (2026-11-11):
+
+- **Expo SDK 58** (current; cud-app is on 57), React Native's New Architecture, dev builds.
+- **Core without a workspace:** `apps/mobile/package.json` depends on
+  `"@wingbeat/core": "file:../../packages/core"`, and `metro.config.js` adds `packages/core`
+  to `watchFolders`, so Metro compiles core's TypeScript like the app's own. The app keeps its
+  own `package-lock.json`, and the root `npm test` doesn't install it.
+- **The scanner reads the web's existing QR codes.** Settings → Devices already shows a
+  device-link QR code of `https://<host>/join/<token>`, and invites are the same URL. The
+  scanner accepts that URL as well as `wingbeat://pair?host=…&token=…`, so every link the web
+  makes today pairs a phone, and the web change is only wording ("Add phone").
+- **Tiles through the proxy carry the bearer.** Keyed basemaps (Carto) come through
+  `/api/tiles`, which needs a session. MapLibre RN 11's `TransformRequestManager.addHeader()`
+  adds `Authorization` to requests matching the account's host, and only those.
+
+Done: step 1 (EAS project `@dummsoftware/wingbeat`, id `ab9f03ef-…`; the app runs on the
+system Node 24, not the repo's `nix` shell, and EAS CLI needs `EAS_NO_VCS=1` in this jj
+repo; see `apps/mobile/AGENTS.md`). Background-location modes and the full-accuracy,
+motion and Face ID strings are left out of the first binary: phase 8 adds what presence
+needs in its own native release.
+
+Done: step 2. The catalog is `@wingbeat/core/basemaps`; the Worker keeps `readEnvSecret()`
+and passes `clientBasemapPresets()` a has-secret lookup (`envBasemapPresets(env)` in
+`src/shared/map-controls.ts`). Bootstrap's `basemaps` is optional in the level 1 snapshot,
+since a v0.4.0 server can pair the app but doesn't send it: the app falls back to core's
+keyless presets there. A basemap `url` may have `{s}` (`TILE_SUBDOMAINS`) and `{r}`, which
+the app's MapLibre style expands itself (MapLibre takes `tiles` lists, not `{s}`).
+
+Done: step 3. The hosted-instance check is the domain `*.wingbeat.dummthings.dev`, baked
+into the app (see "Auth and pairing"). The account list and each account's token are
+separate secure-store entries (`AFTER_FIRST_UNLOCK`, so phases 7 and 8 can read a token in
+the background). A `wingbeat://pair` link asks before signing in, since any app or page can
+open it. Settings has a minimal account list (tap to switch, long-press to remove) until
+step 8.
+
+Done: step 4. `handshake()` in `apps/mobile/src/lib/handshake.ts` decides from the active
+account's bootstrap (loaded on account change and on return to the foreground); the oldest
+server level the app works with is the app's `MIN_SERVER_API_VERSION`, and a server without
+`api_version` counts as too old. A client too old doesn't read the update's level from its
+manifest (that would mean a level in the config's `extra`, which the fingerprint hashes): it
+fetches the newest update for its runtime and reloads, and if the handshake still fails with
+no newer update left, it shows "Update the app". expo-updates checks on launch by itself; the
+app adds the check on return to the foreground. The iOS store link waits for the App Store
+record (step 12).
+
+Done: step 5. `apps/mobile/src/lib/flight-cache.ts` keys each account's blob
+`flights.v<FLIGHT_CACHE_FORMAT>.<host>.<user id>` in `expo-sqlite/kv-store`: the format
+version is in the key, and blobs of other formats or of removed accounts are dropped when the
+account list loads or changes. `FlightsProvider` refreshes the active trackers on core's
+`nextLivePoll` schedule while the app is in the foreground, at once on return to it, and only
+when the handshake is `ok`. Jest resolves core's own imports from the app's `node_modules`
+(`moduleDirectories`), as Metro does.
+
+Done: step 6. The Live tab is the map over the status cards. `apps/mobile/src/lib/map-style.ts`
+builds the MapLibre style (one raster source per basemap and overlay that is on, `{s}`
+expanded into a `tiles` list, `{r}` as `@2x` on a high-density screen, a detectRetina
+basemap as 128 px tiles, proxy paths made absolute on the account's host), and `live.ts` the
+cards, the positions and the in-flight tracks from core's `live`. `tile-auth.ts` adds the
+bearer to requests matching `^https://<host>/api/tiles/` when the account's token is read.
+Pills over the map pick the basemap and toggle overlays (reset to the basemap's defaults, as
+on the web); the choice isn't kept yet (step 8). What both clients show moved to core:
+`TRACKER_COLORS`/`trackerColor()` (`live`), `relativeTime()` (`time`), `toKnots`/`toFeet`
+(new `format`) and `overlayDefaultEnabled()` (`basemaps`); the web embeds or binds them. Positions
+are circles in the tracker's color (no plane icon: it needs an image asset). The map waits for
+the bootstrap, so offline with no answer yet it shows "Loading…".
+
+Done: step 7. The Flights tab lists the active trackers' effective flights (the store's
+`getAll()`, removed flights left out, as on the dashboard) under sticky operator-day headings,
+newest first, each with its zoned time, duration, route, assignment and remarks, a † on a
+corrected time or label and a "Manual" chip (`apps/mobile/src/lib/flights.ts`). The filter
+sheet uses core's `FilterState` and `matchesFlight()`, with date presets (today, the last 7,
+30 or 90 operator days) instead of the web's from/to inputs, so it needs no date picker; it
+lasts while the app runs and resets on an account switch, and isn't kept yet. Days don't
+collapse and have no "Map all". The detail shows the track on the Live tab's map (now taking
+a bounds initial view), its start and end (a manual flight's named points), and each field
+with the tracker's value under a correction. An admin's "Edit" sets the aircraft and pilot
+through `PUT /api/flights/assignment` (`flightAssignmentRequest()`, only what changed), then
+refreshes the store; times, labels, Part 91 and removal stay on the web until phase 11.
+
+Done: step 8. Settings lists the accounts (tap to show one, touch and hold to sign out, "Add
+account"), then the active account's "Sign out" and "Delete my account", then the theme
+(Light, Dark, System, as on the web). Signing out revokes the account's own session
+(`DELETE /api/me/sessions/<session_id>`, a 401 counting as done) before removing it from the
+phone; a signed-out account is only removed. There's no link to the web's settings (goal 5;
+it was built here first, opening a device link in `expo-web-browser`, and removed). "Delete my account"
+confirms, calls `DELETE /api/me`, shows the server's refusal as it comes (the shared
+env-configured account, the last admin), and removes the account on success. The theme
+overrides the whole app's color scheme (`Appearance.setColorScheme`, native headers and tabs
+included) and is applied at launch before the first render. What steps 6 and 7 left in memory
+is now kept per account in `expo-sqlite/kv-store` (`apps/mobile/src/lib/prefs.ts`,
+`stored-state.ts`): the map's basemap and overlays (the Live tab and the flight detail share
+them) and the Flights tab's filter and date preset; the keys of removed accounts are dropped
+with their flight caches. Notification subscriptions, auto-logging and the opening tab come
+with phases 7 and 8.
+
+Done: step 9. `apps/mobile/src/lib/sentry.ts` initializes
+Sentry only when the bundle was built with `EXPO_PUBLIC_SENTRY_DSN` (an EAS environment
+variable, so local and development runs report nothing), with the channel as its environment.
+Events carry the tags `host` and `server_api_version` (the active account's) and
+`client_api_level`; the SDK's Expo context adds the update ID, channel and runtime version
+itself, and reports an emergency launch (an update that fell back). No flight or location
+data: no default PII, console breadcrumbs dropped (core's client warnings and any log can
+quote a response), request URLs without their query strings (`sentry-scrub.ts`), and no
+navigation integration (route params hold flight ids). A response the strict client can't
+read (`ApiShapeError`) is reported with its path and the schema's issues, never the
+response, since it's exactly the incompatibility an OTA update must fix. Metro uses
+`getSentryExpoConfig`, so each bundle has a debug ID matching its source map: EAS Build
+uploads them (`SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` as EAS environment
+variables; the `development` profile sets `SENTRY_DISABLE_AUTO_UPLOAD`), and an EAS Update is
+followed by `npx sentry-expo-upload-sourcemaps dist` (`apps/mobile/AGENTS.md`). The plugin
+takes org and project from those variables rather than `app.config.ts`, so they don't enter
+the fingerprint. The Sentry project is `dumm-software-llc/wingbeat-mobile` (React Native),
+with "Prevent storing of IP addresses" on; the four variables are set for the `preview` and
+`production` EAS environments, and a test event sent with its DSN arrived.
+
+Step 10, in part: the iOS `development` build (EAS `62536b2d`) runs on the user's iPhone,
+signed in to staging. The Android build and the Maestro flows are deferred while the app is
+iOS only.
+
+Done after step 9, from the first device runs (2026-11-13; the rules they settled are in
+`docs/mobile-design-principles.md`):
+
+- **Fixes:** `/` redirects to `/live`; the Live layout accounts for the tab bar and header
+  that iOS draws over the screen.
+- **Map tools and the day view.** The Live map runs to the top under the status bar. Its
+  tools are a column of glass buttons at the bottom left (`map-tools.tsx`), each a SwiftUI
+  menu: Layers (a basemap `Picker`, overlay `Toggle`s) on every map, and on Live, Day (the
+  newest 30 days with flights, plus "Choose a Date…", a graphical `DatePicker` in a sheet).
+  A day maps all its flights as the dashboard's "Map all" does, with a banner to step
+  between days. Core gained `dayFlightNumbers` (the web's track-render uses it).
+- **End markers and the location sheet.** Numbered ends merge into pills by zoom (core's
+  `groupEndMarkers` / `mercatorPixel`, which the web now uses too). Tapping a status card
+  flies to the aircraft and opens a native location sheet (core's `locationDetails`, shared
+  with the web's location popup): coordinates, rows, Google Maps and MapShare links, and
+  copy buttons. `expo-clipboard` is installed for the next native build; without it, the
+  buttons share.
+- **The flight detail in a native sheet** (`map-sheet.tsx`): the map fills the screen under
+  an undismissable sheet with peek, medium and large detents, the track refits above it, the
+  Layers button rides on it, and the tab bar hides.
+- **Status cards on the float surface:** the tail on a pill in the tracker's color, the
+  details on the first line when they fit.
+
+Done next (2026-11-13): the native-debt cleanup below (Settings, the filter and the
+assignment edit are SwiftUI `Form`s; native `Stack.Toolbar` buttons; pull to refresh on
+Flights; `EmptyState` on `ContentUnavailableView`), and the native modules for the TestFlight
+binary: `react-native-webview`, `expo-file-system`, `expo-sharing`, and `react-native-svg`
+(phase 11's QR code and, if Swift Charts can't stack, the stream graph). From the TestFlight
+build on, development runs over TestFlight (the user, 2026-11-13: "I'd like to do all future
+development over testflight, assuming that's not going to run into any expo free tier
+limits"): JS changes ship as `eas update --channel preview` (unlimited on the free plan),
+and only a native change takes one of the free plan's 15 iOS builds a month.
+
+Next in the app, in this order (the user, 2026-11-13): the native-debt cleanup ("Feature
+parity with the web", "Decided 2026-11-13"); the native modules the coming phases need, so
+the TestFlight binary has them (`react-native-webview`, `expo-file-system` and
+`expo-sharing` for the duty-log PDF; check the parity list for any other); then step 12's
+TestFlight build (below); then plane markers turned to their heading, and ground trails; the
+point picker (tap the map for its coordinates, snapping to a track point); and the elevation
+tool, all of which ship as OTA updates. For step 12: an
+EAS profile `testflight` (`distribution: "store"`, `channel: "preview"`,
+`environment: "preview"`), built with `EAS_PROJECT_ROOT=$(realpath ../..) EAS_NO_VCS=1 npx
+eas-cli@latest build --profile testflight --platform ios`, then `eas submit`, which needs the
+user's Apple sign-in. On that build, check that `expo-clipboard` is linked (Copy replaces the
+share buttons), that the source maps uploaded, and the waiting Sentry test error. Build 4 (2026-11-13): Copy
+works and its source maps uploaded; a temporary Settings row sent a test error from the first OTA
+update, which arrived with its stack resolved by the update's uploaded maps (AGENTS.md), so build
+4, OTA updates and Sentry all work end to end. The row is removed. App Store
+Connect's EU DSA trader status is unset; it matters only for an App Store release. The App Store
+Connect record, which EAS named "Wingbeat (0ea…)" ("Wingbeat" is taken, likely an unreleased
+reservation), is renamed "Wingbeat Flight Tracking" (2026-11-13). The name under the icon stays `app.config.ts`'s "Wingbeat".
+Build 6 (2026-11-15, on TestFlight): the Wingbeat logo icon and the Time Sensitive
+notifications entitlement for gap alerts. Build 5 failed signing: a new entitlement needs
+EAS to sync the App ID's capabilities and regenerate the profile, which only an interactive
+build with the user's Apple sign-in does. `eas.json`'s submit profiles now carry `ascAppId`,
+so `eas submit` no longer needs the sign-in. Updates publish from the tree as is (its
+fingerprint is build 6's).
+
+1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
+   native stack headers, TypeScript, and every native module the plan uses installed with
+   its config plugin (`expo-notifications`, `expo-location`, `expo-task-manager`,
+   `expo-background-task`, `expo-camera`, `expo-secure-store`, `expo-sqlite`,
+   `expo-web-browser`, `expo-updates`, `@expo/ui`, `@maplibre/maplibre-react-native`,
+   `@sentry/react-native`). `app.config.ts`: `dev.dummthings.wingbeat`, scheme `wingbeat`,
+   owner `dummsoftware`, `runtimeVersion: { policy: 'fingerprint' }`,
+   `ITSAppUsesNonExemptEncryption: false`, permission strings. `eas.json` with
+   `development`, `preview` and `production` profiles. `eas init` creates the EAS project.
+   Done when `tsc`, `expo-doctor` and `expo export` (iOS and Android) pass and
+   `expo prebuild` makes both native projects.
+2. **The basemap catalog in core.** `BASEMAP_PRESETS` and its client projection move from
+   `src/shared/map-controls.ts` to `packages/core/src/basemaps.ts`, and `GET /api/bootstrap`
+   gains `basemaps` (the client presets, keyed ones as proxy paths) for the app, which has no
+   page to inline them into. Level 1's snapshot gets the field (it's editable until the first
+   release). Done when `npm test`, `type-check` and `docs:showcase --check` pass.
+3. **Accounts and pairing.** An account list `{ host, token, user }` in
+   `expo-secure-store`, one core API client per account (bearer and `X-Wingbeat-App`), a
+   `401` marks the account signed out. The "Add account" screen: `expo-camera` scanner,
+   the hosted-instance check, `POST /api/app/pair`, and the `wingbeat://` fallback link.
+   Jest covers parsing what was scanned and the account store. Where the hosted-instance
+   list is published (the hosting repo knows the hosts) is settled at this step.
+4. **Version handshake and OTA.** The bootstrap check and its three outcomes (client too old:
+   fetch the update and reload, or "Update the app"; server too old; otherwise background
+   updates on launch and foreground). The decision is a pure function with Jest tests.
+5. **Flight store per account.** `createFlightStore` on `expo-sqlite/kv-store`, keyed by
+   host and user, with the cache's format version, refreshed on a foreground timer and on
+   return to the foreground. Jest with an in-memory store.
+6. **Live.** MapLibre with a style built from the bootstrap's basemaps and overlays, tracker
+   positions and in-flight tracks, and the status cards as a native list from core's `live`.
+7. **Flights.** The list with day grouping and filters, the flight detail with its track,
+   times, labels and assignment, and the assignment edit for admins.
+8. **Settings.** Accounts (add, sign out, switch), theme, and "Delete my account"
+   (`DELETE /api/me`, with its refusals shown). (A link to the web's settings was planned
+   here and dropped: see goal 5.)
+9. **Sentry.** Init with the host, API level and update ID as tags and no flight or location
+   data; source maps uploaded by EAS Build and EAS Update.
+10. **Dev builds and Maestro.** The first `development` builds on an iPhone and an Android
+    phone (the user signs in to Apple at the first iOS build), then Maestro flows for pairing,
+    Live, flight detail and sign-out.
+11. **The `demo` tenant and the privacy policy.** A hosted `demo` customer seeded from the
+    showcase sample data with a scripted tracker, a review pairing code that doesn't expire
+    and works only there, and the privacy policy on the docs site. How the tracker moves and
+    how the review code is scoped are settled at this step.
+12. **TestFlight and Android internal distribution.** A `preview` build to TestFlight
+    (internal testers first) and to EAS internal distribution for Android, and the first
+    `eas update` to the preview channel.
+
+### Feature parity with the web
+
+Audited 2026-11-13 against `app-shell` (6b11aa5a) and the web dashboard, analytics and
+Settings (`src/dashboard/`, `src/analytics/`, `src/shared/`). This is goal 5's inventory: every
+feature the web has, where the app is with it, and the native element it uses or will use on
+each platform (the rules and the usual pairs are in `docs/mobile-design-principles.md`,
+section 2). "Core" names what both clients share. A feature whose logic is still in a web
+script string moves to core first (phase 11's rule). Status: **Done**, **Partial**, **Queued**
+(the next steps, in "Phase 5 progress"), or the phase it's planned in. Update the row when a
+feature lands.
+
+MapLibre (`@maplibre/maplibre-react-native`) is the same component on both platforms, so map
+layers need no Android counterpart; only the chrome around the map does.
+
+**Live (the dashboard's map)**
+
+| Feature | App | iOS | Android | Core / notes |
+|---|---|---|---|---|
+| Tracker positions | Done (circles) | MapLibre layer | same | `live` |
+| Plane marker turned to its heading | Done | MapLibre `SymbolLayer` with an image (`Images`), `iconRotate` from the heading | same | heading from the last points (`live`) |
+| Each tracker's current or latest flight (the default view), fitted on opening the tab | Done, on the phone: per tracker, where the web shows every flight in progress, else the one newest flight; a takeoff dot in the tracker's color, as the web's | MapLibre `LineLayer`, the camera's `fitBounds` on each visit | same | `live` |
+| Ground trails (taxi between flights) | Done | MapLibre `LineLayer`, dashed | same | move the web's trail rule to `live` |
+| Status cards | Done (top bar) | RN views on the float surface (no system equivalent) | the same RN component | `live` (`statusCards`) |
+| Location popup (coordinates, details, links, copy) | Done (location sheet) | `BottomSheet` + `Form` + `LabeledContent`, `Link`, Copy (`expo-clipboard`) | universal `BottomSheet` (`ModalBottomSheet`) with `ListItem`s, `Share.share` | `live` (`locationDetails`) |
+| Basemap and overlays | Done (Layers menu) | `Menu` with a `Picker` and `Toggle`s | `DropdownMenu` with radio and checkbox items | `basemaps` |
+| Map a day's flights ("Map all") | Done, on the phone: "Map all" on the Flights list's day headers opens the day on the map with its flights in the `MapSheet`, arrows to the older and newer day; the Live tab's Day menu and calendar are gone. The day and a flight are one screen (`flight-map-screen.tsx`), so tapping a flight in the day's sheet swaps the sheet and map to it, with a back button to the day; no tab bar, as on the flight detail | a header button, the map + `MapSheet` (as the flight detail) | the same, with its Android sheet | `dayFlightNumbers`, `groupEndMarkers` |
+| Point picker (tap the map, snap to a track point, copy) | Done, on the phone (Live tab: a tap snaps to a track or closes the sheet, a long press picks the exact spot, the map stays live under the sheet and pans the point into view; flight detail: the point takes the MapSheet's place, as a place does in Maps, with a close button back to the flight) | MapLibre `onPress`/`onLongPress`, then the location sheet, or `LocationSections` in the flight detail's MapSheet | the same, with its Android sheet | `live`'s `nearestPointIdx`, `pickedPointDetails` (the web uses them too) |
+| Elevation tool (tint by reference elevation, readout) | Done on the Live tab and the flight detail, on the phone | a `raster-dem` source on `pmtiles://` Mapterhorn (as a tile template with `encoding: terrarium`: the archive's metadata names no encoding, and with a `url` MapLibre Native takes it from there only) and a `color-relief` layer, its ramp core's `elevationRampStops` around the reference. Readout: a crosshair mid-view and a pill at the top right (clear of a back button); point elevations from a hidden WebView (pmtiles.js and the browser's WebP decoder; `elevation-reader.tsx`), since Hermes can't decode WebP and MapLibre exposes no elevation query. A tap sets the reference (a track point's altitude when near) | same | `elevation` (decode, tint) |
+| Alerts strip (unassigned flights, maintenance due, timer not recorded, duty near its limits) | Screen done (`flights/alerts.tsx`, from the Flights header's bell; an unassigned flight opens the flight, a pilot their duty log; maintenance rows only read); notifications with phase 7 | a `Form` in a modal sheet, opened from a toolbar button, with a badge on the Flights tab | a `ModalBottomSheet` list, a `Badge` on the tab | `alerts` (`computeAlerts`), on the phone; their notifications come from the Worker running the same core code (see "Decided 2026-11-13") |
+| Refresh now, "updated n min ago" | Done (pull to refresh; "Updated n min ago" above the Flights list; a second poll 15 s after a new fix whose place name was pending, as the web's) | `RefreshControl` on the Flights list; the age in the status bar | `RefreshControl` | `nextLivePoll` |
+| Hover a flight to highlight its track | n/a on touch | tapping a track selects its flight (opens its sheet) | same | — |
+
+**Flights**
+
+| Feature | App | iOS | Android | Core / notes |
+|---|---|---|---|---|
+| List grouped by operator day | Done | RN `SectionList` with sticky headers (kept: virtualized, dense custom rows) | same | `time`, `flights.ts` |
+| Filters: aircraft, pilots, trackers | Done | a `Form` of `Toggle` rows (`ToggleSection`) | `Checkbox` `ListItem`s | `filters` |
+| Filters: from and to dates | Done (the presets, and Custom with From and To `DatePicker`s) | the presets in a `Picker`, plus two compact `DatePicker`s | `SingleChoiceSegmentedButtonRow` or radio rows, the Material date-range picker | `filters`, `time` |
+| Collapse a day; "Show recent" | Phase 11 | tap the day header (or `Section(isExpanded:)`, if the list moves to SwiftUI) | same | — |
+| Map a day from the list | Done (see "Map all" under Live) | a "Map all" button on the day header | same | `dayMap` |
+| Flight detail (track, times, labels, assignment, remarks) | Done | the map + `MapSheet` (`BottomSheet` with detents, a `Form`) | persistent sheet: open (design principles, section 3) | `flight-edits` |
+| Assignment edit (admins) | Done | a `Form` with `Picker`s (`menu` style: `navigationLink` needs a SwiftUI navigation stack) | `ExposedDropdownMenuBox` | `corrections` (`flightAssignmentRequest`) |
+| Edit times, origin and destination, Part 91 ("Operated under"), pay, remark | Phase 11 | a `Form`: compact `DatePicker`s (date, hour and minute) read in the operator's zone, a `Picker` for named points, `TextField`s | `ListItem`s that open the Material date and time pickers, `ExposedDropdownMenuBox`, `TextField` | `flight-edits` (`flightFormTimes`, …), `corrections` |
+| Remove and restore, revert to tracker, delete a manual flight | Phase 11 | destructive `Button`s, `ConfirmationDialog` | `AlertDialog` | `corrections` |
+| Add a manual flight | Phase 11 | the edit `Form` in a sheet, from a toolbar `+` | `FloatingActionButton` | `flight-edits`, `corrections` |
+| Bulk edit ("Edit flights") | Phase 11 | the list's edit mode, multi-select and a bottom toolbar | long-press to select, a contextual top bar | `corrections` |
+| Edit history | Phase 11 | a `List` in the detail's sheet | `LazyColumn` | `edit-history` |
+| Edit conflict (409) | Phase 11 | an `Alert` with Reload and Overwrite | the same (`AlertDialog`) | `corrections` (`base_history_id`) |
+
+**Duty log** (phase 6)
+
+| Feature | App | iOS | Android | Core / notes |
+|---|---|---|---|---|
+| Month view, totals and limits | Done (the Duty tab, or Settings → Duty Log: the pilot from the header's menu, else the user's own `users.pilot_id`) | dense RN rows like the flight list (days newest first as sticky headings, a flight opens its map), a bar per limit, Upcoming in the current month | the same RN views | `duty` (`computeDutyData`), app `duty.ts` |
+| Plan or edit a day (duty or rest, start and end, through, note, use the default) | Done (admins: a day's heading, an Upcoming row or the header's +; `duty/day.tsx`, fields in `duty-day-form.tsx`; a 409 offers Reload) | a `Form` with a segmented `Picker`, `DatePicker`s (`hourAndMinute`), `Toggle`s for Through and Duty Times (on: the default's times) | `SingleChoiceSegmentedButtonRow`, the Material time picker, `Switch` | `duty`, the duty request schemas |
+| Default duty, duty methods history | Phase 11 | `Form` | `ListItem`s | `duty` |
+| PDF export | Done (the header's Export PDF menu: the web's presets, and Custom… for any From and To months, `duty/export.tsx`; a hidden WebView compiles it, see "Decided 2026-11-13") | `ShareLink` (share sheet) for the file | `Share.share` | the Typst template |
+| Role-based first tab | Done (no Settings override yet) | `/` redirects to Duty for a user linked to a pilot, else Live | same | `users.pilot_id`, kept on the stored account from bootstrap's `me` |
+
+**Maintenance** (the web's aircraft info; phase 11)
+
+| Feature | App | iOS | Android | Core / notes |
+|---|---|---|---|---|
+| Items and their due status, by hours or months | Phase 11 | a `List` with a status chip (the meanings of the web's `status.ts`), a `Gauge` for hours left | `ListItem`, `LinearProgressIndicator` | `maintenance` |
+| Meter readings (hobbs, tach) | Phase 11 | a `Form`: decimal `TextField`, `DatePicker` | `TextField`, the date picker | `maintenance` (`estimatedMeter`) |
+| Add, edit and delete an item | Phase 11 | a `Form` in a sheet; `SwipeActions` to delete | a long-press menu | `maintenance` |
+
+**Analytics** (phase 11)
+
+| Feature | App | iOS | Android | Core / notes |
+|---|---|---|---|---|
+| Heatmaps (time, stops; weighting) | Phase 11 | MapLibre `HeatmapLayer`, a Layers-style menu for the mode | the same, `DropdownMenu` | `analytics` (`endpointHeatPoints`, `interpolateRoutePoints`) |
+| Stream graph (interval, scale, home base) | Phase 11 | Swift Charts. `@expo/ui`'s `Chart` takes one series of points and may not stack areas: check, and otherwise draw it in RN (SVG or Skia) on both | no `@expo/ui` chart: the RN drawing | `analytics` (`sgComputeData`, …) |
+| Accounting (monthly hours and stops by region), overall totals | Phase 11 | `List` / `Grid` | `LazyColumn` | `accounting` |
+| Region info popup | Phase 11 | the location sheet's pattern | same | `regions` |
+| The shared filter section | Phase 11 | the Flights filter `Form` | same | `filters` |
+
+**Settings**
+
+| Feature | App | iOS | Android | Core / notes |
+|---|---|---|---|---|
+| Accounts: switch, add, sign out | Done | a `Form`; a context menu instead of touch-and-hold | `ListItem`s, a long-press `DropdownMenu` | `api/me` |
+| Delete my account | Done | a destructive `Button`, `Alert` | `AlertDialog` | `DELETE /api/me` |
+| Theme | Done | a segmented `Picker` | `SingleChoiceSegmentedButtonRow` | — |
+| Documentation link | Done: a Help section | a `Button` opening the docs site in `expo-web-browser` (public, no session) | same | `docs` (`docsHref`, the web's too) |
+| Clear local cache | Done: "Clear Flight Cache" in the active account's section, with a confirmation, then a full download | a destructive `Button`, `Alert` | same | `flight-cache.ts`, the flight store's `clearCache` |
+| My Devices (rename, sign out) | Phase 11 (first in Settings) | a `List` with `SwipeActions`; an `Alert` with a text field to rename | a long-press menu, an `AlertDialog` with a `TextField` | `api/me` |
+| Notification subscriptions | Phase 7 | a `Form` of `Toggle`s | `Switch` `ListItem`s | phase 7's routes |
+| Aircraft, pilots, trackers (add, edit, test a feed) | Phase 11 | `Form`s pushed on the Settings stack | `ListItem` screens | the settings request schemas |
+| Users and invites (with the "Add phone" QR code) | Phase 11 | a `Form`; the QR code in a sheet, `ShareLink` | same | — |
+| General, duty limits, timezone (with its warning) | Phase 11 | `Form`, `Picker`, `Stepper` | `ListItem`s, `ExposedDropdownMenuBox` | `settings` |
+| Webhooks (notification targets) | Phase 11 | `Form` | same | — |
+| Named points | Phase 11 | a list, and the map with `MapSheet` (pick a point on the map) | the same, with the Android sheet | `regions` |
+| Regions (the map editor) | Phase 11, last | drawing polygons on MapLibre with RN gestures: the hardest settings page | same | `regions` |
+| Overlays, tile layers | Phase 11 | `Form` | same | `basemaps` |
+| Setup checklist | Phase 11 | a `List` with checkmarks | same | — |
+
+**Decided 2026-11-13:**
+
+- **Duty-log PDF: compiled in a hidden WebView in the app.** The app doesn't open the web
+  (each phone would add a browser session to Devices), and Typst's WASM doesn't run in
+  Hermes. The web loads typst.ts and its WASM from jsdelivr with no session, so a hidden
+  `react-native-webview` can do the same. The code that writes the Typst source (a script
+  string in `src/shared/pilot-duty.ts`) moves to core first, the web switches to it in the
+  same change, and the app passes the source in from its own duty data. Done 2026-11-14:
+  `@wingbeat/core/duty-pdf` (`dutyLogTypstSource`, `dutyLogPdfName`, and the compiler's and
+  font's URLs), byte-for-byte the old builder's output. The app's side is
+  `apps/mobile/src/lib/duty-pdf.tsx`, from the Duty tab's Export PDF menu (the web's presets,
+  and Custom… for any months, `duty/export.tsx`). The WebView only
+  compiles, and returns the PDF's bytes, which the app writes to a file and shares
+  (`expo-file-system`, `expo-sharing`). Those three native modules go into the TestFlight
+  binary (step 12), so phase 6 ships as an OTA update.
+- **Alerts: one computation, in core, for the app, the web and the Worker.** Today alerts
+  (unassigned flights, maintenance due, timer not recorded, duty near its limits) are
+  computed only in the web page, by core's `computeAlerts`, and notify no one. The Worker's
+  notifications are tracker events (takeoff, landing, gaps; `src/notifications.ts`).
+  - **An alerts screen in the app** computes them on the phone with `computeAlerts`, as the
+    web does. It's cheap and can come any time; it's no longer tied to phase 10. Done
+    2026-11-15: the page's `AlertLists` were already core's (`flightStore.getAll()` and the
+    bootstrap's lists), so only the rows' words moved to core (`alertText`).
+  - **Alert notifications come from the Worker, not the client.** A notification raised on
+    the phone fires only while the app runs, and the app doesn't rely on background fetch
+    (see "Data and sync"). A Worker cron calls the **same** `computeAlerts` and `sortAlerts`
+    from `@wingbeat/core/alerts`, with no second implementation of any rule. Whatever the
+    Worker needs that is still page-only (how the page assembles `AlertLists` from the flight
+    store, corrections, aircraft, pilots and trackers; the maintenance and duty inputs) moves
+    to core first, and the web switches to it in the same change, so the web, the app and the
+    Worker read the same rules from one place. The Worker builds its inputs from D1 with the
+    same core functions the clients apply (`applyFlightEdits`, …). Who gets which alert and
+    how often (a digest, or when one becomes due) is settled with phase 7's push, which
+    delivers them; a test runs one fixture through the page bundle's and the Worker's paths
+    and checks they produce the same alerts.
+- **Native debt before TestFlight** (design principles, section 7): the hand-built grouped
+  lists (`choice-list.tsx`, used by Settings, the filter sheet and the assignment edit) become
+  `Form`s, `HeaderButton` becomes native bar buttons, the flight list gets pull to refresh,
+  and empty states use `ContentUnavailableView`. Moving screens' direct SwiftUI imports
+  behind shared components with Android twins waits for Android.
+
+**Open:** Android's persistent sheet (design principles, section 3), decided when Android
+starts.
 
 ## Rollout and risk to the web dashboard
 
@@ -1858,7 +2517,7 @@ were, so references elsewhere in this doc stay valid.
    hosted instances, `push_subscriptions` and `push_devices` (one migration, since phase 2
    is deferred), `POST /api/me/push-devices`, subscriptions in the app, Expo delivery in
    `dispatchNotifications()` (ahead of its no-webhooks early return, isolated from the
-   webhook and Pushover sends) and receipt checks, channels, categories, Time Sensitive gap alerts and deep links. First App Store
+   webhook and Pushover sends) and receipt checks, channels, categories, Time Sensitive gap alerts and deep links. Alert notifications (maintenance due, duty near its limits, …) from a Worker cron that calls core's `computeAlerts`, the same code the web and the app run (see "Feature parity with the web", "Decided 2026-11-13"). First App Store
    release (iOS, individual account). Android goes to Play once the Play organization account
    exists; until then it stays on EAS internal distribution. Then move the operators you
    host off Pushover and retire it (see "Retiring Pushover").
@@ -1884,9 +2543,37 @@ were, so references elsewhere in this doc stay valid.
 **Later:**
 
 10. Two pilots aboard and "Did you fly?" prompts, Live Activities (APNs from wherever the Expo
-    token is held), self-hosted PMTiles basemaps, FAA sectionals and offline regions, an alerts
-    screen in the app (`alerts` is in core from phase 1), and the web moving to MapLibre if it's worth it
-    by then.
+    token is held), self-hosted PMTiles basemaps, FAA sectionals and offline regions, and the web moving to MapLibre if it's worth it
+    by then. (The app's alerts screen moved out of this phase on 2026-11-13: it can come any
+    time, and alert notifications come with phase 7.)
+
+**Web parity (goal 5; after phase 7's first release, one step at a time, interleaved with
+phases 8–10 as needed):**
+
+11. **Everything the web does, in the app.** Each step ships when it's done well on a phone,
+    and every step follows the same rule for sharing: whatever the web's version decides
+    (validation, defaults, conflict handling, what a form sends) moves to core first if it's
+    still in a script string, the web switches to it in the same change, and the app's
+    native UI calls the same functions and the same `api/<group>-requests.ts` schemas. Only
+    the UI is written twice. Proposed order:
+    - **Flight editing, full parity** (first): start and end times, origin and destination
+      labels (named points), Part 91, removing and restoring a flight, adding a manual
+      flight, the bulk edits the web's flight editor does, the edit history, and the 409
+      edit-conflict flow. Core already has `flight-edits` (`flightFormTimes`,
+      `flightTrackedTimes`, `applyFlightEdits`, …), `corrections` and `edit-history`; the
+      app needs native date and time pickers (`@expo/ui`) read in the operator's zone.
+    - **The Flights tab's remaining web features:** from/to dates (step 7's presets stay as
+      shortcuts), collapsing a day, and "Map all".
+    - **Settings, phone-first:** the user's own Devices list (rename, sign out), then users
+      and invites, aircraft (with hobbs and tach), pilots, and trackers.
+    - **Settings, the rest:** named points, regions, overlays and tile layers, webhooks, duty
+      methods, and the instance's settings (with the timezone-change warning).
+    - **The other pages:** maintenance, accounting, and analytics (heatmaps, the stream graph),
+      on core's `maintenance`, `accounting` and `analytics`.
+    The inventory, with each feature's native element on iOS and Android, is "Feature parity
+    with the web" (taken 2026-11-13). Check it against the web again at the start of the
+    phase, since the web keeps growing; anything new on the web after that is planned with its
+    app version.
 
 ## Open questions
 

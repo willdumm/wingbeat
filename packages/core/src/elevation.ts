@@ -7,6 +7,13 @@
  * The DEM is Mapterhorn's public Terrarium-encoded `planet.pmtiles` archive.
  */
 
+/** Mapterhorn's public DEM archive: Terrarium-encoded WebP tiles, DEM_TILE_SIZE px square. */
+export const DEM_PMTILES_URL = 'https://download.mapterhorn.com/planet.pmtiles';
+
+/** pmtiles.js, which reads the archive in the browser (the web's pages and the app's WebView). */
+export const PMTILES_SCRIPT_URL = 'https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js';
+export const PMTILES_SCRIPT_SRI = 'sha384-QfbOCebHNw8pQiPAOd2IFee2v2A5VYZxBk0+JGZ5H+3mfzVIp6zsQNkTsfGJot93';
+
 export const DEM_MAX_ZOOM = 12;
 // Mapterhorn's planet.pmtiles WebP tiles decode to 512x512 px, not the 256x256 most
 // raster tile schemes use — verified directly against a fetched tile, not assumed.
@@ -101,6 +108,21 @@ export function elevationColorFor(elevM: number | null, refM: number | null, ran
   const to   = t < 0 ? [255, 255, 255] : [220, 38, 38];   // white -> red
   const k = t < 0 ? t + 1 : t;
   return [lerp(from[0], to[0], k), lerp(from[1], to[1], k), lerp(from[2], to[2], k)];
+}
+
+/**
+ * elevationColorFor's ramp as stops for a renderer that interpolates linearly between them
+ * (the app's MapLibre color-relief layer): [meters, color or null for transparent],
+ * ascending. Transparent up to the water mask, then the ramp, clamped beyond its ends.
+ */
+export function elevationRampStops(refM: number, rangeM: number): [number, Rgb | null][] {
+  const stops: [number, Rgb | null][] = [[DEM_TINT_MASK_ELEVATION_M, null]];
+  // Just above the mask, so the edge of the water stays sharp.
+  const first = DEM_TINT_MASK_ELEVATION_M + 0.01;
+  for (const m of [first, refM - rangeM, refM, refM + rangeM]) {
+    if (m >= first && m > stops[stops.length - 1][0]) stops.push([m, elevationColorFor(m, refM, rangeM)]);
+  }
+  return stops;
 }
 
 /**

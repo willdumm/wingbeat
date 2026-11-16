@@ -1,7 +1,7 @@
 import { icon } from './icons';
-import { lightThemeToken } from './theme';
 import { complianceNoticeMarkup } from './help';
-import { MAX_DUTY_DAYS_PER_REQUEST, MAX_DUTY_NOTE_LENGTH } from '@wingbeat/core/record-limits';
+import { MAX_DUTY_NOTE_LENGTH } from '@wingbeat/core/record-limits';
+import { TYPST_FONT_URLS, TYPST_SCRIPT_URL, TYPST_WASM_URL } from '@wingbeat/core/duty-pdf';
 
 /** Duty log view body: month navigation + export toolbar, then the table and totals. */
 export function pilotDutyMarkup(): string {
@@ -249,8 +249,8 @@ export function pilotDutyStyles(): string {
  * turns one pilot's effective flights (corrections already applied by applyFlightEdits(),
  * @wingbeat/core/flight-edits) and duty/rest days (GET /api/duty-days) into a month of day
  * rows with §135.267 warnings and totals; renderDutyLog() and the PDF export (Typst,
- * loaded on first export) only format that model. Takes flights, log and elements as
- * arguments rather than reading the flight store, so the docs-site showcase (src/showcase/)
+ * loaded on first export, compiling @wingbeat/core/duty-pdf's source) only format that
+ * model. Takes flights, log and elements as arguments rather than reading the flight store, so the docs-site showcase (src/showcase/)
  * renders and exports the same log from sample data. Times are shown in
  * APP_SETTINGS.timezone. Needs the core bundle's time, flight-edits and duty globals
  * (shared/core-bundle.ts) on the page, and flightEditsScript() (flight-edits.ts) and
@@ -260,30 +260,14 @@ export function pilotDutyRenderScript(): string {
   return `
     // ── Pilot duty log rendering ──────────────────────────────────────────────
 
-    // The PDF isn't themed: it prints in light mode's colors.
-    const _DUTY_PDF_THEME = ${JSON.stringify({
-      trackingHeading: lightThemeToken('--tracking-heading'),
-      trackingCaps:    lightThemeToken('--tracking-caps'),
-      ink:        lightThemeToken('--text-primary'),
-      muted:      lightThemeToken('--text-muted'),
-      faint:      lightThemeToken('--text-faint'),
-      rule:       lightThemeToken('--border'),
-      ruleSubtle: lightThemeToken('--border-subtle'),
-      danger:     lightThemeToken('--danger-fg'),
-      dangerBg:   lightThemeToken('--danger-surface'),
-    })};
-
     const _DUTY_ICON_EDIT      = ${JSON.stringify(icon('pencil', { size: 13 }))};
     const _DUTY_ICON_DAY       = ${JSON.stringify(icon('calendar-clock', { size: 13 }))};
     const _DUTY_ICON_WARN      = ${JSON.stringify(icon('triangle-alert', { size: 13 }))};
 
-    const _TYPST_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts@0.7.0/dist/esm/contrib/all-in-one-lite.bundle.js';
-    const _TYPST_WASM_URL   = 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler@0.7.0/pkg/typst_ts_web_compiler_bg.wasm';
-    // The PDF's font, IBM Plex Sans (the design system's --font-body): typst.ts's bundled
-    // fonts have no sans-serif. Static OTFs (Typst can't use woff or pick a variable
-    // font's weights); Bold for *strong*, Italic for rest days.
-    const _TYPST_FONT_URLS = ['Regular', 'Bold', 'Italic'].map(style =>
-      'https://cdn.jsdelivr.net/gh/IBM/plex@v6.4.0/IBM-Plex-Sans/fonts/complete/otf/IBMPlexSans-' + style + '.otf');
+    // The compiler and the PDF's font (@wingbeat/core/duty-pdf, which the app's compile uses too).
+    const _TYPST_SCRIPT_URL = ${JSON.stringify(TYPST_SCRIPT_URL)};
+    const _TYPST_WASM_URL   = ${JSON.stringify(TYPST_WASM_URL)};
+    const _TYPST_FONT_URLS  = ${JSON.stringify(TYPST_FONT_URLS)};
     const _TYPST_CACHE_NAME = 'ft-typst-v1';
 
     let _typstModule    = null;
@@ -514,17 +498,13 @@ export function pilotDutyRenderScript(): string {
       const months = Array.isArray(data) ? data : [data];
       await _ensureTypst(onProgress, onStatus);
       onStatus('Compiling PDF…');
-      const pdfBytes = await _typstInstance.pdf({ mainContent: _buildTypstSource(months) });
-      const monthKey = m => m.year + '-' + String(m.month).padStart(2, '0');
-      const first = months[0], last = months[months.length - 1];
+      const pdfBytes = await _typstInstance.pdf({ mainContent: dutyLogTypstSource(months) });
 
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement('a');
       a.href = url;
-      a.download = 'duty-log-' +
-        first.pilotName.toLowerCase().replace(/\\s+/g, '-') + '-' +
-        monthKey(first) + (first === last ? '' : '-to-' + monthKey(last)) + '.pdf';
+      a.download = dutyLogPdfName(months);
       a.click();
       URL.revokeObjectURL(url);
     }
@@ -550,220 +530,6 @@ export function pilotDutyRenderScript(): string {
         overlay.classList.add('hidden');
         exportBtn.disabled = false;
       }
-    }
-
-    // A Typst string literal in markup (#"…"), so labels and notes print verbatim
-    // whatever markup characters they contain.
-    function _typStr(s) {
-      return '#"' + String(s).replace(/[\\\\"]/g, m => '\\\\' + m).replace(/[\\u0000-\\u001f]/g, ' ') + '"';
-    }
-
-    // The same rows, warnings and totals as renderDutyLog(), with each edited flight's
-    // tracker values in numbered † footnotes. input is one month's computeDutyData result,
-    // or several in order (an export of a range): each month then starts on a new page
-    // under its own heading, and each calendar quarter in the range ends with a summary
-    // page (flight time and rest by month, totals, and the quarter's warnings).
-    function _buildTypstSource(input) {
-      const months = Array.isArray(input) ? input : [input];
-      const range = months.length > 1;
-      const { pilotName } = months[0];
-      const periodLabel = dutyRangeLabel(months);
-      const appName = window.APP_SETTINGS.appName;
-      const COLS = 8;
-      // A warning is indented past the DATE column, so that column holds the day's whole block.
-      const warnCell = text => '  [], warning(' + _typStr(text).slice(1) + '),\\n';
-      const footnotes = [];
-      let anyManual = false;
-
-      // The day before the month, so its rolling checks (24-hour flight time, rest before
-      // the first duty) can be followed from the page.
-      function prevDayRow(data) {
-        const p = data.prevDay;
-        if (!p) return '';
-        const parts = [p.rest || p.duty ? dutyDayText(p, data.year) : 'No duty recorded'];
-        if (p.daySecs) parts.push(fmtDuration(p.daySecs) + ' flight time');
-        if (p.flights.length) {
-          parts.push('flights ' + p.flights.map(f => unixToTzTime(f.start_time) + '–' + unixToTzTime(f.end_time)).join(', '));
-        }
-        return '  [' + _typStr(tzShortDate(p.dateKey, data.year)) + '], table.cell(colspan: ' + (COLS - 1) + ')[#text(fill: muted)[_' +
-          _typStr('Previous day: ' + parts.join(' · ')) + '_]],\\n';
-      }
-
-      function monthTable(data) {
-        const { year, days } = data;
-        let rows = prevDayRow(data);
-        for (const day of days) {
-          // Each day starts below a rule, and those are the only rules between rows.
-          if (rows) rows += '  table.hline(stroke: 0.6pt + rule),\\n';
-          const dayText = dutyDayText(day, year) + (day.note ? ' (' + day.note + ')' : '');
-          if (day.flights.length === 0) {
-            rows += '  [' + day.label + '], table.cell(colspan: ' + (COLS - 1) + ')[' +
-              (day.rest ? '#text(fill: muted)[_' + _typStr(dayText) + '_]' : _typStr(dayText)) + '],\\n';
-          }
-          day.flights.forEach((f, i) => {
-            let mark = '';
-            const fields = Object.keys(f.edited);
-            if (fields.length) {
-              footnotes.push(day.label + ', flight at ' + unixToTzTime(f.start_time) + ': the tracker recorded ' +
-                fields.map(k => FLIGHT_EDIT_FIELD_NAMES[k] + ' ' + flightOriginalText(k, f.edited[k])).join(', ') + '.');
-              mark = '#super[†' + footnotes.length + ']';
-            }
-            const cell = (field, text) => '[' + _typStr(text) + (field in f.edited ? mark : '') + ']';
-            if (f.manual) anyManual = true;
-            rows += '  ' +
-              (i === 0 ? '[' + day.label + '], [' + _typStr(dayText) + ']' : '[], []') + ', ' +
-              '[' + _typStr(f.aircraft_tail || '—') + '], ' +
-              '[' + _typStr(f.origin_label || '—') + ('origin_label' in f.edited ? mark : '') + (f.manual ? '#super[‡]' : '') + '], ' +
-              cell('start_time', unixToTzTime(f.start_time)) + ', ' +
-              cell('destination_label', f.destination_label || '—') + ', ' +
-              cell('end_time', unixToTzTime(f.end_time)) + ', ' +
-              '[' + fmtDuration(f.secs) + '],\\n';
-            // Remarks (Part 91, a remark) span the row under the flight, from A/C on.
-            const remarks = dutyRemarksText(f);
-            if (remarks) {
-              rows += '  [], [], table.cell(colspan: ' + (COLS - 2) + ', align: left)[#text(size: 7pt, fill: muted)[' + _typStr(remarks) + ']],\\n';
-            }
-          });
-          for (const e of day.unmatched) {
-            rows += '  [], table.cell(colspan: ' + (COLS - 1) + ')[' +
-              _typStr('Tracked flight from ' + unixToTzTime(e.flight_start_time) + ' no longer found; its corrections (' +
-                flightEntrySummary(e) + ') are not counted.') + '],\\n';
-          }
-          if (day.flights.length > 0) {
-            rows += '  table.cell(colspan: ' + (COLS - 1) + ', align: right)[#text(fill: muted)[Day total]], [*' + fmtDuration(day.daySecs) + '*],\\n';
-          }
-          for (const w of day.warnings) rows += warnCell(w);
-        }
-        return (
-          '#table(\\n' +
-          '  stroke: none,\\n' +
-          '  columns: (auto, auto, auto, 1fr, auto, 1fr, auto, auto),\\n' +
-          '  align: (left, left, center, left, center, left, center, right),\\n' +
-          '  table.header([DATE], [DUTY], [A/C], [ORIGIN], [DEP], [DEST], [ARR], [TIME], table.hline(stroke: 0.8pt + ink)),\\n' +
-          rows +
-          '  table.hline(stroke: 0.8pt + ink),\\n' +
-          '  table.cell(colspan: ' + (COLS - 1) + ', align: right)[*Month total*], [*' + fmtDuration(data.monthSecs) + '*],\\n' +
-          ')\\n\\n'
-        );
-      }
-
-      const overFill = '#text(fill: danger)';
-      function totalsBlock(totals) {
-        const r = totals.rest;
-        const totalsRows = totals.hours.map(t =>
-          '  [' + _typStr(t.label) + '], [' + (t.over ? overFill + '[*' + fmtDuration(t.secs, true) + '*]' : fmtDuration(t.secs)) + '], [' + fmtDuration(t.limit) + '],\\n'
-        ).join('') +
-          '  [' + _typStr(r.label) + '], [' + (r.short ? overFill + '[*' + r.taken + '*]' : String(r.taken)) +
-          (r.scheduled ? ' + ' + r.scheduled + ' planned' : '') + '], [' + r.required + '],\\n';
-        return (
-          '#block(breakable: false)[\\n' +
-          '#text(size: 10pt, weight: "bold")[' + _typStr('§135.267 totals (as of ' + totals.asOfLabel + ')') + ']\\n' +
-          '#v(0.2em)\\n' +
-          '#table(\\n' +
-          '  columns: (1fr, auto, auto),\\n' +
-          '  align: (left, right, right),\\n' +
-          '  table.header([PERIOD], [TOTAL], [LIMIT], table.hline(stroke: 0.8pt + ink)),\\n' +
-          totalsRows +
-          ')\\n' +
-          ']\\n\\n'
-        );
-      }
-
-      // One calendar quarter's months from the export: flight time and rest by month, the
-      // totals as of the last of them, and every warning in them.
-      function quarterSummary(qMonths) {
-        const lastM = qMonths[qMonths.length - 1];
-        const qName = 'Q' + ((lastM.month - 1 - (lastM.month - 1) % 3) / 3 + 1) + ' ' + lastM.year;
-        const byMonth = qMonths.map(m => {
-          const restDays = m.days.filter(d => d.rest && !d.warnings.length).length;
-          const warnDays = m.days.filter(d => d.warnings.length).length;
-          return '  [' + _typStr(dutyPeriodLabel(m)) + '], [' + fmtDuration(m.monthSecs) + '], [' + restDays + '], [' +
-            (warnDays ? overFill + '[*' + warnDays + '*]' : '0') + '],\\n';
-        }).join('');
-        const warnRows = qMonths.flatMap(m => m.days.flatMap(d => d.warnings.map(w =>
-          '  [' + _typStr(tzShortDate(d.dateKey, m.year)) + '], [' + overFill + '[' + _typStr(w) + ']],\\n'))).join('');
-        return (
-          '#pagebreak()\\n' +
-          '#text(size: 13pt, weight: "bold")[' + _typStr(qName + ' summary') + ']\\n' +
-          '#v(0.2em)\\n' +
-          '#text(fill: muted)[' + _typStr(dutyRangeLabel(qMonths) + (qMonths.length < 3 ? ' (the months of the quarter in this log)' : '')) + ']\\n' +
-          '#v(0.8em)\\n' +
-          '#table(\\n' +
-          '  columns: (1fr, auto, auto, auto),\\n' +
-          '  align: (left, right, right, right),\\n' +
-          '  table.header([MONTH], [FLIGHT TIME], [REST PERIODS], [DAYS WITH WARNINGS], table.hline(stroke: 0.8pt + ink)),\\n' +
-          byMonth +
-          ')\\n\\n' +
-          '#v(1.2em)\\n' +
-          totalsBlock(lastM.totals) +
-          '#v(1.2em)\\n' +
-          '#text(size: 10pt, weight: "bold")[Warnings]\\n' +
-          '#v(0.2em)\\n' +
-          (warnRows
-            ? '#table(\\n  columns: (auto, 1fr),\\n  align: (left, left),\\n' +
-              '  table.header([DATE], [WARNING], table.hline(stroke: 0.8pt + ink)),\\n' + warnRows + ')\\n\\n'
-            : '#text(fill: muted)[None.]\\n\\n')
-        );
-      }
-
-      let body = '';
-      months.forEach((data, i) => {
-        if (range) {
-          if (i > 0) body += '#pagebreak()\\n';
-          body += '#text(size: 13pt, weight: "bold")[' + _typStr(dutyPeriodLabel(data)) + ']\\n#v(0.6em)\\n';
-        }
-        body += monthTable(data) + '#v(1.6em)\\n' + totalsBlock(data.totals);
-        // A quarter's summary follows its last month, or the export's last month.
-        const next = months[i + 1];
-        const quarterOf = m => m.year * 4 + Math.floor((m.month - 1) / 3);
-        if (range && (!next || quarterOf(next) !== quarterOf(data))) {
-          body += quarterSummary(months.filter(m => quarterOf(m) === quarterOf(data)));
-        }
-      });
-
-      const nowSecs = Math.floor(Date.now() / 1000);
-      const generated = tzShortDate(unixToTzDateStr(nowSecs)) + ', ' + fmtTzTime(nowSecs);   // Oct 15, 2026, 14:05 AKDT
-      const notes = [];
-      if (footnotes.length) {
-        notes.push('*Corrections.* Values marked † were corrected from the tracker’s:');
-        footnotes.forEach((n, i) => notes.push('#super[†' + (i + 1) + '] ' + _typStr(n)));
-      }
-      if (anyManual) notes.push('#super[‡] ' + _typStr('Entered manually (not tracked).'));
-
-      const color = name => 'rgb("' + _DUTY_PDF_THEME[name] + '")';
-      return (
-        '#set document(title: ' + _typStr(pilotName + ' Duty Log').slice(1) + ', author: ' + _typStr(appName).slice(1) + ')\\n' +
-        '#let ink = ' + color('ink') + '\\n' +
-        '#let muted = ' + color('muted') + '\\n' +
-        '#let rule = ' + color('rule') + '\\n' +
-        '#let danger = ' + color('danger') + '\\n' +
-        // A day's warning: a row from after the DATE column, tinted and barred as well as
-        // colored, so it still stands out in black and white.
-        '#let warning(body) = table.cell(colspan: ' + (COLS - 1) + ', fill: ' + color('dangerBg') + ', stroke: (left: 2pt + danger))[#text(fill: danger)[*Warning:* #body]]\\n' +
-        '#set text(font: ("IBM Plex Sans", "Libertinus Serif"), size: 8pt, fill: ink, number-width: "tabular")\\n' +
-        '#set page(\\n' +
-        '  paper: "us-letter",\\n' +
-        '  margin: (x: 0.6in, y: 0.6in),\\n' +
-        '  footer: context [\\n' +
-        '    #set text(size: 7pt, fill: ' + color('faint') + ')\\n' +
-        '    ' + _typStr(pilotName + ' · ' + periodLabel) +
-              ' #h(1fr) ' + _typStr('Generated ' + generated) + ' #h(1fr) Page #counter(page).display("1 of 1", both: true)\\n' +
-        '  ]\\n' +
-        ')\\n' +
-        // Hairlines between rows, for the summary tables; the month table turns them off and
-        // draws only a heavy rule under the header and a rule between days.
-        '#set table(inset: (x: 5pt, y: 4pt), stroke: (_, y) => if y > 0 { (top: 0.4pt + ' + color('ruleSubtle') + ') })\\n' +
-        '#show table.cell.where(y: 0): set text(size: 6.5pt, weight: "bold", fill: muted, tracking: ' + _DUTY_PDF_THEME.trackingCaps + ')\\n\\n' +
-        '#stack(spacing: 7pt,\\n' +
-        '  text(size: 17pt, weight: "bold", tracking: ' + _DUTY_PDF_THEME.trackingHeading + ', ' + _typStr(pilotName + ' Duty Log').slice(1) + '),\\n' +
-        '  text(size: 10pt, fill: muted, ' + _typStr(periodLabel).slice(1) + '),\\n' +
-        ')\\n\\n' +
-        '#v(1.2em)\\n\\n' +
-        body +
-        (notes.length
-          ? '#v(1em)\\n#set text(size: 7pt, fill: muted)\\n' + notes.join('\\n\\n') + '\\n'
-          : '')
-      );
     }
   `;
 }
@@ -1018,12 +784,9 @@ export function pilotDutyScript(): string {
       ).join('') + '</ul>';
     }
 
-    // An export covers at most this many months.
-    const _DUTY_MAX_EXPORT_MONTHS = 24;
-
     // Export form: the months to export, from a preset (dutyExportPresets) or picked
     // From/To. One PDF, a section per month and a summary page per quarter
-    // (_buildTypstSource).
+    // (dutyLogTypstSource, @wingbeat/core/duty-pdf).
     function _dutyOpenExportForm() {
       if (!_dutyLog) return;
       const [curY, curM] = currentDutyMonth();
@@ -1031,12 +794,7 @@ export function pilotDutyScript(): string {
       const ym = i => [Math.floor(i / 12), i % 12 + 1];
       const cur = idx(curY, curM), shown = idx(_dutyYear, _dutyMonth);
       // From the pilot's first flight (at least the last 12 months) through this month.
-      let earliest = Math.min(shown, cur - 11);
-      for (const f of flightStore.getCompleted()) {
-        if (f.pilot_id !== _dutyPilotId) continue;
-        const [y, m] = unixToTzDateStr(f.start_time).split('-').map(Number);
-        earliest = Math.min(earliest, idx(y, m));
-      }
+      const earliest = dutyExportEarliest(flightStore.getCompleted(), _dutyPilotId, shown, cur);
       const presetList = dutyExportPresets(shown, cur, earliest);
       const presets = {};
       for (const p of presetList) presets[p.key] = [p.from, p.to];
@@ -1078,11 +836,8 @@ export function pilotDutyScript(): string {
       modal.querySelector('[data-act="cancel"]').addEventListener('click', close);
       modal.querySelector('[data-act="export"]').addEventListener('click', () => {
         const from = Number(fromEl.value), to = Number(toEl.value);
-        if (from > to) { errorEl.textContent = 'From has to be before To.'; return; }
-        if (to - from + 1 > _DUTY_MAX_EXPORT_MONTHS) {
-          errorEl.textContent = 'Export at most ' + _DUTY_MAX_EXPORT_MONTHS + ' months at a time.';
-          return;
-        }
+        const error = dutyExportRangeError(from, to);
+        if (error) { errorEl.textContent = error; return; }
         const months = [];
         for (let i = from; i <= to; i++) {
           const [y, m] = ym(i);
@@ -1120,9 +875,6 @@ export function pilotDutyScript(): string {
       _dutyLoad();
       return true;
     }
-
-    // The day form's Through range covers at most this many days (the server's limit).
-    const _DUTY_MAX_RANGE_DAYS = ${MAX_DUTY_DAYS_PER_REQUEST};
 
     // Day form: duty start/end, or a rest day, plus a note, for dateKey or, with a
     // "Through" date, for every day from it to that date (e.g. a block of rest days planned
@@ -1195,24 +947,13 @@ export function pilotDutyScript(): string {
       const setKind = getKind.set;
 
       // The date range as day keys, or an error message.
-      function readDates() {
-        const from = $('#duty-d-date').value, through = $('#duty-d-through').value || from;
-        if (!from) return 'Enter a date.';
-        if (through < from) return 'The Through date is before the date.';
-        const keys = [];
-        for (let k = from; k <= through; k = tzAddDays(k, 1)) {
-          keys.push(k);
-          if (keys.length > _DUTY_MAX_RANGE_DAYS) return 'Enter at most ' + _DUTY_MAX_RANGE_DAYS + ' days at a time.';
-        }
-        return keys;
-      }
+      const readDates = () => dutyDayKeys($('#duty-d-date').value, $('#duty-d-through').value);
       // Fills the form from the first date's record, and offers Clear when the range has one.
       function load() {
         baseHistoryId = _dutyLog ? _dutyLog.last_history_id : 0;
         rec = recordOf($('#duty-d-date').value);
         def = dutyDefaultOn((_dutyLog && _dutyLog.default_duties) || [], $('#duty-d-date').value);
-        defaultHint.firstChild.textContent = def
-          ? 'Default duty ' + def.duty_start + '–' + def.duty_end + ' applies on a flying day with no times recorded.' : '';
+        defaultHint.firstChild.textContent = def ? dutyDefaultHint(def) : '';
         setKind(rec && rec.rest ? 'rest' : 'duty');
         $('#duty-d-start').value = (rec && rec.duty_start) || '';
         $('#duty-d-end').value = (rec && rec.duty_end) || '';
@@ -1221,9 +962,7 @@ export function pilotDutyScript(): string {
         const base = baseHistoryId;
         showLastEdit($('[data-duty-last-edit]'), 'duty_days', _dutyPilotId + '/' + $('#duty-d-date').value)
           .then(h => { if (h && h.id > base && !errorEl.textContent) onConflict(h); });
-        restHint.textContent = rec && rec.rest && rec.rest_designated_at != null
-          ? 'Designated ' + tzDateLabel(unixToTzDateStr(rec.rest_designated_at)) + ', ' + unixToTzTime(rec.rest_designated_at) + '.'
-          : 'Today is recorded as the date the rest was designated. Rest has to be designated before the day it falls on.';
+        restHint.textContent = dutyRestHint(rec);
         updateClear();
       }
       function updateClear() {
@@ -1251,8 +990,8 @@ export function pilotDutyScript(): string {
         const rest = getKind() === 'rest';
         const dutyStart = rest ? null : ($('#duty-d-start').value || null);
         const dutyEnd = rest ? null : ($('#duty-d-end').value || null);
-        if ((dutyStart == null) !== (dutyEnd == null)) { errorEl.textContent = 'Enter both duty start and end, or neither.'; return; }
-        if (dutyStart != null && dutyStart === dutyEnd) { errorEl.textContent = 'The duty end must differ from its start.'; return; }
+        const timesError = dutyTimesError(dutyStart, dutyEnd);
+        if (timesError) { errorEl.textContent = timesError; return; }
         const body = { dates: keys, duty_start: dutyStart, duty_end: dutyEnd, rest, note: $('#duty-d-note').value };
         const ask = dutySaveConfirmText((_dutyLog && _dutyLog.days) || [], keys, body);
         if (ask && !confirm(ask)) return;

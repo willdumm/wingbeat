@@ -708,9 +708,24 @@ describe('response shapes: bootstrap, trackers, aircraft and pilots', async () =
     assert.equal(boot.aircraft.find(a => a.tail_number === 'N2').maintenance_schedule.length, 3);
     assert.equal(boot.overlays.length, 2);
     assert.ok(boot.pilots.find(p => p.id === 1).default_duties.length >= 1);
+    // No CARTO_API_KEY here, so no Map (Carto) basemap; the keyless ones keep their upstream URL.
+    assert.deepEqual(boot.basemaps.map(b => b.id), ['topo', 'usgstopo', 'usgsimagerytopo', 'satellite']);
+    assert.ok(boot.basemaps.every(b => b.url.startsWith('https://')));
     assert.deepEqual((await getTrackers(client)).trackers, boot.trackers);
     assert.deepEqual((await getAircraft(client)).aircraft, boot.aircraft);
     assert.deepEqual((await getPilots(client)).pilots, boot.pilots);
+  });
+
+  test('with CARTO_API_KEY set: the Map basemap first, as the proxy path, without the key', async () => {
+    const w2 = await startWorker({ bindings: { CARTO_API_KEY: 'test-carto-key' } });
+    try {
+      const boot = (await w2.request('GET', '/api/bootstrap')).body;
+      assertShape(BootstrapResponse, boot);
+      assert.deepEqual(boot.basemaps[0], { ...boot.basemaps[0], id: 'map', url: '/api/tiles/map/{z}/{x}/{y}{r}.png' });
+      assert.ok(!JSON.stringify(boot).includes('test-carto-key'));
+    } finally {
+      await w2.dispose();
+    }
   });
 
   test('as a viewer: trackers without their feed URL', async () => {
@@ -925,6 +940,26 @@ describe('the settings modal’s requests, through the core client', async () =>
     await assert.rejects(users.createInvite(client, { name: 'X', role: 'owner' }), refused(400, 'role must be admin or viewer'));
   });
 
+  test('users: linked to the pilot they are, which bootstrap’s me carries; one user per pilot', async () => {
+    await w.run("INSERT INTO users (id, name, role) VALUES (31, 'Pat Pilot', 'viewer')");
+    assert.equal((await me.getMe(client)).pilot_id, null);
+    assert.deepEqual(await users.updateUser(client, 1, { pilot_id: 1 }), { ok: true });
+    assert.equal((await me.getMe(client)).pilot_id, 1);
+    assert.equal((await w.request('GET', '/api/bootstrap')).body.me.pilot_id, 1);
+    assert.equal((await users.getUsers(client)).users.find(u => u.id === 1).pilot_id, 1);
+    await assert.rejects(users.updateUser(client, 31, { pilot_id: 1 }), refused(409, 'That pilot is already linked to Ada Admin'));
+    await assert.rejects(users.updateUser(client, 31, { pilot_id: 999 }), refused(404, 'Pilot not found'));
+    await assert.rejects(users.updateUser(client, 999, { pilot_id: null }), refused(404, 'User not found'));
+    await assert.rejects(users.updateUser(client, 31, {}), refused(400, 'Nothing to update'));
+    // Relinking the same user to the same pilot is fine; unlinking frees the pilot.
+    await users.updateUser(client, 1, { pilot_id: 1 });
+    await users.updateUser(client, 1, { pilot_id: null });
+    await users.updateUser(client, 31, { pilot_id: 1 });
+    assert.equal((await me.getMe(client)).pilot_id, null);
+    assert.equal((await w.request('PATCH', '/api/users/31', { pilot_id: null }, { as: 'viewer' })).status, 403);
+    assert.deepEqual(await users.deleteUser(client, 31), { ok: true });
+  });
+
   test('trackers: added, edited (assignment and access code), paused, its assignment carried over, then deleted', async () => {
     const added = await trackers.createTracker(client, { name: 'Three', type: 'inreach',
       source_url: 'https://share.garmin.com/Feed/Share/abc', credentials: { password: 'pw' }, assigned_aircraft: null, assigned_pilot: null });
@@ -1033,6 +1068,7 @@ describe('request validation: the settings modal’s writes', () => {
   test('a field of the wrong type is a 400 naming it', async () => {
     const cases = [
       ['PATCH', '/api/me/sessions/1', { device_name: 5 }, /^device_name: /],
+      ['PATCH', '/api/users/1', { pilot_id: '1' }, /^pilot_id: /],
       ['POST', '/api/invites', { name: 'A', role: 'viewer', expires_in_hours: '24' }, /^expires_in_hours: /],
       ['POST', '/api/trackers', { name: 'T', type: 'spot', source_url: 'https://example.com/x', assigned_pilot: 'one' }, /^assigned_pilot: /],
       ['PUT', '/api/trackers/1', { active: 'yes' }, /^active: /],
@@ -1229,6 +1265,66 @@ describe('the app’s requests, through the core client', async () => {
   });
 });
 
+// App push (migration 0006): a session's device and the user's subscriptions, through core's
+// client as the app calls them.
+describe('push devices and subscriptions, through the core client', async () => {
+  const { createApiClient, ApiHttpError } = await importCore('api/client');
+  const app = await importCore('api/app');
+  const me = await importCore('api/me');
+  const push = await importCore('api/push');
+  const paired = async () => {
+    const link = (await w.request('POST', '/api/me/device-link')).body.url.replace('/join/', '');
+    const { token, me: { session_id } } = await app.pair(createApiClient({ baseUrl: 'http://localhost', fetch: () => w.fetch }), { token: link });
+    return { session_id, client: createApiClient({ baseUrl: 'http://localhost', fetch: () => w.fetch, auth: { kind: 'bearer', token } }) };
+  };
+  const devices = (session) => w.all('SELECT kind, endpoint FROM push_devices WHERE session_id = ? ORDER BY id', session);
+
+  test('registerPushDevice: one token per session, the same one again a no-op; signing out drops it', async () => {
+    const { session_id, client } = await paired();
+    const first = await push.registerPushDevice(client, { kind: 'expo', token: 'ExponentPushToken[a]' });
+    assert.deepEqual(await push.registerPushDevice(client, { kind: 'expo', token: 'ExponentPushToken[a]' }), first);
+    assert.deepEqual(await devices(session_id), [{ kind: 'expo', endpoint: 'ExponentPushToken[a]' }]);
+    // A reinstall's new token replaces it.
+    await push.registerPushDevice(client, { kind: 'expo', token: 'ExponentPushToken[b]' });
+    assert.deepEqual(await devices(session_id), [{ kind: 'expo', endpoint: 'ExponentPushToken[b]' }]);
+    await me.deleteSession(client, session_id);
+    assert.deepEqual(await devices(session_id), []);
+  });
+
+  test('push subscriptions: replaced as a set, an unknown tracker refused, alerts only for every tracker', async () => {
+    const { client } = await paired();
+    const subs = [{ tracker_id: 2, event: 'landing' }, { tracker_id: null, event: 'takeoff' }, { tracker_id: null, event: 'alerts' }, { tracker_id: 2, event: 'landing' }];
+    const stored = [{ tracker_id: null, event: 'alerts' }, { tracker_id: 2, event: 'landing' }, { tracker_id: null, event: 'takeoff' }];
+    assert.deepEqual(await push.setPushSubscriptions(client, { subscriptions: subs }), { subscriptions: stored });
+    assert.deepEqual(await push.getPushSubscriptions(client), { subscriptions: stored });
+    await assert.rejects(push.setPushSubscriptions(client, { subscriptions: [{ tracker_id: 99, event: 'gap' }] }),
+      (e) => e instanceof ApiHttpError && e.status === 404);
+    await assert.rejects(push.setPushSubscriptions(client, { subscriptions: [{ tracker_id: 1, event: 'alerts' }] }),
+      (e) => e instanceof ApiHttpError && e.status === 400);
+    assert.deepEqual(await push.getPushSubscriptions(client), { subscriptions: stored });
+    assert.deepEqual(await push.setPushSubscriptions(client, { subscriptions: [] }), { subscriptions: [] });
+  });
+
+  test('request validation', async () => {
+    for (const [method, url, body] of [
+      ['POST', '/api/me/push-devices', { kind: 'web', token: 'x' }],
+      ['POST', '/api/me/push-devices', { kind: 'expo', token: '' }],
+      ['PUT', '/api/me/push-subscriptions', { subscriptions: [{ tracker_id: null, event: 'everything' }] }],
+      ['PUT', '/api/me/push-subscriptions', { subscriptions: [{ tracker_id: 1.5, event: 'gap' }] }],
+    ]) assert.equal((await w.request(method, url, body)).status, 400, url + ' ' + JSON.stringify(body));
+  });
+
+  test('deleting the account deletes its subscriptions and devices', async () => {
+    const { token: invite } = (await w.request('POST', '/api/invites', { name: 'Push Viewer', role: 'viewer' })).body;
+    const { token, me: { id, session_id } } = await app.pair(createApiClient({ baseUrl: 'http://localhost', fetch: () => w.fetch }), { token: invite });
+    const client = createApiClient({ baseUrl: 'http://localhost', fetch: () => w.fetch, auth: { kind: 'bearer', token } });
+    await push.registerPushDevice(client, { kind: 'expo', token: 'ExponentPushToken[gone]' });
+    await push.setPushSubscriptions(client, { subscriptions: [{ tracker_id: null, event: 'gap' }] });
+    await me.deleteMe(client);
+    assert.deepEqual([await devices(session_id), await w.all('SELECT * FROM push_subscriptions WHERE user_id = ?', id)], [[], []]);
+  });
+});
+
 // Every compat snapshot (packages/core/src/api/compat/<level>.ts, one per supported client
 // API level), against the routes' real responses: a server change that would break an app
 // still on an older level fails here. A level's new file joins by itself; a route it lists
@@ -1267,6 +1363,10 @@ describe('compat snapshots: the app’s routes, against every supported level', 
     await call('GET /api/me', '/api/me');
     await call('GET /api/me/sessions', '/api/me/sessions');
     await call('POST /api/me/ping', '/api/me/ping');
+    await call('POST /api/me/push-devices', '/api/me/push-devices', { kind: 'expo', token: 'ExponentPushToken[compat]' });
+    await call('PUT /api/me/push-subscriptions', '/api/me/push-subscriptions', { subscriptions: [{ tracker_id: 1, event: 'gap' }, { tracker_id: null, event: 'alerts' }] });
+    await call('GET /api/me/push-subscriptions', '/api/me/push-subscriptions');
+    await call('PUT /api/me/push-subscriptions', '/api/me/push-subscriptions', { subscriptions: [] });
 
     // Live and Flights: a tracked flight with its points, a correction and a manual flight.
     const t = next();

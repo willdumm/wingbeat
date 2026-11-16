@@ -1,0 +1,329 @@
+/**
+ * What the Live tab shows, from the flight store and the last refresh: one status card per
+ * active tracker (what the dashboard's buildAircraftCard() shows), each tracker's position,
+ * and the track of its current or latest flight (the dashboard's default view), with the
+ * bounds the map fits to them; or a day's flights at once (dayMap, the Flights tab's day
+ * map). Colors are core's trackerColor(), or the caller's faint color for a tracker without one.
+ */
+import type { InstanceSettings } from '@wingbeat/core/api/bootstrap';
+import type { FlightPoint, TrackedFlight } from '@wingbeat/core/api/flights';
+import { toFeet, toKnots } from '@wingbeat/core/format';
+import { dayFlightNumbers, groundTrail, isGpsFresh, isInFlight, mercatorPixel, nearestPointIdx, pickedPointDetails, trackerColor, type LiveData, type LocationDetails } from '@wingbeat/core/live';
+import { SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
+import { relativeTime, tzLongDateLabel, unixToTzDateStr } from '@wingbeat/core/time';
+import { bboxOf, type Flight } from './flights';
+
+export interface LiveTracker {
+  id: number;
+  name: string;
+  assigned_aircraft: string | null;
+}
+
+export interface StatusCard {
+  trackerId: number;
+  /** The tracker's aircraft, else its name. */
+  label: string;
+  color: string;
+  inFlight: boolean;
+  /** "GPS 5 min ago", from its newest point of any kind; null before its first point. */
+  gps: string | null;
+  gpsFresh: boolean;
+  /** Altitude and speed while in flight ("1,200 ft · 95.0 kt"); null otherwise. */
+  metrics: string | null;
+  location: string | null;
+  /** [lon, lat]; null before its first point. */
+  position: [number, number] | null;
+}
+
+export function statusCards(
+  trackers: LiveTracker[],
+  live: Record<number, LiveData>,
+  now: number,
+  fallbackColor: string,
+): StatusCard[] {
+  return trackers.map((t) => {
+    const d = live[t.id];
+    const inFlight = isInFlight(SPEED_THRESHOLD_KMH, d);
+    const gpsTime = d ? (d.last_point_time ?? d.garmin_time) : null;
+    const metrics = inFlight && d
+      ? [d.elevation_m != null ? toFeet(d.elevation_m) : null, d.velocity_kmh != null ? toKnots(d.velocity_kmh) : null]
+          .filter((s) => s !== null).join(' · ') || null
+      : null;
+    return {
+      trackerId: t.id,
+      label: t.assigned_aircraft || t.name,
+      color: trackerColor(trackers, t.id) ?? fallbackColor,
+      inFlight,
+      gps: gpsTime ? 'GPS ' + relativeTime(now, gpsTime) : null,
+      gpsFresh: gpsTime ? isGpsFresh(now, gpsTime) : false,
+      metrics,
+      location: d?.location_label ?? null,
+      position: d ? [d.lon, d.lat] : null,
+    };
+  });
+}
+
+/**
+ * The cards' positions as map points: plane markers (`plane`), turned to their `course`.
+ * With trails, each tracker's ground trail's pilot too (`pilot`: a hollow dot).
+ */
+export function positionFeatures(cards: StatusCard[], live: Record<number, LiveData>, { trails = false } = {}): GeoJSON.FeatureCollection<GeoJSON.Point> {
+  return {
+    type: 'FeatureCollection',
+    features: cards.flatMap((c) => {
+      if (!c.position) return [];
+      const trail = trails ? groundTrail(SPEED_THRESHOLD_KMH, live[c.trackerId]) : null;
+      return [
+        {
+          type: 'Feature' as const,
+          id: c.trackerId,
+          geometry: { type: 'Point' as const, coordinates: c.position },
+          properties: { color: c.color, inFlight: c.inFlight, plane: true, course: live[c.trackerId]?.course_deg ?? 0 },
+        },
+        ...(trail ? [{
+          type: 'Feature' as const,
+          id: 'pilot-' + c.trackerId,
+          geometry: { type: 'Point' as const, coordinates: [trail.pilot.lon, trail.pilot.lat] },
+          properties: { color: c.color, inFlight: false, pilot: true },
+        }] : []),
+      ];
+    }),
+  };
+}
+
+/**
+ * Each tracker's ground trail (core's groundTrail: on the ground, once it has moved since
+ * landing), as a dotted line (`trail`) from its plane marker to its pilot.
+ */
+export function groundTrailFeatures(cards: StatusCard[], live: Record<number, LiveData>): GeoJSON.FeatureCollection<GeoJSON.LineString> {
+  return {
+    type: 'FeatureCollection',
+    features: cards.flatMap((c) => {
+      const trail = groundTrail(SPEED_THRESHOLD_KMH, live[c.trackerId]);
+      return trail ? [{
+        type: 'Feature' as const,
+        id: 'trail-' + c.trackerId,
+        geometry: { type: 'LineString' as const, coordinates: trail.line.map((p) => [p.lon, p.lat]) },
+        properties: { color: c.color, trail: true },
+      }] : [];
+    }),
+  };
+}
+
+/**
+ * Each tracker's latest flight's track: the one in progress while it's in flight, else the
+ * last it recorded (the tracker's own records, as positions are). getRaw is the flight store's.
+ */
+export function latestTracks(
+  cards: StatusCard[],
+  getRaw: (trackerIds: number[]) => TrackedFlight[],
+): GeoJSON.FeatureCollection<GeoJSON.LineString> {
+  return {
+    type: 'FeatureCollection',
+    features: cards.flatMap((c) => {
+      const latest = getRaw([c.trackerId]).at(-1);
+      if (!latest || latest.points.length < 2) return [];
+      return [{
+        type: 'Feature' as const,
+        id: c.trackerId,
+        geometry: { type: 'LineString' as const, coordinates: latest.points.map((p) => [p.lon, p.lat]) },
+        properties: { color: c.color },
+      }];
+    }),
+  };
+}
+
+/** A dot at each track's first point, in its color (the dashboard's takeoff marker). */
+export function trackStarts(tracks: GeoJSON.FeatureCollection<GeoJSON.LineString>): GeoJSON.FeatureCollection<GeoJSON.Point> {
+  return {
+    type: 'FeatureCollection',
+    features: tracks.features.map((f) => ({
+      type: 'Feature' as const,
+      id: 'start-' + f.id,
+      geometry: { type: 'Point' as const, coordinates: f.geometry.coordinates[0] },
+      properties: { color: f.properties?.color, inFlight: false },
+    })),
+  };
+}
+
+/**
+ * What the Live map fits on opening: every coordinate of the collections (tracks and
+ * positions); null when there are none.
+ */
+export function liveBounds(...collections: GeoJSON.FeatureCollection<GeoJSON.Point | GeoJSON.LineString>[]): [number, number, number, number] | null {
+  return bboxOf(collections.flatMap((c) => c.features.flatMap((f) =>
+    (f.geometry.type === 'Point' ? [f.geometry.coordinates] : f.geometry.coordinates) as [number, number][])));
+}
+
+/**
+ * How long a follow refit still waits (ms) for a map the user last moved at touchedAt: until
+ * they've left it alone for idleMs; 0 to fit now.
+ */
+export function followWait({ touchedAt, now, idleMs }: { touchedAt: number; now: number; idleMs: number }): number {
+  return Math.max(0, touchedAt + idleMs - now);
+}
+
+// ── The point picker: a tap on the map, snapped to a drawn track's point ──
+
+/** A drawn track's point, with what the location sheet says about it. */
+export interface TrackPick {
+  point: FlightPoint;
+  trackerId: number | null;
+  pilotName: string | null;
+}
+
+/** The points a tap snaps to: each latest track's and ground trail's (Live). */
+export function liveTrackPicks(
+  cards: StatusCard[],
+  live: Record<number, LiveData>,
+  getRaw: (trackerIds: number[]) => TrackedFlight[],
+): TrackPick[] {
+  return cards.flatMap((c) => {
+    const latest = getRaw([c.trackerId]).at(-1);
+    const trail = groundTrail(SPEED_THRESHOLD_KMH, live[c.trackerId]);
+    return [...(latest?.points ?? []), ...(trail?.points ?? [])]
+      .map((point) => ({ point, trackerId: c.trackerId, pilotName: latest?.pilot_name ?? null }));
+  });
+}
+
+/** The points of flights drawn with their tracks (a day's, or one flight). */
+export function flightTrackPicks(flights: Flight[]): TrackPick[] {
+  return flights.flatMap((f) => (f.points ?? []).map((point) => ({ point, trackerId: f.tracker_id, pilotName: f.pilot_name ?? null })));
+}
+
+/**
+ * A picked spot: the location sheet's details, whether it's a track's point, where it is (for
+ * the map's marker), and course: the snapped track point's recorded heading (degrees), null
+ * off route or unrecorded.
+ */
+export type PickedSpot = LocationDetails & { snapped: boolean; lngLat: [number, number]; course: number | null };
+
+/**
+ * The map's marker for a picked spot (live-map.tsx): the web's direction arrow turned to the
+ * track point's heading (`arrow`), else a dot.
+ */
+export function pickedFeature(spot: PickedSpot, color: string): GeoJSON.Feature<GeoJSON.Point> {
+  return {
+    type: 'Feature', id: 'picked', geometry: { type: 'Point', coordinates: spot.lngLat },
+    properties: spot.course != null ? { color, arrow: true, course: spot.course } : { color },
+  };
+}
+
+/** The pick nearest a tap at lngLat on a map at zoom, within core's SNAP_PX on screen. */
+export function nearestPick(lngLat: [number, number], zoom: number, picks: TrackPick[]): TrackPick | undefined {
+  const project = (lat: number, lon: number) => mercatorPixel(lat, lon, zoom);
+  return picks[nearestPointIdx(project(lngLat[1], lngLat[0]), picks, ({ point: p }) => project(p.lat, p.lon))];
+}
+
+/**
+ * What the location sheet shows for a tap at lngLat on a map at zoom: the nearest pick's
+ * tracker, pilot, time, speed and altitude, or null when no track is that close.
+ */
+export function pickDetails(
+  tz: string,
+  lngLat: [number, number],
+  zoom: number,
+  picks: TrackPick[],
+  trackerFor: (id: number) => { name: string; assigned_aircraft?: string | null } | null,
+): PickedSpot | null {
+  const pick = nearestPick(lngLat, zoom, picks);
+  if (!pick) return null;
+  const details = pickedPointDetails(tz, pick.point.lat, pick.point.lon, { time: pick.point.t, velocity_kmh: pick.point.v, elevation_m: pick.point.e },
+    pick.trackerId != null ? trackerFor(pick.trackerId) : null, pick.pilotName);
+  return { ...details, snapped: true, lngLat: [pick.point.lon, pick.point.lat], course: pick.point.c };
+}
+
+/** What the location sheet shows for a long press at lngLat: the spot itself, on a track or not. */
+export function spotDetails(tz: string, lngLat: [number, number]): PickedSpot {
+  return { ...pickedPointDetails(tz, lngLat[1], lngLat[0], null, null, null), snapped: false, lngLat, course: null };
+}
+
+/** Where the map opens: the instance's default view, else the first position, else the world. */
+export function initialView(
+  instance: InstanceSettings | undefined,
+  cards: StatusCard[],
+): { center: [number, number]; zoom: number } {
+  if (instance) return { center: [instance.map_default_lng, instance.map_default_lat], zoom: instance.map_default_zoom };
+  const first = cards.find((c) => c.position)?.position;
+  return first ? { center: first, zoom: 8 } : { center: [0, 20], zoom: 1 };
+}
+
+// ── A day's flights (the dashboard's "Map all") ──
+
+export interface MapDay {
+  dayKey: string;
+  /** "Mon, Oct 3, 2026" */
+  title: string;
+  /** Its flights with a track. */
+  count: number;
+}
+
+/** The operator days with a flight that has a track, newest first. flights: getAll()'s (chronological). */
+export function mapDays(tz: string, flights: Flight[]): MapDay[] {
+  const days: MapDay[] = [];
+  for (let i = flights.length - 1; i >= 0; i--) {
+    const f = flights[i];
+    if (!f.points?.length) continue;
+    const dayKey = unixToTzDateStr(tz, f.start_time);
+    const day = days.at(-1);
+    if (day?.dayKey === dayKey) day.count++;
+    else days.push({ dayKey, title: tzLongDateLabel(dayKey), count: 1 });
+  }
+  return days;
+}
+
+export interface DayMap {
+  tracks: GeoJSON.FeatureCollection<GeoJSON.LineString>;
+  /** Each flight's start, and its numbered end (`label`) unless it's in progress. */
+  points: GeoJSON.FeatureCollection<GeoJSON.Point>;
+  /** The flights drawn, in order, with their numbers and colors (the day map's list). */
+  flights: { flight: Flight; n: number; color: string }[];
+  /** The trackers, when there are several (the web's legend). */
+  legend: { label: string; color: string }[];
+  /** [west, south, east, north]; null when no flight has a track. */
+  bounds: [number, number, number, number] | null;
+}
+
+/**
+ * A day's flights drawn at once, as the dashboard's day view does: each track in its
+ * tracker's color, a dot at its start and its number (core's dayFlightNumbers) at its end.
+ * flights: getAll()'s (chronological); inProgress(f): whether f is still in the air.
+ */
+export function dayMap(
+  tz: string,
+  dayKey: string,
+  flights: Flight[],
+  { colorFor, labelFor, inProgress }: {
+    colorFor: (trackerId: number | null) => string;
+    labelFor: (trackerId: number | null) => string;
+    inProgress: (f: Flight) => boolean;
+  },
+): DayMap {
+  const day = flights.filter((f) => unixToTzDateStr(tz, f.start_time) === dayKey);
+  const numbers = dayFlightNumbers(day);
+  const tracks: DayMap['tracks']['features'] = [];
+  const points: DayMap['points']['features'] = [];
+  const all: [number, number][] = [];
+  const drawn: DayMap['flights'] = [];
+  day.forEach((f, i) => {
+    const n = numbers[i];
+    if (n == null || !f.points?.length) return;
+    const coords = f.points.map((p) => [p.lon, p.lat] as [number, number]);
+    const color = colorFor(f.tracker_id);
+    drawn.push({ flight: f, n, color });
+    for (const c of coords) all.push(c);
+    tracks.push({ type: 'Feature', id: f.id, geometry: { type: 'LineString', coordinates: coords }, properties: { color } });
+    points.push({ type: 'Feature', id: 'start-' + f.id, geometry: { type: 'Point', coordinates: coords[0] }, properties: { color, inFlight: false } });
+    if (!inProgress(f)) {
+      points.push({ type: 'Feature', id: 'end-' + f.id, geometry: { type: 'Point', coordinates: coords.at(-1)! }, properties: { color, inFlight: false, label: String(n) } });
+    }
+  });
+  const trackerIds = [...new Set(day.filter((_, i) => numbers[i] != null).map((f) => f.tracker_id))];
+  return {
+    tracks: { type: 'FeatureCollection', features: tracks },
+    points: { type: 'FeatureCollection', features: points },
+    flights: drawn,
+    legend: trackerIds.length > 1 ? trackerIds.map((id) => ({ label: labelFor(id), color: colorFor(id) })) : [],
+    bounds: bboxOf(all),
+  };
+}

@@ -6,10 +6,11 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { importCore, plain } from './core.mjs';
+import { importCore, plain, TZ } from './core.mjs';
 import { loadEngine } from './harness.mjs';
 
 const live = await importCore('live');
+const time = await importCore('time');
 const KMH = 37;   // the server's SPEED_THRESHOLD_KMH
 const NOW = 1_793_739_600;
 
@@ -20,6 +21,113 @@ const raw = {
   3: [{ id: 30, points: [] }],
 };
 const getRaw = ([id]) => raw[id] ?? [];
+
+describe('trackerColor', () => {
+  test("a tracker keeps its position's color, wrapping the palette; none when inactive", () => {
+    const active = Array.from({ length: 9 }, (_, i) => ({ id: 100 + i }));
+    assert.equal(live.trackerColor(active, 100), live.TRACKER_COLORS[0]);
+    assert.equal(live.trackerColor(active, 101), live.TRACKER_COLORS[1]);
+    assert.equal(live.trackerColor(active, 108), live.TRACKER_COLORS[0]);
+    assert.equal(live.trackerColor(active, 5), null);
+  });
+});
+
+describe('dayFlightNumbers', () => {
+  const f = (tracker_id, n = 1) => ({ tracker_id, points: Array(n).fill({}) });
+  test('one tracker: a flight’s place in the day, skipping none', () => {
+    assert.deepEqual(live.dayFlightNumbers([f(1), f(1, 0), f(1)]), [1, null, 3]);
+  });
+  test('several trackers: each counts its drawn flights from 1', () => {
+    assert.deepEqual(live.dayFlightNumbers([f(1), f(2), f(2, 0), f(1), f(2)]), [1, 1, null, 2, 2]);
+  });
+});
+
+describe('groupEndMarkers', () => {
+  test('overlapping markers merge into one pill at their centroid; distant ones stay apart', () => {
+    const groups = live.groupEndMarkers([{ x: 0, y: 0 }, { x: 15, y: 5 }, { x: 200, y: 0 }]);
+    assert.deepEqual(plain(groups), [{ members: [0, 1], x: 7.5, y: 2.5 }, { members: [2], x: 200, y: 0 }]);
+  });
+  test('a pill widens as it grows, so a marker beside it joins', () => {
+    // 30px clears a single circle (overlap under 14 + 10 = 24px) but not a pill of two (25 + 10 = 35px).
+    assert.equal(live.groupEndMarkers([{ x: 0, y: 0 }, { x: 30, y: 0 }]).length, 2);
+    assert.equal(live.groupEndMarkers([{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 40, y: 0 }]).length, 1);
+  });
+  test('zooming in (pixels from mercatorPixel) splits a pill apart', () => {
+    const ends = [[57.79, -152.39], [57.80, -152.40]];
+    const at = (zoom) => live.groupEndMarkers(ends.map(([lat, lon]) => live.mercatorPixel(lat, lon, zoom))).length;
+    assert.equal(at(8), 1);
+    assert.equal(at(14), 2);
+  });
+});
+
+describe('locationDetails', () => {
+  const d = { lat: 57.8, lon: -152.4, velocity_kmh: 185.2, elevation_m: 304.8, course_deg: 23, garmin_time: NOW - 300,
+    last_point_time: NOW - 120, ground_trail: [], location_label: 'Near Kodiak', last_polled: null };
+  test('the popup’s coordinates, links and rows, in order', () => {
+    const details = live.locationDetails(NOW, { name: 'inReach 1', assigned_aircraft: 'N77KZ', mapshare_url: 'https://share.garmin.com/x' }, d, 'Sam');
+    assert.deepEqual(plain(details), {
+      coords: '57.800000, -152.400000',
+      googleMapsUrl: 'https://www.google.com/maps?q=57.800000,-152.400000',
+      mapshareUrl: 'https://share.garmin.com/x',
+      rows: [['Tracker', 'inReach 1'], ['Aircraft', 'N77KZ'], ['Pilot', 'Sam'], ['Altitude', '1,000 ft'], ['Speed', '100.0 kt'],
+        ['Heading', '23° NNE'], ['Location', 'Near Kodiak'], ['GPS fix', '2 min ago']],
+    });
+  });
+  test('only what’s known; nothing without a position', () => {
+    const bare = { ...d, velocity_kmh: null, elevation_m: null, course_deg: null, location_label: null, last_point_time: null };
+    assert.deepEqual(plain(live.locationDetails(NOW, null, bare, null).rows), [['GPS fix', '5 min ago']]);
+    assert.equal(live.locationDetails(NOW, null, null, null), null);
+  });
+  test('a position on the equator is still a position', () => {
+    assert.equal(live.locationDetails(NOW, null, { ...d, lat: 0 }, null).coords, '0.000000, -152.400000');
+  });
+});
+
+describe('cardinalDir', () => {
+  test('wraps headings outside 0–360', () => {
+    assert.equal(live.cardinalDir(0), 'N');
+    assert.equal(live.cardinalDir(359), 'N');
+    assert.equal(live.cardinalDir(-90), 'W');
+    assert.equal(live.cardinalDir(405), 'NE');
+  });
+});
+
+describe('nearestPointIdx', () => {
+  const pts = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 40, y: 0 }];
+  test('the nearest point within 30 px, else -1', () => {
+    assert.equal(live.SNAP_PX, 30);
+    assert.equal(live.nearestPointIdx({ x: 45, y: 10 }, pts, (p) => p), 2);
+    assert.equal(live.nearestPointIdx({ x: 70, y: 0 }, pts, (p) => p), 1, '30 px away, from both sides');
+    assert.equal(live.nearestPointIdx({ x: 70, y: 31 }, pts, (p) => p), -1);
+    assert.equal(live.nearestPointIdx({ x: 0, y: 0 }, [], (p) => p), -1);
+  });
+  test('through mercatorPixel, the distance is in screen points at the zoom', () => {
+    const track = [[57.8, -152.4], [57.9, -152.4]];
+    const at = (zoom) => {
+      const project = ([lat, lon]) => live.mercatorPixel(lat, lon, zoom);
+      return live.nearestPointIdx(project([57.8, -152.404]), track, project);
+    };
+    assert.equal(at(12), 0, 'about 23 px at zoom 12');
+    assert.equal(at(13), -1, 'about 47 px at zoom 13');
+  });
+});
+
+describe('pickedPointDetails', () => {
+  test('a snapped point: its tracker, pilot, time, speed and altitude, in the web popup’s order', () => {
+    const details = live.pickedPointDetails(TZ, 57.8, -152.4, { time: NOW, velocity_kmh: 185.2, elevation_m: 304.8 },
+      { name: 'inReach 1', assigned_aircraft: 'N77KZ' }, 'Sam');
+    assert.deepEqual(plain(details), {
+      coords: '57.800000, -152.400000',
+      googleMapsUrl: 'https://www.google.com/maps?q=57.800000,-152.400000',
+      mapshareUrl: null,
+      rows: [['Tracker', 'inReach 1'], ['Aircraft', 'N77KZ'], ['Pilot', 'Sam'],
+        ['Time', time.fmtTzPointTime(TZ, NOW)], ['Speed', '100.0 kt'], ['Altitude', '1,000 ft']],
+    });
+  });
+  test('off the track: the coordinates only', () => {
+    assert.deepEqual(plain(live.pickedPointDetails(TZ, 57.8, -152.4, null, { name: 'inReach 1' }, 'Sam').rows), []);
+  });
+});
 
 describe('trackerLiveData', () => {
   test('each tracker’s latest flight’s last point, with what the refresh said about it', () => {
@@ -58,6 +166,19 @@ describe('in flight and in progress', () => {
     const liveBy = { 1: { velocity_kmh: 140 }, 2: { velocity_kmh: 3 } };
     const inProgress = flights.filter(f => live.isFlightInProgress(KMH, f, flights, liveBy)).map(f => f.id);
     assert.deepEqual(inProgress, [11]);
+  });
+
+  test('ground trail: from the plane to the pilot, only on the ground and once it has moved', () => {
+    const pts = [{ t: NOW - 60, lat: 57.81, lon: -152.39, v: 4, e: 10, c: 0 }, { t: NOW, lat: 57.82, lon: -152.38, v: 5, e: 10, c: 0 }];
+    const parked = { lat: 57.8, lon: -152.4, velocity_kmh: 0, ground_trail: pts };
+    assert.deepEqual(live.groundTrail(KMH, parked), {
+      line: [{ lat: 57.8, lon: -152.4 }, { lat: 57.81, lon: -152.39 }, { lat: 57.82, lon: -152.38 }],
+      pilot: { lat: 57.82, lon: -152.38 },
+      points: pts,
+    });
+    assert.equal(live.groundTrail(KMH, { ...parked, velocity_kmh: 140 }), null, 'in flight');
+    assert.equal(live.groundTrail(KMH, { ...parked, ground_trail: [] }), null, 'not moved');
+    assert.equal(live.groundTrail(KMH, undefined), null);
   });
 
   test('GPS is fresh for under four minutes', () => {
@@ -112,4 +233,7 @@ test('the page’s globals bind the server’s threshold and the clock', () => {
   assert.equal(engine.isInFlight({ velocity_kmh: 37 }), true);
   assert.equal(engine.isGpsFresh(NOW - 100), true);
   assert.equal(engine.isGpsFresh(NOW - 300), false);
+  assert.equal(engine.nearestPointIdx({ x: 0, y: 0 }, [{ x: 20, y: 0 }], (p) => p), 0);
+  const picked = { time: NOW, velocity_kmh: null, elevation_m: null };
+  assert.deepEqual(plain(engine.pickedPointDetails(57.8, -152.4, picked, null, null).rows), [['Time', time.fmtTzPointTime(TZ, NOW)]], 'in the page’s timezone');
 });

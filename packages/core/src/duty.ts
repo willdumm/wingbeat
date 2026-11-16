@@ -13,6 +13,7 @@
  */
 import type { EffectiveFlight, FlightCorrection, FlightEdit } from './flight-edits';
 import { flightRemarks } from './flight-edits';
+import { MAX_DUTY_DAYS_PER_REQUEST } from './record-limits';
 import {
   fmtDuration, tzAddDays, tzAddMonths, tzDateKey, tzDateLabel, tzLocalToEpoch, tzShortDate,
   unixToTzDateStr, unixToTzTime,
@@ -77,6 +78,9 @@ export type DutyFlight = Completed & {
   secs: number;
 };
 
+/** A correction whose tracked flight is gone, filed under the day of the flight's start. */
+export type UnmatchedCorrection = FlightCorrection & { flight_start_time: number };
+
 export interface DutyDayRow {
   dateKey: string;
   label: string;
@@ -88,7 +92,7 @@ export interface DutyDayRow {
   restDesignatedAt: number | null;
   note: string | null;
   flights: DutyFlight[];
-  unmatched: FlightCorrection[];
+  unmatched: UnmatchedCorrection[];
   daySecs: number;
   warnings: string[];
 }
@@ -384,9 +388,11 @@ export function computeDutyData(tz: string, now: number, allFlights: DutyInputFl
   // pilot, so it goes to the pilot of the same tracker's flight nearest its start time
   // (within 12 h: the flight that replaced it, or that day's flying). With no flight
   // that close it shows only in the flight editor, rather than in every pilot's log.
-  const unmatchedByDate: Record<string, FlightCorrection[]> = {};
+  const unmatchedByDate: Record<string, UnmatchedCorrection[]> = {};
   for (const e of unmatchedEntries) {
-    const start = e.flight_start_time!;
+    // A tracked flight's correction always has its start; a manual flight's is never unmatched.
+    if (e.flight_start_time == null) continue;
+    const start = e.flight_start_time;
     let near: Completed | null = null, nearGap = 12 * 3600;
     for (const f of completed) {
       if (f.tracker_id !== e.tracker_id) continue;
@@ -395,7 +401,7 @@ export function computeDutyData(tz: string, now: number, allFlights: DutyInputFl
     }
     if (!near || near.pilot_id !== pilotId) continue;
     const dk = unixToTzDateStr(tz, start);
-    (unmatchedByDate[dk] = unmatchedByDate[dk] || []).push(e);
+    (unmatchedByDate[dk] = unmatchedByDate[dk] || []).push({ ...e, flight_start_time: start });
   }
 
   const { flightsByDate, recordByDate, dutyOf, spanOf, restProblems } = dutyCalendar(tz, flights, dayRecords, defaultOn);
@@ -739,29 +745,118 @@ export function dutySaveConfirmText(tz: string, records: DutyDay[], keys: string
     '. Save?';
 }
 
+/**
+ * The day form's dates as day keys, from through (through empty: from alone), or what's
+ * wrong with them. A range covers at most MAX_DUTY_DAYS_PER_REQUEST days (the server's
+ * limit).
+ */
+export function dutyDayKeys(from: string, through: string): string[] | string {
+  const last = through || from;
+  if (!from) return 'Enter a date.';
+  if (last < from) return 'The Through date is before the date.';
+  const keys: string[] = [];
+  for (let k = from; k <= last; k = tzAddDays(k, 1)) {
+    keys.push(k);
+    if (keys.length > MAX_DUTY_DAYS_PER_REQUEST) return 'Enter at most ' + MAX_DUTY_DAYS_PER_REQUEST + ' days at a time.';
+  }
+  return keys;
+}
+
+/** What's wrong with the day form's duty start and end (HH:MM, or null), or null. */
+export function dutyTimesError(start: string | null, end: string | null): string | null {
+  if ((start == null) !== (end == null)) return 'Enter both duty start and end, or neither.';
+  if (start != null && start === end) return 'The duty end must differ from its start.';
+  return null;
+}
+
+/** The day form's line about the pilot's default duty on its date (dutyDefaultOn's). */
+export function dutyDefaultHint(def: DutyTimes): string {
+  return 'Default duty ' + def.duty_start + '–' + def.duty_end + ' applies on a flying day with no times recorded.';
+}
+
+/**
+ * The day form's line for a rest day: when the record's rest was designated, or, for a day
+ * not yet rest, that saving designates it today.
+ */
+export function dutyRestHint(tz: string, record: Pick<DutyDay, 'rest' | 'rest_designated_at'> | null): string {
+  return record && record.rest && record.rest_designated_at != null
+    ? 'Designated ' + tzDateLabel(unixToTzDateStr(tz, record.rest_designated_at)) + ', ' + unixToTzTime(tz, record.rest_designated_at) + '.'
+    : 'Today is recorded as the date the rest was designated. Rest has to be designated before the day it falls on.';
+}
+
 /** "Remarks: Part 91 · Training" for a flight with remarks, else ''. */
 export function dutyRemarksText(f: { remarks: string[] }): string {
   return f.remarks.length ? 'Remarks: ' + f.remarks.join(' · ') : '';
 }
 
+/** A month as one number (year * 12 + month - 1), to step through months: a month index. */
+export function dutyMonthIndex(year: number, month: number): number {
+  return year * 12 + month - 1;
+}
+
+/** A month index's [year, month]. */
+export function dutyMonthOf(index: number): [number, number] {
+  return [Math.floor(index / 12), (index % 12) + 1];
+}
+
+/** A month index as dutyRangeLabel takes it. */
+export function dutyMonthYm(index: number): { year: number; month: number } {
+  const [year, month] = dutyMonthOf(index);
+  return { year, month };
+}
+
+/**
+ * The first month (a month index) an export offers: the month of the pilot's first
+ * flight, and at least the shown month and the 12 months through this one (cur).
+ */
+export function dutyExportEarliest(tz: string, flights: { pilot_id?: number | null; start_time: number }[], pilotId: number,
+                                   shown: number, cur: number): number {
+  let earliest = Math.min(shown, cur - 11);
+  for (const f of flights) {
+    if (f.pilot_id !== pilotId) continue;
+    const [y, m] = unixToTzDateStr(tz, f.start_time).split('-').map(Number);
+    earliest = Math.min(earliest, dutyMonthIndex(y, m));
+  }
+  return earliest;
+}
+
+export type DutyExportPresetKey = 'month' | 'quarter' | 'prevQuarter' | 'year';
+
+export interface DutyExportPreset {
+  key: DutyExportPresetKey;
+  label: string;
+  from: number;
+  to: number;
+}
+
 /**
  * The Export PDF form's period presets as { key, label, from, to } (month indexes,
- * year * 12 + month - 1): the shown month, its calendar quarter (through this month,
+ * dutyMonthIndex's): the shown month, its calendar quarter (through this month,
  * cur), the quarter before it (the usual quarterly sign-off), and the last 12 months.
  * Each is clamped to earliest..cur, the months the From/To selects offer; a quarter
  * wholly before earliest is left out. The labels are short so that five segments (with
  * Custom) fit a 320px phone; the From/To selects show the months a preset picked.
  */
-export function dutyExportPresets(shown: number, cur: number, earliest: number): { key: string; label: string; from: number; to: number }[] {
+export function dutyExportPresets(shown: number, cur: number, earliest: number): DutyExportPreset[] {
   const qStart = shown - (shown % 12) % 3;
   const clamp = (from: number, to: number) => [Math.max(from, earliest), Math.min(to, cur)];
-  const out = [{ key: 'month', label: 'Month', from: shown, to: shown }];
+  const out: DutyExportPreset[] = [{ key: 'month', label: 'Month', from: shown, to: shown }];
   for (const [key, label, start] of [['quarter', 'This qtr', qStart], ['prevQuarter', 'Last qtr', qStart - 3]] as const) {
     const [from, to] = clamp(start, start + 2);
     if (from <= to) out.push({ key, label, from, to });
   }
   out.push({ key: 'year', label: '12 mo', from: cur - 11, to: cur });
   return out;
+}
+
+/** An export covers at most this many months. */
+export const MAX_DUTY_EXPORT_MONTHS = 24;
+
+/** What's wrong with an export of the months from..to (month indexes), or null. */
+export function dutyExportRangeError(from: number, to: number): string | null {
+  if (from > to) return 'From has to be before To.';
+  if (to - from + 1 > MAX_DUTY_EXPORT_MONTHS) return 'Export at most ' + MAX_DUTY_EXPORT_MONTHS + ' months at a time.';
+  return null;
 }
 
 /**

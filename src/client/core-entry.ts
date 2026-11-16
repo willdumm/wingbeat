@@ -12,7 +12,8 @@ import * as flightEdits from '@wingbeat/core/flight-edits';
 import type { FlightCorrection, FlightEditField } from '@wingbeat/core/flight-edits';
 import * as time from '@wingbeat/core/time';
 import * as duty from '@wingbeat/core/duty';
-import type { ComputeDutyDataOptions, DutyDay, DutyInputFlight, DutyInterval } from '@wingbeat/core/duty';
+import type { ComputeDutyDataOptions, DutyData, DutyDay, DutyInputFlight, DutyInterval } from '@wingbeat/core/duty';
+import * as dutyPdf from '@wingbeat/core/duty-pdf';
 import * as corrections from '@wingbeat/core/corrections';
 import type { FlightFormFields, FlightFormTarget, FlightFormValues, FlightSaveOptions } from '@wingbeat/core/corrections';
 import * as editHistory from '@wingbeat/core/edit-history';
@@ -51,7 +52,7 @@ import * as namedPointsApi from '@wingbeat/core/api/named-points';
 import { createFlightStore, FLIGHT_STORE_KEY } from '@wingbeat/core/flight-store';
 
 declare const window: {
-  APP_SETTINGS: { timezone: string };
+  APP_SETTINGS: { timezone: string; appName: string };
   addEventListener(type: 'storage', listener: (e: { key: string | null }) => void): void;
 };
 declare const localStorage: { getItem(key: string): string | null; setItem(key: string, value: string): void };
@@ -104,7 +105,17 @@ Object.assign(globalThis, {
   dutySaveConfirmText: (records: DutyDay[], keys: string[], values: Parameters<typeof duty.dutySaveConfirmText>[3]) =>
     duty.dutySaveConfirmText(tz(), records, keys, values),
   dutyRemarksText: duty.dutyRemarksText,
+  dutyDayKeys: duty.dutyDayKeys,
+  dutyTimesError: duty.dutyTimesError,
+  dutyDefaultHint: duty.dutyDefaultHint,
+  dutyRestHint: (record: Parameters<typeof duty.dutyRestHint>[1]) => duty.dutyRestHint(tz(), record),
   dutyExportPresets: duty.dutyExportPresets,
+  dutyExportRangeError: duty.dutyExportRangeError,
+  dutyExportEarliest: (flights: DutyInputFlight[], pilotId: number, shown: number, cur: number) =>
+    duty.dutyExportEarliest(tz(), flights, pilotId, shown, cur),
+  // ── duty-pdf: the duty log PDF's Typst source and file name ──
+  dutyLogTypstSource: (input: DutyData | DutyData[]) => dutyPdf.dutyLogTypstSource(tz(), now(), input, window.APP_SETTINGS.appName),
+  dutyLogPdfName: dutyPdf.dutyLogPdfName,
   // ── corrections: the flight editor's requests and the flight form's validation ──
   flightRef: corrections.flightRef,
   flightAssignmentRequest: corrections.flightAssignmentRequest,
@@ -124,7 +135,17 @@ Object.assign(globalThis, {
     filters.matchesFlight(tz(), flight, state),
   // ── live: the status cards' and Live view's rules (the threshold is the server's) ──
   trackerLiveData: live.trackerLiveData,
+  trackerColor: live.trackerColor,
+  dayFlightNumbers: live.dayFlightNumbers,
+  groupEndMarkers: live.groupEndMarkers,
+  nearestPointIdx: live.nearestPointIdx,
+  pickedPointDetails: (lat: number, lon: number, point: live.PickedPoint | null,
+                       tracker: Parameters<typeof live.pickedPointDetails>[4], pilotName: string | null | undefined) =>
+    live.pickedPointDetails(tz(), lat, lon, point, tracker, pilotName),
+  locationDetails: (tracker: Parameters<typeof live.locationDetails>[1], d: Parameters<typeof live.locationDetails>[2], pilotName: string | null | undefined) =>
+    live.locationDetails(now(), tracker, d, pilotName),
   isInFlight: (d: Parameters<typeof live.isInFlight>[1]) => live.isInFlight(SPEED_THRESHOLD_KMH, d),
+  groundTrail: (d: Parameters<typeof live.groundTrail>[1]) => live.groundTrail(SPEED_THRESHOLD_KMH, d),
   isGpsFresh: (gpsTime: number) => live.isGpsFresh(now(), gpsTime),
   isFlightInProgress: (flight: Parameters<typeof live.isFlightInProgress>[1], flights: Parameters<typeof live.isFlightInProgress>[2],
                        liveByTracker: Parameters<typeof live.isFlightInProgress>[3]) =>
@@ -137,8 +158,9 @@ Object.assign(globalThis, {
   _estimatedMeter: maintenance.estimatedMeter,
   _maintenanceStatus: (item: MaintenanceItem, estHobbs: number | null, estTach: number | null) =>
     maintenance.maintenanceStatus(tz(), now(), item, estHobbs, estTach),
-  // ── alerts: the dashboard's alerts feed (its rows are HTML in alerts.ts) ──
+  // ── alerts: the dashboard's alerts feed (its rows' HTML is in alerts.ts) ──
   computeAlertsFor: (lists: AlertLists) => alerts.computeAlerts(tz(), now(), lists),
+  alertText: alerts.alertText,
   // ── regions: distances and which region a point is in (the analytics page holds REGIONS
   // and wraps the …In functions under their old names) ──
   haversineKm: regions.haversineKm,
@@ -206,6 +228,7 @@ Object.assign(globalThis, {
   createPilot: (body: pilotsApi.PilotCreateRequest) => pilotsApi.createPilot(api, body),
   updatePilot: (id: number, body: pilotsApi.PilotUpdateRequest) => pilotsApi.updatePilot(api, id, body),
   fetchUsers: () => usersApi.getUsers(api),
+  updateUser: (id: number, body: usersApi.UserUpdateRequest) => usersApi.updateUser(api, id, body),
   deleteUser: (id: number) => usersApi.deleteUser(api, id),
   fetchInvites: () => usersApi.getInvites(api),
   createInvite: (body: usersApi.InviteRequest) => usersApi.createInvite(api, body),

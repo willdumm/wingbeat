@@ -10,39 +10,28 @@ export function dashboardScriptsAlerts(): string {
 
     function _alertRowHtml(alert) {
       var borderClass = alert.urgency === 'immediate' ? 'immediate' : 'due_soon';
-      var icon, bodyHtml, actionLabel, actionDataAttrs;
+      // The row's words are core's (alertText), as in the app and its notifications.
+      var words = alertText(alert);
+      var bodyHtml = '<div class="alert-body">' +
+        '<span class="alert-text">' + escHtml(words.text) + '</span>' +
+        (words.detail ? '<span class="alert-desc">' + escHtml(words.detail) + '</span>' : '') +
+        '</div>';
+      var icon, actionLabel, actionDataAttrs;
 
       if (alert.kind === 'unassigned_flight') {
         icon = '!';
-        var descParts = [];
-        if (alert.flight_time_str) descParts.push(alert.flight_time_str);
-        if (alert.flight_origin) {
-          descParts.push(alert.flight_origin + (alert.flight_destination ? ' → ' + alert.flight_destination : ''));
-        }
-        bodyHtml = '<div class="alert-body">' +
-          '<span class="alert-text">' + escHtml(alert.flight_label) + '</span>' +
-          (descParts.length > 0 ? '<span class="alert-desc">' + escHtml(descParts.join(' · ')) + '</span>' : '') +
-          '</div>';
         actionLabel = 'Assign';
         actionDataAttrs = 'data-flight-id="' + escHtml(String(alert.flight_id)) + '"';
       } else if (alert.kind === 'maintenance') {
         icon = '⚠';
-        var acParts = alert.aircraft_name ? [alert.aircraft_tail, alert.aircraft_name] : [alert.aircraft_tail];
-        bodyHtml = '<div class="alert-body"><span class="alert-text">' + escHtml(acParts.join(' · ') + ' · ' + alert.item.name + ' · ' + alert.status.due_label) + '</span></div>';
         actionLabel = 'View';
         actionDataAttrs = 'data-aircraft-tail="' + escHtml(alert.aircraft_tail) + '"';
       } else if (alert.kind === 'timer_not_recorded') {
         icon = '⚑';
-        var acParts2 = alert.aircraft_name ? [alert.aircraft_tail, alert.aircraft_name] : [alert.aircraft_tail];
-        var timerDesc = alert.timer_type === 'calendar'
-          ? 'Last service date not set (' + alert.needed_for + ')'
-          : (alert.timer_type === 'hobbs' ? 'Hobbs' : 'Tach') + ' not recorded (' + alert.needed_for + ')';
-        bodyHtml = '<div class="alert-body"><span class="alert-text">' + escHtml(acParts2.join(' · ') + ' · ' + timerDesc) + '</span></div>';
         actionLabel = 'Set';
         actionDataAttrs = 'data-aircraft-tail="' + escHtml(alert.aircraft_tail) + '"';
       } else {
         icon = '⚑';
-        bodyHtml = '<div class="alert-body"><span class="alert-text">' + escHtml(alert.pilot_name + ' · ' + alert.hours_flown.toFixed(1) + '/' + alert.limit_hours + ' hr (' + alert.window_label + ')') + '</span></div>';
         actionLabel = 'Log';
         actionDataAttrs = 'data-pilot-id="' + escHtml(String(alert.pilot_id)) + '" data-pilot-name="' + escHtml(alert.pilot_name) + '"';
       }

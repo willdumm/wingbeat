@@ -8,6 +8,7 @@ import { brandStyles, logoFaviconHref, logoFaviconScript } from './shared/brand'
 import { iconStyles, iconRuntimeScript } from './shared/icons';
 import { statusStyles } from './shared/status';
 import { segmentedControlStyles } from './shared/segmented-control';
+import { PMTILES_SCRIPT_SRI, PMTILES_SCRIPT_URL } from '@wingbeat/core/elevation';
 import { formModalStyles } from './shared/form-modal';
 import { flightEditsStyles } from './shared/flight-edits';
 import { flightEditorStyles } from './shared/flight-editor';
@@ -37,7 +38,7 @@ export function dashboardHTML(settings: AppSettings, env: Env, nonce: string): s
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous" />
   <script nonce="${nonce}" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
   <script nonce="${nonce}" src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU" crossorigin="anonymous"></script>
-  <script nonce="${nonce}" src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js" integrity="sha384-QfbOCebHNw8pQiPAOd2IFee2v2A5VYZxBk0+JGZ5H+3mfzVIp6zsQNkTsfGJot93" crossorigin="anonymous"></script>
+  <script nonce="${nonce}" src="${PMTILES_SCRIPT_URL}" integrity="${PMTILES_SCRIPT_SRI}" crossorigin="anonymous"></script>
   <script nonce="${nonce}" src="https://unpkg.com/lucide@0.454.0/dist/umd/lucide.js" integrity="sha384-xlHvwOp6tVxLcI04ruwDHJIpPVNUP8eGUUmGzM8wPdz1spvksYyV3MFdMEC6dejr" crossorigin="anonymous"></script>
   <style>${themeFontImport()}${themeVars()}${dashboardPageStyles()}</style>
 </head>

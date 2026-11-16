@@ -1,17 +1,9 @@
 /**
  * Pure formatting helpers used by both the Worker (server-side, e.g. notification
- * messages) and the browser dashboard. `toKnots`/`toFeet` have no free variables, so
- * dashboard/scripts/helpers.ts embeds them into its generated browser script verbatim via
- * `.toString()` — this file is the single source, not a copy kept in sync by hand.
+ * messages) and the browser dashboard. toKnots/toFeet are @wingbeat/core/format's.
  */
 
-export function toKnots(kmh: number): string {
-  return (kmh * 0.539957).toFixed(1) + ' kt';
-}
-
-export function toFeet(m: number): string {
-  return Math.round(m * 3.28084).toLocaleString() + ' ft';
-}
+export { toKnots, toFeet } from '@wingbeat/core/format';
 
 /**
  * Formats an epoch time in an explicit IANA timezone (e.g. the tenant's configured

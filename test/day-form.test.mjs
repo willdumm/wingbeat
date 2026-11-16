@@ -1,12 +1,13 @@
 // The day form's Save: dutySaveConfirmText(), the question asked before a save replaces
-// recorded days (a Through range) or drops a rest designation (one day).
+// recorded days (a Through range) or drops a rest designation (one day), and the checks of
+// its dates and times (dutyDayKeys, dutyTimesError) the web and the app share.
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { importCore, TZ } from './core.mjs';
 import { fixtures } from './duty-fixtures.mjs';
 
-const { dutySaveConfirmText } = await importCore('duty');
+const { dutyDayKeys, dutyRestHint, dutySaveConfirmText, dutyTimesError } = await importCore('duty');
 const { duty, rest } = fixtures();
 const ask = (records, keys, values) => dutySaveConfirmText(TZ, records, keys, values);
 
@@ -84,5 +85,28 @@ describe('one-day save', () => {
   test('a rest day kept as rest, or without a designation on record, asks nothing', () => {
     assert.equal(ask([rest(DAY[0])], DAY, { ...REST, note: 'Off' }), null);
     assert.equal(ask([rest(DAY[0], { designated: null })], DAY, DUTY), null);
+  });
+});
+
+describe('the form’s dates and times', () => {
+  test('dutyDayKeys lists the range, or says what’s wrong', () => {
+    assert.deepEqual(dutyDayKeys('2026-11-02', ''), ['2026-11-02']);
+    assert.deepEqual(dutyDayKeys('2026-10-31', '2026-11-02'), ['2026-10-31', '2026-11-01', '2026-11-02']);
+    assert.equal(dutyDayKeys('', ''), 'Enter a date.');
+    assert.equal(dutyDayKeys('2026-11-02', '2026-11-01'), 'The Through date is before the date.');
+    assert.equal(dutyDayKeys('2026-01-01', '2027-01-01').length, 366);
+    assert.equal(dutyDayKeys('2026-01-01', '2027-01-02'), 'Enter at most 366 days at a time.');
+  });
+
+  test('dutyTimesError wants both times or neither, and a duty end that differs from its start', () => {
+    assert.equal(dutyTimesError(null, null), null);
+    assert.equal(dutyTimesError('22:00', '06:00'), null);
+    assert.equal(dutyTimesError('08:00', null), 'Enter both duty start and end, or neither.');
+    assert.equal(dutyTimesError('08:00', '08:00'), 'The duty end must differ from its start.');
+  });
+
+  test('dutyRestHint shows when a rest day was designated', () => {
+    assert.match(dutyRestHint(TZ, rest('2026-11-12')), /^Designated .*Nov 5.*, 12:00\.$/);
+    assert.match(dutyRestHint(TZ, null), /^Today is recorded/);
   });
 });

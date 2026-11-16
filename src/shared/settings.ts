@@ -829,6 +829,8 @@ export function settingsModalStyles(): string {
       white-space: nowrap;
     }
 
+    .settings-link-open-app { text-decoration: none; }
+
     .settings-link-qr {
       display: flex;
       justify-content: center;
@@ -2345,7 +2347,9 @@ export function settingsModalScript(): string {
 
     // ── Link display card ─────────────────────────────────────────────────────
 
-    function settingsCreateLinkPanel(url, label, onDone) {
+    // appLink: a wingbeat:// link that opens the same sign-in in the app, for the phone this
+    // page is on (docs/mobile-app-plan.md, "Auth and pairing").
+    function settingsCreateLinkPanel(url, label, onDone, appLink) {
       const card = document.createElement('div');
       card.className = 'settings-link-card';
 
@@ -2373,6 +2377,14 @@ export function settingsModalScript(): string {
       urlRow.appendChild(copyBtn);
       card.appendChild(urlRow);
 
+      if (appLink) {
+        const openApp = document.createElement('a');
+        openApp.className = 'btn-primary settings-link-open-app';
+        openApp.href = appLink;
+        openApp.textContent = 'Open in Wingbeat app';
+        card.appendChild(openApp);
+      }
+
       const qrWrap = document.createElement('div');
       qrWrap.className = 'settings-link-qr';
       card.appendChild(qrWrap);
@@ -2387,6 +2399,16 @@ export function settingsModalScript(): string {
       card.appendChild(doneBtn);
 
       return card;
+    }
+
+    // The app's link for a device link's /join/<token> path, on an iPhone or iPad (the app is
+    // iOS only for now; iPadOS reports itself as a Mac with touch), or null.
+    function settingsAppPairLink(joinPath) {
+      const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+        (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+      if (!ios) return null;
+      const token = joinPath.split('/').pop();
+      return 'wingbeat://pair?host=' + encodeURIComponent(location.host) + '&token=' + encodeURIComponent(token);
     }
 
     // ── Devices section ───────────────────────────────────────────────────────
@@ -2546,7 +2568,7 @@ export function settingsModalScript(): string {
           row.classList.remove('editing');
           btn.textContent = 'Get link';
           btn.disabled = false;
-        });
+        }, settingsAppPairLink(data.url));
         row.appendChild(card);
       } catch (_) {
         btn.textContent = 'Get link';
@@ -2569,7 +2591,8 @@ export function settingsModalScript(): string {
       try {
         container.innerHTML = '';
         if (usersRes.status === 'fulfilled') {
-          for (const user of usersRes.value.users) {
+          const userList = usersRes.value.users;
+          for (const user of userList) {
             const row = document.createElement('div');
             row.className = 'settings-aircraft-row';
             const info = document.createElement('div');
@@ -2582,10 +2605,19 @@ export function settingsModalScript(): string {
             subEl.textContent = (user.role === 'admin' ? 'Admin' : 'Viewer') +
               (user.is_env_admin ? ' · Shared account' : '') +
               ' · ' + user.device_count + ' device' + (user.device_count !== 1 ? 's' : '');
+            const pilot = user.pilot_id != null ? pilotList.find(p => p.id === user.pilot_id) : null;
+            if (pilot) subEl.textContent += ' · Pilot ' + pilot.name;
             info.appendChild(nameEl);
             info.appendChild(subEl);
             const actions = document.createElement('div');
             actions.className = 'settings-aircraft-actions';
+            if (!user.is_env_admin && pilotList.length > 0) {
+              const pilotBtn = document.createElement('button');
+              pilotBtn.className = 'settings-action-btn';
+              pilotBtn.textContent = 'Designate pilot';
+              pilotBtn.addEventListener('click', () => settingsToggleUserPilot(row, user, userList));
+              actions.appendChild(pilotBtn);
+            }
             if (!user.is_env_admin && user.id !== _settingsUser?.id) {
               const deleteBtn = document.createElement('button');
               deleteBtn.className = 'btn-danger';
@@ -2643,6 +2675,64 @@ export function settingsModalScript(): string {
       } catch (_) {
         container.innerHTML = '<p class="settings-msg">Failed to load users.</p>';
       }
+    }
+
+    // Links a user to the pilot they are, which the app's duty log opens on. A pilot linked
+    // to another user isn't offered (the server refuses a second link).
+    function settingsToggleUserPilot(row, user, userList) {
+      const actions = row.querySelector('.settings-aircraft-actions');
+      const existing = row.querySelector('.settings-edit-form');
+      if (existing) {
+        existing.remove();
+        actions.style.display = '';
+        row.classList.remove('editing');
+        return;
+      }
+      actions.style.display = 'none';
+      row.classList.add('editing');
+
+      const form = document.createElement('div');
+      form.className = 'settings-edit-form';
+      const pilotSel = document.createElement('select');
+      const noOpt = document.createElement('option');
+      noOpt.value = '';
+      noOpt.textContent = 'Not a pilot';
+      pilotSel.appendChild(noOpt);
+      const taken = new Set(userList.filter(u => u.id !== user.id && u.pilot_id != null).map(u => u.pilot_id));
+      for (const p of pilotList) {
+        if (p.id !== user.pilot_id && (!p.active || taken.has(p.id))) continue;
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.name;
+        if (p.id === user.pilot_id) opt.selected = true;
+        pilotSel.appendChild(opt);
+      }
+      form.appendChild(_lbl('Pilot', pilotSel));
+
+      const actionsDiv = document.createElement('div');
+      actionsDiv.className = 'settings-edit-form-actions';
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'settings-action-btn save-edit-btn';
+      saveBtn.textContent = 'Save';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'settings-action-btn settings-cancel-btn';
+      cancelBtn.textContent = 'Cancel';
+      actionsDiv.appendChild(saveBtn);
+      actionsDiv.appendChild(cancelBtn);
+      form.appendChild(actionsDiv);
+
+      saveBtn.addEventListener('click', async () => {
+        saveBtn.disabled = true;
+        try {
+          await updateUser(user.id, { pilot_id: pilotSel.value ? parseInt(pilotSel.value, 10) : null });
+          renderSettingsUsersList();
+        } catch (err) {
+          alert(apiErrorMessage(err, 'Failed to save the pilot.'));
+          saveBtn.disabled = false;
+        }
+      });
+      cancelBtn.addEventListener('click', () => settingsToggleUserPilot(row, user, userList));
+      row.appendChild(form);
     }
 
     async function settingsRevokeUser(user, btn) {
