@@ -1052,10 +1052,12 @@ a limit, so an alert appearing is the advance warning.
 - Keys: an unassigned flight's is its tracker and tracked start (it survives the poller
   rewriting the flight under a new id); maintenance's is tail, item and status (due soon,
   then overdue, notifies twice); records needed, tail and meter; duty, pilot and window.
-- `alerts_seen` holds the keys present at the last check, recorded whether or not anyone is
-  subscribed. An alert that goes (a pilot assigned, an item signed off) drops its key, so it
-  notifies again if it comes back. So subscribing doesn't replay the alerts already present
-  (the alerts screen lists them), and the first check on an instance seeds the table.
+- `alerts_seen` holds the keys present at the last check. An alert that goes (a pilot
+  assigned, an item signed off) drops its key, so it notifies again if it comes back. It's
+  kept only while someone is subscribed to `alerts`: with no subscriber the check clears it
+  and reads nothing else, and the first check with one records the alerts present (and a
+  `baseline` row) without pushing. So subscribing, or adding the Expo token, doesn't replay
+  the alerts already present (the alerts screen lists them).
 - An unassigned flight still in the air (its tracker's `poll_state` is `in_flight`) waits
   until it lands: its pilot is usually set after the flight.
 - A failed send isn't retried (the key is recorded first), as with tracker events.

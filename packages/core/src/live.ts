@@ -20,7 +20,10 @@ export const LIVE_FIX_INTERVAL_SECS = 150;
 export const LIVE_POLL_MIN_MS = 30_000;
 export const LIVE_POLL_IDLE_MS = 60_000;
 
-/** The trackers' colors on the map and the status cards (ColorBrewer Dark2), by position. */
+/**
+ * The trackers' colors on the map and the status cards (ColorBrewer Dark2), by position. A
+ * data series palette, not UI chrome, so not from tokens.ts.
+ */
 export const TRACKER_COLORS: readonly string[] = ['#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02', '#a6761d', '#666666'];
 
 /** The trackers that are on (active and not deleted), in order: what trackerColor() takes. */

@@ -97,6 +97,8 @@ describe('alert notifications', () => {
     await w.run("INSERT INTO flight_corrections (start_time, end_time, pilot_id, aircraft_tail) VALUES (?, ?, 1, 'N1')", NOW - 9 * H, NOW - 1.5 * H);
     await w.run("INSERT INTO push_devices (session_id, kind, endpoint) VALUES (2, 'expo', 'ExponentPushToken[viewer]')");
     await w.run("INSERT INTO push_subscriptions (user_id, tracker_id, event) VALUES (2, NULL, 'alerts')");
+    // An instance whose alerts were already checked, with none present then.
+    await w.run("INSERT INTO alerts_seen (key, seen_at) VALUES ('baseline', ?)", NOW - D);
   });
   after(() => w?.dispose());
 
@@ -149,5 +151,20 @@ describe('alert notifications', () => {
     await rewriteFlight(w, 4, 5);
     await w.scheduled({ scheduledTime: tick(30) });
     assert.equal(sends.length, before + 1);
+  });
+
+  test('without subscribers nothing is kept; the first check with one records without pushing', async () => {
+    const before = sends.length;
+    await w.run("DELETE FROM push_subscriptions WHERE event = 'alerts'");
+    await w.scheduled({ scheduledTime: tick(35) });
+    assert.deepEqual(await w.all('SELECT key FROM alerts_seen'), []);
+
+    await w.run("INSERT INTO push_subscriptions (user_id, tracker_id, event) VALUES (2, NULL, 'alerts')");
+    await w.scheduled({ scheduledTime: tick(40) });
+    assert.equal(sends.length, before);
+    const keys = (await w.all('SELECT key FROM alerts_seen')).map(r => r.key);
+    assert.ok(keys.includes('baseline') && keys.length > 1, JSON.stringify(keys));
+    await w.scheduled({ scheduledTime: tick(45) });
+    assert.equal(sends.length, before);
   });
 });

@@ -301,6 +301,16 @@ describe('app connect (/app/connect)', () => {
     assert.equal((await pair({ token, code_verifier: verifier })).status, 410);
   });
 
+  test('connecting again clears the user’s spent connect tokens and keeps pending ones', async () => {
+    const challenge = await challengeOf(verifier);
+    const expired = await connectedToken(challenge);
+    await w.run('UPDATE invite_tokens SET expires_at = ? WHERE token = ?', now() - 1, expired);
+    const pending = await connectedToken(challenge);
+    const fresh = await connectedToken(challenge);
+    const left = (await w.all('SELECT token FROM invite_tokens WHERE user_id = 1 AND code_challenge IS NOT NULL')).map(r => r.token);
+    assert.deepEqual(left.sort(), [pending, fresh].sort());
+  });
+
   test('a verifier on an ordinary device link is ignored', async () => {
     const link = (await w.request('POST', '/api/me/device-link')).body.url.replace('/join/', '');
     assert.equal((await pair({ token: link, code_verifier: verifier })).status, 200);

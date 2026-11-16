@@ -10,6 +10,10 @@
 /** Mapterhorn's public DEM archive: Terrarium-encoded WebP tiles, DEM_TILE_SIZE px square. */
 export const DEM_PMTILES_URL = 'https://download.mapterhorn.com/planet.pmtiles';
 
+/** pmtiles.js, which reads the archive in the browser (the web's pages and the app's WebView). */
+export const PMTILES_SCRIPT_URL = 'https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js';
+export const PMTILES_SCRIPT_SRI = 'sha384-QfbOCebHNw8pQiPAOd2IFee2v2A5VYZxBk0+JGZ5H+3mfzVIp6zsQNkTsfGJot93';
+
 export const DEM_MAX_ZOOM = 12;
 // Mapterhorn's planet.pmtiles WebP tiles decode to 512x512 px, not the 256x256 most
 // raster tile schemes use — verified directly against a fetched tile, not assumed.

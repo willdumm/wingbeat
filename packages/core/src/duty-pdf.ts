@@ -130,7 +130,7 @@ export function dutyLogTypstSource(tz: string, now: number, input: DutyData | Du
       // An unmatched entry corrects a tracked flight, so it has the flight's start.
       for (const e of day.unmatched) {
         rows += '  [], table.cell(colspan: ' + (COLS - 1) + ')[' +
-          typStr('Tracked flight from ' + time(e.flight_start_time!) + ' no longer found; its corrections (' +
+          typStr('Tracked flight from ' + time(e.flight_start_time) + ' no longer found; its corrections (' +
             flightEntrySummary(tz, e) + ') are not counted.') + '],\n';
       }
       if (day.flights.length > 0) {

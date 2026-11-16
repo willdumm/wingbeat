@@ -1,6 +1,7 @@
 import { Tenant } from './types';
 import { loadSettings } from './settings';
 import { sendAppPushes, subscribedDevices } from './app-push';
+import { queryAircraft, queryPilots, queryTrackers } from './queries';
 import { alertText, alertTitle, computeAlerts, type Alert, type AlertLists } from '@wingbeat/core/alerts';
 import { applyFlightEdits, type EffectiveFlight, type FlightCorrection } from '@wingbeat/core/flight-edits';
 
@@ -8,10 +9,15 @@ import { applyFlightEdits, type EffectiveFlight, type FlightCorrection } from '@
 // computes the alerts feed with core's computeAlerts, from the same lists the dashboard
 // computes it from, and pushes each alert to the `alerts` subscribers once, when it first
 // appears. alerts_seen keeps the key of every alert present at the last check; one that's
-// gone drops its key, so it notifies again if it comes back.
+// gone drops its key, so it notifies again if it comes back. It's kept only while someone is
+// subscribed: the first check with a subscriber records a baseline without pushing, so
+// subscribing (or adding the Expo token) doesn't replay the alerts already present.
 
 /** The check runs on the cron ticks of every ALERT_CHECK_MINUTES-th minute. */
 export const ALERT_CHECK_MINUTES = 5;
+
+/** The alerts_seen row that says the table holds a baseline. Alert keys all contain a '/'. */
+const BASELINE_KEY = 'baseline';
 
 /**
  * The page's AlertLists, from D1: the effective flights of active trackers and the manual
@@ -20,23 +26,21 @@ export const ALERT_CHECK_MINUTES = 5;
  */
 export async function alertLists(tenant: Tenant): Promise<{ lists: AlertLists; airborne: Set<number> }> {
   const db = tenant.db;
-  const [trackers, aircraft, pilots, flights, entries, inFlight] = await db.batch([
-    db.prepare('SELECT id, active, deleted FROM trackers'),
-    db.prepare('SELECT tail_number, name, active, hobbs_time, hobbs_recorded_at, hobbs_correction, tach_time, tach_recorded_at, tach_correction, maintenance_schedule FROM aircraft'),
-    db.prepare('SELECT id, name, active FROM pilots'),
-    db.prepare(
-      `SELECT f.id, f.tracker_id, f.start_time, f.end_time, f.modified_at, f.aircraft_tail, f.pilot_id, f.origin_label, f.destination_label
-       FROM flights f JOIN trackers t ON t.id = f.tracker_id
-       WHERE t.active = 1 AND t.deleted = 0`),
-    db.prepare('SELECT * FROM flight_corrections'),
-    db.prepare(
-      `SELECT (SELECT id FROM flights WHERE tracker_id = ps.tracker_id ORDER BY start_time DESC LIMIT 1) AS id
-       FROM poll_state ps WHERE ps.flight_status = 'in_flight'`),
+  const [trackerRows, aircraftRows, pilotRows, [flights, entries, inFlight]] = await Promise.all([
+    queryTrackers(db, false),
+    queryAircraft(db),
+    queryPilots(db),
+    db.batch([
+      db.prepare(
+        `SELECT f.id, f.tracker_id, f.start_time, f.end_time, f.modified_at, f.aircraft_tail, f.pilot_id, f.origin_label, f.destination_label
+         FROM flights f JOIN trackers t ON t.id = f.tracker_id
+         WHERE t.active = 1 AND t.deleted = 0`),
+      db.prepare('SELECT * FROM flight_corrections'),
+      db.prepare(
+        `SELECT (SELECT id FROM flights WHERE tracker_id = ps.tracker_id ORDER BY start_time DESC LIMIT 1) AS id
+         FROM poll_state ps WHERE ps.flight_status = 'in_flight'`),
+    ]),
   ]);
-  const trackerRows = trackers.results as AlertLists['trackers'];
-  const pilotRows = pilots.results as AlertLists['pilots'];
-  const aircraftRows = (aircraft.results as (Omit<AlertLists['aircraft'][number], 'maintenance_schedule'> & { maintenance_schedule: string | null })[])
-    .map(a => ({ ...a, maintenance_schedule: a.maintenance_schedule ? JSON.parse(a.maintenance_schedule) : null }));
   const activeTrackerIds = trackerRows.filter(t => t.active && !t.deleted).map(t => t.id);
   const effective = applyFlightEdits(flights.results as EffectiveFlight[], entries.results as FlightCorrection[],
     { pilots: pilotRows, knownTrackerIds: activeTrackerIds }).flights;
@@ -67,15 +71,22 @@ export function alertKey(alert: Alert, flightsById: Map<number, EffectiveFlight>
 
 /**
  * The cron's alert check (on every ALERT_CHECK_MINUTES-th minute, and only with an Expo
- * access token): pushes each alert that wasn't present at the last check to the `alerts`
- * subscribers' devices, and records the keys of all present now. An unassigned flight still
- * in the air waits until it lands (its pilot is usually set after the flight).
+ * access token and `alerts` subscribers): pushes each alert that wasn't present at the last
+ * check to the subscribers' devices, and records the keys of all present now. Without
+ * subscribers it clears alerts_seen and reads nothing else; the first check after that only
+ * records. An unassigned flight still in the air waits until it lands (its pilot is usually
+ * set after the flight).
  */
 export async function checkAlerts(tenant: Tenant, scheduledTime: number): Promise<void> {
   if (!tenant.expoAccessToken) return;
   if (Math.floor(scheduledTime / 60_000) % ALERT_CHECK_MINUTES !== 0) return;
   const now = Math.floor(scheduledTime / 1000);
 
+  const devices = await subscribedDevices(tenant, 'alerts', null);
+  if (devices.length === 0) {
+    await tenant.db.prepare('DELETE FROM alerts_seen').run();
+    return;
+  }
   const [{ timezone }, { lists, airborne }, seenRows] = await Promise.all([
     loadSettings(tenant),
     alertLists(tenant),
@@ -91,6 +102,14 @@ export async function checkAlerts(tenant: Tenant, scheduledTime: number): Promis
     current.set(key, alert);
   }
   const seen = new Set(seenRows.results.map(r => r.key));
+  if (!seen.delete(BASELINE_KEY)) {
+    await tenant.db.batch([
+      tenant.db.prepare('DELETE FROM alerts_seen'),
+      ...[BASELINE_KEY, ...current.keys()].map(key =>
+        tenant.db.prepare('INSERT INTO alerts_seen (key, seen_at) VALUES (?, ?)').bind(key, now)),
+    ]);
+    return;
+  }
   const appeared = [...current].filter(([key]) => !seen.has(key));
   const gone = [...seen].filter(key => !current.has(key));
   if (appeared.length === 0 && gone.length === 0) return;
@@ -101,8 +120,6 @@ export async function checkAlerts(tenant: Tenant, scheduledTime: number): Promis
     ...appeared.map(([key]) => tenant.db.prepare('INSERT OR IGNORE INTO alerts_seen (key, seen_at) VALUES (?, ?)').bind(key, now)),
   ]);
   if (appeared.length === 0) return;
-  const devices = await subscribedDevices(tenant, 'alerts', null);
-  if (devices.length === 0) return;
   await sendAppPushes(tenant, appeared.map(([, alert]) => {
     const { text, detail } = alertText(alert);
     return {

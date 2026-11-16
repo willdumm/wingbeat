@@ -7,7 +7,7 @@
 import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
 import { View } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
-import { DEM_PMTILES_URL, DEM_TILE_SIZE, decodeTerrarium, demZoomFor, latLngToTilePixel } from '@wingbeat/core/elevation';
+import { DEM_PMTILES_URL, DEM_TILE_SIZE, PMTILES_SCRIPT_SRI, PMTILES_SCRIPT_URL, decodeTerrarium, demZoomFor, latLngToTilePixel } from '@wingbeat/core/elevation';
 
 export interface ElevationReaderRef {
   /** Meters at lngLat on a map at zoom, or null where the DEM has no data (or the fetch failed). */
@@ -24,7 +24,7 @@ const READ_TIMEOUT_MS = 15_000;
 const TILES_KEPT = 12;
 
 const PAGE = `<!doctype html><meta charset="utf-8">
-<script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js" integrity="sha384-QfbOCebHNw8pQiPAOd2IFee2v2A5VYZxBk0+JGZ5H+3mfzVIp6zsQNkTsfGJot93" crossorigin="anonymous"></script>
+<script src="${PMTILES_SCRIPT_URL}" integrity="${PMTILES_SCRIPT_SRI}" crossorigin="anonymous"></script>
 <script>
 const archive = new pmtiles.PMTiles(${JSON.stringify(DEM_PMTILES_URL)});
 // Only once pmtiles.js has loaded (the line above throws if it didn't).
@@ -106,7 +106,14 @@ export function ElevationReader({ ref }: { ref: Ref<ElevationReaderRef> }) {
     <View pointerEvents="none" style={{ position: 'absolute', width: 1, height: 1, opacity: 0 }}>
       <Web ref={web} source={{ html: PAGE, baseUrl: 'https://localhost/' }} originWhitelist={['*']}
         containerStyle={{ width: 1, height: 1, flex: 0 }} style={{ width: 1, height: 1 }}
-        onMessage={onMessage} />
+        onMessage={onMessage}
+        // iOS can reap the page's process: the reads in flight are lost, and the reloaded page
+        // says 'ready' again, which sends the ones made meanwhile.
+        onContentProcessDidTerminate={() => {
+          ready.current = false;
+          for (const id of [...pending.current.keys()]) settle(id, null);
+          web.current?.reload();
+        }} />
     </View>
   );
 }

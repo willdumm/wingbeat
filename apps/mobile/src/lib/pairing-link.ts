@@ -59,7 +59,8 @@ function pairingTarget(text: string): PairingTarget | null {
   if (url.protocol === 'https:') {
     const m = /^\/join\/([^/]+)\/?$/.exec(url.pathname);
     host = url.host;
-    token = m ? decodeURIComponent(m[1]) : null;
+    // Not decoded: a token is URL-safe, so an escape makes it invalid (and a bad one would throw).
+    token = m ? m[1] : null;
   } else if (url.protocol === 'wingbeat:') {
     // wingbeat://pair?… parses with 'pair' as the host; wingbeat:pair?… as the path.
     if ((url.host || url.pathname.replace(/^\/+/, '')) !== 'pair') return null;

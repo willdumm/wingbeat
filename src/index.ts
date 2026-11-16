@@ -1,10 +1,11 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
-import { Env, Tenant, Point, Flight, FlightRecord, FlightPoint, Tracker, Aircraft, Pilot, InviteToken, Webhook, TileOverlay, FlightCorrection, DutyDay, DefaultDuty, DutyMethodEntry } from './types';
+import { Env, Tenant, Point, Flight, FlightRecord, FlightPoint, InviteToken, Webhook, TileOverlay, FlightCorrection, DutyDay, DefaultDuty, DutyMethodEntry } from './types';
 import { maybePoll, pollAllActive, pollAllActiveForce, testFeed } from './poller';
 import { checkPublicHttpsUrl } from './safe-fetch';
 import { mapshareUrl } from './notifications';
+import { queryAircraft, queryPilots, queryTrackers } from './queries';
 import { checkAppPushReceipts } from './app-push';
 import { checkAlerts } from './alert-push';
 import { resegment } from './segmentation';
@@ -137,45 +138,6 @@ function invalidateTrackerCache(tenantKey: string) { _defaultTrackerIdCache.dele
 
 function meJson(u: AuthUser) {
   return { id: u.id, name: u.name, role: u.role, pilot_id: u.pilot_id, device_name: u.device_name, session_id: u.sessionId };
-}
-
-// The feed URL (source_url) can embed a share id/key that lets whoever holds it poll the
-// live feed directly, so only admins (who edit it in Settings) get it. Everyone gets the
-// derived MapShare page URL, which is what the UI links to.
-async function queryTrackers(db: D1Database, isAdmin: boolean): Promise<Tracker[]> {
-  const { results } = await db.prepare(
-    'SELECT id, name, type, source_url, active, deleted, assigned_aircraft, assigned_pilot FROM trackers ORDER BY id ASC'
-  ).all<Omit<Tracker, 'mapshare_url'> & { source_url: string }>();
-  return results.map(({ source_url, ...t }) => ({
-    ...t,
-    ...(isAdmin ? { source_url } : {}),
-    mapshare_url: t.type === 'inreach' ? mapshareUrl(source_url) : null,
-  }));
-}
-
-async function queryAircraft(db: D1Database, activeOnly = false) {
-  const query = activeOnly
-    ? 'SELECT tail_number, name, active, hobbs_time, hobbs_recorded_at, hobbs_correction, tach_time, tach_recorded_at, tach_correction, maintenance_schedule FROM aircraft WHERE active = 1 ORDER BY tail_number ASC'
-    : 'SELECT tail_number, name, active, hobbs_time, hobbs_recorded_at, hobbs_correction, tach_time, tach_recorded_at, tach_correction, maintenance_schedule FROM aircraft ORDER BY tail_number ASC';
-  const { results } = await db.prepare(query).all<Aircraft & { maintenance_schedule: string | null }>();
-  return results.map(r => ({ ...r, maintenance_schedule: r.maintenance_schedule ? JSON.parse(r.maintenance_schedule) : null }));
-}
-
-// Pilots with their dated default duties (default_duties, oldest first; migration 0002),
-// for the pilot list's "Default duty" line.
-async function queryPilots(db: D1Database, activeOnly = false): Promise<Pilot[]> {
-  const query = activeOnly
-    ? 'SELECT id, name, active FROM pilots WHERE active = 1 ORDER BY name ASC'
-    : 'SELECT id, name, active FROM pilots ORDER BY name ASC';
-  const [pilots, defaults] = await db.batch([
-    db.prepare(query),
-    db.prepare('SELECT pilot_id, effective_date, duty_start, duty_end FROM pilot_default_duty ORDER BY pilot_id, effective_date'),
-  ]);
-  const byPilot = new Map<number, DefaultDuty[]>();
-  for (const { pilot_id, ...entry } of defaults.results as (DefaultDuty & { pilot_id: number })[]) {
-    byPilot.set(pilot_id, [...byPilot.get(pilot_id) ?? [], entry]);
-  }
-  return (pilots.results as Omit<Pilot, 'default_duties'>[]).map(p => ({ ...p, default_duties: byPilot.get(p.id) ?? [] }));
 }
 
 async function queryTileOverlays(db: D1Database) {
@@ -605,10 +567,16 @@ app.post(APP_CONNECT_PATH, async (c) => {
   }
   if (!session) return c.html(appConnectSignedOutHTML(appName), 401);
 
+  // Each press makes a row, so this user's spent ones (used or expired) go first.
   const token = generateToken();
-  await c.var.db.prepare(
-    `INSERT INTO invite_tokens (token, type, user_id, expires_at, code_challenge) VALUES (?, 'device_link', ?, ?, ?)`
-  ).bind(token, session.user_id, Math.floor(Date.now() / 1000) + DEVICE_LINK_TTL_SECS, challenge).run();
+  const now = Math.floor(Date.now() / 1000);
+  await c.var.db.batch([
+    c.var.db.prepare('DELETE FROM invite_tokens WHERE user_id = ? AND code_challenge IS NOT NULL AND (used = 1 OR expires_at < ?)')
+      .bind(session.user_id, now),
+    c.var.db.prepare(
+      `INSERT INTO invite_tokens (token, type, user_id, expires_at, code_challenge) VALUES (?, 'device_link', ?, ?, ?)`
+    ).bind(token, session.user_id, now + DEVICE_LINK_TTL_SECS, challenge),
+  ]);
   return c.redirect(appConnectCallbackUrl(token, state), 303);
 });
 

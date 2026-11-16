@@ -24,6 +24,8 @@ describe('parsePairingLink', () => {
       `https://a.wingbeat.dummthings.dev/join/${TOKEN}/extra`,
       'https://a.wingbeat.dummthings.dev/join/short',
       `https://a.wingbeat.dummthings.dev/join/${TOKEN}%2F..`,
+      // A malformed escape (decoding it would throw).
+      `https://a.wingbeat.dummthings.dev/join/${TOKEN}%zz`,
       `wingbeat://join?host=a.wingbeat.dummthings.dev&token=${TOKEN}`,
       `wingbeat://pair?token=${TOKEN}`,
       `wingbeat://pair?host=a.wingbeat.dummthings.dev`,

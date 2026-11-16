@@ -199,7 +199,7 @@ export function dutyMonthView(tz: string, data: DutyData): DutyMonthView {
       ...day.flights.map((f): DutyItem => ({ kind: 'flight', key: 'f' + f.id, row: flightRow(tz, f) })),
       ...day.unmatched.map((e): DutyItem => ({
         kind: 'unmatched', key: 'u' + e.id,
-        text: 'Tracked flight from ' + unixToTzTime(tz, e.flight_start_time as number) + ' no longer found; its corrections (' +
+        text: 'Tracked flight from ' + unixToTzTime(tz, e.flight_start_time) + ' no longer found; its corrections (' +
           flightEntrySummary(tz, e) + ') aren’t counted.',
       })),
       ...day.warnings.map((text, i): DutyItem => ({ kind: 'warning', key: 'w' + i, text })),

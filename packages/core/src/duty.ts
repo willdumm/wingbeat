@@ -78,6 +78,9 @@ export type DutyFlight = Completed & {
   secs: number;
 };
 
+/** A correction whose tracked flight is gone, filed under the day of the flight's start. */
+export type UnmatchedCorrection = FlightCorrection & { flight_start_time: number };
+
 export interface DutyDayRow {
   dateKey: string;
   label: string;
@@ -89,7 +92,7 @@ export interface DutyDayRow {
   restDesignatedAt: number | null;
   note: string | null;
   flights: DutyFlight[];
-  unmatched: FlightCorrection[];
+  unmatched: UnmatchedCorrection[];
   daySecs: number;
   warnings: string[];
 }
@@ -385,9 +388,11 @@ export function computeDutyData(tz: string, now: number, allFlights: DutyInputFl
   // pilot, so it goes to the pilot of the same tracker's flight nearest its start time
   // (within 12 h: the flight that replaced it, or that day's flying). With no flight
   // that close it shows only in the flight editor, rather than in every pilot's log.
-  const unmatchedByDate: Record<string, FlightCorrection[]> = {};
+  const unmatchedByDate: Record<string, UnmatchedCorrection[]> = {};
   for (const e of unmatchedEntries) {
-    const start = e.flight_start_time!;
+    // A tracked flight's correction always has its start; a manual flight's is never unmatched.
+    if (e.flight_start_time == null) continue;
+    const start = e.flight_start_time;
     let near: Completed | null = null, nearGap = 12 * 3600;
     for (const f of completed) {
       if (f.tracker_id !== e.tracker_id) continue;
@@ -396,7 +401,7 @@ export function computeDutyData(tz: string, now: number, allFlights: DutyInputFl
     }
     if (!near || near.pilot_id !== pilotId) continue;
     const dk = unixToTzDateStr(tz, start);
-    (unmatchedByDate[dk] = unmatchedByDate[dk] || []).push(e);
+    (unmatchedByDate[dk] = unmatchedByDate[dk] || []).push({ ...e, flight_start_time: start });
   }
 
   const { flightsByDate, recordByDate, dutyOf, spanOf, restProblems } = dutyCalendar(tz, flights, dayRecords, defaultOn);
@@ -746,11 +751,11 @@ export function dutySaveConfirmText(tz: string, records: DutyDay[], keys: string
  * limit).
  */
 export function dutyDayKeys(from: string, through: string): string[] | string {
-  through = through || from;
+  const last = through || from;
   if (!from) return 'Enter a date.';
-  if (through < from) return 'The Through date is before the date.';
+  if (last < from) return 'The Through date is before the date.';
   const keys: string[] = [];
-  for (let k = from; k <= through; k = tzAddDays(k, 1)) {
+  for (let k = from; k <= last; k = tzAddDays(k, 1)) {
     keys.push(k);
     if (keys.length > MAX_DUTY_DAYS_PER_REQUEST) return 'Enter at most ' + MAX_DUTY_DAYS_PER_REQUEST + ' days at a time.';
   }
