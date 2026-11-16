@@ -1464,6 +1464,16 @@ Use `expo-location` for the location fixes instead of reimplementing them.
 
 - iOS "Always" location and Android background location both get extra store review. The
   purpose strings and the Play declaration video must describe exactly this feature.
+- **Decided (2026-11-15): the "Always" purpose strings change in phase 8's native build, not
+  before.** The first binary's three location strings in `apps/mobile/app.config.ts` all say
+  "Wingbeat shows your position on the map.", which is right for "While using" (kept) but not
+  for "Always". In phase 8's build, `locationAlwaysAndWhenInUsePermission` and
+  `locationAlwaysPermission` become: "Wingbeat uses your location in the background, only
+  near your aircraft, to log the flights you fly to you automatically. You can turn this off
+  in Settings." The setting it names is the auto-log switch below. Any change to these strings
+  changes the fingerprint, so it waits for that build to keep OTA updates reaching the current
+  one. Passive matching ships before the first App Store review, so the review sees strings
+  that match what the app does.
 - Ask for permission at the point of use (the "auto-log my flights" switch), never at first
   launch. The app must work fully with "While using" permission or none. Without location,
   only trackers with a fixed pilot or aircraft can be auto-assigned.
