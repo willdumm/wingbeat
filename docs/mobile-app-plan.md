@@ -1985,7 +1985,15 @@ The app sends both in an `X-Wingbeat-App` header on every request, as
   the showcase sample data and kept moving by a scripted tracker. Put a pairing code in the
   review notes that doesn't expire and is limited to that tenant, plus a short screen
   recording of pairing. Use the same tenant for the Play review and the background-location
-  declaration video.
+  declaration video. Settled at step 11 (2026-11-16): the hosting config marks the customer
+  `"demo": true` (the Worker's `DEMO_BINDINGS`); there, the three trackers whose source is
+  `demo:0`–`demo:2` read `src/demo-feed.ts`, a feed that is a pure function of the tracker
+  and the time, in place of Garmin's (two always flying 40-minute legs out of Kodiak, one
+  always on the ground, pilots on 8-hour shifts with a relief pilot once a week). The demo
+  code (`DEMO_CODE`, `kodiak`) never expires and can be used any number of times: typed on
+  the demo tenant's sign-in page, or sent by the app's "Try the Demo" on "Add account"
+  (`POST /api/app/pair`), it signs in as the demo user, an admin who is a pilot. Off a demo
+  tenant it does nothing. `scripts/demo-seed.mjs` seeds the tenant and imports its history.
 - **Privacy policy** on dummthings.dev (required by both stores before the first
   submission). It covers what the instance stores, what the relay stores, what Sentry
   receives, the presence data rules (Decision 5), account deletion, and users' emails
@@ -2229,6 +2237,13 @@ build with the user's Apple sign-in does. `eas.json`'s submit profiles now carry
 so `eas submit` no longer needs the sign-in. Updates publish from the tree as is (its
 fingerprint is build 6's).
 
+Step 11 (2026-11-16, `demo-tenant`): the demo feed, the demo sign-in and the app's "Try the
+Demo" (JavaScript only, so it ships as an update), the seed script, and tests
+(`test/demo-feed.test.mjs`, `test/worker-demo.test.mjs`). Still to do: the staging and
+production `demo` customers and the privacy policy. Points on the demo tenant grow by about
+2,000 a day with nothing pruning them, and the relief pilots have no default duty, so their
+days show "No duty times recorded"; both are accepted for now.
+
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with
    its config plugin (`expo-notifications`, `expo-location`, `expo-task-manager`,
@@ -2271,8 +2286,8 @@ fingerprint is build 6's).
     Live, flight detail and sign-out.
 11. **The `demo` tenant and the privacy policy.** A hosted `demo` customer seeded from the
     showcase sample data with a scripted tracker, a review pairing code that doesn't expire
-    and works only there, and the privacy policy on the docs site. How the tracker moves and
-    how the review code is scoped are settled at this step.
+    and works only there, and the privacy policy on the docs site. How the trackers move and
+    how the review code is scoped are settled (see "Store review and privacy requirements").
 12. **TestFlight and Android internal distribution.** A `preview` build to TestFlight
     (internal testers first) and to EAS internal distribution for Android, and the first
     `eas update` to the preview channel.

@@ -5,6 +5,7 @@ import { geocodePendingPoints, geocodeLivePoint, computeLiveLabel, resolveRefPoi
 import { SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
 import { loadSettings } from './settings';
 import { dispatchNotifications, mapshareUrl, trackerLabel, NotificationEvent } from './notifications';
+import { demoFeedPoints, demoTrackerIndex } from './demo-feed';
 
 const POLL_INTERVAL_SECONDS = 120; // matches Garmin inReach's ~2-min transmission rate
 
@@ -99,6 +100,19 @@ async function fetchFeedPoints(
 }
 
 /**
+ * A tracker's fixes from d1 (to d2, else now). A demo tenant's `demo:<n>` trackers read the
+ * simulated feed, from d1's exact time; every other tracker reads its Garmin feed.
+ */
+async function feedPoints(tenant: Tenant, tracker: TrackerRef, d1: Date, d2?: Date): Promise<ParsedPoint[]> {
+  if (tenant.demo && demoTrackerIndex(tracker.source_url) !== null) {
+    const now = Math.floor(Date.now() / 1000);
+    const to = d2 ? Math.min(now, Math.floor(d2.getTime() / 1000)) : now;
+    return demoFeedPoints(tracker.source_url, tracker.credentials, Math.floor(d1.getTime() / 1000), to);
+  }
+  return fetchFeedPoints(tenant.host, tracker.source_url, tracker.credentials, d1, d2);
+}
+
+/**
  * Fetches the last 30 days of a feed without storing anything, so the tracker form can
  * confirm a MapShare URL (and password) works before saving it.
  */
@@ -136,7 +150,7 @@ export async function poll(
     }
   }
 
-  const parsedPoints = await fetchFeedPoints(tenant.host, tracker.source_url, tracker.credentials, d1, toDate);
+  const parsedPoints = await feedPoints(tenant, tracker, d1, toDate);
 
   if (parsedPoints.length === 0) {
     if (updateLastPolled) await tenant.db.prepare(
@@ -177,7 +191,7 @@ export async function poll(
     tenant.db.prepare(
       `INSERT OR IGNORE INTO points (garmin_time, lat, lon, elevation_m, velocity_kmh, course_deg, event, raw_kml, tracker_id, aircraft_tail, pilot_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(p.garmin_time, p.lat, p.lon, p.elevation_m, p.velocity_kmh, p.course_deg, p.event, p.raw_kml, tracker.id, tracker.assigned_aircraft, tracker.assigned_pilot)
+    ).bind(p.garmin_time, p.lat, p.lon, p.elevation_m, p.velocity_kmh, p.course_deg, p.event, p.raw_kml, tracker.id, tracker.assigned_aircraft, p.pilot_id ?? tracker.assigned_pilot)
   );
 
   // Each point carries its raw KML (~6 KB), and a single D1 batch is one RPC capped at

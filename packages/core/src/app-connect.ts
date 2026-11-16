@@ -38,3 +38,13 @@ export function appConnectUrl(origin: string, challenge: string, state: string):
 export function appConnectCallbackUrl(token: string, state: string): string {
   return `${APP_CONNECT_CALLBACK}?token=${encodeURIComponent(token)}&state=${encodeURIComponent(state)}`;
 }
+
+/**
+ * The demo tenant's code (docs/mobile-app-plan.md, "Store review and privacy requirements"):
+ * on a demo tenant only, it signs anyone in as the demo user, typed on the web's signed-out
+ * pages or sent by the app's "Try the Demo" to POST /api/app/pair. The tenant's settings hold
+ * it (demo_code, written by scripts/demo-seed.mjs from this constant).
+ */
+export const DEMO_CODE = 'kodiak';
+/** The address the app's "Try the Demo" signs in to (the hosting repo's customers/demo.json). */
+export const DEMO_INSTANCE = 'demo';

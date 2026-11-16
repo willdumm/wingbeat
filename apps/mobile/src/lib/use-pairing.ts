@@ -1,6 +1,6 @@
 /**
- * Pairing, shared by Add account's "Sign in with Browser", the scanner and the wingbeat://pair
- * link: get a token (from scanned or opened text, or from the signed-in browser), check the
+ * Pairing, shared by Add account's "Sign in with Browser" and "Try the Demo", the scanner and
+ * the wingbeat://pair link: get a token (from scanned or opened text, or from the signed-in browser), check the
  * host, redeem the token, then close the screen.
  */
 import { useCallback, useRef, useState } from 'react';
@@ -8,7 +8,7 @@ import { uuid } from 'expo';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { ApiHttpError, ApiNetworkError, ApiTimeoutError } from '@wingbeat/core/api/client';
-import { APP_CONNECT_CALLBACK } from '@wingbeat/core/app-connect';
+import { APP_CONNECT_CALLBACK, DEMO_CODE, DEMO_INSTANCE } from '@wingbeat/core/app-connect';
 import { firstTab } from './accounts';
 import { useAccounts } from './accounts-context';
 import { storedDutyTab } from './duty-tab';
@@ -83,13 +83,22 @@ export function usePairing() {
     await redeem({ host: parsed.host, token, codeVerifier: request.verifier });
   }, [redeem]);
 
+  /** "Try the Demo": the demo tenant's code, which its server takes in place of a token. */
+  const tryDemo = useCallback(async () => {
+    if (busy.current) return;
+    const parsed = instanceHost(DEMO_INSTANCE);
+    if (!parsed.ok) throw new Error(`DEMO_INSTANCE isn't an instance name: ${DEMO_INSTANCE}`);
+    busy.current = true;
+    await redeem({ host: parsed.host, token: DEMO_CODE });
+  }, [redeem]);
+
   /** Back to waiting for a code after a failure. */
   const reset = useCallback(() => {
     busy.current = false;
     setStatus({ kind: 'idle' });
   }, []);
 
-  return { status, pairFrom, signInWithBrowser, reset };
+  return { status, pairFrom, signInWithBrowser, tryDemo, reset };
 }
 
 /** The server's reason (a used or expired code says so), or what went wrong. */
