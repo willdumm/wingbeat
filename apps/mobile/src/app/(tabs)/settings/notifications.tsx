@@ -29,6 +29,7 @@ export default function NotificationsScreen() {
 
   useEffect(() => {
     setSubs(null);
+    setUnsupported(false);
     if (!client) return;
     let current = true;
     getPushSubscriptions(client).then(

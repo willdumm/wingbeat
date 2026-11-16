@@ -119,6 +119,17 @@ describe('app push through Expo', () => {
       ['ExponentPushToken[admin]', null],
     ]);
   });
+
+  test("a phone paired again under a new session keeps one registration per user, so one push", async () => {
+    const register = (cookie) => w.request('POST', '/api/me/push-devices', { kind: 'expo', token: 'ExponentPushToken[admin]' },
+      { as: null, headers: { cookie } });
+    // The admin's second session (3) takes the token over from session 1; the viewer on the
+    // same phone (another user) keeps theirs.
+    await w.run("INSERT INTO push_devices (session_id, kind, endpoint) VALUES (2, 'expo', 'ExponentPushToken[admin]')");
+    assert.equal((await register('session=admin-phone-2')).status, 200);
+    assert.deepEqual(await w.all("SELECT session_id FROM push_devices WHERE endpoint = 'ExponentPushToken[admin]' ORDER BY session_id"),
+      [{ session_id: 2 }, { session_id: 3 }]);
+  });
 });
 
 describe('without EXPO_ACCESS_TOKEN', () => {

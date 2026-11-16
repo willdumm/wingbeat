@@ -55,7 +55,8 @@ export async function alertLists(tenant: Tenant): Promise<{ lists: AlertLists; a
 export function alertKey(alert: Alert, flightsById: Map<number, EffectiveFlight>): string {
   switch (alert.kind) {
     case 'unassigned_flight': {
-      const f = flightsById.get(alert.flight_id)!;
+      const f = flightsById.get(alert.flight_id);
+      if (!f) throw new Error(`alert references unknown flight ${alert.flight_id}`);
       return 'flight/' + (f.tracker_id == null ? 'manual/' + -f.id : f.tracker_id + '/' + (f.edit ? f.edit.entry.flight_start_time : f.start_time));
     }
     case 'maintenance': return 'maintenance/' + alert.aircraft_tail + '/' + alert.item.id + '/' + alert.status.status;

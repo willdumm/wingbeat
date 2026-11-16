@@ -180,8 +180,11 @@ export function flightTrackPicks(flights: Flight[]): TrackPick[] {
   return flights.flatMap((f) => (f.points ?? []).map((point) => ({ point, trackerId: f.tracker_id, pilotName: f.pilot_name ?? null })));
 }
 
-/** A picked spot: the location sheet's details, whether it's a track's point, and where it is (for the map's dot). */
-/** course: the snapped track point's recorded heading (degrees), null off route or unrecorded. */
+/**
+ * A picked spot: the location sheet's details, whether it's a track's point, where it is (for
+ * the map's marker), and course: the snapped track point's recorded heading (degrees), null
+ * off route or unrecorded.
+ */
 export type PickedSpot = LocationDetails & { snapped: boolean; lngLat: [number, number]; course: number | null };
 
 /**
@@ -293,8 +296,8 @@ export function dayMap(
   const drawn: DayMap['flights'] = [];
   day.forEach((f, i) => {
     const n = numbers[i];
-    if (n == null) return;
-    const coords = f.points!.map((p) => [p.lon, p.lat] as [number, number]);
+    if (n == null || !f.points?.length) return;
+    const coords = f.points.map((p) => [p.lon, p.lat] as [number, number]);
     const color = colorFor(f.tracker_id);
     drawn.push({ flight: f, n, color });
     all.push(...coords);

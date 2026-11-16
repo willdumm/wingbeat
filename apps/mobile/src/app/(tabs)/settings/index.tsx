@@ -55,7 +55,7 @@ export default function SettingsScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: () => remove(a.id) },
     ])
-    : Alert.alert('Sign out?', `${a.user.name} on ${a.host}. Adding it again takes a new device link from the web’s Settings.`, [
+    : Alert.alert('Sign out?', `${a.user.name} on ${a.host}. You can add it again with Sign in with Browser or a new code.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: () => run('Couldn’t sign out', () => signOut(a.id)) },
     ]);

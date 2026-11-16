@@ -23,7 +23,8 @@ type PageMessage =
   | { type: 'error'; message: string };
 
 // fetchCached is the web's _typstFetchCached (src/shared/pilot-duty.ts) without the
-// progress; the status line counts the downloads instead.
+// progress; the status line counts the downloads instead. The cache is only a speed-up: when
+// it can't be opened, read or written, the files are fetched again.
 const PAGE = `<!doctype html><meta charset="utf-8">
 <script>
 const post = (m) => window.ReactNativeWebView.postMessage(JSON.stringify(m));
@@ -108,13 +109,16 @@ export function useDutyPdf(): {
   };
 
   const onMessage = (e: WebViewMessageEvent) => {
-    const m = JSON.parse(e.nativeEvent.data) as PageMessage;
-    if (m.type === 'status') setStatus(m.text);
-    else if (m.type === 'done') { job.current?.resolve(m.base64); job.current = null; }
-    else fail(m.message);
+    let m: Partial<PageMessage> | null = null;
+    try { m = JSON.parse(e.nativeEvent.data); } catch { /* not the page's: fails below */ }
+    if (m?.type === 'status' && typeof m.text === 'string') setStatus(m.text);
+    else if (m?.type === 'done' && typeof m.base64 === 'string') { job.current?.resolve(m.base64); job.current = null; }
+    else fail(m?.type === 'error' && typeof m.message === 'string' ? m.message : 'The PDF compiler sent something unexpected.');
   };
 
   const exportPdf = useCallback(async (source: string, name: string) => {
+    // The page compiles one at a time; a second job would orphan the first's promise.
+    if (job.current) throw new Error('An export is already running.');
     setStatus('Preparing the PDF…');
     try {
       const base64 = await new Promise<string>((resolve, reject) => {

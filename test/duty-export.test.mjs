@@ -132,4 +132,11 @@ describe('the PDF file name', () => {
     assert.equal(dutyLogPdfName(months[1]), 'duty-log-pilot-2026-09.pdf');
     assert.equal(dutyLogPdfName(months), 'duty-log-pilot-2026-08-to-2026-09.pdf');
   });
+
+  test("a pilot name's path and markup characters and accents don't reach the file name", () => {
+    const named = (pilotName) => dutyLogPdfName({ ...months[1], pilotName });
+    assert.equal(named('José  O\'Neil'), 'duty-log-jose-o-neil-2026-09.pdf');
+    assert.equal(named('../a/b: c'), 'duty-log-a-b-c-2026-09.pdf');
+    assert.equal(named('/..'), 'duty-log-pilot-2026-09.pdf');
+  });
 });

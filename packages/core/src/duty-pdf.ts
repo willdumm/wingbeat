@@ -44,13 +44,17 @@ function typStr(s: unknown): string {
   return '#"' + String(s).replace(/[\\"]/g, m => '\\' + m).replace(/[\u0000-\u001f]/g, ' ') + '"';
 }
 
-/** "duty-log-jane-doe-2026-10.pdf", or "…-2026-07-to-2026-09.pdf" for a range. */
+/**
+ * "duty-log-jane-doe-2026-10.pdf", or "…-2026-07-to-2026-09.pdf" for a range. The name keeps
+ * only ASCII letters and digits (accents dropped), so it's a safe file name on any system.
+ */
 export function dutyLogPdfName(input: DutyData | DutyData[]): string {
   const months = Array.isArray(input) ? input : [input];
   const monthKey = (m: DutyData) => m.year + '-' + String(m.month).padStart(2, '0');
   const first = months[0], last = months[months.length - 1];
   return 'duty-log-' +
-    first.pilotName.toLowerCase().replace(/\s+/g, '-') + '-' +
+    (first.pilotName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'pilot') + '-' +
     monthKey(first) + (first === last ? '' : '-to-' + monthKey(last)) + '.pdf';
 }
 

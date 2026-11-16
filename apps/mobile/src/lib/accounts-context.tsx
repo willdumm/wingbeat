@@ -19,7 +19,11 @@ interface AccountsValue extends AccountsState {
   /** Pairs with the instance and makes the new account active. Rejects with the API error. */
   addAccount(target: PairingTarget): Promise<Account>;
   setActive(id: string): Promise<void>;
-  /** Removes the account from this phone only: its session stays in the web's Devices list. */
+  /**
+   * Removes the account from this phone only, for one whose session is already gone (signed
+   * out, or its user deleted): a live session would stay in the web's Devices list and keep
+   * its push registration. Use signOut for those.
+   */
   remove(id: string): Promise<void>;
   /**
    * Signs the account's session out on its instance, then removes it. Rejects with the API

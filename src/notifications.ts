@@ -132,7 +132,9 @@ export function eventMessage(event: NotificationEvent, timezone: string, { links
  */
 export async function dispatchNotifications(tenant: Tenant, events: NotificationEvent[]): Promise<void> {
   if (events.length === 0) return;
-  const { timezone } = await loadSettings(tenant);
+  // Read only once a path has somewhere to send (most tenants have neither), and then once.
+  let settings: ReturnType<typeof loadSettings> | null = null;
+  const timezone = async () => (await (settings ??= loadSettings(tenant))).timezone;
   const outcomes = await Promise.allSettled([
     sendWebhooks(tenant, events, timezone),
     sendEventPushes(tenant, events, timezone),
@@ -140,8 +142,9 @@ export async function dispatchNotifications(tenant: Tenant, events: Notification
   for (const o of outcomes) if (o.status === 'rejected') console.error('Notification delivery failed:', String(o.reason));
 }
 
-async function sendEventPushes(tenant: Tenant, events: NotificationEvent[], timezone: string): Promise<void> {
+async function sendEventPushes(tenant: Tenant, events: NotificationEvent[], getTimezone: () => Promise<string>): Promise<void> {
   if (!tenant.expoAccessToken) return;
+  const timezone = await getTimezone();
   const pushes = [];
   for (const event of events) {
     const key = subscriptionKey(event.type);
@@ -161,11 +164,12 @@ async function sendEventPushes(tenant: Tenant, events: NotificationEvent[], time
   await sendAppPushes(tenant, pushes);
 }
 
-async function sendWebhooks(tenant: Tenant, events: NotificationEvent[], timezone: string): Promise<void> {
+async function sendWebhooks(tenant: Tenant, events: NotificationEvent[], getTimezone: () => Promise<string>): Promise<void> {
   const { results } = await tenant.db.prepare(
     'SELECT id, type, url, pushover_user_key, events FROM webhooks WHERE active = 1'
   ).all<NotificationTarget>();
   if (results.length === 0) return;
+  const timezone = await getTimezone();
 
   const subscribed = (w: NotificationTarget, eventType: string): boolean => {
     try {

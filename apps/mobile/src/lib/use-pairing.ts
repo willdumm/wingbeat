@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { ApiHttpError, ApiNetworkError, ApiTimeoutError } from '@wingbeat/core/api/client';
 import { APP_CONNECT_CALLBACK } from '@wingbeat/core/app-connect';
+import { firstTab } from './accounts';
 import { useAccounts } from './accounts-context';
 import { addressFailureMessage, connectCallbackToken, connectRequest, instanceHost } from './browser-sign-in';
 import { parseFailureMessage, parsePairingLink, type PairingTarget } from './pairing-link';
@@ -28,8 +29,7 @@ export function usePairing() {
   const redeem = useCallback(async (target: PairingTarget) => {
     setStatus({ kind: 'pairing', host: target.host });
     try {
-      await addAccount(target);
-      router.dismissTo('/live');
+      router.dismissTo(firstTab(await addAccount(target)));
     } catch (err) {
       setStatus({ kind: 'failed', message: pairingErrorMessage(err) });
     }

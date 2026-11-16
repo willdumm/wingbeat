@@ -257,7 +257,7 @@ function tenantDb(env: Env, bindingName: string): D1Database | undefined {
 //   - Referrer-Policy strict-origin-when-cross-origin: browsers fetch the keyless basemap tiles
 //     (OpenTopoMap, USGS, Esri) directly and some providers want a Referer, so the origin is
 //     still sent cross-origin; path and query (e.g. /join/<token>) never leave the site.
-function buildCsp(nonce: string): string {
+function buildCsp(nonce: string, path: string): string {
   return [
     "default-src 'self'",
     `script-src 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval' 'unsafe-eval' https://unpkg.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net`,
@@ -269,8 +269,8 @@ function buildCsp(nonce: string): string {
     "object-src 'none'",
     "base-uri 'none'",
     "frame-ancestors 'none'",
-    // wingbeat: is POST /app/connect's redirect back to the app.
-    "form-action 'self' wingbeat:",
+    // wingbeat: is POST /app/connect's redirect back to the app, so only that page allows it.
+    path === '/app/connect' ? "form-action 'self' wingbeat:" : "form-action 'self'",
   ].join('; ');
 }
 
@@ -291,7 +291,7 @@ app.use('*', async (c, next) => {
     c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
   if ((c.res.headers.get('Content-Type') ?? '').startsWith('text/html')) {
-    c.header('Content-Security-Policy', buildCsp(nonce));
+    c.header('Content-Security-Policy', buildCsp(nonce, c.req.path));
   }
 });
 
@@ -788,7 +788,8 @@ app.post('/api/me/ping', async (c) => {
 // ── Push routes (any authenticated user): this device's push token and the user's subscriptions ──
 
 // Registers this session's device for push. The same token again is a no-op; a session keeps
-// one token (a reinstall's new one replaces it).
+// one token (a reinstall's new one replaces it), and a token belongs to one session of a user (the
+// newest to register it).
 app.post('/api/me/push-devices', valid('json', PushDeviceRequest), async (c) => {
   const u = c.get('user');
   const { kind, token, time_sensitive } = c.req.valid('json');
@@ -797,6 +798,10 @@ app.post('/api/me/push-devices', valid('json', PushDeviceRequest), async (c) => 
   const timeSensitive = time_sensitive ? JSON.stringify([...new Set(time_sensitive)]) : null;
   await db.batch([
     db.prepare('DELETE FROM push_devices WHERE session_id = ? AND endpoint != ?').bind(u.sessionId, token),
+    // The same phone under an older session of this user (paired again without signing out):
+    // it would get every push twice.
+    db.prepare(`DELETE FROM push_devices WHERE endpoint = ? AND session_id != ?
+                AND session_id IN (SELECT id FROM sessions WHERE user_id = ?)`).bind(token, u.sessionId, u.id),
     db.prepare(`INSERT INTO push_devices (session_id, kind, endpoint, time_sensitive) VALUES (?, ?, ?, ?)
                 ON CONFLICT (session_id, endpoint) DO UPDATE SET time_sensitive = COALESCE(excluded.time_sensitive, time_sensitive)`)
       .bind(u.sessionId, kind, token, timeSensitive),
@@ -867,11 +872,17 @@ app.patch('/api/users/:id', requireAdmin, valid('json', UserUpdateRequest), asyn
   if (body.pilot_id !== null) {
     const pilot = await db.prepare('SELECT id FROM pilots WHERE id = ?').bind(body.pilot_id).first();
     if (!pilot) return c.json({ error: 'Pilot not found' }, 404);
+  }
+  // The check is part of the UPDATE, so two admins linking one pilot at once get a 409, not
+  // the index's error.
+  const { meta } = await db.prepare(
+    'UPDATE users SET pilot_id = ?1 WHERE id = ?2 AND (?1 IS NULL OR NOT EXISTS (SELECT 1 FROM users WHERE pilot_id = ?1 AND id != ?2))'
+  ).bind(body.pilot_id, id).run();
+  if (meta.changes === 0) {
     const other = await db.prepare('SELECT name FROM users WHERE pilot_id = ? AND id != ?')
       .bind(body.pilot_id, id).first<{ name: string }>();
-    if (other) return c.json({ error: `That pilot is already linked to ${other.name}` }, 409);
+    return c.json({ error: `That pilot is already linked to ${other?.name ?? 'another user'}` }, 409);
   }
-  await db.prepare('UPDATE users SET pilot_id = ? WHERE id = ?').bind(body.pilot_id, id).run();
   return c.json({ ok: true });
 });
 

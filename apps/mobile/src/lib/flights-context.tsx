@@ -65,7 +65,8 @@ export function FlightsProvider({ children }: { children: ReactNode }) {
     return () => { current = false; unsubscribe(); };
   }, [accountKey, client]);
 
-  // Keyed by the ids, so a bootstrap reloaded on return to the foreground doesn't restart the poll.
+  // Keyed by the ids, so a bootstrap reloaded on return to the foreground doesn't restart the
+  // poll. The poll reads only the ids (trackerLiveData), so the rest going stale here is fine.
   const activeTrackers = bootstrap?.trackers.filter((t) => t.active && !t.deleted) ?? [];
   const trackerIdsKey = activeTrackers.map((t) => t.id).join(',');
   const trackers = useMemo(() => activeTrackers, [trackerIdsKey]);
