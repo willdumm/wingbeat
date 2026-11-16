@@ -71,7 +71,10 @@ interface LiveMapProps {
   tools?: MapTool[];
   /** Shown at the top right, below the status bar or the header (clear of a back button). */
   overlay?: ReactNode;
-  /** Beside the tools' bottom, as Maps puts its logo (the Wingbeat lockup); it takes no touches. */
+  /**
+   * Bottom right, left of MapLibre's attribution (i) button and centred on it (the Wingbeat
+   * lockup); it takes no touches.
+   */
   watermark?: ReactNode;
   /**
    * A full-width bar along the top, on the floating surface (as the overlay's), running up
@@ -102,6 +105,9 @@ interface LiveMapProps {
   followKey?: unknown;
   ref?: Ref<LiveMapRef>;
 }
+
+// MapLibre iOS's attribution button (a UIButtonTypeInfoLight).
+const ATTRIBUTION_SIZE = 22;
 
 export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, watermark, topBar, sheetHeight, fit, fitKey, followKey = null, onPress, onLongPress, picks = [], ref }: LiveMapProps) {
   const t = useTokens();
@@ -330,8 +336,14 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
       ) : null}
       <ElevationChrome tool={elevation} center={crosshair} top={Math.max(top, topEdge) + px(t['space-2'])} side={gutter} onReadoutHeight={setReadoutHeight} />
       {toolsShown && <MapTools tools={[...(basemaps.length + overlays.length > 1 ? [layersTool] : []), elevation.tool, ...tools]} left={gutter} bottom={toolsBottom} />}
+      {/* Without a sheet the (i) button sits space-2 above the bottom inset (attributionPosition
+          above); with one it moves top left, and the lockup centres on the tools' row instead. */}
       {toolsShown && watermark && (
-        <View pointerEvents="none" style={{ position: 'absolute', left: gutter + TOOL_SIZE + px(t['space-2']), bottom: toolsBottom, height: TOOL_SIZE, justifyContent: 'center' }}>
+        <View pointerEvents="none" style={{
+          position: 'absolute', right: sheetHeight ? gutter : gutter + ATTRIBUTION_SIZE + px(t['space-2']),
+          bottom: sheetHeight ? toolsBottom : insets.bottom + px(t['space-2']),
+          height: sheetHeight ? TOOL_SIZE : ATTRIBUTION_SIZE, justifyContent: 'center',
+        }}>
           {watermark}
         </View>
       )}
