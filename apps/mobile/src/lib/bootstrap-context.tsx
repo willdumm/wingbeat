@@ -19,14 +19,18 @@ const BootstrapContext = createContext<BootstrapValue>({ bootstrap: null, handsh
 
 export function BootstrapProvider({ children }: { children: ReactNode }) {
   const { client } = useAccounts();
-  const [bootstrap, setBootstrap] = useState<BootstrapResponse | null>(null);
+  // Kept with the client it was loaded with: on an account switch the first render has the new
+  // client and the old answer (the effect below runs after it), which must not reach the new
+  // account (AccountUserSync would save the old instance's name and user onto it).
+  const [loaded, setLoaded] = useState<{ client: typeof client; bootstrap: BootstrapResponse } | null>(null);
+  const bootstrap = loaded && loaded.client === client ? loaded.bootstrap : null;
 
   useEffect(() => {
-    setBootstrap(null);
+    setLoaded(null);
     if (!client) return;
     let current = true;
     // A failed load keeps the last answer; the next foreground tries again.
-    const load = () => getBootstrap(client).then((b) => { if (current) setBootstrap(b); }, () => {});
+    const load = () => getBootstrap(client).then((b) => { if (current) setLoaded({ client, bootstrap: b }); }, () => {});
     load();
     const sub = AppState.addEventListener('change', (s) => { if (s === 'active') load(); });
     return () => { current = false; sub.remove(); };

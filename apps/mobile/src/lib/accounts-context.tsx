@@ -44,17 +44,20 @@ const AccountsContext = createContext<AccountsValue | null>(null);
 export function AccountsProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AccountsState>({ accounts: [], activeId: null });
   const [loaded, setLoaded] = useState(false);
-  const [client, setClient] = useState<ApiClient | null>(null);
+  // Kept with its account's id: on a switch, the render before the effect below runs has the
+  // new active account, which mustn't get the old one's client.
+  const [clientOf, setClientOf] = useState<{ id: string; client: ApiClient } | null>(null);
 
   useEffect(() => {
     store.load().then(setState).finally(() => setLoaded(true));
   }, []);
 
   const active = state.accounts.find((a) => a.id === state.activeId) ?? null;
+  const client = clientOf && clientOf.id === active?.id && !active.signedOut ? clientOf.client : null;
 
   useEffect(() => {
     let current = true;
-    setClient(null);
+    setClientOf(null);
     setTileAuth(null, null);
     if (!active || active.signedOut) return;
     const id = active.id;
@@ -65,7 +68,7 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
         return;
       }
       setTileAuth(active.host, token);
-      setClient(accountClient(active.host, token, () => { store.markSignedOut(id).then(setState); }));
+      setClientOf({ id, client: accountClient(active.host, token, () => { store.markSignedOut(id).then(setState); }) });
     });
     return () => { current = false; };
   }, [active?.id, active?.host, active?.signedOut]);
