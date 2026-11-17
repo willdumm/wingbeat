@@ -59,8 +59,8 @@ SENTRY_URL=https://sentry.io/ SENTRY_ORG=dumm-software-llc SENTRY_PROJECT=wingbe
 (no `react-native-web`). The runtime version is the native fingerprint, so an update reaches only
 builds with the same one: `npx expo-updates fingerprint:generate --platform ios` gives the local
 hash, and `eas build:list --json` shows each build's `fingerprint.hash`. Check the hash
-matches the target build's before publishing (the current TestFlight build is 6,
-`3662f6bb…`). The app icon and `.gitignore` are in the fingerprint, so changing either needs a
+matches the target build's before publishing (the current TestFlight build is 7,
+`1e182fbd…`). The app icon and `.gitignore` are in the fingerprint, so changing either needs a
 new build.
 
 `.gitignore` must keep ignoring `.env.sentry-build-plugin`, `dist/` and `.expo/`: otherwise a jj

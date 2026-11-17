@@ -2248,8 +2248,15 @@ Build 6 (2026-11-15, on TestFlight): the Wingbeat logo icon and the Time Sensiti
 notifications entitlement for gap alerts. Build 5 failed signing: a new entitlement needs
 EAS to sync the App ID's capabilities and regenerate the profile, which only an interactive
 build with the user's Apple sign-in does. `eas.json`'s submit profiles now carry `ascAppId`,
-so `eas submit` no longer needs the sign-in. Updates publish from the tree as is (its
-fingerprint is build 6's).
+so `eas submit` no longer needs the sign-in.
+
+Build 7 (2026-11-17, v0.6.1, fingerprint `1e182fbd…`): for Beta App Review. No location or
+background-task modules ("Policy and privacy"), no link to the docs site, and the
+no-account text points to Add Account; it also carries main's JavaScript since build 6's last
+update (the lockup move, "Try the Demo" to the production demo). Built non-interactively
+(removing `UIBackgroundModes` changes no capability), source maps uploaded for release
+`dev.dummthings.wingbeat@0.1.0+7`, and submitted with `eas submit`. Updates publish from the
+tree as is (its fingerprint is build 7's).
 
 Step 11 (2026-11-16, `demo-tenant`): the demo feed, the demo sign-in and the app's "Try the
 Demo" (JavaScript only, so it ships as an update), the seed script, and tests
