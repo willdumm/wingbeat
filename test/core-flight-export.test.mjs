@@ -1,5 +1,6 @@
 // @wingbeat/core/flight-export, imported directly: the admin flights export's rows (times
-// in UTC and the operator's timezone, duration, names, ends, flags), its date range, and
+// in UTC and the operator's timezone, duration, names, ends with their elevation and
+// speed, flags), its date range, and
 // the CSV and JSON it writes.
 
 import { describe, test } from 'node:test';
@@ -13,7 +14,13 @@ const at = (s) => time.tzLocalToEpoch(TZ, ...s.split(' '));
 const tracked = {
   id: 7, tracker_id: 1, start_time: at('2026-07-03 09:00'), end_time: at('2026-07-03 10:30'),
   pilot_id: 2, pilot_name: 'Sam', aircraft_tail: 'N123', origin_label: 'Kodiak, AK', destination_label: 'Larsen Bay',
-  start_lat: 57.75, start_lon: -152.49, end_lat: 57.54, end_lon: -153.98, points: [{ t: 0 }], edit: null,
+  start_lat: 57.75, start_lon: -152.49, end_lat: 57.54, end_lon: -153.98, edit: null,
+  points: [
+    { t: at('2026-07-03 09:00'), lat: 57.75, lon: -152.49, v: 20, e: 10, c: 90 },
+    { t: at('2026-07-03 09:05'), lat: 57.7, lon: -152.6, v: 185.2, e: 304.8, c: 250 },
+    { t: at('2026-07-03 10:25'), lat: 57.55, lon: -153.9, v: 150, e: 152.4, c: 250 },
+    { t: at('2026-07-03 10:30'), lat: 57.54, lon: -153.98, v: null, e: null, c: null },
+  ],
 };
 const manual = {
   id: -4, tracker_id: null, start_time: at('2026-07-01 14:00'), end_time: at('2026-07-01 14:20'),
@@ -39,6 +46,19 @@ describe('flightExportRows', () => {
     assert.equal(r.end_lon, -153.98);
     assert.equal('points' in r, false);
     assert.deepEqual([rows[0].manual, rows[0].part91, rows[0].start_lat], [true, true, null]);
+  });
+
+  test('each end\'s elevation (ft) and speed (kt) come from the track point nearest its time', () => {
+    const [r] = x.flightExportRows(TZ, [tracked]);
+    assert.deepEqual([r.start_elevation_ft, r.start_speed_kt], [33, 10.8]);
+    assert.deepEqual([r.end_elevation_ft, r.end_speed_kt], [null, null]);
+    // Corrected times: the nearest points, not the first and last.
+    const corrected = { ...tracked, start_time: at('2026-07-03 09:04'), end_time: at('2026-07-03 10:24') };
+    const [c] = x.flightExportRows(TZ, [corrected]);
+    assert.deepEqual([c.start_elevation_ft, c.start_speed_kt, c.end_elevation_ft, c.end_speed_kt], [1000, 100, 500, 81]);
+    // A manual flight has no track.
+    const [m] = x.flightExportRows(TZ, [manual]);
+    assert.deepEqual([m.start_elevation_ft, m.start_speed_kt, m.end_elevation_ft, m.end_speed_kt], [null, null, null, null]);
   });
 
   test('from and to are inclusive operator dates', () => {

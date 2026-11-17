@@ -33,8 +33,8 @@ another device to your account. See
 **Export flights** — downloads your flights as a CSV or JSON file, one row
 per flight, optionally limited to a date range. Each row has the start and
 end times (in UTC and in the operator's timezone), the duration, the pilot,
-aircraft and tracker, the start and end places (names and coordinates), the
-Part 91 and unpaid flags, and the remark. Flights appear as they do in the
+aircraft and tracker, the start and end places (names and coordinates, and
+the GPS elevation in feet and speed in knots there), the Part 91 and unpaid flags, and the remark. Flights appear as they do in the
 flight list, with corrections applied and removed flights left out; a flight
 still in the air isn't included. Tracks aren't exported.
 

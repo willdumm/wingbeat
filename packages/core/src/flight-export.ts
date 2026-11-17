@@ -2,8 +2,8 @@
  * The flights export (Settings → Data → Export flights): effective flights (corrections
  * applied, as the flight store serves them) as rows, then CSV or JSON. No track points:
  * each row is the flight's times, duration, pilot, aircraft, flags and its two ends
- * (coordinates and geocoded or corrected labels). Times are given both as UTC ISO 8601
- * and in the operator's timezone.
+ * (coordinates, geocoded or corrected labels, and the GPS elevation and speed there).
+ * Times are given both as UTC ISO 8601 and in the operator's timezone.
  */
 import type { EffectiveFlight } from './flight-edits';
 import { tzAbbrev, unixToTzDateStr, unixToTzTime } from './time';
@@ -28,8 +28,12 @@ export interface FlightExportRow {
   destination: string | null;
   start_lat: number | null;
   start_lon: number | null;
+  start_elevation_ft: number | null;
+  start_speed_kt: number | null;
   end_lat: number | null;
   end_lon: number | null;
+  end_elevation_ft: number | null;
+  end_speed_kt: number | null;
   manual: boolean;
   part91: boolean;
   unpaid: boolean;
@@ -40,7 +44,8 @@ export interface FlightExportRow {
 export const FLIGHT_EXPORT_COLUMNS: (keyof FlightExportRow)[] = [
   'id', 'tracker_id', 'tracker_name', 'date', 'start_utc', 'end_utc', 'start_local', 'end_local', 'timezone',
   'duration_minutes', 'duration_hours', 'pilot_id', 'pilot_name', 'aircraft_tail', 'aircraft_name',
-  'origin', 'destination', 'start_lat', 'start_lon', 'end_lat', 'end_lon', 'manual', 'part91', 'unpaid', 'remark',
+  'origin', 'destination', 'start_lat', 'start_lon', 'start_elevation_ft', 'start_speed_kt',
+  'end_lat', 'end_lon', 'end_elevation_ft', 'end_speed_kt', 'manual', 'part91', 'unpaid', 'remark',
 ];
 
 export interface FlightExportOptions {
@@ -58,6 +63,22 @@ const local = (tz: string, unix: number) =>
 const numOrNull = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const strOrNull = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null);
 
+interface TrackPoint { t: number; v?: number | null; e?: number | null }
+
+// The track point nearest a flight end's time. A corrected start or end time can fall
+// inside the track (taxi trimmed off) or beyond it, so this takes the point nearest the
+// effective time rather than the first or last point; for an uncorrected flight that is
+// the first or last point. None for a manual flight (no points).
+function pointNearest(points: TrackPoint[], t: number): TrackPoint | null {
+  let best: TrackPoint | null = null;
+  for (const p of points) if (!best || Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+  return best;
+}
+
+// Numbers in the units the clients show (format.ts toFeet and toKnots): whole feet, knots to 0.1.
+const feet = (m: unknown) => (typeof m === 'number' && Number.isFinite(m) ? Math.round(m * 3.28084) : null);
+const knots = (kmh: unknown) => (typeof kmh === 'number' && Number.isFinite(kmh) ? Math.round(kmh * 5.39957) / 10 : null);
+
 /** The rows of flights (oldest first) that start within the options' date range. */
 export function flightExportRows(tz: string, flights: EffectiveFlight[], opts: FlightExportOptions = {}): FlightExportRow[] {
   const trackerNames = new Map((opts.trackers || []).map(t => [t.id, t.name ?? null]));
@@ -68,6 +89,9 @@ export function flightExportRows(tz: string, flights: EffectiveFlight[], opts: F
     if ((opts.from && date < opts.from) || (opts.to && date > opts.to)) continue;
     const minutes = f.end_time != null ? Math.round((f.end_time - f.start_time) / 60) : null;
     const tail = strOrNull(f.aircraft_tail);
+    const points = Array.isArray(f.points) ? (f.points as TrackPoint[]) : [];
+    const startPoint = pointNearest(points, f.start_time);
+    const endPoint = f.end_time != null ? pointNearest(points, f.end_time) : null;
     rows.push({
       id: f.id,
       tracker_id: f.tracker_id,
@@ -88,8 +112,12 @@ export function flightExportRows(tz: string, flights: EffectiveFlight[], opts: F
       destination: strOrNull(f.destination_label),
       start_lat: numOrNull(f.start_lat),
       start_lon: numOrNull(f.start_lon),
+      start_elevation_ft: feet(startPoint?.e),
+      start_speed_kt: knots(startPoint?.v),
       end_lat: numOrNull(f.end_lat),
       end_lon: numOrNull(f.end_lon),
+      end_elevation_ft: feet(endPoint?.e),
+      end_speed_kt: knots(endPoint?.v),
       manual: !!f.edit?.manual,
       part91: !!f.edit?.part91,
       unpaid: !!f.edit?.unpaid,
