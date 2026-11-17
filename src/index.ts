@@ -437,6 +437,13 @@ async function demoSession(tenant: Tenant, code: string, deviceName: string): Pr
   return redeemed(result);
 }
 
+/** The demo user's id (settings' demo_user_id), or null when it isn't set. Only meaningful on a demo tenant. */
+async function demoUserId(db: D1Database): Promise<number | null> {
+  const row = await db.prepare(`SELECT value FROM settings WHERE key = 'demo_user_id'`).first<{ value: string }>();
+  const id = parseInt(row?.value ?? '', 10);
+  return Number.isInteger(id) ? id : null;
+}
+
 app.post(DEMO_SIGN_IN_PATH, async (c) => {
   if (!c.var.tenant.demo) return c.text('Not Found', 404);
   const form = await c.req.parseBody();
@@ -773,9 +780,17 @@ app.get('/api/bootstrap', async (c) => {
 
 // Account deletion, started by the user (Settings, in the web and the app; App Review needs
 // it in the app because redeeming an invite there creates an account). This signs out every
-// device of theirs, this one included.
+// device of theirs, this one included. On a demo tenant the demo user is shared by everyone
+// who signs in with the demo code, so deleting it only signs this device out (its push
+// devices go with the session) and the demo user stays.
 app.delete('/api/me', async (c) => {
-  const refusal = await deleteUserAccount(c.var.db, c.get('user').id);
+  const u = c.get('user');
+  if (c.var.tenant.demo && u.id === await demoUserId(c.var.db)) {
+    await c.var.db.prepare('DELETE FROM sessions WHERE id = ?').bind(u.sessionId).run();
+    c.header('Set-Cookie', sessionCookie(''));
+    return c.json({ ok: true });
+  }
+  const refusal = await deleteUserAccount(c.var.db, u.id);
   if (refusal) return c.json({ error: refusal.error }, refusal.status);
   c.header('Set-Cookie', sessionCookie(''));
   return c.json({ ok: true });
@@ -2965,6 +2980,29 @@ app.delete('/api/webhooks/:id', requireAdmin, async (c) => {
 
 // ── Scheduled handler ─────────────────────────────────────────────────────────
 
+/** How long a demo tenant keeps its simulated history and idle sessions (the history import loads 30 days). */
+const DEMO_RETENTION_SECS = 31 * 24 * 3600;
+
+/**
+ * Keeps a demo tenant's storage flat: its trackers add about 2,000 points a day and every
+ * demo sign-in makes a session. Deletes the flights that ended before the retention window
+ * (with their point links), the points before it that no remaining flight holds, and the
+ * demo user's sessions idle that long. Corrections and edit_history stay (they're small, and
+ * edit_history is append-only). Never call it for a tenant that isn't a demo.
+ */
+async function pruneDemoTenant(tenant: Tenant, nowSec: number): Promise<void> {
+  if (!tenant.demo) return;
+  const cutoff = nowSec - DEMO_RETENTION_SECS;
+  const db = tenant.db;
+  await db.batch([
+    db.prepare('DELETE FROM point_flights WHERE flight_id IN (SELECT id FROM flights WHERE end_time < ?)').bind(cutoff),
+    db.prepare('DELETE FROM flights WHERE end_time < ?').bind(cutoff),
+    db.prepare('DELETE FROM points WHERE garmin_time < ? AND NOT EXISTS (SELECT 1 FROM point_flights pf WHERE pf.point_id = points.id)').bind(cutoff),
+    db.prepare(`DELETE FROM sessions WHERE last_seen_at < ?
+                AND user_id = (SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'demo_user_id')`).bind(cutoff),
+  ]);
+}
+
 export default {
   fetch: app.fetch,
 
@@ -3009,6 +3047,14 @@ export default {
           await checkAlerts(tenant, event.scheduledTime);
         } catch (err) {
           console.error(`Alert check failed for ${hostname} ("${bindingName}"):`, String(err));
+        }
+        // Hourly is often enough: an hour adds about 80 points.
+        if (tenant.demo && new Date(event.scheduledTime).getUTCMinutes() === 0) {
+          try {
+            await pruneDemoTenant(tenant, Math.floor(event.scheduledTime / 1000));
+          } catch (err) {
+            console.error(`Demo pruning failed for ${hostname} ("${bindingName}"):`, String(err));
+          }
         }
       }
     })());

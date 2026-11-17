@@ -1465,10 +1465,13 @@ Use `expo-location` for the location fixes instead of reimplementing them.
 - iOS "Always" location and Android background location both get extra store review. The
   purpose strings and the Play declaration video must describe exactly this feature.
 - **Decided (2026-11-15): the "Always" purpose strings change in phase 8's native build, not
-  before.** The first binary's three location strings in `apps/mobile/app.config.ts` all say
-  "Wingbeat shows your position on the map.", which is right for "While using" (kept) but not
-  for "Always". In phase 8's build, `locationAlwaysAndWhenInUsePermission` and
-  `locationAlwaysPermission` become: "Wingbeat uses your location in the background, only
+  before.** Since build 7 (v0.6.1, 2026-11-17) the binary has no location module, strings or
+  background modes at all: `expo-location`, `expo-task-manager` and `expo-background-task`
+  were uninstalled and their config plugins removed from `apps/mobile/app.config.ts`, because
+  App Review asks about permissions and background modes the app doesn't use. Phase 8's build
+  reinstalls them, with "Wingbeat shows your position on the map." for
+  `locationWhenInUsePermission`, and `locationAlwaysAndWhenInUsePermission` and
+  `locationAlwaysPermission` as: "Wingbeat uses your location in the background, only
   near your aircraft, to log the flights you fly to you automatically. You can turn this off
   in Settings." The setting it names is the auto-log switch below. Any change to these strings
   changes the fingerprint, so it waits for that build to keep OTA updates reaching the current
@@ -1894,6 +1897,11 @@ calls a new `DELETE /api/me`:
 - refuses to delete the env-configured admin (`is_env_admin`) or the last admin of an
   instance, with a message to transfer admin first.
 
+On a demo tenant, everyone who signs in with the demo code shares the demo user
+(`demo_user_id`), which is also its only admin. There `DELETE /api/me` from the demo user
+deletes only the caller's session (and so its push devices), keeps the demo user, and returns
+ok, so App Review can try deletion and still sign in again.
+
 The web gets the same button in Settings. The privacy policy states what's deleted and what
 the operator keeps.
 
@@ -2251,9 +2259,11 @@ Demo" (JavaScript only, so it ships as an update), the seed script, and tests
 history imported 2026-11-16). "Try the Demo" signs in to the production demo
 (`demo.wingbeat.dummthings.dev`) on the `production` and `preview` channels, since
 TestFlight's external testers go through Beta App Review, and to the staging demo on
-development builds (`demoInstance` in `browser-sign-in.ts`). Every demo sign-in makes a session, and nothing prunes them. Points on the demo tenant grow by about
-2,000 a day with nothing pruning them, and the relief pilots have no default duty, so their
-days show "No duty times recorded"; both are accepted for now.
+development builds (`demoInstance` in `browser-sign-in.ts`). Every demo sign-in makes a session, and the demo's points grow by about 2,000 a day, so
+on a demo tenant only the cron prunes hourly (`pruneDemoTenant` in `src/index.ts`, v0.6.1):
+flights that ended more than 31 days ago with their points, and the demo user's sessions idle
+that long, which keeps the month the history import loads. The relief pilots have no default
+duty, so their days show "No duty times recorded"; that's accepted for now.
 
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with
@@ -2388,7 +2398,7 @@ layers need no Android counterpart; only the chrome around the map does.
 | Accounts: switch, add, sign out | Done | a `Form`; a context menu instead of touch-and-hold | `ListItem`s, a long-press `DropdownMenu` | `api/me` |
 | Delete my account | Done | a destructive `Button`, `Alert` | `AlertDialog` | `DELETE /api/me` |
 | Theme | Done | a segmented `Picker` | `SingleChoiceSegmentedButtonRow` | — |
-| Documentation link | Done: a Help section | a `Button` opening the docs site in `expo-web-browser` (public, no session) | same | `docs` (`docsHref`, the web's too) |
+| Documentation link | Removed (v0.6.1): every docs page's logo leads to the home page and its pricing, which the app mustn't link to (guideline 3.1.1, see above). Return it with docs pages that can't reach pricing | — | — | `docs` (`docsHref`, the web's) |
 | Clear local cache | Done: "Clear Flight Cache" in the active account's section, with a confirmation, then a full download | a destructive `Button`, `Alert` | same | `flight-cache.ts`, the flight store's `clearCache` |
 | My Devices (rename, sign out) | Phase 11 (first in Settings) | a `List` with `SwipeActions`; an `Alert` with a text field to rename | a long-press menu, an `AlertDialog` with a `TextField` | `api/me` |
 | Notification subscriptions | Phase 7 | a `Form` of `Toggle`s | `Switch` `ListItem`s | phase 7's routes |

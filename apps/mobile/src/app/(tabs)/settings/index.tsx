@@ -9,11 +9,9 @@
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Alert, Linking } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
 import { Button, ContextMenu, Form, HStack, Host, Image, Section, Spacer, Text, Toggle, VStack } from '@expo/ui/swift-ui';
 import { disabled, font, foregroundStyle } from '@expo/ui/swift-ui/modifiers';
 import { createDeviceLink, deleteMe } from '@wingbeat/core/api/me';
-import { docsHref } from '@wingbeat/core/docs';
 import { useAccounts } from '@/lib/accounts-context';
 import { useDutyTab } from '@/lib/duty-tab';
 import { errorText } from '@/lib/api';
@@ -150,10 +148,6 @@ export default function SettingsScreen() {
 
         <Section title="Appearance">
           <ChoicePicker label="Theme" choices={THEME_CHOICES} value={theme} onChange={setTheme} style="segmented" />
-        </Section>
-
-        <Section title="Help" footer={<Text>How tracking, flight editing, the duty log and settings work.</Text>}>
-          <Button label="Documentation" systemImage="book" onPress={() => WebBrowser.openBrowserAsync(docsHref())} />
         </Section>
       </Form>
     </Host>
