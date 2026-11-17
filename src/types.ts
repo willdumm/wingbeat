@@ -240,6 +240,12 @@ export interface InviteToken {
   used: number;
   /** The app's PKCE S256 challenge, on a device link from POST /app/connect; null otherwise. */
   code_challenge: string | null;
+  /** The address this token was emailed to (redeeming it adds the address to the user's); null when not emailed. */
+  email: string | null;
+  /** On a device link from the /login form: SHA-256 hex of the 6-digit code it was emailed with. */
+  code_hash: string | null;
+  /** Wrong codes entered against code_hash. */
+  attempts: number;
 }
 
 export interface Env {
@@ -255,6 +261,15 @@ export interface Env {
   // JSON array of the D1 bindings whose tenants are demos (the hosting config's "demo": true):
   // their `demo:<n>` trackers read the simulated feed (demo-feed.ts).
   DEMO_BINDINGS?: string;
+  // Cloudflare Email Service (src/email.ts): the send_email binding, the sender address it
+  // allows and the sender's display name. Without EMAIL and EMAIL_FROM the instance sends no
+  // email and its email features (sign-in by email, email invites, users' addresses) are hidden.
+  EMAIL?: SendEmail;
+  EMAIL_FROM?: string;
+  EMAIL_FROM_NAME?: string;
+  // Workers rate limiting binding for POST /login and /login/code, keyed per client IP.
+  // Optional: the per-address cap in D1 applies either way.
+  LOGIN_RATE_LIMIT?: RateLimit;
 }
 
 /**

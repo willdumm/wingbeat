@@ -8,7 +8,9 @@
 import * as z from 'zod/mini';
 import { OkResponse, type ApiClient } from './client';
 import { Me } from './bootstrap';
+import { EmailAddResponse, PendingEmail, UserEmail } from './users';
 import type { SessionRenameRequest } from './me-requests';
+import type { EmailAddRequest } from './users-requests';
 
 export type { SessionRenameRequest } from './me-requests';
 
@@ -26,7 +28,11 @@ export const SessionsResponse = z.looseObject({ sessions: z.array(Session) });
 /** POST /api/me/device-link: the sign-in link's path (/join/<token>), valid for 15 minutes. */
 export const DeviceLinkResponse = z.looseObject({ url: z.string() });
 
+/** GET /api/me/emails: the user's addresses, and those sent a link but not yet confirmed. */
+export const MyEmailsResponse = z.looseObject({ emails: z.array(UserEmail), pending_emails: z.array(PendingEmail) });
+
 export type Session = z.infer<typeof Session>;
+export type MyEmailsResponse = z.infer<typeof MyEmailsResponse>;
 export type SessionsResponse = z.infer<typeof SessionsResponse>;
 export type DeviceLinkResponse = z.infer<typeof DeviceLinkResponse>;
 
@@ -53,6 +59,21 @@ export function deleteSession(client: ApiClient, id: number): Promise<OkResponse
 /** A sign-in link for another device of the same user. */
 export function createDeviceLink(client: ApiClient): Promise<DeviceLinkResponse> {
   return client.write('POST', '/api/me/device-link', undefined, DeviceLinkResponse);
+}
+
+/** The signed-in user's email addresses. */
+export function getMyEmails(client: ApiClient): Promise<MyEmailsResponse> {
+  return client.get('/api/me/emails', MyEmailsResponse);
+}
+
+/** Emails a new address a link that adds it to the signed-in user's. */
+export function addMyEmail(client: ApiClient, body: EmailAddRequest): Promise<EmailAddResponse> {
+  return client.write('POST', '/api/me/emails', body, EmailAddResponse);
+}
+
+/** Removes one of the signed-in user's addresses. */
+export function removeMyEmail(client: ApiClient, emailId: number): Promise<OkResponse> {
+  return client.write('DELETE', '/api/me/emails/' + emailId, undefined, OkResponse);
 }
 
 /** Marks this session as seen now. */

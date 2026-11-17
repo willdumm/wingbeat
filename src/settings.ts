@@ -1,4 +1,5 @@
-import { Tenant } from './types';
+import { Env, Tenant } from './types';
+import { emailEnabled } from './email';
 import { jsonForScript } from './shared/html';
 import type { InstanceSettings } from '@wingbeat/core/api/bootstrap';
 
@@ -65,7 +66,7 @@ export async function loadSettings(tenant: Tenant): Promise<AppSettings> {
   };
 }
 
-export function settingsAsClientObject(s: AppSettings): string {
+export function settingsAsClientObject(s: AppSettings, env: Env): string {
   // The pages and the app get the same non-secret settings: settingsAsInstance picks them.
   const instance = settingsAsInstance(s);
   return jsonForScript({
@@ -74,6 +75,8 @@ export function settingsAsClientObject(s: AppSettings): string {
     mapDefaultLat:  instance.map_default_lat,
     mapDefaultLng:  instance.map_default_lng,
     mapDefaultZoom: instance.map_default_zoom,
+    // Whether this instance sends email (bootstrap's instance.email): Settings' email fields.
+    email:          emailEnabled(env),
   });
 }
 

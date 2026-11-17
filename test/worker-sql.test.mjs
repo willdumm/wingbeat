@@ -1237,7 +1237,8 @@ describe('the app’s requests, through the core client', async () => {
       assert.equal((await w.request('PATCH', '/api/settings', restore)).status, 200);
     }
     assert.deepEqual([boot.api_version, boot.min_client_level], [version.API_VERSION, version.MIN_CLIENT_LEVEL]);
-    assert.deepEqual(boot.instance, instance);
+    // This instance has no EMAIL binding, so it sends no email.
+    assert.deepEqual(boot.instance, { ...instance, email: false });
     assert.equal(await settled('level=1; runtime=r1'), 'level=1; runtime=r1');
     await me.getMe(asApp('r2'));
     assert.equal(await settled('level=1; runtime=r2'), 'level=1; runtime=r2');
@@ -1407,5 +1408,232 @@ describe('compat snapshots: the app’s routes, against every supported level', 
         for (const body of seen.get(route)) assertShape(schema, body);
       }
     });
+  });
+});
+
+// Email sign-in, email invites and users' addresses (docs/mobile-app-plan.md, "Email sign-in,
+// email invites and finding your instance"), on a Worker of their own that has an EMAIL
+// binding: test/worker.mjs's stub records each message in test_sent_emails.
+describe('email: sign-in, invites and addresses', async () => {
+  const { createApiClient, ApiHttpError } = await importCore('api/client');
+  const me = await importCore('api/me');
+  const users = await importCore('api/users');
+  const { getBootstrap } = await importCore('api/bootstrap');
+  let e;
+  before(async () => { e = await startWorker({ email: true }); });
+  after(() => e?.dispose());
+  const refused = (status, message) => (err) => err instanceof ApiHttpError && err.status === status && err.serverError === message;
+
+  /** A core client signed in with this session token (a page's cookie). */
+  const clientAs = (token) => createApiClient({
+    baseUrl: 'http://localhost',
+    fetch: () => (url, init = {}) => e.fetch(url, { ...init, headers: { ...init.headers, cookie: 'session=' + token } }),
+  });
+  let admin;
+  before(() => { admin = clientAs('test-admin-session'); });
+
+  /** The messages sent since the last call (all of them, the first time). */
+  let seen = 0;
+  async function sent() {
+    const rows = await e.all('SELECT * FROM sqlite_master WHERE name = ?', 'test_sent_emails');
+    if (!rows.length) return [];
+    const mail = await e.all('SELECT * FROM test_sent_emails WHERE id > ? ORDER BY id', seen);
+    if (mail.length) seen = mail.at(-1).id;
+    return mail;
+  }
+  const linkIn = (mail) => /\/join\/([0-9a-f]{64})/.exec(mail.text)[1];
+  const codeIn = (mail) => /: (\d{6})\b/.exec(mail.text)[1];
+  /** A form POST as a signed-out browser (or as `cookie`). */
+  const form = (path, fields, cookie) => e.request('POST', path, new URLSearchParams(fields).toString(), {
+    as: null, raw: true, headers: { 'content-type': 'application/x-www-form-urlencoded', ...(cookie ? { cookie } : {}) },
+  });
+  const sessionOf = (res) => /session=([0-9a-f]+)/.exec(res.headers.get('set-cookie') ?? '')?.[1];
+  /** A user with these confirmed addresses; returns their id. */
+  let nextUser = 100;
+  async function userWith(name, ...emails) {
+    const id = nextUser++;
+    await e.run("INSERT INTO users (id, name, role) VALUES (?, ?, 'viewer')", id, name);
+    for (const email of emails) await e.run('INSERT INTO user_emails (user_id, email) VALUES (?, ?)', id, email);
+    return id;
+  }
+
+  test('bootstrap says the instance sends email; /login shows the email form', async () => {
+    assert.equal((await getBootstrap(admin)).instance.email, true);
+    const page = await e.request('GET', '/login', undefined, { as: null });
+    assert.match(page.body, /action="\/login"/);
+  });
+
+  test('/login: the same answer with or without an account; the code signs this browser in, once', async () => {
+    const id = await userWith('Lee Login', 'lee@example.com');
+    await sent();
+    const unknown = await form('/login', { email: 'nobody@example.com' });
+    assert.equal(unknown.status, 200);
+    assert.deepEqual(await sent(), []);
+
+    const known = await form('/login', { email: '  Lee@Example.com ' });
+    assert.equal(known.status, 200);
+    // The page can't tell the two apart (besides the address it repeats).
+    assert.equal(known.body.replaceAll('lee@example.com', 'X'), unknown.body.replaceAll('nobody@example.com', 'X'));
+    const [mail] = await sent();
+    assert.deepEqual([mail.to, mail.from_email, mail.from_name], ['lee@example.com', 'accounts@wingbeat.test', 'Wingbeat Accounts']);
+    assert.match(mail.text, /localhost/);
+    const code = codeIn(mail);
+    assert.ok(mail.subject.includes(code));
+
+    const signedIn = await form('/login/code', { email: 'lee@example.com', code });
+    assert.equal(signedIn.status, 303);
+    assert.equal(signedIn.headers.get('location'), '/');
+    assert.equal((await me.getMe(clientAs(sessionOf(signedIn)))).id, id);
+    // Used: the same code again, or the email's link, signs nothing in.
+    assert.equal((await form('/login/code', { email: 'lee@example.com', code })).status, 400);
+    assert.equal((await e.request('POST', '/join/' + linkIn(mail), undefined, { as: null })).status, 410);
+  });
+
+  test('/login: the email’s link signs in the browser that opens it', async () => {
+    const id = await userWith('Lin Link', 'lin@example.com');
+    await sent();
+    await form('/login', { email: 'lin@example.com' });
+    const [mail] = await sent();
+    const page = await e.request('GET', '/join/' + linkIn(mail), undefined, { as: null });
+    assert.match(page.body, /Sign in to .* as <strong>Lin Link<\/strong>\?/);
+    const opened = await e.request('POST', '/join/' + linkIn(mail), undefined, { as: null });
+    assert.equal(opened.status, 302);
+    assert.equal((await me.getMe(clientAs(sessionOf(opened)))).id, id);
+  });
+
+  test('/login/code: 5 wrong codes use the token up; at most 3 live tokens per address', async () => {
+    await userWith('Gus Guess', 'gus@example.com');
+    await sent();
+    await form('/login', { email: 'gus@example.com' });
+    const [mail] = await sent();
+    const wrong = codeIn(mail) === '000000' ? '111111' : '000000';
+    const token = () => e.first('SELECT used, attempts FROM invite_tokens WHERE token = ?', linkIn(mail));
+    for (let i = 0; i < 4; i++) assert.equal((await form('/login/code', { email: 'gus@example.com', code: wrong })).status, 400);
+    assert.deepEqual({ ...await token() }, { used: 0, attempts: 4 });
+    assert.equal((await form('/login/code', { email: 'gus@example.com', code: wrong })).status, 400);
+    assert.deepEqual({ ...await token() }, { used: 1, attempts: 5 });
+    assert.equal((await form('/login/code', { email: 'gus@example.com', code: codeIn(mail) })).status, 400);
+
+    for (let i = 0; i < 4; i++) await form('/login', { email: 'gus@example.com' });
+    assert.equal((await sent()).length, 3);
+  });
+
+  test('/login: a return to the app’s connect page comes back there', async () => {
+    await userWith('Ada App', 'ada-app@example.com');
+    await sent();
+    const back = '/app/connect?challenge=' + 'a'.repeat(43) + '&state=' + 'b'.repeat(22);
+    assert.match((await e.request('GET', '/login?return=' + encodeURIComponent(back), undefined, { as: null })).body,
+      new RegExp('value="' + back.replaceAll('?', '\\?').replaceAll('&', '&amp;') + '"'));
+    await form('/login', { email: 'ada-app@example.com', return: back });
+    const [mail] = await sent();
+    const res = await form('/login/code', { email: 'ada-app@example.com', code: codeIn(mail), return: back });
+    assert.equal(res.headers.get('location'), back);
+    // Anywhere else goes home.
+    await form('/login', { email: 'ada-app@example.com', return: 'https://evil.example/' });
+    const [again] = await sent();
+    assert.equal((await form('/login/code', { email: 'ada-app@example.com', code: codeIn(again), return: 'https://evil.example/' }))
+      .headers.get('location'), '/');
+  });
+
+  test('an admin adds a user’s addresses: pending until opened; several per user; one user per address', async () => {
+    const id = await userWith('Max Multi');
+    const other = await userWith('Oli Other', 'oli@example.com');
+    await sent();
+    const added = await users.addUserEmail(admin, id, { email: 'Max@Example.com' });
+    assert.deepEqual(added.pending_email.email, 'max@example.com');
+    const [mail] = await sent();
+    assert.equal(mail.to, 'max@example.com');
+    const listed = () => users.getUsers(admin).then(r => r.users.find(u => u.id === id));
+    assert.deepEqual((await listed()).emails, []);
+    assert.deepEqual((await listed()).pending_emails.map(p => p.email), ['max@example.com']);
+
+    // Opening it confirms the address and signs in the browser that opened it.
+    assert.match((await e.request('GET', '/join/' + linkIn(mail), undefined, { as: null })).body, /Confirm <strong>max@example.com<\/strong>/);
+    const opened = await e.request('POST', '/join/' + linkIn(mail), undefined, { as: null });
+    assert.equal((await me.getMe(clientAs(sessionOf(opened)))).id, id);
+    assert.deepEqual((await listed()).emails.map(x => x.email), ['max@example.com']);
+    assert.deepEqual((await listed()).pending_emails, []);
+
+    // A second address on the same account; both sign in.
+    await users.addUserEmail(admin, id, { email: 'max.work@example.com' });
+    const [second] = await sent();
+    await e.request('POST', '/join/' + linkIn(second), undefined, { as: null });
+    assert.deepEqual((await listed()).emails.map(x => x.email), ['max@example.com', 'max.work@example.com']);
+
+    // No address on two accounts: refused while another user holds it, and by the table itself.
+    await assert.rejects(users.addUserEmail(admin, other, { email: 'max@example.com' }), refused(409, 'That address is on another account'));
+    await assert.rejects(users.addUserEmail(admin, id, { email: 'max@example.com' }), refused(409, 'That address is already on this account'));
+    await assert.rejects(e.run('INSERT INTO user_emails (user_id, email) VALUES (?, ?)', other, 'max.work@example.com'), /UNIQUE/);
+
+    // Removed, it no longer signs in.
+    const work = (await listed()).emails.find(x => x.email === 'max.work@example.com');
+    assert.deepEqual(await users.removeUserEmail(admin, id, work.id), { ok: true });
+    await form('/login', { email: 'max.work@example.com' });
+    assert.deepEqual(await sent(), []);
+    await assert.rejects(users.removeUserEmail(admin, other, work.id), refused(404, 'Email not found'));
+  });
+
+  test('two users sent links to one address: the first opened gets it; the other still signs in', async () => {
+    const a = await userWith('Ann First');
+    const b = await userWith('Bea Second');
+    await sent();
+    await users.addUserEmail(admin, a, { email: 'shared@example.com' });
+    await users.addUserEmail(admin, b, { email: 'shared@example.com' });
+    const [toA, toB] = await sent();
+    await e.request('POST', '/join/' + linkIn(toA), undefined, { as: null });
+    const opened = await e.request('POST', '/join/' + linkIn(toB), undefined, { as: null });
+    assert.equal((await me.getMe(clientAs(sessionOf(opened)))).id, b);
+    assert.deepEqual(await e.all('SELECT user_id FROM user_emails WHERE email = ?', 'shared@example.com'), [{ user_id: a }]);
+  });
+
+  test('a user’s own addresses; opened in their own signed-in browser, the link only confirms', async () => {
+    await sent();
+    assert.deepEqual(await me.getMyEmails(admin), { emails: [], pending_emails: [] });
+    const added = await me.addMyEmail(admin, { email: 'ada@example.com' });
+    assert.equal(added.pending_email.email, 'ada@example.com');
+    assert.deepEqual((await me.getMyEmails(admin)).pending_emails.map(p => p.email), ['ada@example.com']);
+    const [mail] = await sent();
+    const sessions = (await e.all('SELECT id FROM sessions WHERE user_id = 1')).length;
+    const cookie = 'session=test-admin-session';
+    assert.match((await e.request('GET', '/join/' + linkIn(mail), undefined, { as: null, headers: { cookie } })).body, /Add <strong>ada@example.com<\/strong> to your account\?/);
+    const opened = await e.request('POST', '/join/' + linkIn(mail), undefined, { as: null, headers: { cookie } });
+    assert.equal(opened.status, 302);
+    assert.equal(opened.headers.get('set-cookie'), null);
+    assert.equal((await e.all('SELECT id FROM sessions WHERE user_id = 1')).length, sessions);
+    const { emails } = await me.getMyEmails(admin);
+    assert.deepEqual(emails.map(x => x.email), ['ada@example.com']);
+    assert.deepEqual(await me.removeMyEmail(admin, emails[0].id), { ok: true });
+    await assert.rejects(me.addMyEmail(admin, { email: 'not an address' }), refused(400, 'Enter an email address'));
+    // A bounced send leaves nothing pending.
+    await assert.rejects(me.addMyEmail(admin, { email: 'ada@bounce.test' }), refused(502, 'The email couldn’t be sent. Try again later.'));
+    assert.deepEqual((await me.getMyEmails(admin)).pending_emails, []);
+  });
+
+  test('an emailed invite: sent, listed with its address, and redeemed into an account with it', async () => {
+    await sent();
+    const created = await users.createInvite(admin, { name: 'Ivy Invited', role: 'viewer', email: 'ivy@example.com' });
+    assert.equal(created.emailed, true);
+    const [mail] = await sent();
+    assert.equal(linkIn(mail), created.token);
+    assert.match(mail.subject, /Ada Admin invited you/);
+    assert.match(mail.text, /for 7 days/);
+    assert.equal((await users.getInvites(admin)).invites.find(i => i.token === created.token).email, 'ivy@example.com');
+    const opened = await e.request('POST', '/join/' + created.token, undefined, { as: null });
+    const ivy = await me.getMe(clientAs(sessionOf(opened)));
+    assert.deepEqual((await me.getMyEmails(clientAs(sessionOf(opened)))).emails.map(x => x.email), ['ivy@example.com']);
+    assert.equal(ivy.name, 'Ivy Invited');
+
+    // Without an email, as before; a held address or a bounce is refused and leaves no invite.
+    assert.equal((await users.createInvite(admin, { name: 'No Mail', role: 'viewer', email: ' ' })).emailed, false);
+    await assert.rejects(users.createInvite(admin, { name: 'Dup', role: 'viewer', email: 'ivy@example.com' }), refused(409, 'That address is on another account'));
+    await assert.rejects(users.createInvite(admin, { name: 'Bounce', role: 'viewer', email: 'x@bounce.test' }),
+      refused(502, 'The email couldn’t be sent. Try again later, or leave the email blank and share the link.'));
+    assert.ok(!(await users.getInvites(admin)).invites.some(i => i.invited_name === 'Bounce'));
+  });
+
+  test('without an EMAIL binding: no email form, and the email routes refuse', async () => {
+    assert.doesNotMatch((await w.request('GET', '/login', undefined, { as: null })).body, /action="\/login"/);
+    assert.equal((await w.request('POST', '/api/me/emails', { email: 'a@example.com' })).status, 400);
+    assert.equal((await w.request('POST', '/api/invites', { name: 'N', role: 'viewer', email: 'a@example.com' })).status, 400);
   });
 });

@@ -73,12 +73,36 @@ export function splitSql(sql) {
  *   fetch(url, init)                      fetch with no session cookie, for the app's client (bearer or none)
  * startWorker({ bindings }) overrides Worker bindings (a value of undefined leaves one unset).
  * startWorker({ outbound }) answers the Worker's own fetches: outbound(request) → Response.
+ * startWorker({ email: true }) gives the Worker an EMAIL binding (and EMAIL_FROM), which
+ *   records each message in the test_sent_emails table (to, from_email, from_name, subject,
+ *   text, html) of the same database; a message to an address at bounce.test is refused.
  *   scheduled({ scheduledTime })          runs the cron handler once (polls, receipt checks, alerts), at
  *                                         scheduledTime (a Date, default now)
  *   db                                    the D1 binding, for seeding and checking rows
  *   all(sql, ...params) / first(sql, ...params) / run(sql, ...params)  shorthands on it
  */
-export async function startWorker({ bindings: overrides = {}, outbound } = {}) {
+/**
+ * The EMAIL stub (startWorker({ email: true })): a second Worker whose entrypoint stands in for
+ * the send_email binding's send(), over RPC, and records each message in the shared database.
+ */
+const EMAIL_STUB = `
+import { WorkerEntrypoint } from 'cloudflare:workers';
+export class Sender extends WorkerEntrypoint {
+  async send(message) {
+    const to = [message.to].flat().join(', ');
+    if (to.endsWith('@bounce.test')) throw new Error('Recipient refused');
+    const db = this.env.DB;
+    await db.prepare(\`CREATE TABLE IF NOT EXISTS test_sent_emails
+      (id INTEGER PRIMARY KEY, "to" TEXT, from_email TEXT, from_name TEXT, subject TEXT, text TEXT, html TEXT)\`).run();
+    await db.prepare('INSERT INTO test_sent_emails ("to", from_email, from_name, subject, text, html) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(to, message.from.email, message.from.name ?? null, message.subject, message.text ?? null, message.html ?? null).run();
+    return { messageId: 'test-' + Date.now() };
+  }
+}
+export default { fetch: () => new Response('') };
+`;
+
+export async function startWorker({ bindings: overrides = {}, outbound, email = false } = {}) {
   const bundle = await build({
     entryPoints: [path.join(ROOT, 'src/index.ts')],
     bundle: true,
@@ -91,16 +115,29 @@ export async function startWorker({ bindings: overrides = {}, outbound } = {}) {
     logLevel: 'warning',
   });
   // A binding overridden to undefined is left unset.
-  const bindings = { CUSTOMER_ROUTING: JSON.stringify({ localhost: 'DB' }), POLLER_SECRET: 'test-secret', ...overrides };
+  const bindings = {
+    CUSTOMER_ROUTING: JSON.stringify({ localhost: 'DB' }), POLLER_SECRET: 'test-secret',
+    ...(email ? { EMAIL_FROM: 'accounts@wingbeat.test', EMAIL_FROM_NAME: 'Wingbeat Accounts' } : {}),
+    ...overrides,
+  };
   for (const k of Object.keys(bindings)) if (bindings[k] === undefined) delete bindings[k];
-  const mf = new Miniflare({
+  const main = {
+    name: 'wingbeat',
     modules: true,
     script: bundle.outputFiles[0].text,
     compatibilityDate: '2024-11-01',
     d1Databases: ['DB'],
     bindings,
     ...(outbound ? { outboundService: outbound } : {}),
-  });
+  };
+  const mf = new Miniflare(email
+    ? {
+      workers: [
+        { ...main, serviceBindings: { EMAIL: { name: 'email-stub', entrypoint: 'Sender' } } },
+        { name: 'email-stub', modules: true, script: EMAIL_STUB, compatibilityDate: '2024-11-01', d1Databases: ['DB'] },
+      ],
+    }
+    : main);
   try {
     const db = await mf.getD1Database('DB');
     const migrations = readdirSync(path.join(ROOT, 'migrations')).filter(f => /^\d{4}_.*\.sql$/.test(f)).sort();

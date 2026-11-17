@@ -1726,7 +1726,7 @@ account whose operator is in another zone, that's the only correct reading of a 
 
 ### Email sign-in, email invites and finding your instance (proposed 2026-11-15)
 
-Being built, web first (2026-11-17). The user reviewed it on 2026-11-15, settled most of the
+Built for the web on 2026-11-17 (`app-polish`, not yet deployed; "Status" below). The user reviewed it on 2026-11-15, settled most of the
 open questions ("Decided" at the end), and held off then ("I don't want to implement this
 now, just write it up"). On 2026-11-17 they started it and approved simplifying 1 and 2 to
 reuse the join links. It started from the user's note that typing the
@@ -1761,30 +1761,36 @@ codes table and a link page of their own. That page is already safe from mail sc
 `GET` only shows a button; the `POST` signs in), already offers "Open in Wingbeat app" on an
 iPhone, and the app already redeems the same tokens at `POST /api/app/pair`.
 
-- **Migration `0009_`**: `users.email` (lowercased, nullable, verified addresses only) with a
-  partial unique index (`WHERE email IS NOT NULL`), and on `invite_tokens`: `email` (the
-  address the link was sent to), `code_hash` and `attempts` (2). The rows fit the table's
-  existing CHECK (an `invite` keeps its name and role, a `device_link` its `user_id`), so the
-  table isn't rebuilt. `users` has no `edit_history` trigger, so none needs recreating.
-- **One rule verifies addresses: redeeming a token that has an `email` sets that user's
-  email to it**, since opening the link proves the inbox. Redeeming an invite creates the
-  user with it. There's no pending address and no separate confirm step: an admin adding an
-  email, an email invite, a user changing their own address and a sign-in from `/login` all
-  send the same kind of link. The user accepted the one consequence (2026-11-17): a link sent
-  to an address an admin mistyped signs in whoever opens it, as a forwarded invite does.
-  Setting `users.email` to an address another user holds fails the unique index; the
-  redemption then still signs in, but leaves the email unchanged.
+- **Several addresses per user** (the user, 2026-11-17: "I'll want to be able to add
+  multiple email addresses to an account"; and "make sure that we don't allow two users to
+  have the same email address listed"). **Migration `0009_email`**: a `user_emails` table
+  (`user_id`, `email` lowercased and `UNIQUE`, so an address belongs to one user at most;
+  verified addresses only), and on `invite_tokens`: `email` (the address the link was sent
+  to), `code_hash` and `attempts` (2). The token rows fit the table's existing CHECK (an
+  `invite` keeps its name and role, a `device_link` its `user_id`), so it isn't rebuilt.
+  Neither table has an `edit_history` trigger.
+- **One rule verifies addresses: redeeming a token that has an `email` adds the address to
+  that user's**, since opening the link proves the inbox. Redeeming an invite creates the
+  user with it. An admin adding an address, an email invite, a user adding their own and a
+  sign-in from `/login` all send the same kind of link; until it's opened, the address is
+  shown as pending (from the unused token). The user accepted the one consequence
+  (2026-11-17): a link sent to an address an admin mistyped signs in whoever opens it, as a
+  forwarded invite does. An address another user already holds is refused when added (409),
+  and if two users were each sent a link to it, the first opened gets it: the other
+  redemption still signs in but adds nothing (`ON CONFLICT DO NOTHING`). An emailed link
+  opened in its own user's signed-in browser only confirms the address, without a second
+  session.
 - **Invite by email.** The admin's invite form gets an optional Email field (`InviteRequest`
   in `packages/core/src/api/…-requests.ts` gains `email`, or the handler never sees it). With
   one, `POST /api/invites` stores it on the token and emails the link (expiry 7 days, as now),
   with the inviter's name and the instance's name. Without one, invites work as today (copy
   the link).
-- **An admin sets a user's email** in the Users list: the instance emails that address a
-  device link (expiry 7 days) that confirms it and signs in. Until it's opened, the Users list
-  shows the address as sent, not confirmed. A user changes their own in Settings the same way;
-  the old address keeps working until the new one's link is opened. Only admins see other
-  users' emails.
-- **Email sign-in (2) only ever matches `users.email`**, which holds only addresses
+- **An admin adds a user's addresses** in the Users list (**Email**; `POST/DELETE
+  /api/users/:id/emails`): the instance emails the address a device link (expiry 7 days) that
+  confirms it and signs in. Until it's opened, the Users list shows it as not confirmed. A
+  user adds and removes their own in Settings → Email addresses (`GET/POST/DELETE
+  /api/me/emails`). Only admins see other users' addresses.
+- **Email sign-in (2) only ever matches `user_emails`**, which holds only addresses
   confirmed this way.
 
 #### 2. Sign in with an email code (web first)
@@ -1802,7 +1808,12 @@ iPhone, and the app already redeems the same tokens at `POST /api/app/pair`.
   new email, which the rate limits cap.
 - **No account enumeration.** `/login` answers the same way whether or not the address has
   an account ("If that address has an account here, we've sent a link and a code").
-- **Rate limits:** the Workers rate-limiting binding, per address and per IP.
+- **Rate limits** (decided while building): per address in D1, which needs no config: an
+  address with 3 live (unused, unexpired) sign-in tokens gets no more emails until one is
+  used or expires. Per IP: the Workers rate-limiting binding `LOGIN_RATE_LIMIT` on `POST
+  /login` and `/login/code`, keyed `<tenant>:<CF-Connecting-IP>`, optional (the hosting repo
+  sets it; a self-hosted instance may not). The binding counts per Cloudflare location and
+  isn't exact, which is fine for this. Adding addresses is capped at 5 pending per user.
 - **Wording.** `joinHTML` gets a sign-in variant ("Sign in as <name>?") for a device link
   sent by email, and `appConnectSignedOutHTML` points to `/login`.
 - **The app** gets email sign-in through "Sign in with Browser": its auth session shows the
@@ -1895,6 +1906,15 @@ with it.
 
 - Whether to build the instance list at all, its hostname, and whether Sea Hawk Air wants
   to be listed.
+
+#### Status (2026-11-17)
+
+Order step 2 is built on `app-polish` (web only), with tests in `test/worker-sql.test.mjs`
+("email: sign-in, invites and addresses"; `test/worker.mjs`'s `email: true` stubs the
+binding with a second Worker that records each message in D1). The bootstrap's
+`instance.email` and the pages' `APP_SETTINGS.email` say whether the instance sends email.
+Not done: onboarding `wingbeat.dummthings.dev` to Email Sending, the hosting repo's
+`LOGIN_RATE_LIMIT` binding, a staging deploy with migration 0009, and a test email.
 
 ### Account deletion
 

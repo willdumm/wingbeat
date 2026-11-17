@@ -38,6 +38,8 @@ export const InstanceSettings = z.looseObject({
   map_default_lat: z.number(),
   map_default_lng: z.number(),
   map_default_zoom: z.number(),
+  /** Whether the instance sends email: sign-in by email, email invites, users' addresses (absent from older servers). */
+  email: z.optional(z.boolean()),
 });
 
 /**

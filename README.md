@@ -60,6 +60,10 @@ wrangler secret put CARTO_API_KEY  # optional, see below
 | `POLLER_SECRET` | yes | Bearer token required for `/api/admin/*` routes and poller endpoints |
 | `CUSTOMER_ROUTING` | yes | JSON map of `hostname → D1 binding name`, e.g. `'{"your-domain.com": "DB"}'`; hostname only, no port — must be set even for single-customer deployments |
 | `CARTO_API_KEY` | no | API key for the "Map" basemap (Carto Voyager tiles), proxied through `/api/tiles/map/...` so the key never reaches the browser. Shared by every tenant on this deployment — it's a hoster fact, not per-tenant data. If unset, "Map" simply doesn't appear in the basemap switcher; other basemaps (Topo, USGS, Satellite) are unaffected. If the key has a referrer allowlist, include your deployment's domains: the proxy sends the requesting site as `Referer`. |
+| `EMAIL` | no | A [`send_email` binding](https://developers.cloudflare.com/email-service/) (Cloudflare Email Service) for sign-in by email, email invites and users' email addresses. Needs `EMAIL_FROM` too; without both, those features don't appear and access is by invite link only. The sending domain must be onboarded to Email Sending (`wrangler email sending enable <domain>`). |
+| `EMAIL_FROM` | with `EMAIL` | The sender address (a var, not a secret), on the onboarded domain and in the binding's `allowed_sender_addresses`. |
+| `EMAIL_FROM_NAME` | no | The sender's display name (default "Wingbeat"). Each email also names the instance (its app name and host). |
+| `LOGIN_RATE_LIMIT` | no | A [rate limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) for the email sign-in form and its code, keyed per client IP. Without it only the per-address cap applies (3 live sign-in codes per address). |
 
 ### 4. Deploy
 

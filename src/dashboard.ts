@@ -43,7 +43,7 @@ export function dashboardHTML(settings: AppSettings, env: Env, nonce: string): s
   <style>${themeFontImport()}${themeVars()}${dashboardPageStyles()}</style>
 </head>
 <body>
-<script nonce="${nonce}">window.APP_SETTINGS=${settingsAsClientObject(settings)};</script>
+<script nonce="${nonce}">window.APP_SETTINGS=${settingsAsClientObject(settings, env)};</script>
 ${dashboardMarkup(settings.app_name)}
   ${coreBundleScript(nonce)}
   <script nonce="${nonce}">${iconRuntimeScript()}${dashboardScripts(env)}</script>
