@@ -2256,9 +2256,11 @@ Demo" (JavaScript only, so it ships as an update), the seed script, and tests
 history imported 2026-11-16). "Try the Demo" signs in to the production demo
 (`demo.wingbeat.dummthings.dev`) on the `production` and `preview` channels, since
 TestFlight's external testers go through Beta App Review, and to the staging demo on
-development builds (`demoInstance` in `browser-sign-in.ts`). Every demo sign-in makes a session, and nothing prunes them. Points on the demo tenant grow by about
-2,000 a day with nothing pruning them, and the relief pilots have no default duty, so their
-days show "No duty times recorded"; both are accepted for now.
+development builds (`demoInstance` in `browser-sign-in.ts`). Every demo sign-in makes a session, and the demo's points grow by about 2,000 a day, so
+on a demo tenant only the cron prunes hourly (`pruneDemoTenant` in `src/index.ts`, v0.6.1):
+flights that ended more than 31 days ago with their points, and the demo user's sessions idle
+that long, which keeps the month the history import loads. The relief pilots have no default
+duty, so their days show "No duty times recorded"; that's accepted for now.
 
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with

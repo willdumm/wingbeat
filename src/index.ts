@@ -2980,6 +2980,29 @@ app.delete('/api/webhooks/:id', requireAdmin, async (c) => {
 
 // ── Scheduled handler ─────────────────────────────────────────────────────────
 
+/** How long a demo tenant keeps its simulated history and idle sessions (the history import loads 30 days). */
+const DEMO_RETENTION_SECS = 31 * 24 * 3600;
+
+/**
+ * Keeps a demo tenant's storage flat: its trackers add about 2,000 points a day and every
+ * demo sign-in makes a session. Deletes the flights that ended before the retention window
+ * (with their point links), the points before it that no remaining flight holds, and the
+ * demo user's sessions idle that long. Corrections and edit_history stay (they're small, and
+ * edit_history is append-only). Never call it for a tenant that isn't a demo.
+ */
+async function pruneDemoTenant(tenant: Tenant, nowSec: number): Promise<void> {
+  if (!tenant.demo) return;
+  const cutoff = nowSec - DEMO_RETENTION_SECS;
+  const db = tenant.db;
+  await db.batch([
+    db.prepare('DELETE FROM point_flights WHERE flight_id IN (SELECT id FROM flights WHERE end_time < ?)').bind(cutoff),
+    db.prepare('DELETE FROM flights WHERE end_time < ?').bind(cutoff),
+    db.prepare('DELETE FROM points WHERE garmin_time < ? AND NOT EXISTS (SELECT 1 FROM point_flights pf WHERE pf.point_id = points.id)').bind(cutoff),
+    db.prepare(`DELETE FROM sessions WHERE last_seen_at < ?
+                AND user_id = (SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'demo_user_id')`).bind(cutoff),
+  ]);
+}
+
 export default {
   fetch: app.fetch,
 
@@ -3024,6 +3047,14 @@ export default {
           await checkAlerts(tenant, event.scheduledTime);
         } catch (err) {
           console.error(`Alert check failed for ${hostname} ("${bindingName}"):`, String(err));
+        }
+        // Hourly is often enough: an hour adds about 80 points.
+        if (tenant.demo && new Date(event.scheduledTime).getUTCMinutes() === 0) {
+          try {
+            await pruneDemoTenant(tenant, Math.floor(event.scheduledTime / 1000));
+          } catch (err) {
+            console.error(`Demo pruning failed for ${hostname} ("${bindingName}"):`, String(err));
+          }
         }
       }
     })());

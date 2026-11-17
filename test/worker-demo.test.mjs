@@ -134,3 +134,51 @@ describe('deleting my account', () => {
     assert.equal((await pair(demo, DEMO_CODE)).status, 200);
   });
 });
+
+describe('pruning', () => {
+  const DAY = 86400;
+  // On the hour, when the cron prunes.
+  const at = new Date(Math.floor(Date.now() / 3600_000) * 3600_000);
+  const now = Math.floor(at.getTime() / 1000);
+
+  // Rows from 40 days ago and from 10 days ago, ids from 900000 so they don't meet the feed's.
+  async function addHistory(w) {
+    const demoUser = Number((await w.first(`SELECT value FROM settings WHERE key = 'demo_user_id'`)).value);
+    const otherUser = (await w.first(`INSERT INTO users (name, role) VALUES ('Other', 'viewer') RETURNING id`)).id;
+    const stmts = [];
+    for (const [id, start] of [[900001, now - 40 * DAY], [900002, now - 10 * DAY]]) {
+      stmts.push(`INSERT INTO flights (id, tracker_id, start_time, end_time, point_count) VALUES (${id}, 1, ${start}, ${start + 3600}, 1)`);
+      stmts.push(`INSERT INTO points (id, garmin_time, lat, lon, tracker_id) VALUES (${id}, ${start + 60}, 57.75, -152.49, 1)`);
+      stmts.push(`INSERT INTO point_flights (point_id, flight_id) VALUES (${id}, ${id})`);
+    }
+    // A point on the ground, in no flight.
+    stmts.push(`INSERT INTO points (id, garmin_time, lat, lon, tracker_id) VALUES (900003, ${now - 40 * DAY + 7200}, 57.75, -152.49, 1)`);
+    stmts.push(`INSERT INTO sessions (user_id, token, device_name, last_seen_at) VALUES (${demoUser}, 'old-demo', 'old', ${now - 40 * DAY})`);
+    stmts.push(`INSERT INTO sessions (user_id, token, device_name, last_seen_at) VALUES (${demoUser}, 'new-demo', 'new', ${now - 10 * DAY})`);
+    stmts.push(`INSERT INTO sessions (user_id, token, device_name, last_seen_at) VALUES (${otherUser}, 'old-other', 'other', ${now - 40 * DAY})`);
+    for (const s of stmts) await w.run(s);
+  }
+  const left = async (w) => ({
+    flights: (await w.all('SELECT id FROM flights WHERE id >= 900000 ORDER BY id')).map((r) => r.id),
+    points: (await w.all('SELECT id FROM points WHERE id >= 900000 ORDER BY id')).map((r) => r.id),
+    links: (await w.all('SELECT point_id FROM point_flights WHERE point_id >= 900000 ORDER BY point_id')).map((r) => r.point_id),
+    sessions: (await w.all(`SELECT token FROM sessions WHERE token IN ('old-demo', 'new-demo', 'old-other') ORDER BY token`)).map((r) => r.token),
+  });
+
+  test('on a demo tenant drops the history before the last month and its idle demo sessions', async () => {
+    await addHistory(demo);
+    await demo.scheduled({ scheduledTime: at });
+    assert.deepEqual(await left(demo), {
+      flights: [900002], points: [900002], links: [900002], sessions: ['new-demo', 'old-other'],
+    });
+  });
+
+  test('never on a real tenant', async () => {
+    await addHistory(real);
+    await real.scheduled({ scheduledTime: at });
+    assert.deepEqual(await left(real), {
+      flights: [900001, 900002], points: [900001, 900002, 900003], links: [900001, 900002],
+      sessions: ['new-demo', 'old-demo', 'old-other'],
+    });
+  });
+});
