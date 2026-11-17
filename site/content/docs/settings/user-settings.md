@@ -30,6 +30,14 @@ another device to your account. See
 
 ## Data
 
+**Export flights** — downloads your flights as a CSV or JSON file, one row
+per flight, optionally limited to a date range. Each row has the start and
+end times (in UTC and in the operator's timezone), the duration, the pilot,
+aircraft and tracker, the start and end places (names and coordinates), the
+Part 91 and unpaid flags, and the remark. Flights appear as they do in the
+flight list, with corrections applied and removed flights left out; a flight
+still in the air isn't included. Tracks aren't exported.
+
 **Clear local cache** — wipes the local flight-data cache and re-downloads
 everything from the server. Wingbeat keeps a full local copy of flight data
 for speed; this is the escape hatch if that local copy ever looks wrong or

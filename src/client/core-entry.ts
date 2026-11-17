@@ -9,6 +9,8 @@
  * script.
  */
 import * as flightEdits from '@wingbeat/core/flight-edits';
+import * as flightExport from '@wingbeat/core/flight-export';
+import type { FlightExportOptions, FlightExportRow } from '@wingbeat/core/flight-export';
 import type { FlightCorrection, FlightEditField } from '@wingbeat/core/flight-edits';
 import * as time from '@wingbeat/core/time';
 import * as duty from '@wingbeat/core/duty';
@@ -89,6 +91,11 @@ Object.assign(globalThis, {
   flightEntrySummary: (e: FlightCorrection) => flightEdits.flightEntrySummary(tz(), e),
   flightOriginalText: (field: FlightEditField, value: unknown) => flightEdits.flightOriginalText(tz(), field, value),
   flightFormTimes: (dateKey: string, dep: string, arr: string) => flightEdits.flightFormTimes(tz(), dateKey, dep, arr),
+  // ── flight-export: Settings' flights export (CSV or JSON, no track points) ──
+  flightExportRows: (flights: flightEdits.EffectiveFlight[], opts?: FlightExportOptions) => flightExport.flightExportRows(tz(), flights, opts),
+  flightsCsv: flightExport.flightsCsv,
+  flightsJson: (rows: FlightExportRow[], opts?: FlightExportOptions) => flightExport.flightsJson(tz(), now(), rows, opts),
+  flightExportFileName: flightExport.flightExportFileName,
   // ── duty: the §135.267 duty log's rows, warnings and totals ──
   DUTY_TOTALS_FOOTNOTE: duty.DUTY_TOTALS_FOOTNOTE,
   currentDutyMonth: () => duty.currentDutyMonth(tz(), now()),

@@ -140,6 +140,13 @@ export function settingsModalMarkup(): string {
               <div class="settings-section-label">Data</div>
               <div class="settings-row">
                 <div class="settings-row-info">
+                  <div class="settings-row-title">Export flights</div>
+                  <div class="settings-row-desc">Times, pilot, aircraft and start and end places, as CSV or JSON. No tracks.</div>
+                </div>
+                <button id="settings-export-flights" class="settings-action-btn">Export</button>
+              </div>
+              <div class="settings-row">
+                <div class="settings-row-info">
                   <div class="settings-row-title">Clear local cache</div>
                   <div class="settings-row-desc">Re-downloads all flight data from the server.</div>
                 </div>
@@ -2052,6 +2059,52 @@ export function settingsModalScript(): string {
         closeSettings();
         await settingsOnClearCache();
       } catch (_) {}
+    });
+
+    // Export flights: the completed effective flights (flightExportRows, @wingbeat/core/
+    // flight-export) between two optional operator dates, downloaded as CSV or JSON.
+    document.getElementById('settings-export-flights').addEventListener('click', () => {
+      if (!flightStore) return;
+      const { modal, close } = openFormModal({
+        id: 'flight-export-modal',
+        title: 'Export flights',
+        bodyHtml:
+          '<p class="form-modal-hint">One row per flight, in the flight list’s corrected form. Leave a date ' +
+            'empty to export from the first flight or through the last.</p>' +
+          '<div class="form-field">' + segmentedHtml('format', [['csv', 'CSV'], ['json', 'JSON']], 'csv',
+            { label: 'Format' }) + '</div>' +
+          '<div class="form-field-row">' +
+            '<div class="form-field"><label for="flight-x-from">From</label><input type="date" id="flight-x-from" /></div>' +
+            '<div class="form-field"><label for="flight-x-to">To</label><input type="date" id="flight-x-to" /></div>' +
+          '</div>' +
+          '<div class="form-modal-error" role="alert"></div>',
+        footerHtml:
+          '<span class="form-modal-footer-spacer"></span>' +
+          '<button class="btn-secondary btn-md" data-act="cancel">Cancel</button>' +
+          '<button class="btn-primary btn-md" data-act="export">Export</button>',
+      });
+      const format = wireSegmented(modal, 'format');
+      const errorEl = modal.querySelector('.form-modal-error');
+      modal.querySelector('[data-act="cancel"]').addEventListener('click', close);
+      modal.querySelector('[data-act="export"]').addEventListener('click', () => {
+        const from = modal.querySelector('#flight-x-from').value || null;
+        const to = modal.querySelector('#flight-x-to').value || null;
+        if (from && to && from > to) { errorEl.textContent = 'From must be on or before To.'; return; }
+        const opts = { from, to, trackers: trackerList || [], aircraft: aircraftList || [] };
+        const rows = flightExportRows(flightStore.getCompleted(), opts);
+        if (!rows.length) { errorEl.textContent = 'No flights in that range.'; return; }
+        const fmt = format();
+        const blob = fmt === 'csv'
+          ? new Blob([flightsCsv(rows)], { type: 'text/csv' })
+          : new Blob([flightsJson(rows, opts)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = flightExportFileName(fmt, from, to);
+        a.click();
+        URL.revokeObjectURL(url);
+        close();
+      });
     });
 
     document.getElementById('settings-delete-account').addEventListener('click', async (e) => {
