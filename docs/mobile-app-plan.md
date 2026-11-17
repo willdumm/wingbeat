@@ -1726,9 +1726,10 @@ account whose operator is in another zone, that's the only correct reading of a 
 
 ### Email sign-in, email invites and finding your instance (proposed 2026-11-15)
 
-Proposed; nothing here is built. The user reviewed it on 2026-11-15, settled most of the open
-questions ("Decided" at the end), and said to hold off: "I don't want to implement this now,
-just write it up." It started from the user's note that typing the
+Being built, web first (2026-11-17). The user reviewed it on 2026-11-15, settled most of the
+open questions ("Decided" at the end), and held off then ("I don't want to implement this
+now, just write it up"). On 2026-11-17 they started it and approved simplifying 1 and 2 to
+reuse the join links. It started from the user's note that typing the
 instance's address is "a little awkward for the app-first flow", and their follow-up: "I'll
 also want to be able to invite new users through email (so the existing admin user would be
 able to create a new user, enter their email, and the invite would be sent with a link that
@@ -1752,76 +1753,73 @@ tenants. Self-hosted instances get the same flow once they configure email sendi
 someone on several instances adds each one separately. That's rare today (one customer), and
 the central directory below stays possible later without undoing any of this.
 
-#### 1. Emails on users, and email invites (web, admin)
+#### 1. Emails on users, sent as join links (web, admin)
 
-- **Migration `0009_`** (or whatever number is next when this is built): `users.email`
-  (lowercased, nullable, verified addresses only) with a partial unique index
-  (`WHERE email IS NOT NULL`), `users.pending_email` (an address waiting for its code), the
-  `email_codes` table (2), and `invite_tokens.invited_email`. `users` has no `edit_history`
-  trigger, so none needs recreating.
-- **Invite by email.** The admin's invite form gets an optional Email field
-  (`InviteRequest` in `packages/core/src/api/…-requests.ts` gains `email`, or the handler
-  never sees it). With one, `POST /api/invites` stores it in `invited_email` and the instance
-  emails the `https://<host>/join/<token>` link (default expiry 7 days, as now), along with
-  the inviter's name and the instance's name. Redeeming the invite creates the user with
-  that email, already verified, since opening the link proves the inbox, and signs them in.
-  It works through either redemption path: the web's `/join/<token>` (cookie) and the app's
-  `POST /api/app/pair` (an iPhone opening the link already gets "Open in Wingbeat app"). Both
-  use the same consumption code, so the email is set in one place. Without an email, invites
-  work as today (copy the link).
-- **A forwarded invite** signs in whoever opens it first, as a copied invite link does
-  today. It's single-use, and the new user shows up in the Users list.
-- **Every email is verified before it signs anyone in** ("all emails should require
-  verification by code"). The invite email's link counts, since it carries the secret; every
-  other address is confirmed with a code entered by the user while signed in. Email sign-in
-  (2) only ever matches a verified address.
-- **Changing an email.** A user can change their own in Settings: the instance emails a
-  code to the new address, and the change takes effect once they enter it there. The old
-  address keeps working until then. An admin can also add or change a user's email in the
-  Users list, which shows it as "not yet confirmed": it's stored as pending, and the user
-  sees a "Confirm your email" prompt (with Send Code) the next time they're signed in. So
-  an address the admin mistyped can't sign anyone in: its owner gets a code that only works
-  for someone already signed in as that user. Only admins see other users' emails.
+Revised 2026-11-17 (the user approved): an email is a `/join/<token>` link, so the email
+features reuse `invite_tokens`, `redeemJoinToken` and the `/join` pages instead of adding a
+codes table and a link page of their own. That page is already safe from mail scanners (its
+`GET` only shows a button; the `POST` signs in), already offers "Open in Wingbeat app" on an
+iPhone, and the app already redeems the same tokens at `POST /api/app/pair`.
 
-#### 2. Sign in with an email code (web and app)
+- **Migration `0009_`**: `users.email` (lowercased, nullable, verified addresses only) with a
+  partial unique index (`WHERE email IS NOT NULL`), and on `invite_tokens`: `email` (the
+  address the link was sent to), `code_hash` and `attempts` (2). The rows fit the table's
+  existing CHECK (an `invite` keeps its name and role, a `device_link` its `user_id`), so the
+  table isn't rebuilt. `users` has no `edit_history` trigger, so none needs recreating.
+- **One rule verifies addresses: redeeming a token that has an `email` sets that user's
+  email to it**, since opening the link proves the inbox. Redeeming an invite creates the
+  user with it. There's no pending address and no separate confirm step: an admin adding an
+  email, an email invite, a user changing their own address and a sign-in from `/login` all
+  send the same kind of link. The user accepted the one consequence (2026-11-17): a link sent
+  to an address an admin mistyped signs in whoever opens it, as a forwarded invite does.
+  Setting `users.email` to an address another user holds fails the unique index; the
+  redemption then still signs in, but leaves the email unchanged.
+- **Invite by email.** The admin's invite form gets an optional Email field (`InviteRequest`
+  in `packages/core/src/api/…-requests.ts` gains `email`, or the handler never sees it). With
+  one, `POST /api/invites` stores it on the token and emails the link (expiry 7 days, as now),
+  with the inviter's name and the instance's name. Without one, invites work as today (copy
+  the link).
+- **An admin sets a user's email** in the Users list: the instance emails that address a
+  device link (expiry 7 days) that confirms it and signs in. Until it's opened, the Users list
+  shows the address as sent, not confirmed. A user changes their own in Settings the same way;
+  the old address keeps working until the new one's link is opened. Only admins see other
+  users' emails.
+- **Email sign-in (2) only ever matches `users.email`**, which holds only addresses
+  confirmed this way.
 
-- **A 6-digit code and a link that does the whole sign-in**, in the same email ("The email
-  should absolutely carry a link that does the whole sign-in"). The code covers reading the
-  email on a different device from the one signing in. iOS offers it from Mail above the
-  keyboard (`textContentType('oneTimeCode')`).
-- **The link** is `https://<host>/login/email?request=<request_id>&code=<code>`, and signs
-  in the browser that opens it. Its `GET` only shows a "Sign In" button, and the `POST`
-  behind it signs in. Mail scanners (Outlook's Safe Links, say) fetch links in advance, and
-  a `GET` that consumed the code would sign the scanner in or use the code up. On an iPhone
-  the page also offers "Open in Wingbeat app", as `/join/<token>` does, opening
-  `wingbeat://login?host=…&request=…&code=…`. The app confirms it, as `pair.tsx` does, and
-  redeems it with `email-verify`. The request records whether the app or the web asked for
-  the code, and the page leads with that button. The custom-scheme risk is the same as the
-  `wingbeat://pair` fallback's: the code is single-use and expires in 10 minutes. The
-  verification email for a changed address carries the same kind of link, which confirms the
-  address only in a browser already signed in as that user.
-- **Routes.** `POST /api/auth/email-code { email }` → `{ request_id }`, and
-  `POST /api/auth/email-verify { request_id, code, device_name? }`. The web's new `/login`
-  page uses both (a session cookie on success). The app uses both under `/api/app/…` and gets
-  the same response as `/api/app/pair`. Each gets request and response schemas in core and
-  shape tests in `test/worker-sql.test.mjs`.
-- **Table `email_codes`:** `user_id`, `request_id` (random, unique), `code`, `purpose`
-  (`sign_in` or `verify`, the latter for `pending_email`), `origin` (`app` or `web`, for the
-  link's page), `expires_at` (10 minutes), `attempts`, `used`. A code is single-use, and 5
-  wrong tries end its request, so guessing needs a new request, which the rate limits below
-  cap. A `verify` code is accepted only from a session of its user.
-- **No account enumeration.** `email-code` answers the same way whether or not the address
-  has an account ("If that address has an account here, we've sent a code"). An unknown
-  address gets a `request_id` that can never verify.
-- **Rate limits:** a few codes per address per hour and a cap per IP, counted in D1 (or the
-  Workers rate-limiting binding).
-- **Sending:** Cloudflare Email Service through a `send_email` binding (check the current
-  docs when building; there's a `cloudflare-email-service` skill). Hosted instances send
-  from one address, `wingbeat@dummthings.dev` or `accounts@wingbeat.dummthings.dev` (not yet
-  chosen), which needs SPF/DKIM set up for its domain. Self-hosted: the
-  email features (the invite Email field, `/login`'s form, the app's email option) appear
-  only when the binding is configured, so an instance without email keeps working as today.
-  Tests stub the binding in Miniflare.
+#### 2. Sign in with an email code (web first)
+
+- **`/login`** (today the "no access" page) gets an Email field. Submitting it makes a
+  device link for the user with that address (`email` set, expiry 15 minutes) and emails
+  the `/join/<token>` link and a 6-digit code ("The email should absolutely carry a link that
+  does the whole sign-in"). The link signs in the browser that opens it. The code covers
+  reading the email on another device: the page moves on to a code field, and email + code
+  signs in that browser (`POST /login/code`, which redeems the same token through
+  `redeemJoinToken`). The demo tenant's sign-in stays on the page.
+- **The code** is stored hashed (`code_hash`) on the token. The code form sends the email
+  with the code, matched against that address's newest unused, unexpired token, so the
+  browser holds no request id. 5 wrong tries (`attempts`) use the token up; guessing needs a
+  new email, which the rate limits cap.
+- **No account enumeration.** `/login` answers the same way whether or not the address has
+  an account ("If that address has an account here, we've sent a link and a code").
+- **Rate limits:** the Workers rate-limiting binding, per address and per IP.
+- **Wording.** `joinHTML` gets a sign-in variant ("Sign in as <name>?") for a device link
+  sent by email, and `appConnectSignedOutHTML` points to `/login`.
+- **The app** gets email sign-in through "Sign in with Browser": its auth session shows the
+  signed-out connect page, which leads to `/login`, and the code signs in there. A native
+  email option comes later, only if that isn't enough.
+- **Sending:** Cloudflare Email Service through a `send_email` binding (`EMAIL`), from
+  `EMAIL_FROM` with the display name `EMAIL_FROM_NAME` (Worker vars). The hosting repo sets
+  the binding and both vars (`accounts@wingbeat.dummthings.dev`, "Wingbeat Accounts"); this
+  repo only reads them, and names the instance (its app name and host) in each email, since
+  one Worker serves several tenants. The sending domain `wingbeat.dummthings.dev` is
+  onboarded to Email Sending on its own (a subdomain is a separate sending domain; the apex
+  `dummthings.dev` already is). Without the binding (a self-hosted instance without email),
+  the email features (the invite Email field, the Users list's and Settings' email fields,
+  `/login`'s form) don't appear, and the instance works as today. Tests stub the binding in
+  Miniflare.
+- Each route gets request and response schemas in core and shape tests in
+  `test/worker-sql.test.mjs`.
 
 #### 3. The app: find your instance, then sign in
 
@@ -1865,29 +1863,38 @@ Not planned now: the instance list plus per-instance codes covers today's users.
 
 #### Order
 
-1. Migration 0009, emails on users, email invites, and Email Service setup on staging.
-2. Email code sign-in: the web's `/login`, then the app's email option.
-3. If wanted: the instance list and the app's Find screen.
+1. Migration 0009, the hosting repo's binding and vars, the sending domain onboarded, and a
+   test email from staging.
+2. `/login` (email, link and code), admin-set emails in the Users list, email invites, and
+   changing your own address in Settings: web only, one staging deploy.
+3. If wanted: a native email option in the app, the instance list and the app's Find screen.
 
-Each is its own deploy to staging, and the web parts ship before the app depends on them,
-like the bearer middleware did. Emails are new personal data, so the privacy policy (Store
-review, below) covers them. Deleting the account (`DELETE /api/me`) already deletes the user
-row, which takes the email with it.
+Emails are new personal data, so the privacy policy (Store review, below) covers them.
+Deleting the account (`DELETE /api/me`) already deletes the user row, which takes the email
+with it.
 
 #### Decided (the user, 2026-11-15)
 
-- Not to implement it yet: "just write it up".
 - The email carries a link that does the whole sign-in, as well as the code (2).
-- Users can change their own email, and every address is verified, by a code or the
-  invite's link, before it signs anyone in (1).
+- Users can change their own email, and every address is verified (by opening a link sent
+  to it) before it signs anyone in (1).
 - The instance list, if built, is served by a Worker deployed from the hosting repo.
+
+#### Decided (the user, 2026-11-17)
+
+- Build it now, web only first ("Let's work on the email login flow, which will initially be
+  web-only").
+- Email links are `/join/<token>` device links and invites; no separate codes table or link
+  page (1).
+- An admin-entered address is confirmed by the first link opened from it, not by a code
+  entered while signed in (1).
+- Sender `accounts@wingbeat.dummthings.dev`, display name "Wingbeat Accounts", set in the
+  hosting repo rather than here.
 
 #### Still open
 
 - Whether to build the instance list at all, its hostname, and whether Sea Hawk Air wants
   to be listed.
-- The sender address: `wingbeat@dummthings.dev`, `accounts@wingbeat.dummthings.dev`, or
-  similar, and its display name.
 
 ### Account deletion
 
