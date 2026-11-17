@@ -1894,6 +1894,11 @@ calls a new `DELETE /api/me`:
 - refuses to delete the env-configured admin (`is_env_admin`) or the last admin of an
   instance, with a message to transfer admin first.
 
+On a demo tenant, everyone who signs in with the demo code shares the demo user
+(`demo_user_id`), which is also its only admin. There `DELETE /api/me` from the demo user
+deletes only the caller's session (and so its push devices), keeps the demo user, and returns
+ok, so App Review can try deletion and still sign in again.
+
 The web gets the same button in Settings. The privacy policy states what's deleted and what
 the operator keeps.
 

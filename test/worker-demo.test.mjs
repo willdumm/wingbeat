@@ -117,3 +117,20 @@ describe('the demo code', () => {
     assert.equal((await real.first("SELECT COUNT(*) AS n FROM sessions WHERE device_name = 'Reviewer iPhone'")).n, 0);
   });
 });
+
+describe('deleting my account', () => {
+  const asBearer = (token) => ({ as: null, headers: { authorization: 'Bearer ' + token } });
+
+  test('on a demo tenant signs this device out and keeps the shared demo user', async () => {
+    const mine = (await pair(demo, DEMO_CODE)).body.token;
+    const other = (await pair(demo, DEMO_CODE)).body.token;
+    const r = await demo.request('DELETE', '/api/me', undefined, asBearer(mine));
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { ok: true });
+    assert.equal((await demo.request('GET', '/api/me', undefined, asBearer(mine))).status, 401);
+    // Another reviewer's session, the demo user and the demo code still work.
+    assert.equal((await demo.request('GET', '/api/me', undefined, asBearer(other))).status, 200);
+    assert.equal((await demo.first("SELECT COUNT(*) AS n FROM users WHERE name = 'Jordan Lee'")).n, 1);
+    assert.equal((await pair(demo, DEMO_CODE)).status, 200);
+  });
+});
