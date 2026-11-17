@@ -32,7 +32,7 @@ footerLinks:
   - { label: Docs, href: docs/ }
   - { label: Self-hosting, href: docs/self-hosting/ }
   - { label: Map tools, href: docs/features/map-tools/ }
-  - { label: Privacy, href: docs/privacy/ }
+  - { label: Privacy, href: "https://dummthings.dev/privacy#wingbeat" }
   - { label: GitHub, href: "https://github.com/willdumm/wingbeat" }
 footerNote: |-
   Demos on this page use sample data. For custom software solutions like this one, contact Dumm Software LLC at [apps@dummthings.dev](mailto:apps@dummthings.dev).<br />© Dumm Software LLC · Code AGPL-3.0 · Docs CC BY 4.0
