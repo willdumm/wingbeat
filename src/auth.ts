@@ -231,6 +231,10 @@ export function appConnectHTML(name: string, challenge: string, state: string, a
     </form>`);
 }
 
+/** The error line above a sign-in form, or nothing. */
+const formError = (error: string | null) =>
+  error ? `<p style="color: var(--danger-fg); margin-bottom: 1rem;">${escapeHtml(error)}</p>` : '';
+
 /**
  * The demo tenant's signed-out page (/login and the app's connect page): the demo code signs
  * this browser in as the demo user, then goes back to returnTo.
@@ -239,7 +243,7 @@ export function demoSignInHTML(appName: string, returnTo: string, error: string 
   return authPage(appName, `
     <p style="margin-bottom: 1rem;">This is the ${escapeHtml(appName)} demo: three simulated aircraft, two of
       them always flying. Enter the demo code to sign in.</p>
-    ${error ? `<p style="color: var(--danger-fg); margin-bottom: 1rem;">${escapeHtml(error)}</p>` : ''}
+    ${formError(error)}
     <form method="POST" action="/demo/sign-in">
       <input type="hidden" name="return" value="${escapeHtml(returnTo)}" />
       <input name="code" placeholder="Demo code" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false" required autofocus />
@@ -266,10 +270,6 @@ export function appConnectSignedOutHTML(appName: string, returnTo: string, email
     <p>Open your sign-in link in Safari first, then try again in the app. Or, on a device that's
       signed in, open Settings → Devices, choose Get link, and scan its code with the app.</p>`);
 }
-
-/** The error line above a sign-in form, or nothing. */
-const formError = (error: string | null) =>
-  error ? `<p style="color: var(--danger-fg); margin-bottom: 1rem;">${escapeHtml(error)}</p>` : '';
 
 /** /login on an instance that sends email: an address, which POST /login emails a link and a code. */
 export function loginHTML(appName: string, returnTo: string, error: string | null = null): string {

@@ -422,10 +422,17 @@ const LOGIN_LINK_TTL_SECS = 15 * 60;
 const EMAIL_LINK_TTL_SECS = 7 * 24 * 3600;
 /** Wrong codes that use a /login token up. */
 const MAX_LOGIN_CODE_ATTEMPTS = 5;
-/** Live (unused, unexpired) /login tokens an address may have; past it, /login sends nothing. */
+/**
+ * /login tokens an address may have unexpired (used or not, so a token burned by wrong codes
+ * still counts), and in a day; past either, /login sends nothing. With MAX_LOGIN_CODE_ATTEMPTS,
+ * they cap guesses at an address's code at 15 per 15 minutes and 50 a day.
+ */
 const MAX_LIVE_LOGIN_LINKS = 3;
-/** Pending address confirmations a user may have at once. */
+const MAX_DAILY_LOGIN_LINKS = 10;
+const DAY_SECS = 24 * 3600;
+/** Pending address confirmations a user may have at once: distinct addresses, and links in all (resends). */
 const MAX_PENDING_EMAILS = 5;
+const MAX_PENDING_EMAIL_LINKS = 10;
 
 /** A random 6-digit code. */
 function loginCode(): string {
@@ -458,33 +465,40 @@ app.post('/login', async (c) => {
   if (!email) return c.html(loginHTML(appName, returnTo, 'Enter an email address.'), 400);
   if (await loginRateLimited(c)) return c.html(loginHTML(appName, returnTo, 'Too many tries. Wait a minute and try again.'), 429);
 
-  const db = c.var.db;
-  const now = Math.floor(Date.now() / 1000);
-  const [owner, live] = await Promise.all([
-    db.prepare('SELECT user_id FROM user_emails WHERE email = ?').bind(email).first<{ user_id: number }>(),
-    db.prepare('SELECT COUNT(*) AS n FROM invite_tokens WHERE email = ? AND code_hash IS NOT NULL AND used = 0 AND expires_at >= ?')
-      .bind(email, now).first<{ n: number }>(),
-  ]);
-  // No account, or enough codes already out: nothing is sent, and the page says the same.
-  if (owner && (live?.n ?? 0) < MAX_LIVE_LOGIN_LINKS) {
-    const token = generateToken();
-    const code = loginCode();
-    await db.batch([
-      // This address's spent sign-in tokens go first, so they don't pile up.
-      db.prepare('DELETE FROM invite_tokens WHERE email = ? AND code_hash IS NOT NULL AND (used = 1 OR expires_at < ?)').bind(email, now),
-      db.prepare(
-        `INSERT INTO invite_tokens (token, type, user_id, expires_at, email, code_hash) VALUES (?, 'device_link', ?, ?, ?, ?)`
-      ).bind(token, owner.user_id, now + LOGIN_LINK_TTL_SECS, email, await loginCodeHash(token, code)),
-    ]);
-    try {
-      await sendSignInEmail(emailContext(c, appName), email, token, code);
-    } catch (err) {
-      // Said only in the log: the page can't differ for an address with an account.
-      console.error('Sign-in email failed', err);
-    }
-  }
+  // After the response, so its timing can't tell an address with an account from one without.
+  c.executionCtx.waitUntil(emailSignInLink(c, appName, email));
   return c.html(loginCodeHTML(appName, email, returnTo));
 });
+
+/**
+ * Emails `email` a sign-in link and code, when it's a user's address and under the caps
+ * (MAX_LIVE_LOGIN_LINKS, MAX_DAILY_LOGIN_LINKS); otherwise does nothing. Never throws: the
+ * page can't differ either way, so a failure is said only in the log.
+ */
+async function emailSignInLink(c: Context<{ Bindings: Env; Variables: Variables }>, appName: string, email: string): Promise<void> {
+  try {
+    const db = c.var.db;
+    const now = Math.floor(Date.now() / 1000);
+    const token = generateToken();
+    const code = loginCode();
+    // One statement, so concurrent requests can't both pass the caps. A token's age comes from
+    // its expiry (the TTL is fixed); this address's tokens older than a day go first.
+    const [, inserted] = await db.batch([
+      db.prepare('DELETE FROM invite_tokens WHERE email = ? AND code_hash IS NOT NULL AND expires_at < ?')
+        .bind(email, now + LOGIN_LINK_TTL_SECS - DAY_SECS),
+      db.prepare(
+        `INSERT INTO invite_tokens (token, type, user_id, expires_at, email, code_hash)
+         SELECT ?1, 'device_link', e.user_id, ?2 + ?3, e.email, ?4 FROM user_emails e
+         WHERE e.email = ?5
+           AND (SELECT COUNT(*) FROM invite_tokens WHERE email = ?5 AND code_hash IS NOT NULL AND expires_at >= ?2) < ?6
+           AND (SELECT COUNT(*) FROM invite_tokens WHERE email = ?5 AND code_hash IS NOT NULL) < ?7`
+      ).bind(token, now, LOGIN_LINK_TTL_SECS, await loginCodeHash(token, code), email, MAX_LIVE_LOGIN_LINKS, MAX_DAILY_LOGIN_LINKS),
+    ]);
+    if (inserted.meta.changes === 1) await sendSignInEmail(emailContext(c, appName), email, token, code);
+  } catch (err) {
+    console.error('Sign-in email failed', err);
+  }
+}
 
 app.post(LOGIN_CODE_PATH, async (c) => {
   const settings = await loadSettings(c.var.tenant);
@@ -502,16 +516,22 @@ app.post(LOGIN_CODE_PATH, async (c) => {
 
   const db = c.var.db;
   const now = Math.floor(Date.now() / 1000);
+  // Each try claims one of the address's newest token's attempts before the code is compared,
+  // so concurrent tries can't get past MAX_LOGIN_CODE_ATTEMPTS. It's a write whether or not
+  // there's a token, so the timing doesn't say whether the address has an account.
   const row = await db.prepare(
-    `SELECT * FROM invite_tokens WHERE email = ? AND code_hash IS NOT NULL AND used = 0 AND expires_at >= ?
-     ORDER BY id DESC LIMIT 1`
-  ).bind(email, now).first<InviteToken>();
-  if (!row) return wrong(400);
-  const [given, expected] = await Promise.all([sha256(await loginCodeHash(row.token, code)), sha256(row.code_hash!)]);
-  if (!crypto.subtle.timingSafeEqual(given, expected)) {
-    await db.prepare(
-      'UPDATE invite_tokens SET attempts = attempts + 1, used = CASE WHEN attempts + 1 >= ? THEN 1 ELSE used END WHERE id = ?'
-    ).bind(MAX_LOGIN_CODE_ATTEMPTS, row.id).run();
+    `UPDATE invite_tokens SET attempts = attempts + 1 WHERE id = (
+       SELECT id FROM invite_tokens WHERE email = ? AND code_hash IS NOT NULL AND used = 0 AND expires_at >= ? AND attempts < ?
+       ORDER BY id DESC LIMIT 1)
+     RETURNING *`
+  ).bind(email, now, MAX_LOGIN_CODE_ATTEMPTS).first<InviteToken>();
+  const [given, expected] = await Promise.all([
+    sha256(await loginCodeHash(row?.token ?? '', code)),
+    sha256(row?.code_hash ?? ''),
+  ]);
+  if (!row || !crypto.subtle.timingSafeEqual(given, expected)) {
+    // The last wrong try uses the token up, its link too.
+    if (row && row.attempts >= MAX_LOGIN_CODE_ATTEMPTS) await db.prepare('UPDATE invite_tokens SET used = 1 WHERE id = ?').bind(row.id).run();
     return wrong(400);
   }
 
@@ -730,15 +750,18 @@ app.get('/join/:token', async (c) => {
 
 /**
  * How a device link meets a browser that's already signed in: 'other' when the link has
- * nothing to do here (it wasn't emailed, so it only adds a device), 'same' when the link was
- * emailed to this browser's user (opening it only confirms the address), or null: not signed
+ * nothing to do here (it wasn't emailed, so it only adds a device, or it's this user's own
+ * /login link), 'same' when a new address's link was emailed to this browser's user (opening
+ * it only confirms the address), or null: not signed
  * in, or an emailed link of another user's, which signs this browser in to that account.
  */
 async function signedInAs(c: Context<{ Bindings: Env; Variables: Variables }>, row: InviteToken): Promise<'same' | 'other' | null> {
   const session = await cookieSession(c);
   if (!session) return null;
   if (!row.email) return 'other';
-  return session.user_id === row.user_id ? 'same' : null;
+  if (session.user_id !== row.user_id) return null;
+  // A /login link (its address is already the user's) has nothing to confirm either.
+  return row.code_hash ? 'other' : 'same';
 }
 
 app.post('/join/:token', async (c) => {
@@ -1052,7 +1075,8 @@ const NO_EMAILS: UserEmails = { emails: [], pending_emails: [] };
 
 /**
  * Emails `raw` a link that adds it to the user's addresses (and signs in the device that opens
- * it). Sending it again replaces the earlier link.
+ * it). Sending it again sends another link (the earlier one still works), up to
+ * MAX_PENDING_EMAIL_LINKS unopened in all, so the form can't email an address without end.
  */
 async function addUserEmail(c: Context<{ Bindings: Env; Variables: Variables }>, user: { id: number; name: string }, raw: string) {
   if (!emailEnabled(c.env)) return c.json({ error: 'This instance doesn’t send email' }, 400);
@@ -1063,24 +1087,25 @@ async function addUserEmail(c: Context<{ Bindings: Env; Variables: Variables }>,
   const [owner, pending] = await Promise.all([
     db.prepare('SELECT user_id FROM user_emails WHERE email = ?').bind(email).first<{ user_id: number }>(),
     db.prepare(
-      `SELECT COUNT(DISTINCT email) AS n FROM invite_tokens
-       WHERE user_id = ? AND email IS NOT NULL AND email != ? AND code_hash IS NULL AND used = 0 AND expires_at >= ?`
-    ).bind(user.id, email, now).first<{ n: number }>(),
+      `SELECT COUNT(DISTINCT CASE WHEN email != ?2 THEN email END) AS addresses, COUNT(*) AS links FROM invite_tokens
+       WHERE user_id = ?1 AND email IS NOT NULL AND code_hash IS NULL AND used = 0 AND expires_at >= ?3
+         AND NOT EXISTS (SELECT 1 FROM user_emails e WHERE e.email = invite_tokens.email)`
+    ).bind(user.id, email, now).first<{ addresses: number; links: number }>(),
   ]);
   if (owner) {
     return c.json({ error: owner.user_id === user.id ? 'That address is already on this account' : 'That address is on another account' }, 409);
   }
-  if ((pending?.n ?? 0) >= MAX_PENDING_EMAILS) {
+  if ((pending?.addresses ?? 0) >= MAX_PENDING_EMAILS) {
     return c.json({ error: `${MAX_PENDING_EMAILS} addresses are already waiting to be confirmed` }, 429);
+  }
+  if ((pending?.links ?? 0) >= MAX_PENDING_EMAIL_LINKS) {
+    return c.json({ error: 'Too many confirmation emails are waiting to be opened. Open one, or try again in a few days.' }, 429);
   }
 
   const token = generateToken();
   const expiresAt = now + EMAIL_LINK_TTL_SECS;
-  await db.batch([
-    db.prepare(`DELETE FROM invite_tokens WHERE user_id = ? AND email = ? AND code_hash IS NULL AND used = 0`).bind(user.id, email),
-    db.prepare(`INSERT INTO invite_tokens (token, type, user_id, expires_at, email) VALUES (?, 'device_link', ?, ?, ?)`)
-      .bind(token, user.id, expiresAt, email),
-  ]);
+  await db.prepare(`INSERT INTO invite_tokens (token, type, user_id, expires_at, email) VALUES (?, 'device_link', ?, ?, ?)`)
+    .bind(token, user.id, expiresAt, email).run();
   const settings = await loadSettings(c.var.tenant);
   try {
     await sendConfirmEmail(emailContext(c, settings.app_name), email, token, user.name);
@@ -1092,12 +1117,22 @@ async function addUserEmail(c: Context<{ Bindings: Env; Variables: Variables }>,
   return c.json({ ok: true, pending_email: { email, expires_at: expiresAt } });
 }
 
-/** Removes one of a user's addresses (by its id); it no longer signs in. */
+/**
+ * Removes one of a user's addresses (by its id); it no longer signs in. Its unopened links go
+ * too: a /login code sent to it, or a confirmation link that would add it back.
+ */
 async function removeUserEmail(c: Context<{ Bindings: Env; Variables: Variables }>, userId: number) {
   const id = parseInt(c.req.param('emailId') ?? '', 10);
   if (isNaN(id)) return c.json({ error: 'Invalid email id' }, 400);
-  const { meta } = await c.var.db.prepare('DELETE FROM user_emails WHERE id = ? AND user_id = ?').bind(id, userId).run();
-  if (meta.changes === 0) return c.json({ error: 'Email not found' }, 404);
+  const db = c.var.db;
+  const [, removed] = await db.batch([
+    db.prepare(
+      `DELETE FROM invite_tokens WHERE user_id = ?2 AND used = 0
+         AND email = (SELECT email FROM user_emails WHERE id = ?1 AND user_id = ?2)`
+    ).bind(id, userId),
+    db.prepare('DELETE FROM user_emails WHERE id = ? AND user_id = ?').bind(id, userId),
+  ]);
+  if (removed.meta.changes === 0) return c.json({ error: 'Email not found' }, 404);
   return c.json({ ok: true });
 }
 

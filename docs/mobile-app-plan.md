@@ -1804,16 +1804,21 @@ iPhone, and the app already redeems the same tokens at `POST /api/app/pair`.
   `redeemJoinToken`). The demo tenant's sign-in stays on the page.
 - **The code** is stored hashed (`code_hash`) on the token. The code form sends the email
   with the code, matched against that address's newest unused, unexpired token, so the
-  browser holds no request id. 5 wrong tries (`attempts`) use the token up; guessing needs a
-  new email, which the rate limits cap.
+  browser holds no request id. 5 wrong tries (`attempts`) use the token up, link included;
+  each try claims its attempt before the code is compared, so tries sent at once get no more.
+  Guessing needs a new email, which the rate limits cap.
 - **No account enumeration.** `/login` answers the same way whether or not the address has
-  an account ("If that address has an account here, we've sent a link and a code").
-- **Rate limits** (decided while building): per address in D1, which needs no config: an
-  address with 3 live (unused, unexpired) sign-in tokens gets no more emails until one is
-  used or expires. Per IP: the Workers rate-limiting binding `LOGIN_RATE_LIMIT` on `POST
+  an account ("If that address has an account here, we've sent a link and a code"), and
+  sends after the response (`waitUntil`) so its timing doesn't differ either; `/login/code`
+  makes the same write whether or not a token exists.
+- **Rate limits** (decided while building, tightened in review the same day): per address in
+  D1, which needs no config: an address gets at most 3 sign-in emails until they expire (15
+  minutes; a used or burned token still counts) and 10 a day, which caps guesses at its code
+  at 15 per 15 minutes and 50 a day. A user's address confirmations are capped at 5 addresses
+  and 10 unopened links (resends add a link rather than replacing one). Per IP: the Workers rate-limiting binding `LOGIN_RATE_LIMIT` on `POST
   /login` and `/login/code`, keyed `<tenant>:<CF-Connecting-IP>`, optional (the hosting repo
   sets it; a self-hosted instance may not). The binding counts per Cloudflare location and
-  isn't exact, which is fine for this. Adding addresses is capped at 5 pending per user.
+  isn't exact, which is fine for this.
 - **Wording.** `joinHTML` gets a sign-in variant ("Sign in as <name>?") for a device link
   sent by email, and `appConnectSignedOutHTML` points to `/login`.
 - **The app** gets email sign-in through "Sign in with Browser": its auth session shows the

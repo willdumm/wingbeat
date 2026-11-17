@@ -1432,15 +1432,27 @@ describe('email: sign-in, invites and addresses', async () => {
   let admin;
   before(() => { admin = clientAs('test-admin-session'); });
 
-  /** The messages sent since the last call (all of them, the first time). */
+  /**
+   * The messages sent since the last call (all of them, the first time), once there are at
+   * least n: POST /login sends after its response (waitUntil).
+   */
   let seen = 0;
-  async function sent() {
-    const rows = await e.all('SELECT * FROM sqlite_master WHERE name = ?', 'test_sent_emails');
-    if (!rows.length) return [];
-    const mail = await e.all('SELECT * FROM test_sent_emails WHERE id > ? ORDER BY id', seen);
-    if (mail.length) seen = mail.at(-1).id;
-    return mail;
+  async function sent(n = 0) {
+    for (let waited = 0; ; waited += 20) {
+      const rows = await e.all('SELECT * FROM sqlite_master WHERE name = ?', 'test_sent_emails');
+      const mail = rows.length ? await e.all('SELECT * FROM test_sent_emails WHERE id > ? ORDER BY id', seen) : [];
+      if (mail.length >= n || waited >= 3000) {
+        if (mail.length) seen = mail.at(-1).id;
+        return mail;
+      }
+      await new Promise((r) => setTimeout(r, 20));
+    }
   }
+  /** That /login sent nothing: it would have within this wait. */
+  const sentNothing = async () => {
+    await new Promise((r) => setTimeout(r, 300));
+    assert.deepEqual(await sent(), []);
+  };
   const linkIn = (mail) => /\/join\/([0-9a-f]{64})/.exec(mail.text)[1];
   const codeIn = (mail) => /: (\d{6})\b/.exec(mail.text)[1];
   /** A form POST as a signed-out browser (or as `cookie`). */
@@ -1468,13 +1480,13 @@ describe('email: sign-in, invites and addresses', async () => {
     await sent();
     const unknown = await form('/login', { email: 'nobody@example.com' });
     assert.equal(unknown.status, 200);
-    assert.deepEqual(await sent(), []);
+    await sentNothing();
 
     const known = await form('/login', { email: '  Lee@Example.com ' });
     assert.equal(known.status, 200);
     // The page can't tell the two apart (besides the address it repeats).
     assert.equal(known.body.replaceAll('lee@example.com', 'X'), unknown.body.replaceAll('nobody@example.com', 'X'));
-    const [mail] = await sent();
+    const [mail] = await sent(1);
     assert.deepEqual([mail.to, mail.from_email, mail.from_name], ['lee@example.com', 'accounts@wingbeat.test', 'Wingbeat Accounts']);
     assert.match(mail.text, /localhost/);
     const code = codeIn(mail);
@@ -1493,7 +1505,7 @@ describe('email: sign-in, invites and addresses', async () => {
     const id = await userWith('Lin Link', 'lin@example.com');
     await sent();
     await form('/login', { email: 'lin@example.com' });
-    const [mail] = await sent();
+    const [mail] = await sent(1);
     const page = await e.request('GET', '/join/' + linkIn(mail), undefined, { as: null });
     assert.match(page.body, /Sign in to .* as <strong>Lin Link<\/strong>\?/);
     const opened = await e.request('POST', '/join/' + linkIn(mail), undefined, { as: null });
@@ -1501,11 +1513,11 @@ describe('email: sign-in, invites and addresses', async () => {
     assert.equal((await me.getMe(clientAs(sessionOf(opened)))).id, id);
   });
 
-  test('/login/code: 5 wrong codes use the token up; at most 3 live tokens per address', async () => {
+  test('/login/code: 5 wrong codes use the token up, even sent at once', async () => {
     await userWith('Gus Guess', 'gus@example.com');
     await sent();
     await form('/login', { email: 'gus@example.com' });
-    const [mail] = await sent();
+    const [mail] = await sent(1);
     const wrong = codeIn(mail) === '000000' ? '111111' : '000000';
     const token = () => e.first('SELECT used, attempts FROM invite_tokens WHERE token = ?', linkIn(mail));
     for (let i = 0; i < 4; i++) assert.equal((await form('/login/code', { email: 'gus@example.com', code: wrong })).status, 400);
@@ -1513,9 +1525,55 @@ describe('email: sign-in, invites and addresses', async () => {
     assert.equal((await form('/login/code', { email: 'gus@example.com', code: wrong })).status, 400);
     assert.deepEqual({ ...await token() }, { used: 1, attempts: 5 });
     assert.equal((await form('/login/code', { email: 'gus@example.com', code: codeIn(mail) })).status, 400);
+    assert.equal((await e.request('POST', '/join/' + linkIn(mail), undefined, { as: null })).status, 410);
 
-    for (let i = 0; i < 4; i++) await form('/login', { email: 'gus@example.com' });
-    assert.equal((await sent()).length, 3);
+    // Tries sent together each claim an attempt before comparing, so they get 5 between them.
+    await form('/login', { email: 'gus@example.com' });
+    const [next] = await sent(1);
+    const others = [...Array(12).keys()].map((i) => String(i).padStart(6, '0')).filter((c) => c !== codeIn(next));
+    await Promise.all(others.map((code) => form('/login/code', { email: 'gus@example.com', code })));
+    assert.equal((await e.first('SELECT attempts FROM invite_tokens WHERE token = ?', linkIn(next))).attempts, 5);
+    assert.equal((await form('/login/code', { email: 'gus@example.com', code: codeIn(next) })).status, 400);
+  });
+
+  test('/login: 3 tokens per address until they expire, used or not, and 10 a day', async () => {
+    await userWith('Cap Count', 'cap@example.com');
+    await sent();
+    for (let i = 0; i < 4; i++) await form('/login', { email: 'cap@example.com' });
+    assert.equal((await sent(3)).length, 3);
+    await sentNothing();
+    // Used up, they still count until they expire.
+    await e.run('UPDATE invite_tokens SET used = 1 WHERE email = ?', 'cap@example.com');
+    await form('/login', { email: 'cap@example.com' });
+    await sentNothing();
+    // Expired ones don't, but a day's still do: 10 in all.
+    await e.run('UPDATE invite_tokens SET expires_at = unixepoch() - 60 WHERE email = ?', 'cap@example.com');
+    for (let i = 0; i < 3; i++) await form('/login', { email: 'cap@example.com' });
+    assert.equal((await sent(3)).length, 3);
+    await e.run('UPDATE invite_tokens SET expires_at = unixepoch() - 60 WHERE email = ?', 'cap@example.com');
+    for (let i = 0; i < 3; i++) await form('/login', { email: 'cap@example.com' });
+    assert.equal((await sent(3)).length, 3);
+    await e.run('UPDATE invite_tokens SET expires_at = unixepoch() - 60 WHERE email = ?', 'cap@example.com');
+    for (let i = 0; i < 2; i++) await form('/login', { email: 'cap@example.com' });
+    assert.equal((await sent(1)).length, 1);
+    await sentNothing();
+    // A day on, the oldest go and it sends again.
+    await e.run('UPDATE invite_tokens SET expires_at = unixepoch() - 86400 WHERE email = ?', 'cap@example.com');
+    await form('/login', { email: 'cap@example.com' });
+    assert.equal((await sent(1)).length, 1);
+  });
+
+  test('/login: a link opened in its own user’s signed-in browser goes home and stays unused', async () => {
+    const id = await userWith('Sam Same', 'sam@example.com');
+    const cookie = 'session=sam-session';
+    await e.run('INSERT INTO sessions (user_id, token, token_hashed, device_name) VALUES (?, ?, 0, ?)', id, 'sam-session', 'Test');
+    await sent();
+    await form('/login', { email: 'sam@example.com' });
+    const [mail] = await sent(1);
+    const opened = await e.request('POST', '/join/' + linkIn(mail), undefined, { as: null, headers: { cookie } });
+    assert.equal(opened.status, 302);
+    assert.equal(opened.headers.get('set-cookie'), null);
+    assert.equal((await e.first('SELECT used FROM invite_tokens WHERE token = ?', linkIn(mail))).used, 0);
   });
 
   test('/login: a return to the app’s connect page comes back there', async () => {
@@ -1525,12 +1583,12 @@ describe('email: sign-in, invites and addresses', async () => {
     assert.match((await e.request('GET', '/login?return=' + encodeURIComponent(back), undefined, { as: null })).body,
       new RegExp('value="' + back.replaceAll('?', '\\?').replaceAll('&', '&amp;') + '"'));
     await form('/login', { email: 'ada-app@example.com', return: back });
-    const [mail] = await sent();
+    const [mail] = await sent(1);
     const res = await form('/login/code', { email: 'ada-app@example.com', code: codeIn(mail), return: back });
     assert.equal(res.headers.get('location'), back);
     // Anywhere else goes home.
     await form('/login', { email: 'ada-app@example.com', return: 'https://evil.example/' });
-    const [again] = await sent();
+    const [again] = await sent(1);
     assert.equal((await form('/login/code', { email: 'ada-app@example.com', code: codeIn(again), return: 'https://evil.example/' }))
       .headers.get('location'), '/');
   });
@@ -1565,11 +1623,14 @@ describe('email: sign-in, invites and addresses', async () => {
     await assert.rejects(users.addUserEmail(admin, id, { email: 'max@example.com' }), refused(409, 'That address is already on this account'));
     await assert.rejects(e.run('INSERT INTO user_emails (user_id, email) VALUES (?, ?)', other, 'max.work@example.com'), /UNIQUE/);
 
-    // Removed, it no longer signs in.
+    // Removed, it no longer signs in, and a code already sent to it stops working.
+    await form('/login', { email: 'max.work@example.com' });
+    const [code] = await sent(1);
     const work = (await listed()).emails.find(x => x.email === 'max.work@example.com');
     assert.deepEqual(await users.removeUserEmail(admin, id, work.id), { ok: true });
+    assert.equal((await form('/login/code', { email: 'max.work@example.com', code: codeIn(code) })).status, 400);
     await form('/login', { email: 'max.work@example.com' });
-    assert.deepEqual(await sent(), []);
+    await sentNothing();
     await assert.rejects(users.removeUserEmail(admin, other, work.id), refused(404, 'Email not found'));
   });
 
@@ -1604,6 +1665,12 @@ describe('email: sign-in, invites and addresses', async () => {
     assert.deepEqual(emails.map(x => x.email), ['ada@example.com']);
     assert.deepEqual(await me.removeMyEmail(admin, emails[0].id), { ok: true });
     await assert.rejects(me.addMyEmail(admin, { email: 'not an address' }), refused(400, 'Enter an email address'));
+    // Resent, each is another link, up to 10 unopened.
+    for (let i = 0; i < 10; i++) await me.addMyEmail(admin, { email: 'again@example.com' });
+    assert.equal((await sent()).length, 10);
+    await assert.rejects(me.addMyEmail(admin, { email: 'again@example.com' }),
+      refused(429, 'Too many confirmation emails are waiting to be opened. Open one, or try again in a few days.'));
+    await e.run('DELETE FROM invite_tokens WHERE email = ?', 'again@example.com');
     // A bounced send leaves nothing pending.
     await assert.rejects(me.addMyEmail(admin, { email: 'ada@bounce.test' }), refused(502, 'The email couldn’t be sent. Try again later.'));
     assert.deepEqual((await me.getMyEmails(admin)).pending_emails, []);
