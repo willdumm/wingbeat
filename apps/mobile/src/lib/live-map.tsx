@@ -31,7 +31,7 @@ import { MapTools, type MapTool } from './map-tools';
 import { defaultBasemapId, defaultOverlayIds, liveMapStyle, type MapBasemap } from './map-style';
 import { accountPrefKey, parseMapChoice } from './prefs';
 import { useStoredState } from './stored-state';
-import { px, shadow, useTokens } from './theme';
+import { px, useTokens } from './theme';
 
 /**
  * bottom: how much of the map's bottom a sheet covers (map-sheet.tsx's sheetDetentHeight), to
@@ -72,8 +72,8 @@ interface LiveMapProps {
   /** Shown at the top right, below the status bar or the header (clear of a back button). */
   overlay?: ReactNode;
   /**
-   * A full-width bar along the top, on the floating surface (as the overlay's), running up
-   * under the status bar.
+   * Along the top, below the status bar, with no surface of its own: its contents float over
+   * the map (the Live tab's lockup and status card). The map's fits keep clear of it.
    */
   topBar?: ReactNode;
   /**
@@ -313,11 +313,8 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
         <EndMarkers ends={ends} groups={groups} />
       </Map>
       {topBar ? (
-        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top }}
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top }} pointerEvents="box-none"
           onLayout={(ev) => setTopEdge(ev.nativeEvent.layout.height)}>
-          <View style={[StyleSheet.absoluteFill, {
-            backgroundColor: t['surface-float'], borderBottomWidth: 1, borderBottomColor: t['glass-border'], boxShadow: shadow(t['shadow-md']),
-          }]} />
           {topBar}
         </View>
       ) : overlay ? (

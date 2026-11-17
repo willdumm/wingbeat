@@ -37,7 +37,7 @@ export default function LiveScreen() {
   const { store, lastRefresh, generation } = useFlights();
   const tab = useFlightsTab();
   const map = useRef<LiveMapRef>(null);
-  const { height: screen } = useWindowDimensions();
+  const { height: screen, width: screenWidth } = useWindowDimensions();
   const now = useNow(30_000);  // the cards' "GPS 5 min ago"
   // Each visit to the tab refits the map to the tracks.
   const focused = useIsFocused();
@@ -132,10 +132,12 @@ export default function LiveScreen() {
         onLongPress={(lngLat) => { if (tz) pick(spotDetails(tz, lngLat)); }}
         topBar={(
           <>
-            <View style={{ alignItems: 'center', paddingTop: px(t['space-1']), paddingBottom: px(t['space-2']) }}>
+            <View pointerEvents="none" style={{ alignItems: 'center', paddingTop: px(t['space-1']), paddingBottom: px(t['space-2']) }}>
               <InstanceLockup />
             </View>
-            {cards.length > 0 && <StatusCards cards={cards} pinnedIds={pinned} onSelect={select} onPin={setPinned} />}
+            {cards.length > 0 && (
+              <StatusCards cards={cards} pinnedIds={pinned} onSelect={select} onPin={setPinned} width={screenWidth - 2 * px(t['space-3'])} />
+            )}
           </>
         )}
       />

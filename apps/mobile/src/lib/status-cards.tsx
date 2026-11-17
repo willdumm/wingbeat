@@ -1,115 +1,80 @@
 /**
- * The aircraft status cards (the dashboard's status bar), in the map's top bar (LiveMap's
- * topBar): the tail on a pill in the tracker's color, in flight / on ground and GPS age (with a
- * dot only while fresh), then altitude and speed in flight and the place, on a second line
- * when they don't fit on the first. The cards stack, divided by hairlines: collapsed, the
- * pinned ones, or with none the one that last reported (live.ts cardStack); "All Aircraft"
- * under them opens every card. Each card's pin button (with more than one tracker) pins or
- * unpins it; tapping a card opens its sheet and collapses the list. The dots follow the web's
- * status primitive (src/shared/status.ts).
+ * The aircraft status cards (the dashboard's status bar), at the top of the Live tab: a floating
+ * SwiftUI card, Liquid Glass on iOS 26 and a blurred material before it. Each row has the tail
+ * on a pill in the tracker's color, in flight / on ground and GPS age (with a dot only while
+ * fresh), then altitude, speed and the place. Collapsed, the rows are the pinned ones, or with
+ * none the one that last reported (live.ts cardStack); "All Aircraft" under them expands the
+ * card to every row, scrolling past about half the screen. Touching and holding a row (with
+ * more than one tracker) pins or unpins it; tapping one opens its sheet and collapses the list.
+ * The dots follow the web's status primitive (src/shared/status.ts).
  */
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
-import { Host, Image } from '@expo/ui/swift-ui';
+import { Platform, useWindowDimensions } from 'react-native';
+import { Button, Circle, ContextMenu, Divider, HStack, Host, Image, ScrollView, Spacer, Text, VStack } from '@expo/ui/swift-ui';
+import {
+  accessibilityLabel, Animation, animation, background, buttonStyle, clipShape, contentShape, disabled, font, foregroundStyle,
+  frame, glassEffect, lineLimit, padding, rotationEffect, shapes, type ModifierConfig,
+} from '@expo/ui/swift-ui/modifiers';
 import { cardStack, type StatusCard } from './live';
 import { px, useTokens } from './theme';
 
+const RADIUS = 22;
+// A row's height, for when the open list needs to scroll (the pill line and the details line).
+const ROW_HEIGHT = 54;
+// Liquid Glass needs iOS 26; before it, glassEffect does nothing, so the card takes a material.
+const GLASS = Platform.OS === 'ios' && parseInt(String(Platform.Version), 10) >= 26;
+const CARD_SURFACE: ModifierConfig[] = GLASS
+  ? [glassEffect({ glass: { variant: 'regular' }, shape: 'roundedRectangle', cornerRadius: RADIUS })]
+  : [background({ type: 'material', material: 'regular' }, shapes.roundedRectangle({ cornerRadius: RADIUS })), clipShape('roundedRectangle', RADIUS)];
+
 function Dot({ color }: { color: string }) {
-  return <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }} />;
+  return <Circle modifiers={[frame({ width: 8, height: 8 }), foregroundStyle(color)]} />;
 }
 
-/** An SF Symbol in RN layout; inside a Pressable, so the Pressable gets the touch. */
-function Symbol({ name, size, color }: { name: 'pin' | 'pin.fill' | 'chevron.down' | 'chevron.up'; size: number; color: string }) {
-  return (
-    <View pointerEvents="none">
-      <Host matchContents><Image systemName={name} size={size} color={color} /></Host>
-    </View>
-  );
-}
-
-/** A card's pin: outlined until pinned. Its touch area runs the card's full height. */
-function PinButton({ label, pinned, onPress }: { label: string; pinned: boolean; onPress: () => void }) {
-  const t = useTokens();
-  return (
-    <Pressable onPress={onPress} hitSlop={{ top: 4, bottom: 4 }}
-      accessibilityRole="switch" accessibilityLabel={'Pin ' + label} accessibilityState={{ checked: pinned }}
-      style={({ pressed }) => ({ width: 44, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.5 : 1 })}>
-      <Symbol name={pinned ? 'pin.fill' : 'pin'} size={15} color={pinned ? t['accent'] : t['text-faint']} />
-    </Pressable>
-  );
-}
-
-function Card({ card, pinned, divider, disabled, onPress, onPin }: {
-  card: StatusCard;
-  pinned: boolean;
-  divider: boolean;
-  disabled: boolean;
-  onPress: () => void;
-  /** Pins or unpins it; null: no pin button. */
-  onPin: (() => void) | null;
-}) {
+function Row({ card, pinned, width }: { card: StatusCard; pinned: boolean; width: number }) {
   const t = useTokens();
   const details = [card.metrics, card.location].filter(Boolean).join(' · ');
-  const gap = 6;
-  // The details stay on the first line when they fit, measured apart (an unseen copy) so
-  // where they go doesn't change what's measured.
-  const [w, setW] = useState({ row: 0, head: 0, details: 0 });
-  const measure = (key: keyof typeof w) => (ev: LayoutChangeEvent) => {
-    const v = ev.nativeEvent.layout.width;
-    setW((p) => (p[key] === v ? p : { ...p, [key]: v }));
-  };
-  const inline = w.row > 0 && w.head + gap + w.details <= w.row;
-  const detailsStyle = { fontSize: 13, fontWeight: '500', color: t['text-primary'] } as const;
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityLabel={`${card.label}, ${card.inFlight ? 'in flight' : 'on ground'}${pinned ? ', pinned' : ''}`}
-      style={({ pressed }) => ({
-        flexDirection: 'row', alignItems: 'center',
-        paddingVertical: px(t['space-1']) + 2, paddingLeft: px(t['space-3']), paddingRight: onPin ? 0 : px(t['space-3']),
-        opacity: pressed ? 0.6 : 1,
-        borderTopWidth: divider ? StyleSheet.hairlineWidth : 0, borderTopColor: t['border'],
-      })}
-    >
-      <View onLayout={measure('row')} style={[{ flex: 1 }, inline
-        ? { flexDirection: 'row', alignItems: 'center', gap }
-        : { alignItems: 'flex-start', gap: 2 }]}>
-        <View onLayout={measure('head')} style={{ maxWidth: '100%', flexDirection: 'row', alignItems: 'center', gap }}>
-          {/* The tail on the tracker's color, as on its map marker. */}
-          <View style={{ paddingHorizontal: px(t['space-2']), paddingVertical: 1, borderRadius: px(t['radius-pill']), backgroundColor: card.color }}>
-            <Text style={{ fontSize: 14, fontWeight: '700', color: t['accent-fg'] }} numberOfLines={1}>{card.label}</Text>
-          </View>
-          {card.inFlight && <Dot color={t['live-dot']} />}
-          <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.3, color: card.inFlight ? t['live-fg'] : t['text-secondary'] }}>
-            {card.inFlight ? 'IN FLIGHT' : 'ON GROUND'}
+    <VStack alignment="leading" spacing={3} modifiers={[
+      frame({ width, alignment: 'leading' }), padding({ horizontal: px(t['space-3']), vertical: px(t['space-2']) }),
+      // The whole row takes the tap, not just its text.
+      contentShape(shapes.rectangle()),
+    ]}>
+      <HStack spacing={6}>
+        {/* The tail on the tracker's color, as on its map marker. */}
+        <Text modifiers={[
+          font({ size: 14, weight: 'bold' }), foregroundStyle(t['accent-fg']), lineLimit(1),
+          padding({ horizontal: px(t['space-2']), vertical: 1 }), background(card.color, shapes.capsule()),
+        ]}>{card.label}</Text>
+        {card.inFlight && <Dot color={t['live-dot']} />}
+        <Text modifiers={[font({ size: 11, weight: 'bold' }), foregroundStyle(card.inFlight ? t['live-fg'] : t['text-secondary'])]}>
+          {card.inFlight ? 'IN FLIGHT' : 'ON GROUND'}
+        </Text>
+        {card.gps && <Text modifiers={[font({ size: 13 }), foregroundStyle(t['text-secondary'])]}>·</Text>}
+        {card.gps && card.gpsFresh && <Dot color={t['success-dot']} />}
+        {card.gps && (
+          <Text modifiers={[font({ size: 13, weight: 'medium' }), lineLimit(1), foregroundStyle(card.gpsFresh ? t['text-primary'] : t['text-secondary'])]}>
+            {card.gps}
           </Text>
-          {card.gps && (
-            <>
-              <Text style={{ fontSize: 13, color: t['text-secondary'] }}>·</Text>
-              {card.gpsFresh && <Dot color={t['success-dot']} />}
-              <Text style={{ flexShrink: 1, fontSize: 13, fontWeight: '500', color: card.gpsFresh ? t['text-primary'] : t['text-secondary'] }} numberOfLines={1}>{card.gps}</Text>
-            </>
-          )}
-        </View>
-        {!!details && <Text style={[detailsStyle, { flexShrink: 1 }]} numberOfLines={1}>{inline ? '· ' + details : details}</Text>}
-      </View>
-      {onPin && <PinButton label={card.label} pinned={pinned} onPress={onPin} />}
+        )}
+        <Spacer />
+        {pinned && <Image systemName="pin.fill" size={12} color={t['accent']} />}
+      </HStack>
       {!!details && (
-        <Text onLayout={measure('details')} numberOfLines={1} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
-          style={[detailsStyle, { position: 'absolute', opacity: 0 }]}>{'· ' + details}</Text>
+        <Text modifiers={[font({ size: 13, weight: 'medium' }), lineLimit(1), foregroundStyle(t['text-primary'])]}>{details}</Text>
       )}
-    </Pressable>
+    </VStack>
   );
 }
 
 /** onSelect: a card with a position was tapped. onPin: the pinned trackers, changed. */
-export function StatusCards({ cards, pinnedIds, onSelect, onPin }: {
+export function StatusCards({ cards, pinnedIds, onSelect, onPin, width }: {
   cards: StatusCard[];
   pinnedIds: number[];
   onSelect: (card: StatusCard) => void;
   onPin: (trackerIds: number[]) => void;
+  /** The card's width (the screen's, less its margins). */
+  width: number;
 }) {
   const t = useTokens();
   const { height: screen } = useWindowDimensions();
@@ -123,35 +88,65 @@ export function StatusCards({ cards, pinnedIds, onSelect, onPin }: {
     if (c.position) onSelect(c);
   };
   const pin = (id: number) => onPin(pinned.includes(id) ? pinned.filter((p) => p !== id) : [...pinned, id]);
-  const list = shown.map((c, i) => (
-    <Card key={c.trackerId} card={c} pinned={pinned.includes(c.trackerId)} divider={i > 0}
-      disabled={!open && !c.position} onPress={() => pick(c)} onPin={listed ? () => pin(c.trackerId) : null} />
-  ));
+
+  const rows = shown.map((c, i) => {
+    const isPinned = pinned.includes(c.trackerId);
+    const row = (
+      <Button onPress={() => pick(c)} modifiers={[
+        buttonStyle('plain'), disabled(!open && !c.position),
+        accessibilityLabel(`${c.label}, ${c.inFlight ? 'in flight' : 'on ground'}${isPinned ? ', pinned' : ''}`),
+      ]}>
+        <Row card={c} pinned={isPinned} width={width} />
+      </Button>
+    );
+    return (
+      <VStack key={c.trackerId} spacing={0}>
+        {i > 0 && <Divider />}
+        {listed ? (
+          <ContextMenu>
+            <ContextMenu.Items>
+              <Button label={isPinned ? 'Unpin' : 'Pin'} systemImage={isPinned ? 'pin.slash' : 'pin'} onPress={() => pin(c.trackerId)} />
+            </ContextMenu.Items>
+            <ContextMenu.Trigger>{row}</ContextMenu.Trigger>
+          </ContextMenu>
+        ) : row}
+      </VStack>
+    );
+  });
+  // A ScrollView takes all the height it's offered, so only a list too tall for the cap scrolls.
+  const cap = Math.round(screen * 0.55);
+  const scrolls = open && shown.length * ROW_HEIGHT > cap;
   const toggle = open ? 'Show Less'
     : `All Aircraft (${cards.length})` + (moreInFlight ? ` · ${moreInFlight} more in flight` : '');
+
   return (
-    <View>
-      {/* The open list scrolls past half the screen. */}
-      {open ? (
-        <ScrollView style={{ flexGrow: 0, maxHeight: screen * 0.55 }} contentInsetAdjustmentBehavior="never">{list}</ScrollView>
-      ) : list}
-      {open && pinned.length === 0 && (
-        <Text style={{ paddingHorizontal: px(t['space-3']), paddingVertical: px(t['space-1']), fontSize: 12, color: t['text-muted'],
-          borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t['border'] }}>
-          Pin aircraft to keep their cards here. Unpinned, the one that last reported shows.
-        </Text>
-      )}
-      {listed && (
-        <Pressable onPress={() => setOpen((o) => !o)} accessibilityRole="button" accessibilityState={{ expanded: open }}
-          style={({ pressed }) => ({
-            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-            paddingVertical: px(t['space-1']) + 2, opacity: pressed ? 0.6 : 1,
-            borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t['border'],
-          })}>
-          <Text style={{ fontSize: 13, fontWeight: '600', color: t['accent'] }}>{toggle}</Text>
-          <Symbol name={open ? 'chevron.up' : 'chevron.down'} size={12} color={t['accent']} />
-        </Pressable>
-      )}
-    </View>
+    <Host matchContents style={{ alignSelf: 'center' }}>
+      <VStack spacing={0} modifiers={[frame({ width }), ...CARD_SURFACE, animation(Animation.snappy(), open)]}>
+        {scrolls
+          ? <ScrollView modifiers={[frame({ width, height: cap })]}><VStack spacing={0}>{rows}</VStack></ScrollView>
+          : rows}
+        {open && pinned.length === 0 && (
+          <VStack spacing={0}>
+            <Divider />
+            <Text modifiers={[font({ size: 12 }), foregroundStyle(t['text-muted']), frame({ width, alignment: 'leading' }),
+              padding({ horizontal: px(t['space-3']), vertical: px(t['space-1']) })]}>
+              Touch and hold an aircraft to pin its card here. Unpinned, the one that last reported shows.
+            </Text>
+          </VStack>
+        )}
+        {listed && (
+          <VStack spacing={0}>
+            <Divider />
+            <Button onPress={() => setOpen((o) => !o)} modifiers={[buttonStyle('plain'), accessibilityLabel(open ? 'Show less' : toggle)]}>
+              <HStack spacing={6} modifiers={[frame({ width }), padding({ vertical: px(t['space-2']) }), contentShape(shapes.rectangle())]}>
+                <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(t['accent'])]}>{toggle}</Text>
+                <Image systemName="chevron.down" size={12} color={t['accent']}
+                  modifiers={[rotationEffect(open ? 180 : 0), animation(Animation.snappy(), open)]} />
+              </HStack>
+            </Button>
+          </VStack>
+        )}
+      </VStack>
+    </Host>
   );
 }
