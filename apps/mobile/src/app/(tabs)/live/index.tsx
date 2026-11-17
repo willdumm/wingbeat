@@ -7,7 +7,6 @@ import { origin } from '@/lib/api';
 import { useBootstrap } from '@/lib/bootstrap-context';
 import { useFlights } from '@/lib/flights-context';
 import { groundTrailFeatures, initialView, latestTracks, liveBounds, liveTrackPicks, pickDetails, pickedFeature, positionFeatures, spotDetails, statusCards, trackStarts, type PickedSpot } from '@/lib/live';
-import { InstanceLockup } from '@/lib/brand';
 import { LiveMap, type LiveMapRef } from '@/lib/live-map';
 import { LocationSheet } from '@/lib/location-sheet';
 import { sheetDetentHeight } from '@/lib/map-sheet';
@@ -130,17 +129,10 @@ export default function LiveScreen() {
           if (tz) pick(pickDetails(tz, lngLat, zoom, picks, (id) => trackers.find((tr) => tr.id === id) ?? null));
         }}
         onLongPress={(lngLat) => { if (tz) pick(spotDetails(tz, lngLat)); }}
-        topBar={(
-          <>
-            {cards.length > 0 && (
-              <View style={{ paddingTop: px(t['space-1']) }} pointerEvents="box-none">
-                <StatusCards cards={cards} pinnedIds={pinned} onSelect={select} onPin={setPinned} width={screenWidth - 2 * px(t['space-3'])} />
-              </View>
-            )}
-            <View pointerEvents="none" style={{ alignItems: 'center', paddingTop: px(t['space-2']), paddingBottom: px(t['space-2']) }}>
-              <InstanceLockup />
-            </View>
-          </>
+        topBar={cards.length > 0 && (
+          <View style={{ paddingTop: px(t['space-1']), paddingBottom: px(t['space-2']) }} pointerEvents="box-none">
+            <StatusCards cards={cards} pinnedIds={pinned} onSelect={select} onPin={setPinned} width={screenWidth - 2 * px(t['space-3'])} />
+          </View>
         )}
       />
       {/* A status card's tracker, or a tap on the map (the web's point picker): one sheet, so one replaces the other in place. */}

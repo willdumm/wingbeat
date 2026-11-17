@@ -35,7 +35,7 @@ export function LogoLockup({ appName, height = 28 }: { appName: string; height?:
   );
 }
 
-/** The lockup with the active account's instance name, at the top of the Live, Flights and Duty tabs. */
+/** The lockup with the active account's instance name, in the Flights and Duty tabs' navigation bars. */
 export function InstanceLockup() {
   const { bootstrap } = useBootstrap();
   return <LogoLockup appName={bootstrap?.instance?.app_name ?? 'Wingbeat'} />;

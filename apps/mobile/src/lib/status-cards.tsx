@@ -1,8 +1,8 @@
 /**
- * The aircraft status cards (the dashboard's status bar), at the top of the Live tab above the
- * lockup: a floating SwiftUI card, Liquid Glass on iOS 26 and a blurred material before it. Each row has the tail
- * on a pill in the tracker's color, in flight / on ground and GPS age (with a dot only while
- * fresh), then altitude, speed and the place. Collapsed, the rows are the pinned ones, or with
+ * The aircraft status cards (the dashboard's status bar), at the top of the Live tab: a floating
+ * SwiftUI card, Liquid Glass on iOS 26 and a blurred material before it. Each row, centred, has
+ * the tail on a pill in the tracker's color, in flight / on ground, GPS age (with a dot only
+ * while fresh) and a pin when pinned, then altitude, speed and the place. Collapsed, the rows are the pinned ones, or with
  * none the one that last reported (live.ts cardStack); "All Aircraft" under them expands the
  * card to every row, scrolling past about half the screen. Touching and holding a row (with
  * more than one tracker) pins or unpins it; tapping one opens its sheet and collapses the list.
@@ -10,7 +10,7 @@
  */
 import { useState } from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
-import { Button, Circle, ContextMenu, Divider, HStack, Host, Image, ScrollView, Spacer, Text, VStack } from '@expo/ui/swift-ui';
+import { Button, Circle, ContextMenu, Divider, HStack, Host, Image, ScrollView, Text, VStack } from '@expo/ui/swift-ui';
 import {
   accessibilityLabel, Animation, animation, background, buttonStyle, clipShape, contentShape, disabled, font, foregroundStyle,
   frame, glassEffect, lineLimit, padding, rotationEffect, shapes, type ModifierConfig,
@@ -35,8 +35,8 @@ function Row({ card, pinned, width }: { card: StatusCard; pinned: boolean; width
   const t = useTokens();
   const details = [card.metrics, card.location].filter(Boolean).join(' · ');
   return (
-    <VStack alignment="leading" spacing={3} modifiers={[
-      padding({ horizontal: px(t['space-3']), vertical: px(t['space-2']) }), frame({ width, alignment: 'leading' }),
+    <VStack spacing={3} modifiers={[
+      padding({ horizontal: px(t['space-3']), vertical: px(t['space-2']) }), frame({ width }),
       // The whole row takes the tap, not just its text.
       contentShape(shapes.rectangle()),
     ]}>
@@ -57,7 +57,6 @@ function Row({ card, pinned, width }: { card: StatusCard; pinned: boolean; width
             {card.gps}
           </Text>
         )}
-        <Spacer />
         {/* Pinned, as Notes and Messages mark it: a filled pin, tilted, in the secondary color. */}
         {pinned && <Image systemName="pin.fill" size={11} modifiers={[foregroundStyle({ type: 'hierarchical', style: 'secondary' }), rotationEffect(45)]} />}
       </HStack>
