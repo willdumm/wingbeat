@@ -1465,10 +1465,13 @@ Use `expo-location` for the location fixes instead of reimplementing them.
 - iOS "Always" location and Android background location both get extra store review. The
   purpose strings and the Play declaration video must describe exactly this feature.
 - **Decided (2026-11-15): the "Always" purpose strings change in phase 8's native build, not
-  before.** The first binary's three location strings in `apps/mobile/app.config.ts` all say
-  "Wingbeat shows your position on the map.", which is right for "While using" (kept) but not
-  for "Always". In phase 8's build, `locationAlwaysAndWhenInUsePermission` and
-  `locationAlwaysPermission` become: "Wingbeat uses your location in the background, only
+  before.** Since build 7 (v0.6.1, 2026-11-17) the binary has no location module, strings or
+  background modes at all: `expo-location`, `expo-task-manager` and `expo-background-task`
+  were uninstalled and their config plugins removed from `apps/mobile/app.config.ts`, because
+  App Review asks about permissions and background modes the app doesn't use. Phase 8's build
+  reinstalls them, with "Wingbeat shows your position on the map." for
+  `locationWhenInUsePermission`, and `locationAlwaysAndWhenInUsePermission` and
+  `locationAlwaysPermission` as: "Wingbeat uses your location in the background, only
   near your aircraft, to log the flights you fly to you automatically. You can turn this off
   in Settings." The setting it names is the auto-log switch below. Any change to these strings
   changes the fingerprint, so it waits for that build to keep OTA updates reaching the current
@@ -2395,7 +2398,7 @@ layers need no Android counterpart; only the chrome around the map does.
 | Accounts: switch, add, sign out | Done | a `Form`; a context menu instead of touch-and-hold | `ListItem`s, a long-press `DropdownMenu` | `api/me` |
 | Delete my account | Done | a destructive `Button`, `Alert` | `AlertDialog` | `DELETE /api/me` |
 | Theme | Done | a segmented `Picker` | `SingleChoiceSegmentedButtonRow` | — |
-| Documentation link | Done: a Help section | a `Button` opening the docs site in `expo-web-browser` (public, no session) | same | `docs` (`docsHref`, the web's too) |
+| Documentation link | Removed (v0.6.1): every docs page's logo leads to the home page and its pricing, which the app mustn't link to (guideline 3.1.1, see above). Return it with docs pages that can't reach pricing | — | — | `docs` (`docsHref`, the web's) |
 | Clear local cache | Done: "Clear Flight Cache" in the active account's section, with a confirmation, then a full download | a destructive `Button`, `Alert` | same | `flight-cache.ts`, the flight store's `clearCache` |
 | My Devices (rename, sign out) | Phase 11 (first in Settings) | a `List` with `SwipeActions`; an `Alert` with a text field to rename | a long-press menu, an `AlertDialog` with a `TextField` | `api/me` |
 | Notification subscriptions | Phase 7 | a `Form` of `Toggle`s | `Switch` `ListItem`s | phase 7's routes |

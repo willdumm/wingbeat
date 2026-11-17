@@ -1,9 +1,10 @@
 /**
  * The app's Expo config (docs/mobile-app-plan.md, "The app itself").
  *
- * Every native module the plan uses is configured here from the first binary, so later
- * features ship as OTA updates ("Versions and compatibility"). Background location and the
- * presence module wait for phase 8, a planned native release.
+ * The native modules the app uses are configured here, so later features ship as OTA updates
+ * ("Versions and compatibility"). Location, background tasks and the presence module wait for
+ * phase 8, a planned native release: until the app uses them, their permission strings and
+ * background modes would be questions App Review asks.
  */
 import type { ExpoConfig } from 'expo/config';
 
@@ -50,7 +51,6 @@ const config: ExpoConfig = {
     ['expo-secure-store', { faceIDPermission: false }],
     'expo-sqlite',
     'expo-web-browser',
-    'expo-background-task',
     'expo-notifications',
     [
       'expo-camera',
@@ -58,16 +58,6 @@ const config: ExpoConfig = {
         cameraPermission: 'Wingbeat uses the camera to scan the QR code that adds an account.',
         microphonePermission: false,
         recordAudioAndroid: false,
-      },
-    ],
-    [
-      'expo-location',
-      {
-        locationWhenInUsePermission: 'Wingbeat shows your position on the map.',
-        locationAlwaysAndWhenInUsePermission: 'Wingbeat shows your position on the map.',
-        locationAlwaysPermission: 'Wingbeat shows your position on the map.',
-        locationFullAccuracyPermission: false,
-        motionUsagePermission: false,
       },
     ],
     '@maplibre/maplibre-react-native',

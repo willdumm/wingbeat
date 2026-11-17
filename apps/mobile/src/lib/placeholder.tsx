@@ -19,7 +19,7 @@ export function Placeholder({ text }: { text?: string }) {
   const addAccount = { label: 'Add Account', onPress: () => router.push('/add-account') };
   if (loaded && !active) {
     return <EmptyState title="No account" systemImage="person.crop.circle.badge.plus"
-      description="Sign in by scanning the code from Wingbeat on the web." action={addAccount} />;
+      description="Tap Add Account to sign in to your operator’s Wingbeat, or to try the demo." action={addAccount} />;
   }
   if (active?.signedOut) {
     return <EmptyState title="Signed out" systemImage="person.crop.circle.badge.exclamationmark"
