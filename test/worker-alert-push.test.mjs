@@ -22,10 +22,10 @@ async function outbound(request) {
   return Response.json({ data: messages.map((m, i) => ({ status: 'ok', id: 'ticket-' + sends.length + '-' + i })) });
 }
 
-// A cron tick on an alert-check minute (every 5th), `minutes` after the first one.
-const T0 = Math.floor(Date.now() / 300_000) * 300_000;
+// A cron tick on an alert-check minute (on the hour), `hours` after the first one.
+const T0 = Math.floor(Date.now() / 3_600_000) * 3_600_000;
 const NOW = T0 / 1000;
-const tick = (minutes = 0) => new Date(T0 + minutes * 60_000);
+const tick = (hours = 0) => new Date(T0 + hours * 3_600_000);
 const H = 3600, D = 86400;
 
 let nextPoint = 1;
@@ -112,27 +112,29 @@ describe('alert notifications', () => {
     for (const m of sends) {
       assert.equal(m.to, 'ExponentPushToken[viewer]');
       assert.deepEqual(m.data, { type: 'alert', host: 'localhost' });
+      assert.equal(m.channelId, 'alerts');
+      assert.equal(m.categoryId, undefined);
       assert.equal(m.interruptionLevel, undefined);
     }
     assert.ok(sent().some(m => m.title === 'Unassigned flight' && /· N1 · no pilot\n\d\d:\d\d AKST$/.test(m.body)), JSON.stringify(sent()));
 
     // The same alerts at the next check: nothing new.
-    await w.scheduled({ scheduledTime: tick(5) });
+    await w.scheduled({ scheduledTime: tick(1) });
     assert.equal(sends.length, 5);
   });
 
   test('between checks nothing is pushed; an alert that goes and comes back notifies again', async () => {
     const before = sends.length;
     await w.run('UPDATE flights SET pilot_id = 2 WHERE id = 1');
-    await w.scheduled({ scheduledTime: tick(10) });
+    await w.scheduled({ scheduledTime: tick(2) });
     assert.equal(sends.length, before);
     assert.equal((await w.all("SELECT key FROM alerts_seen WHERE key LIKE 'flight/%'")).length, 0);
 
     await w.run('UPDATE flights SET pilot_id = NULL WHERE id = 1');
     // Not an alert-check minute.
-    await w.scheduled({ scheduledTime: tick(11) });
+    await w.scheduled({ scheduledTime: tick(2 + 1 / 60) });
     assert.equal(sends.length, before);
-    await w.scheduled({ scheduledTime: tick(15) });
+    await w.scheduled({ scheduledTime: tick(3) });
     assert.deepEqual(sent(before).map(m => m.title), ['Unassigned flight']);
     assert.deepEqual(await w.all("SELECT key FROM alerts_seen WHERE key LIKE 'flight/%'"), [{ key: 'flight/1/' + (NOW - 2 * D) }]);
   });
@@ -141,31 +143,31 @@ describe('alert notifications', () => {
     const before = sends.length;
     await seedFlight(w, { id: 3, start: NOW - 1800, hours: 0.25 });
     await w.run("UPDATE poll_state SET flight_status = 'in_flight'");
-    await w.scheduled({ scheduledTime: tick(20) });
+    await w.scheduled({ scheduledTime: tick(4) });
     assert.equal(sends.length, before);
 
     // Landed, and the poller rewrote the flight under a new id.
     await w.run("UPDATE poll_state SET flight_status = 'grounded'");
     await rewriteFlight(w, 3, 4);
-    await w.scheduled({ scheduledTime: tick(25) });
+    await w.scheduled({ scheduledTime: tick(5) });
     assert.deepEqual(sent(before).map(m => m.title), ['Unassigned flight']);
     await rewriteFlight(w, 4, 5);
-    await w.scheduled({ scheduledTime: tick(30) });
+    await w.scheduled({ scheduledTime: tick(6) });
     assert.equal(sends.length, before + 1);
   });
 
   test('without subscribers nothing is kept; the first check with one records without pushing', async () => {
     const before = sends.length;
     await w.run("DELETE FROM push_subscriptions WHERE event = 'alerts'");
-    await w.scheduled({ scheduledTime: tick(35) });
+    await w.scheduled({ scheduledTime: tick(7) });
     assert.deepEqual(await w.all('SELECT key FROM alerts_seen'), []);
 
     await w.run("INSERT INTO push_subscriptions (user_id, tracker_id, event) VALUES (2, NULL, 'alerts')");
-    await w.scheduled({ scheduledTime: tick(40) });
+    await w.scheduled({ scheduledTime: tick(8) });
     assert.equal(sends.length, before);
     const keys = (await w.all('SELECT key FROM alerts_seen')).map(r => r.key);
     assert.ok(keys.includes('baseline') && keys.length > 1, JSON.stringify(keys));
-    await w.scheduled({ scheduledTime: tick(45) });
+    await w.scheduled({ scheduledTime: tick(9) });
     assert.equal(sends.length, before);
   });
 });

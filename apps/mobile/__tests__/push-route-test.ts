@@ -1,4 +1,5 @@
-import { isSubscribed, pushRoute, setSubscribed, type Subscription } from '@/lib/push-route';
+import { pushChannel } from '@wingbeat/core/api/push';
+import { isSubscribed, pushMapShareUrl, pushRoute, setSubscribed, type Subscription } from '@/lib/push-route';
 
 test('pushRoute: a tracker event to Live, an alert to the alerts sheet, with the host', () => {
   for (const type of ['takeoff', 'landing', 'gap', 'gap_resolved', 'gap_timeout']) {
@@ -29,4 +30,16 @@ test('subscriptions: every tracker covers each one; turning it on drops the per-
   expect(subs).toEqual([{ tracker_id: 1, event: 'landing' }]);
   subs = setSubscribed(subs, { tracker_id: 1, event: 'landing' }, false);
   expect(subs).toEqual([]);
+});
+
+test('pushMapShareUrl: the push’s https MapShare page, or none', () => {
+  expect(pushMapShareUrl({ type: 'gap', mapshare_url: 'https://share.garmin.com/pilot' })).toBe('https://share.garmin.com/pilot');
+  expect(pushMapShareUrl({ type: 'gap', mapshare_url: 'javascript:alert(1)' })).toBeNull();
+  expect(pushMapShareUrl({ type: 'gap' })).toBeNull();
+  expect(pushMapShareUrl(null)).toBeNull();
+});
+
+test('pushChannel: takeoff and landing are flights, gap its own channel, alerts theirs', () => {
+  expect(['takeoff', 'landing', 'gap', 'alerts'].map((e) => pushChannel(e as Parameters<typeof pushChannel>[0])))
+    .toEqual(['flights', 'flights', 'signal-gaps', 'alerts']);
 });

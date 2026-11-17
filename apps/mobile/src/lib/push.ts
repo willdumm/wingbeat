@@ -5,21 +5,41 @@
  * routed to what the push is about (push-route.ts), switching to its account first.
  */
 import { useEffect, useRef } from 'react';
+import { Linking, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import type { ApiClient } from '@wingbeat/core/api/client';
-import { registerPushDevice, type TrackerPushEvent } from '@wingbeat/core/api/push';
+import { PUSH_ACTIONS, PUSH_CHANNELS, registerPushDevice, TRACKER_PUSH_CATEGORY, type TrackerPushEvent } from '@wingbeat/core/api/push';
 import { useAccounts } from './accounts-context';
 import { parseTimeSensitive, TIME_SENSITIVE_KEY } from './prefs';
-import { pushRoute } from './push-route';
+import { pushMapShareUrl, pushRoute } from './push-route';
 import { readStored } from './stored-state';
 
-/** Shows a push that arrives while the app is open as it would otherwise. */
+/**
+ * Shows a push that arrives while the app is open as it would otherwise, and sets up what
+ * pushes name: the Android channels (PUSH_CHANNELS) and the tracker events' actions
+ * (TRACKER_PUSH_CATEGORY). Setting either again is harmless, and keeps a user's channel
+ * settings.
+ */
 export function initPush() {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
   });
+  if (Platform.OS === 'android') {
+    const channels: [string, string, Notifications.AndroidImportance][] = [
+      [PUSH_CHANNELS.flights, 'Takeoffs and Landings', Notifications.AndroidImportance.HIGH],
+      [PUSH_CHANNELS.gaps, 'Signal Gaps', Notifications.AndroidImportance.MAX],
+      [PUSH_CHANNELS.alerts, 'Alerts', Notifications.AndroidImportance.DEFAULT],
+    ];
+    for (const [id, name, importance] of channels) {
+      Notifications.setNotificationChannelAsync(id, { name, importance }).catch(() => {});
+    }
+  }
+  Notifications.setNotificationCategoryAsync(TRACKER_PUSH_CATEGORY, [
+    { identifier: PUSH_ACTIONS.viewOnMap, buttonTitle: 'View on Map', options: { opensAppToForeground: true } },
+    { identifier: PUSH_ACTIONS.openMapShare, buttonTitle: 'Open MapShare', options: { opensAppToForeground: true } },
+  ]).catch(() => {});
 }
 
 /** Whether pushes can be shown, asking the first time (iOS asks only once). */
@@ -62,11 +82,19 @@ export function usePush() {
   const response = Notifications.useLastNotificationResponse();
   const handled = useRef<string | null>(null);
   useEffect(() => {
-    if (!loaded || !response || response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
-    const id = response.notification.request.identifier;
+    if (!loaded || !response) return;
+    const action = response.actionIdentifier;
+    const id = response.notification.request.identifier + '/' + action;
     if (handled.current === id) return;
     handled.current = id;
-    const route = pushRoute(response.notification.request.content.data);
+    const data = response.notification.request.content.data;
+    if (action === PUSH_ACTIONS.openMapShare) {
+      const url = pushMapShareUrl(data);
+      if (url) Linking.openURL(url).catch(() => {});
+      return;
+    }
+    if (action !== Notifications.DEFAULT_ACTION_IDENTIFIER && action !== PUSH_ACTIONS.viewOnMap) return;
+    const route = pushRoute(data);
     if (!route) return;
     const account = route.host ? accounts.find((a) => a.host === route.host && !a.signedOut) : null;
     if (route.host && !account) return;  // an account this phone no longer has

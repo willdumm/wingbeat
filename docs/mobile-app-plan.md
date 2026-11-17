@@ -1010,7 +1010,11 @@ access token. Without it, anyone holding a device's push token can send to it.
 ### Native details
 
 - **Android channels** per event type (Takeoff/Landing, Signal gap), so users control sound
-  and importance in system settings.
+  and importance in system settings. **Done 2026-11-17:** `PUSH_CHANNELS` in core's
+  `api/push-requests.ts` (`flights`, `signal-gaps`, `alerts`; `pushChannel()` maps a
+  subscription to its channel); every push names its `channelId`, and the app creates the
+  three at launch (`initPush`, "Takeoffs and Landings" high, "Signal Gaps" max, "Alerts"
+  default). JavaScript only, so it shipped with build 7's fingerprint.
 - **iOS Time Sensitive** interruption level (entitlement, build 6), so they get through Focus
   modes. Which tracker events (takeoff, landing, gap) are Time Sensitive is the phone's
   choice, in Settings → Notifications ("Time Sensitive"), gap alone by default (decided
@@ -1020,7 +1024,10 @@ access token. Without it, anyone holding a device's push token can send to it.
   stored choice stays, and a device that never said gets gap). A change registers again with
   every signed-in account. Alerts are never Time Sensitive.
 - **Notification categories with actions**, e.g. on a gap alert "Open MapShare" and "View on
-  map".
+  map". **Done 2026-11-17:** a tracker event whose tracker has a MapShare page carries
+  `categoryId: 'tracker'` (`TRACKER_PUSH_CATEGORY`) and `mapshare_url` in its `data`; the
+  app registers the category at launch with View on Map (the tap's route) and Open MapShare
+  (opens the page, `pushMapShareUrl` taking https only). Alerts have no category.
 - Tapping a notification deep-links to the tracker or flight (`wingbeat://flight/123`).
   Each push's `data` carries a `type`, the same types as Web Push. An app that doesn't know
   the type opens to its home screen instead of following a link it can't handle, and
@@ -1041,8 +1048,9 @@ limit) notifies the users subscribed to `alerts` when an alert first appears, no
 digest: core's `computeAlerts` already flags maintenance before it's due and duty at 90% of
 a limit, so an alert appearing is the advance warning.
 
-- **Done 2026-11-15 (phase 7):** `src/alert-push.ts`. On every fifth minute's cron tick
-  (`ALERT_CHECK_MINUTES`, from the tick's scheduled time, so no stored timestamp) and only
+- **Done 2026-11-15 (phase 7):** `src/alert-push.ts`. Once an hour, on the hour's cron tick
+  (`ALERT_CHECK_MINUTES`, 60 since 2026-11-17, when the user found every fifth minute more
+  than needed; from the tick's scheduled time, so no stored timestamp) and only
   with `EXPO_ACCESS_TOKEN`, `checkAlerts()` builds the page's `AlertLists` from D1 (the
   effective flights of active trackers and the manual ones through `applyFlightEdits`, as the
   flight store's `getAll()`, and the bootstrap's aircraft, pilots and trackers), runs
@@ -2265,7 +2273,9 @@ it overlapped "Fit all"; switching accounts no longer saves the previous account
 name and user onto the new one (the accounts and bootstrap contexts now keep the client and
 the bootstrap with the account they were loaded for, since both were stale for the render
 before their effects ran); and the status cards became a floating SwiftUI glass card with
-centred rows, pinned by touch and hold, with no lockup on the Live tab. Last group: `eb7190bf`.
+centred rows, pinned by touch and hold, with no lockup on the Live tab (group `eb7190bf`). Then,
+before the user submitted build 7 for review: push channels and the tracker events' View on Map
+and Open MapShare actions (group `92ffcdc0`, the last).
 
 Step 11 (2026-11-16, `demo-tenant`): the demo feed, the demo sign-in and the app's "Try the
 Demo" (JavaScript only, so it ships as an update), the seed script, and tests
@@ -2417,7 +2427,7 @@ layers need no Android counterpart; only the chrome around the map does.
 | Documentation link | Removed (v0.6.1): every docs page's logo leads to the home page and its pricing, which the app mustn't link to (guideline 3.1.1, see above). Return it with docs pages that can't reach pricing | — | — | `docs` (`docsHref`, the web's) |
 | Clear local cache | Done: "Clear Flight Cache" in the active account's section, with a confirmation, then a full download | a destructive `Button`, `Alert` | same | `flight-cache.ts`, the flight store's `clearCache` |
 | My Devices (rename, sign out) | Phase 11 (first in Settings) | a `List` with `SwipeActions`; an `Alert` with a text field to rename | a long-press menu, an `AlertDialog` with a `TextField` | `api/me` |
-| Notification subscriptions | Phase 7 | a `Form` of `Toggle`s | `Switch` `ListItem`s | phase 7's routes |
+| Notification subscriptions | Done (Settings → Notifications: per tracker and event, Alerts, and which events are Time Sensitive; Android channels and the tracker events' actions, 2026-11-17) | a `Form` of `Toggle`s | `Switch` `ListItem`s | phase 7's routes |
 | Aircraft, pilots, trackers (add, edit, test a feed) | Phase 11 | `Form`s pushed on the Settings stack | `ListItem` screens | the settings request schemas |
 | Users and invites (with the "Add phone" QR code) | Phase 11 | a `Form`; the QR code in a sheet, `ShareLink` | same | — |
 | General, duty limits, timezone (with its warning) | Phase 11 | `Form`, `Picker`, `Stepper` | `ListItem`s, `ExposedDropdownMenuBox` | `settings` |
@@ -2573,6 +2583,10 @@ were, so references elsewhere in this doc stay valid.
    release (iOS, individual account). Android goes to Play once the Play organization account
    exists; until then it stays on EAS internal distribution. Then move the operators you
    host off Pushover and retire it (see "Retiring Pushover").
+   **Status (2026-11-17):** everything up to the release is built: app push for tracker events
+   and alerts (hourly), subscriptions, Time Sensitive, deep links, Android channels and the
+   tracker events' actions. Left: an alert and a gap push seen on a device, the first App
+   Store release (after Beta App Review), then moving operators off Pushover.
 8. **Passive matching** (a planned native release): the presence module from the probe
    (CoreLocation on iOS, AltBeacon on Android), location fixes around beacons, the offline
    event queue and `POST /api/presence/events`, `trackers.current_*` and stamping from them

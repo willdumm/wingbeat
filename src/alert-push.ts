@@ -1,6 +1,7 @@
 import { Tenant } from './types';
 import { loadSettings } from './settings';
 import { sendAppPushes, subscribedDevices } from './app-push';
+import { PUSH_CHANNELS } from '@wingbeat/core/api/push-requests';
 import { queryAircraft, queryPilots, queryTrackers } from './queries';
 import { alertText, alertTitle, computeAlerts, type Alert, type AlertLists } from '@wingbeat/core/alerts';
 import { applyFlightEdits, type EffectiveFlight, type FlightCorrection } from '@wingbeat/core/flight-edits';
@@ -13,8 +14,8 @@ import { applyFlightEdits, type EffectiveFlight, type FlightCorrection } from '@
 // subscribed: the first check with a subscriber records a baseline without pushing, so
 // subscribing (or adding the Expo token) doesn't replay the alerts already present.
 
-/** The check runs on the cron ticks of every ALERT_CHECK_MINUTES-th minute. */
-export const ALERT_CHECK_MINUTES = 5;
+/** The check runs on the cron ticks of every ALERT_CHECK_MINUTES-th minute: on the hour. */
+export const ALERT_CHECK_MINUTES = 60;
 
 /** The alerts_seen row that says the table holds a baseline. Alert keys all contain a '/'. */
 const BASELINE_KEY = 'baseline';
@@ -123,7 +124,10 @@ export async function checkAlerts(tenant: Tenant, scheduledTime: number): Promis
   await sendAppPushes(tenant, appeared.map(([, alert]) => {
     const { text, detail } = alertText(alert);
     return {
-      push: { title: alertTitle(alert), body: detail ? text + '\n' + detail : text, data: { type: 'alert', host: tenant.host } },
+      push: {
+        title: alertTitle(alert), body: detail ? text + '\n' + detail : text,
+        data: { type: 'alert', host: tenant.host }, channelId: PUSH_CHANNELS.alerts,
+      },
       devices,
     };
   }));
