@@ -7,7 +7,7 @@ import { origin } from '@/lib/api';
 import { useBootstrap } from '@/lib/bootstrap-context';
 import { useFlights } from '@/lib/flights-context';
 import { groundTrailFeatures, initialView, latestTracks, liveBounds, liveTrackPicks, pickDetails, pickedFeature, positionFeatures, spotDetails, statusCards, trackStarts, type PickedSpot } from '@/lib/live';
-import { LogoLockup } from '@/lib/brand';
+import { InstanceLockup } from '@/lib/brand';
 import { LiveMap, type LiveMapRef } from '@/lib/live-map';
 import { LocationSheet } from '@/lib/location-sheet';
 import { sheetDetentHeight } from '@/lib/map-sheet';
@@ -16,7 +16,7 @@ import { Placeholder } from '@/lib/placeholder';
 import { accountPrefKey, parseLivePinned } from '@/lib/prefs';
 import { StatusCards } from '@/lib/status-cards';
 import { useStoredState } from '@/lib/stored-state';
-import { useTokens } from '@/lib/theme';
+import { px, useTokens } from '@/lib/theme';
 import { useFlightsTab } from '@/lib/use-flights-tab';
 import { useNow } from '@/lib/use-now';
 
@@ -130,9 +130,13 @@ export default function LiveScreen() {
           if (tz) pick(pickDetails(tz, lngLat, zoom, picks, (id) => trackers.find((tr) => tr.id === id) ?? null));
         }}
         onLongPress={(lngLat) => { if (tz) pick(spotDetails(tz, lngLat)); }}
-        watermark={<LogoLockup appName={bootstrap.instance?.app_name ?? 'Wingbeat'} />}
-        topBar={cards.length > 0 && (
-          <StatusCards cards={cards} pinnedIds={pinned} onSelect={select} onPin={setPinned} />
+        topBar={(
+          <>
+            <View style={{ alignItems: 'center', paddingTop: px(t['space-1']), paddingBottom: px(t['space-2']) }}>
+              <InstanceLockup />
+            </View>
+            {cards.length > 0 && <StatusCards cards={cards} pinnedIds={pinned} onSelect={select} onPin={setPinned} />}
+          </>
         )}
       />
       {/* A status card's tracker, or a tap on the map (the web's point picker): one sheet, so one replaces the other in place. */}
