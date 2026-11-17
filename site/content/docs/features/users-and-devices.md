@@ -23,7 +23,7 @@ An account can have any number of email addresses, and any of them signs in.
 Each address belongs to one account only. An address is added by emailing it a link, by
 the user (Settings → Email addresses) or by an admin (Settings → Admin → Users →
 **Email**); it's added once the link is opened, so every address on an account has been
-confirmed. Until then it shows as *not confirmed*. Opening the link also signs in the device
+confirmed. Until then it shows as *not verified*. Opening the link also signs in the device
 that opened it.
 
 To sign in, enter an address on the sign-in page. If it belongs to an account, Wingbeat

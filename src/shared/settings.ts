@@ -2679,10 +2679,10 @@ export function settingsModalScript(): string {
             removeBtn.disabled = false;
           }
         });
-        addRow(e.email, 'Signs in', false, removeBtn);
+        addRow(e.email, 'Verified', false, removeBtn);
       }
       for (const pending of data.pending_emails) {
-        addRow(pending.email + ' (not confirmed)', 'Link sent · Expires ' + fmtTzDate(pending.expires_at), true, null);
+        addRow(pending.email + ' (not verified)', 'Verification link sent · Expires ' + fmtTzDate(pending.expires_at), true, null);
       }
       if (data.emails.length === 0 && data.pending_emails.length === 0) {
         const none = document.createElement('p');
@@ -2700,13 +2700,13 @@ export function settingsModalScript(): string {
       form.appendChild(input);
       const hint = document.createElement('p');
       hint.className = 'settings-msg';
-      hint.textContent = 'We\u2019ll email it a link. Opening the link confirms the address, and it can sign in from then on.';
+      hint.textContent = 'Verified email addresses can be used to sign in.';
       form.appendChild(hint);
       const actionsDiv = document.createElement('div');
       actionsDiv.className = 'settings-edit-form-actions';
       const sendBtn = document.createElement('button');
       sendBtn.className = 'settings-action-btn save-edit-btn';
-      sendBtn.textContent = 'Send link';
+      sendBtn.textContent = 'Verify email';
       actionsDiv.appendChild(sendBtn);
       form.appendChild(actionsDiv);
       sendBtn.addEventListener('click', async () => {
@@ -2717,7 +2717,7 @@ export function settingsModalScript(): string {
           await ops.add(email);
           ops.reload();
         } catch (err) {
-          alert(apiErrorMessage(err, 'Failed to send the link.'));
+          alert(apiErrorMessage(err, 'Failed to send the verification email.'));
           sendBtn.disabled = false;
         }
       });
@@ -2774,7 +2774,7 @@ export function settingsModalScript(): string {
             const pilot = user.pilot_id != null ? pilotList.find(p => p.id === user.pilot_id) : null;
             if (pilot) subEl.textContent += ' · Pilot ' + pilot.name;
             for (const e of user.emails ?? []) subEl.textContent += ' · ' + e.email;
-            for (const e of user.pending_emails ?? []) subEl.textContent += ' · ' + e.email + ' (not confirmed)';
+            for (const e of user.pending_emails ?? []) subEl.textContent += ' · ' + e.email + ' (not verified)';
             info.appendChild(nameEl);
             info.appendChild(subEl);
             const actions = document.createElement('div');

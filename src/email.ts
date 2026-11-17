@@ -49,12 +49,16 @@ function body(paragraphs: string[], link: { url: string; label: string }, footer
   const text = [...paragraphs, `${link.label}: ${link.url}`, footer].join('\n\n');
   // Inline styles with the light theme's token values: mail clients drop <style> and can't
   // read the page's CSS variables.
-  const p = (s: string) => `<p style="margin:0 0 16px;font-size:15px;line-height:1.5;color:${t['text-primary']}">${s}</p>`;
-  const html = `<!DOCTYPE html><html><body style="margin:0;padding:24px;background:${t['bg-base']};font-family:${escapeHtml(t['font-body'])}">
+  // The body font, with the system fonts mail clients do have spelled out (IBM Plex Sans isn't
+  // loaded in mail, and some clients don't know system-ui), single-quoted to sit in a style
+  // attribute. Set on every element: some clients drop <body>'s style.
+  const font = t['font-body'].replaceAll('"', "'").replace('sans-serif', "-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif");
+  const p = (s: string) => `<p style="margin:0 0 16px;font-family:${font};font-size:15px;line-height:1.5;color:${t['text-primary']}">${s}</p>`;
+  const html = `<!DOCTYPE html><html><body style="margin:0;padding:24px;background:${t['bg-base']};font-family:${font}">
 <div style="max-width:480px;margin:0 auto">
 ${paragraphs.map((s) => p(escapeHtml(s))).join('\n')}
-<p style="margin:24px 0"><a href="${escapeHtml(link.url)}" style="display:inline-block;padding:10px 18px;background:${t['accent-solid']};color:${t['accent-fg']};border-radius:${t['radius-md']};text-decoration:none;font-weight:${t['weight-semibold']}">${escapeHtml(link.label)}</a></p>
-<p style="margin:0;font-size:13px;line-height:1.5;color:${t['text-muted']}">${escapeHtml(footer)}</p>
+<p style="margin:24px 0"><a href="${escapeHtml(link.url)}" style="display:inline-block;padding:10px 18px;background:${t['accent-solid']};color:${t['accent-fg']};border-radius:${t['radius-md']};text-decoration:none;font-family:${font};font-size:15px;line-height:1.2;font-weight:${t['weight-semibold']};letter-spacing:${t['tracking-wide']}">${escapeHtml(link.label)}</a></p>
+<p style="margin:0;font-family:${font};font-size:13px;line-height:1.5;color:${t['text-muted']}">${escapeHtml(footer)}</p>
 </div></body></html>`;
   return { text, html };
 }

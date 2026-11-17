@@ -1913,8 +1913,12 @@ Order step 2 is built on `app-polish` (web only), with tests in `test/worker-sql
 ("email: sign-in, invites and addresses"; `test/worker.mjs`'s `email: true` stubs the
 binding with a second Worker that records each message in D1). The bootstrap's
 `instance.email` and the pages' `APP_SETTINGS.email` say whether the instance sends email.
-Not done: onboarding `wingbeat.dummthings.dev` to Email Sending, the hosting repo's
-`LOGIN_RATE_LIMIT` binding, a staging deploy with migration 0009, and a test email.
+`wingbeat.dummthings.dev` is onboarded to Email Sending (the hosting shell's wrangler 4.83
+can't; a newer wrangler under Node 22 did), the hosting repo sets `EMAIL`, the sender vars
+and `LOGIN_RATE_LIMIT`, and staging runs it with migration 0009 applied. The user tested it
+on staging ("it seems to work great") and asked for tighter Settings wording ("Verified email
+addresses can be used to sign on", a "Verify email" button), done the same day. Production
+waits for the merge.
 
 ### Account deletion
 
