@@ -11,6 +11,7 @@ export default function SettingsLayout() {
       <Stack.Screen name="duty/assign" options={{ presentation: 'modal', title: 'Assignment' }} />
       <Stack.Screen name="duty/export" options={{ presentation: 'modal', title: 'Export PDF' }} />
       <Stack.Screen name="duty/day" options={{ presentation: 'modal', title: 'Duty or Rest' }} />
+      <Stack.Screen name="duty/flight" options={{ presentation: 'modal', title: 'Add Flight' }} />
     </Stack>
   );
 }

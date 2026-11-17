@@ -16,7 +16,7 @@ function authPageStyles(): string {
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: var(--font-body);
-      background: var(--bg-base);
+      background: var(--input-bg);
       color: var(--text-primary);
       display: flex;
       flex-direction: column;
@@ -51,6 +51,18 @@ function authPageStyles(): string {
       transition: background-color var(--duration-fast) var(--ease-standard);
     }
     button:hover { background: var(--accent-text); }
+    input {
+      width: 100%;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      font-family: var(--font-body);
+      font-size: 1rem;
+      padding: 0.55rem 0.7rem;
+      margin-bottom: 0.75rem;
+    }
+    input:focus { outline: none; box-shadow: var(--ring-focus); }
     .back {
       display: block;
       margin-top: 1.5rem;
@@ -203,6 +215,22 @@ export function appConnectHTML(name: string, challenge: string, state: string, a
       <input type="hidden" name="challenge" value="${escapeHtml(challenge)}" />
       <input type="hidden" name="state" value="${escapeHtml(state)}" />
       <button type="submit">Connect</button>
+    </form>`);
+}
+
+/**
+ * The demo tenant's signed-out page (/login and the app's connect page): the demo code signs
+ * this browser in as the demo user, then goes back to returnTo.
+ */
+export function demoSignInHTML(appName: string, returnTo: string, error: string | null = null): string {
+  return authPage(appName, `
+    <p style="margin-bottom: 1rem;">This is the ${escapeHtml(appName)} demo: three simulated aircraft, two of
+      them always flying. Enter the demo code to sign in.</p>
+    ${error ? `<p style="color: var(--danger-fg); margin-bottom: 1rem;">${escapeHtml(error)}</p>` : ''}
+    <form method="POST" action="/demo/sign-in">
+      <input type="hidden" name="return" value="${escapeHtml(returnTo)}" />
+      <input name="code" placeholder="Demo code" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false" required autofocus />
+      <button type="submit">Sign in to the demo</button>
     </form>`);
 }
 

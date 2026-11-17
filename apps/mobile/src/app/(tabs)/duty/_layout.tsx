@@ -8,6 +8,7 @@ export default function DutyLayout() {
       <Stack.Screen name="assign" options={{ presentation: 'modal', title: 'Assignment' }} />
       <Stack.Screen name="export" options={{ presentation: 'modal', title: 'Export PDF' }} />
       <Stack.Screen name="day" options={{ presentation: 'modal', title: 'Duty or Rest' }} />
+      <Stack.Screen name="flight" options={{ presentation: 'modal', title: 'Add Flight' }} />
     </Stack>
   );
 }

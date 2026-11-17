@@ -6,6 +6,7 @@ import { clearDutyDays, putDutyDays } from '@wingbeat/core/api/duty';
 import { dutyDayKeys, dutyDefaultHint, dutyDefaultOn, dutyRestHint, dutySaveConfirmText } from '@wingbeat/core/duty';
 import { editConflictText } from '@wingbeat/core/edit-history';
 import { useAccounts } from '@/lib/accounts-context';
+import { useDutyTab } from '@/lib/duty-tab';
 import { dutyDayFormOf, dutyDayRequest, dutyDaysRecorded, dutyTimesSuggested, type DutyDayForm } from '@/lib/duty';
 import { DutyDayFields } from '@/lib/duty-day-form';
 import { Placeholder } from '@/lib/placeholder';
@@ -24,7 +25,8 @@ const confirm = (title: string, message: string, ok: string) => new Promise<bool
 /**
  * An admin's plan or edit of a pilot's day (the web's "Duty or rest" form: PUT
  * /api/duty-days/:pilot, or its clear), from a day of the Duty tab, an Upcoming row or the
- * header's +. A Through date applies it to every day of a range, in one request.
+ * header's +. A Through date applies it to every day of a range, in one request. Add Flight
+ * swaps the form for the flight form (flight.tsx) on its date.
  *
  * The form is filled from the pilot's log, again when it's refetched while unchanged. A
  * save sends what the log was as of (base_history_id), so a change another admin made
@@ -37,6 +39,7 @@ export default function DutyDayScreen() {
   const date = dayParam(params.date);
   const { client } = useAccounts();
   const tab = useFlightsTab();
+  const dutyTab = useDutyTab();
   const { log, failed, reload } = useDutyLog(pilotId);
   const [form, setForm] = useState<DutyDayForm | null>(null);
   // The log's history id the form was filled as of, and a count of the fills (which resets
@@ -126,6 +129,7 @@ export default function DutyDayScreen() {
         onFrom={(from) => refill(from, form.through == null ? null : form.through < from ? from : form.through)}
         onTimes={(on) => edit({ times: on ? dutyTimesSuggested(log, form.from) : null })}
         hint={hint}
+        onAddFlight={() => router.replace({ pathname: `${dutyTab.base}/flight`, params: { pilot: String(pilotId), date: form.from } })}
         onClear={dutyDaysRecorded(log, form) && !saving ? clear : null}
       />
     </>

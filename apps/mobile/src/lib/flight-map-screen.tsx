@@ -55,6 +55,9 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
   const [picked, setPicked] = useState<PickedSpot | null>(null);
   // The day's flight shown in its place.
   const [chosen, setChosen] = useState<number | null>(null);
+  // The trackers the day's legend hides (null: manual flights), for the day they were hidden on.
+  const [hiddenOn, setHiddenOn] = useState<{ dayKey: string; ids: (number | null)[] } | null>(null);
+  const hidden = useMemo(() => (hiddenOn && hiddenOn.dayKey === dayKey ? hiddenOn.ids : []), [hiddenOn, dayKey]);
   // Edit opens a modal, which can't come up while the sheet is: the sheet goes first, and
   // comes back with the screen.
   const [editing, setEditing] = useState(false);
@@ -82,10 +85,17 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
       colorFor: (id) => (id != null ? trackerColor(trackers, id) : null) ?? t['text-faint'],
       labelFor: (id) => card(id)?.label ?? 'Manual',
       inProgress: (f) => isFlightInProgress(SPEED_THRESHOLD_KMH, f, newestFirst, live),
+      hidden,
     });
-  }, [dayKey, tz, flights, trackers, cards, live, t]);
+  }, [dayKey, tz, flights, trackers, cards, live, t, hidden]);
   const shownId = flightId ?? chosen;
   const flight = tab.ready && shownId != null ? tab.findFlight(shownId) : null;
+  // A flight's own screen whose flight is gone (deleted from its Edit) closes when it's shown again.
+  const shown = useRef(false);
+  if (flight) shown.current = true;
+  useEffect(() => {
+    if (focused && flightId != null && shown.current && !flight && router.canGoBack()) router.back();
+  }, [focused, flight]);
   const track = useMemo(() => flight && flightTrack(flight, {
     track: (flight.tracker_id != null ? trackerColor(trackers, flight.tracker_id) : null) ?? t['accent'],
     start: t['success-dot'],
@@ -114,7 +124,8 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
   // One flight: from the list, or from the day.
   const one = flight && track && (() => {
     const detail = flightDetail(tab.tz, flight, tab.roster);
-    const edit = () => router.push({ pathname: `/${stack}/assign`, params: { id: String(flight.id) } });
+    // The flight form; a flight in progress only its aircraft and pilot (its times aren't known yet).
+    const edit = () => router.push({ pathname: `/${stack}/${flight.end_time == null ? 'assign' : 'flight'}`, params: { id: String(flight.id) } });
     const notes = [detail.manual && 'Manual entry', !track.line.features.length && 'No track recorded'].filter(Boolean).join(' · ');
     const sections = (
       <>
@@ -158,7 +169,7 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
   const bounds = one ? track!.bounds! : day!.bounds!;
   const positions = one
     ? [...track!.ends.features, ...pickedDot]
-    : [...day!.points.features, ...positionFeatures(cards, live).features.filter((p) => p.properties?.inFlight), ...pickedDot];
+    : [...day!.points.features, ...positionFeatures(cards, live).features.filter((p) => p.properties?.inFlight && !hidden.includes(p.id as number)), ...pickedDot];
   const sheet = picked ? {
     title: picked.snapped ? 'On route' : 'Off route',
     summary: picked.coords,
@@ -177,7 +188,7 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
     const go = (key: string) => { setPicked(null); onDay?.(key); };
     return {
       title: info!.title,
-      summary: info!.count + (info!.count === 1 ? ' flight' : ' flights'),
+      summary: (hidden.length ? day!.flights.length + ' of ' : '') + info!.count + (info!.count === 1 ? ' flight' : ' flights'),
       actions: (
         <HStack spacing={8}>
           {iconButton('Older day', 'chevron.left', () => older && go(older), !older)}
@@ -222,12 +233,17 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
         initialView={{ bounds, padding: FIT_PADDING }}
         // Once the sheet is up, so the tracks fit above it, and again on each day or flight.
         fit={sheetHeight ? bounds : undefined}
-        fitKey={dayKey + ':' + shownId}
+        fitKey={dayKey + ':' + shownId + ':' + hidden.join(',')}
         sheetHeight={sheetHeight}
         positions={{ type: 'FeatureCollection', features: positions }}
         tracks={one ? track!.line : day!.tracks}
-        // A day's trackers, when there are several (the web's legend).
-        overlay={!one && day!.legend.length > 0 ? <DayLegend entries={day!.legend} /> : undefined}
+        // A day's trackers, when there are several (the web's legend), which filter the day.
+        overlay={!one && day!.legend.length > 0 ? (
+          <DayLegend entries={day!.legend} onToggle={(e) => {
+            setPicked(null);
+            setHiddenOn({ dayKey: dayKey!, ids: e.hidden ? hidden.filter((id) => id !== e.trackerId) : [...hidden, e.trackerId] });
+          }} />
+        ) : undefined}
         picks={picks}
         // Away from the tracks, a tap goes back to the day or the flight.
         onPress={(lngLat, zoom) => pick(pickDetails(tab.tz, lngLat, zoom, picks, (tid) => tab.bootstrap.trackers.find((tr) => tr.id === tid) ?? null))}

@@ -1985,11 +1985,23 @@ The app sends both in an `X-Wingbeat-App` header on every request, as
   the showcase sample data and kept moving by a scripted tracker. Put a pairing code in the
   review notes that doesn't expire and is limited to that tenant, plus a short screen
   recording of pairing. Use the same tenant for the Play review and the background-location
-  declaration video.
+  declaration video. Settled at step 11 (2026-11-16): the hosting config marks the customer
+  `"demo": true` (the Worker's `DEMO_BINDINGS`); there, the three trackers whose source is
+  `demo:0`–`demo:2` read `src/demo-feed.ts`, a feed that is a pure function of the tracker
+  and the time, in place of Garmin's (two always flying 40-minute legs out of Kodiak, one
+  always on the ground, pilots on 8-hour shifts with a relief pilot once a week). The demo
+  code (`DEMO_CODE`, `kodiak`) never expires and can be used any number of times: typed on
+  the demo tenant's sign-in page, or sent by the app's "Try the Demo" on "Add account"
+  (`POST /api/app/pair`), it signs in as the demo user, an admin who is a pilot. Off a demo
+  tenant it does nothing. `scripts/demo-seed.mjs` seeds the tenant and imports its history.
 - **Privacy policy** on dummthings.dev (required by both stores before the first
   submission). It covers what the instance stores, what the relay stores, what Sentry
   receives, the presence data rules (Decision 5), account deletion, and users' emails
-  (once "Email sign-in, email invites and finding your instance" ships).
+  (once "Email sign-in, email invites and finding your instance" ships). Written at step 11
+  (2026-11-16): `site/content/docs/privacy.md`, served at
+  `https://wingbeat.dummthings.dev/docs/privacy/` (the store listings' privacy URL) and linked
+  from the home page's footer. Its location section describes passive matching as coming; update
+  it when presence ships in phase 8, and add emails when email sign-in ships.
 - **App Store privacy labels** and the **Play Data Safety form**: precise location (presence
   features only, opt-in), identifiers (push token), crash data (Sentry), and nothing used for
   tracking. Update both when presence ships in phase 8.
@@ -2229,6 +2241,18 @@ build with the user's Apple sign-in does. `eas.json`'s submit profiles now carry
 so `eas submit` no longer needs the sign-in. Updates publish from the tree as is (its
 fingerprint is build 6's).
 
+Step 11 (2026-11-16, `demo-tenant`): the demo feed, the demo sign-in and the app's "Try the
+Demo" (JavaScript only, so it ships as an update), the seed script, and tests
+(`test/demo-feed.test.mjs`, `test/worker-demo.test.mjs`), and the privacy policy
+(`site/content/docs/privacy.md`). The staging `demo` customer runs this branch at
+`demo.staging.wingbeat.dummthings.dev` (hosting repo `customers/demo.json`, seeded and its
+history imported 2026-11-16). "Try the Demo" signs in to the production demo
+(`demo.wingbeat.dummthings.dev`) on the `production` and `preview` channels, since
+TestFlight's external testers go through Beta App Review, and to the staging demo on
+development builds (`demoInstance` in `browser-sign-in.ts`). Every demo sign-in makes a session, and nothing prunes them. Points on the demo tenant grow by about
+2,000 a day with nothing pruning them, and the relief pilots have no default duty, so their
+days show "No duty times recorded"; both are accepted for now.
+
 1. **Scaffold.** `apps/mobile`: Expo Router with native tabs (Live, Flights, Settings) and
    native stack headers, TypeScript, and every native module the plan uses installed with
    its config plugin (`expo-notifications`, `expo-location`, `expo-task-manager`,
@@ -2271,8 +2295,8 @@ fingerprint is build 6's).
     Live, flight detail and sign-out.
 11. **The `demo` tenant and the privacy policy.** A hosted `demo` customer seeded from the
     showcase sample data with a scripted tracker, a review pairing code that doesn't expire
-    and works only there, and the privacy policy on the docs site. How the tracker moves and
-    how the review code is scoped are settled at this step.
+    and works only there, and the privacy policy on the docs site. How the trackers move and
+    how the review code is scoped are settled (see "Store review and privacy requirements").
 12. **TestFlight and Android internal distribution.** A `preview` build to TestFlight
     (internal testers first) and to EAS internal distribution for Android, and the first
     `eas update` to the preview channel.
@@ -2299,10 +2323,10 @@ layers need no Android counterpart; only the chrome around the map does.
 | Plane marker turned to its heading | Done | MapLibre `SymbolLayer` with an image (`Images`), `iconRotate` from the heading | same | heading from the last points (`live`) |
 | Each tracker's current or latest flight (the default view), fitted on opening the tab | Done, on the phone: per tracker, where the web shows every flight in progress, else the one newest flight; a takeoff dot in the tracker's color, as the web's | MapLibre `LineLayer`, the camera's `fitBounds` on each visit | same | `live` |
 | Ground trails (taxi between flights) | Done | MapLibre `LineLayer`, dashed | same | move the web's trail rule to `live` |
-| Status cards | Done (top bar) | RN views on the float surface (no system equivalent) | the same RN component | `live` (`statusCards`) |
+| Status cards | Done (top bar): stacked, the pinned ones, or else the one that last reported; "All Aircraft" under them opens every card (and counts the in-flight ones not shown). Each card's pin button pins or unpins it (stored per account). A tap opens its location sheet | RN views on the float surface (no system equivalent) | the same RN component | `live` (`statusCards`; the app's `cardStack`) |
 | Location popup (coordinates, details, links, copy) | Done (location sheet) | `BottomSheet` + `Form` + `LabeledContent`, `Link`, Copy (`expo-clipboard`) | universal `BottomSheet` (`ModalBottomSheet`) with `ListItem`s, `Share.share` | `live` (`locationDetails`) |
 | Basemap and overlays | Done (Layers menu) | `Menu` with a `Picker` and `Toggle`s | `DropdownMenu` with radio and checkbox items | `basemaps` |
-| Map a day's flights ("Map all") | Done, on the phone: "Map all" on the Flights list's day headers opens the day on the map with its flights in the `MapSheet`, arrows to the older and newer day; the Live tab's Day menu and calendar are gone. The day and a flight are one screen (`flight-map-screen.tsx`), so tapping a flight in the day's sheet swaps the sheet and map to it, with a back button to the day; no tab bar, as on the flight detail | a header button, the map + `MapSheet` (as the flight detail) | the same, with its Android sheet | `dayFlightNumbers`, `groupEndMarkers` |
+| Map a day's flights ("Map all") | Done, on the phone: "Map all" on the Flights list's day headers opens the day on the map with its flights in the `MapSheet`, arrows to the older and newer day; the Live tab's Day menu and calendar are gone. The legend, stacked at the map's top right (clear of the back button), filters the day by aircraft: tapping an entry hides or shows its flights, on the map and in the sheet's list. The day and a flight are one screen (`flight-map-screen.tsx`), so tapping a flight in the day's sheet swaps the sheet and map to it, with a back button to the day; no tab bar, as on the flight detail | a header button, the map + `MapSheet` (as the flight detail) | the same, with its Android sheet | `dayFlightNumbers`, `groupEndMarkers` |
 | Point picker (tap the map, snap to a track point, copy) | Done, on the phone (Live tab: a tap snaps to a track or closes the sheet, a long press picks the exact spot, the map stays live under the sheet and pans the point into view; flight detail: the point takes the MapSheet's place, as a place does in Maps, with a close button back to the flight) | MapLibre `onPress`/`onLongPress`, then the location sheet, or `LocationSections` in the flight detail's MapSheet | the same, with its Android sheet | `live`'s `nearestPointIdx`, `pickedPointDetails` (the web uses them too) |
 | Elevation tool (tint by reference elevation, readout) | Done on the Live tab and the flight detail, on the phone | a `raster-dem` source on `pmtiles://` Mapterhorn (as a tile template with `encoding: terrarium`: the archive's metadata names no encoding, and with a `url` MapLibre Native takes it from there only) and a `color-relief` layer, its ramp core's `elevationRampStops` around the reference. Readout: a crosshair mid-view and a pill at the top right (clear of a back button); point elevations from a hidden WebView (pmtiles.js and the browser's WebP decoder; `elevation-reader.tsx`), since Hermes can't decode WebP and MapLibre exposes no elevation query. A tap sets the reference (a track point's altitude when near) | same | `elevation` (decode, tint) |
 | Alerts strip (unassigned flights, maintenance due, timer not recorded, duty near its limits) | Screen done (`flights/alerts.tsx`, from the Flights header's bell; an unassigned flight opens the flight, a pilot their duty log; maintenance rows only read); notifications with phase 7 | a `Form` in a modal sheet, opened from a toolbar button, with a badge on the Flights tab | a `ModalBottomSheet` list, a `Badge` on the tab | `alerts` (`computeAlerts`), on the phone; their notifications come from the Worker running the same core code (see "Decided 2026-11-13") |
@@ -2320,9 +2344,9 @@ layers need no Android counterpart; only the chrome around the map does.
 | Map a day from the list | Done (see "Map all" under Live) | a "Map all" button on the day header | same | `dayMap` |
 | Flight detail (track, times, labels, assignment, remarks) | Done | the map + `MapSheet` (`BottomSheet` with detents, a `Form`) | persistent sheet: open (design principles, section 3) | `flight-edits` |
 | Assignment edit (admins) | Done | a `Form` with `Picker`s (`menu` style: `navigationLink` needs a SwiftUI navigation stack) | `ExposedDropdownMenuBox` | `corrections` (`flightAssignmentRequest`) |
-| Edit times, origin and destination, Part 91 ("Operated under"), pay, remark | Phase 11 | a `Form`: compact `DatePicker`s (date, hour and minute) read in the operator's zone, a `Picker` for named points, `TextField`s | `ListItem`s that open the Material date and time pickers, `ExposedDropdownMenuBox`, `TextField` | `flight-edits` (`flightFormTimes`, …), `corrections` |
-| Remove and restore, revert to tracker, delete a manual flight | Phase 11 | destructive `Button`s, `ConfirmationDialog` | `AlertDialog` | `corrections` |
-| Add a manual flight | Phase 11 | the edit `Form` in a sheet, from a toolbar `+` | `FloatingActionButton` | `flight-edits`, `corrections` |
+| Edit times, origin and destination, Part 91 ("Operated under"), pay, remark | Done (admins: Edit in a flight's detail opens the flight form, `duty/flight.tsx` with `id`, filled by `flightFormFieldsOf`, the target from `flightFormTarget`; a tracked flight's corrected fields say the tracker's values under them, `trackerNotes`; a 409 offers Reload). A flight in progress opens the assignment edit instead | a `Form`: compact `DatePicker`s (date, hour and minute) read in the operator's zone, a `TextField` for origin and destination that takes any text, with the named points matching it as `Button` rows under it (`placeSuggestions`; there are too many named points for a `Picker`), `TextField`s | `ListItem`s that open the Material date and time pickers, `ExposedDropdownMenuBox`, `TextField` (with the matches in its dropdown) | `flight-edits` (`flightFormTimes`, …), `corrections` |
+| Remove and restore, revert to tracker, delete a manual flight | Done, except Restore (the app doesn't list removed flights; the web's Show removed does): Remove from Log, Revert to Tracker and Delete Flight under the flight form, each confirmed by an `Alert`; the flight's screen closes when it leaves the list | destructive `Button`s, `ConfirmationDialog` | `AlertDialog` | `corrections` |
+| Add a manual flight | Done, from the Duty tab, where the web's duty log reaches it through Edit flights (admins: the header's + menu, or Add Flight on This Day in the day form; `duty/flight.tsx`, fields in `flight-form-fields.tsx`, choices in `flight-form.ts`), on the day for the duty log's pilot; origin and destination any text, suggesting the named points that match what's typed, as the web's field with its suggestions | the flight `Form` in a modal sheet, from a toolbar `+` `Menu` | `FloatingActionButton` | `flight-edits`, `corrections` (`readFlightForm`, `flightSaveRequest`) |
 | Bulk edit ("Edit flights") | Phase 11 | the list's edit mode, multi-select and a bottom toolbar | long-press to select, a contextual top bar | `corrections` |
 | Edit history | Phase 11 | a `List` in the detail's sheet | `LazyColumn` | `edit-history` |
 | Edit conflict (409) | Phase 11 | an `Alert` with Reload and Overwrite | the same (`AlertDialog`) | `corrections` (`base_history_id`) |

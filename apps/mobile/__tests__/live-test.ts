@@ -2,8 +2,8 @@ import type { FlightPoint, TrackedFlight } from '@wingbeat/core/api/flights';
 import { TRACKER_COLORS, type LiveData } from '@wingbeat/core/live';
 import type { Flight } from '@/lib/flights';
 import {
-  dayMap, flightTrackPicks, followWait, groundTrailFeatures, initialView, latestTracks, liveBounds, liveTrackPicks, mapDays,
-  pickDetails, positionFeatures, spotDetails, statusCards, trackStarts,
+  cardStack, dayMap, flightTrackPicks, followWait, groundTrailFeatures, initialView, latestTracks, liveBounds, liveTrackPicks, mapDays,
+  pickDetails, positionFeatures, spotDetails, statusCards, trackStarts, type StatusCard,
 } from '@/lib/live';
 
 const NOW = 1_793_739_600;
@@ -35,7 +35,32 @@ test('one card per tracker, as the dashboard builds it', () => {
     metrics: '984 ft · 97.2 kt', location: 'Kodiak', position: [-152.4, 57.8],
   });
   expect(b).toMatchObject({ label: 'Tracker 2', inFlight: false, gps: 'GPS 2 hr ago', gpsFresh: false, metrics: null });
-  expect(c).toMatchObject({ color: TRACKER_COLORS[2], gps: null, position: null });
+  expect(c).toMatchObject({ color: TRACKER_COLORS[2], gps: null, gpsTime: null, position: null });
+  expect(b.gpsTime).toBe(NOW - 7200);
+});
+
+describe('cardStack', () => {
+  const card = (trackerId: number, inFlight: boolean, gpsTime: number | null = null): StatusCard => ({
+    trackerId, label: 'T' + trackerId, color: 'c', inFlight, gps: null, gpsTime, gpsFresh: false,
+    metrics: null, location: null, position: null,
+  });
+  const ids = (s: { shown: StatusCard[] }) => s.shown.map((c) => c.trackerId);
+  test('collapsed: the pinned cards, in the cards’ order; the in-flight ones not shown counted', () => {
+    const cards = [card(1, false), card(2, true), card(3, false), card(4, true)];
+    expect(cardStack(cards, [3, 2], false)).toEqual({ shown: [cards[1], cards[2]], moreInFlight: 1 });
+    // A pinned tracker that's gone.
+    expect(ids(cardStack(cards, [9, 4], false))).toEqual([4]);
+  });
+  test('collapsed with nothing pinned: the card that last reported', () => {
+    expect(cardStack([card(1, true, 100), card(2, false, 300), card(3, false)], [], false))
+      .toEqual({ shown: [expect.objectContaining({ trackerId: 2 })], moreInFlight: 1 });
+    expect(ids(cardStack([card(1, false)], [9], false))).toEqual([1]);
+    expect(ids(cardStack([], [], false))).toEqual([]);
+  });
+  test('open: every card', () => {
+    const cards = [card(1, true), card(2, false)];
+    expect(cardStack(cards, [2], true)).toEqual({ shown: cards, moreInFlight: 0 });
+  });
 });
 
 test('positions for trackers with one; each tracker\'s latest track, in flight or not, and the bounds of all', () => {
@@ -105,8 +130,21 @@ describe('a day’s flights', () => {
     expect(d.tracks.features.map((f) => f.properties)).toEqual([{ color: 'c1' }, { color: 'c2' }]);
     // Flight 2 is in progress: a start, no numbered end.
     expect(d.points.features.map((f) => [f.id, f.properties?.label])).toEqual([['start-1', undefined], ['end-1', '1'], ['start-2', undefined]]);
-    expect(d.legend).toEqual([{ label: 'T1', color: 'c1' }, { label: 'T2', color: 'c2' }]);
+    expect(d.legend).toEqual([
+      { trackerId: 1, label: 'T1', color: 'c1', hidden: false },
+      { trackerId: 2, label: 'T2', color: 'c2', hidden: false },
+    ]);
     expect(d.bounds).toEqual([-153, 57, -150, 60]);
+  });
+
+  test('a hidden tracker\'s flights aren\'t drawn and the bounds leave them out; the numbers stay', () => {
+    const d = dayMap(TZ, '2026-11-03', flights, {
+      colorFor: (id) => 'c' + id, labelFor: (id) => 'T' + id, inProgress: () => false, hidden: [1],
+    });
+    expect(d.flights.map((f) => [f.flight.id, f.n])).toEqual([[2, 1]]);
+    expect(d.points.features.map((f) => f.id)).toEqual(['start-2', 'end-2']);
+    expect(d.legend.map((e) => [e.trackerId, e.hidden])).toEqual([[1, true], [2, false]]);
+    expect(d.bounds).toEqual([-151, 59, -150, 60]);
   });
 });
 

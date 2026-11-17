@@ -4,7 +4,7 @@
  * The flow itself (the auth session, the redemption) is in use-pairing.ts.
  */
 import { sha256 } from '@noble/hashes/sha2';
-import { APP_CONNECT_CALLBACK, appConnectUrl, base64url, isConnectState } from '@wingbeat/core/app-connect';
+import { APP_CONNECT_CALLBACK, appConnectUrl, base64url, DEMO_INSTANCE, isConnectState } from '@wingbeat/core/app-connect';
 import { HOSTED_DOMAIN, isHostedInstance, isPairingHost, isPairingToken } from './pairing-link';
 
 export type AddressResult =
@@ -25,6 +25,15 @@ export function instanceHost(input: string): AddressResult {
     : null;
   if (host && isPairingHost(host)) return { ok: true, host };
   return { ok: false, reason: isPairingHost(text) && text.includes('.') ? 'self-hosted' : 'not-an-address' };
+}
+
+/**
+ * The instance "Try the Demo" signs in to on an update channel (Updates.channel): the
+ * production demo on the store builds' channels (production, and preview for TestFlight, whose
+ * external testers go through Beta App Review), the staging one on development builds.
+ */
+export function demoInstance(channel: string | null): string {
+  return channel === 'production' || channel === 'preview' ? DEMO_INSTANCE : DEMO_INSTANCE + '.staging';
 }
 
 /** What the Add account screen says for an address it can't use. */

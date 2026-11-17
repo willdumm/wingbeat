@@ -15,7 +15,7 @@ import { flightCorrectionKey } from '@wingbeat/core/flight-store';
 import { coreBundle, coreBundlePath } from './shared/core-bundle';
 import { dashboardHTML } from './dashboard';
 import { analyticsHTML } from './analytics';
-import { generateToken, sha256Hex, deviceNameFromUA, pairedDeviceName, noAccessHTML, joinHTML, joinErrorHTML, appPairLink, appConnectHTML, appConnectSignedOutHTML } from './auth';
+import { generateToken, sha256Hex, deviceNameFromUA, pairedDeviceName, noAccessHTML, joinHTML, joinErrorHTML, appPairLink, appConnectHTML, appConnectSignedOutHTML, demoSignInHTML } from './auth';
 import { loadSettings, invalidateSettingsCache, settingsAsInstance } from './settings';
 import { envBasemapPresets, readEnvSecret } from './shared/map-controls';
 import { keyedBasemapPreset, substituteTileUrl, TILE_SUBDOMAINS } from '@wingbeat/core/basemaps';
@@ -44,11 +44,17 @@ import { en as zodEnglish } from 'zod/locales';
 
 const SESSION_COOKIE = 'session';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 365;
+/** The Set-Cookie value that signs this browser in with `token`, or out when it's ''. */
+function sessionCookie(token: string): string {
+  return `${SESSION_COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Max-Age=${token ? SESSION_MAX_AGE : 0}; Path=/`;
+}
 // The server enforces expiry: a session unused for this long is rejected and deleted.
 const SESSION_IDLE_SECS = 90 * 24 * 3600;
 // last_seen_at is refreshed on authenticated requests at most this often.
 const SESSION_TOUCH_SECS = 3600;
 const DEVICE_LINK_TTL_SECS = 15 * 60;
+/** The demo tenant's sign-in form posts here (demoSession). */
+const DEMO_SIGN_IN_PATH = '/demo/sign-in';
 
 type AuthUser = { id: number; name: string; role: string; pilot_id: number | null; sessionId: number; device_name: string | null };
 type Variables = { user: AuthUser; db: D1Database; tenant: Tenant; cspNonce: string };
@@ -195,6 +201,21 @@ function parseRouting(env: Env): Record<string, string> | null {
   return _routingCache.map;
 }
 
+let _demoCache: { raw: string | undefined; bindings: unknown[] } | null = null;
+/** Whether the hosting config marks this binding's tenant as a demo (Env.DEMO_BINDINGS). */
+function isDemoBinding(env: Env, bindingName: string): boolean {
+  if (!_demoCache || _demoCache.raw !== env.DEMO_BINDINGS) {
+    let bindings: unknown = [];
+    try {
+      bindings = JSON.parse(env.DEMO_BINDINGS ?? '[]');
+    } catch {
+      console.error('DEMO_BINDINGS is not valid JSON; no tenant is a demo');
+    }
+    _demoCache = { raw: env.DEMO_BINDINGS, bindings: Array.isArray(bindings) ? bindings : [] };
+  }
+  return _demoCache.bindings.includes(bindingName);
+}
+
 // D1 bindings are looked up dynamically by the name in CUSTOMER_ROUTING; this
 // helper confines the cast so Env itself can stay strictly typed.
 function tenantDb(env: Env, bindingName: string): D1Database | undefined {
@@ -282,7 +303,7 @@ app.use('*', async (c, next) => {
   }
 
   c.set('db', db);
-  c.set('tenant', { db, key: bindingName, host, expoAccessToken: c.env.EXPO_ACCESS_TOKEN });
+  c.set('tenant', { db, key: bindingName, host, expoAccessToken: c.env.EXPO_ACCESS_TOKEN, demo: isDemoBinding(c.env, bindingName) });
   return next();
 });
 
@@ -321,7 +342,7 @@ const isAdminPath = (path: string) => path === '/api/admin' || path.startsWith('
 app.use('*', async (c, next) => {
   const path = c.req.path;
 
-  if (path === '/login' || path === '/location') return next();
+  if (path === '/login' || path === '/location' || path === DEMO_SIGN_IN_PATH) return next();
   if (path.startsWith('/join/') || path === '/api/app/pair') return next();
   // Reads the session cookie itself, to say "not signed in" there rather than redirect.
   if (path === APP_CONNECT_PATH) return next();
@@ -381,7 +402,52 @@ async function resolveTrackerId(tenant: Tenant, param: string | undefined): Prom
 
 app.get('/login', async (c) => {
   const settings = await loadSettings(c.var.tenant);
+  if (c.var.tenant.demo) return c.html(demoSignInHTML(settings.app_name, '/'));
   return c.html(noAccessHTML(settings.app_name));
+});
+
+// ── The demo tenant's sign-in ────────────────────────────────────────────────
+//
+// App Review needs a sign-in that doesn't expire (docs/mobile-app-plan.md, "Store review and
+// privacy requirements"). On a demo tenant only (Tenant.demo, from the hosting config), the
+// demo code in settings (demo_code) signs anyone in as the demo user (demo_user_id): typed on
+// the signed-out pages here, or sent by the app's "Try the Demo" to POST /api/app/pair.
+
+/** The return paths the demo sign-in goes back to: home, or the app's connect page. */
+function demoReturnPath(raw: unknown): string {
+  return typeof raw === 'string' && raw.startsWith(APP_CONNECT_PATH + '?') ? raw : '/';
+}
+
+/** A new session for the demo user, named deviceName, when `code` is this demo tenant's code; else null. */
+async function demoSession(tenant: Tenant, code: string, deviceName: string): Promise<Redeemed | null> {
+  if (!tenant.demo) return null;
+  const { results } = await tenant.db.prepare(`SELECT key, value FROM settings WHERE key IN ('demo_code', 'demo_user_id')`)
+    .all<{ key: string; value: string }>();
+  const setting = (key: string) => results.find((r) => r.key === key)?.value ?? '';
+  const expected = setting('demo_code').trim().toLowerCase();
+  const userId = parseInt(setting('demo_user_id'), 10);
+  if (!expected || !Number.isInteger(userId) || code.trim().toLowerCase() !== expected) return null;
+
+  const { sessionHash, created, redeemed } = await newSession(tenant.db);
+  const [, result] = await tenant.db.batch([
+    tenant.db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT id, ?, 1, ? FROM users WHERE id = ?')
+      .bind(sessionHash, deviceName, userId),
+    created,
+  ]);
+  return redeemed(result);
+}
+
+app.post(DEMO_SIGN_IN_PATH, async (c) => {
+  if (!c.var.tenant.demo) return c.text('Not Found', 404);
+  const form = await c.req.parseBody();
+  const returnTo = demoReturnPath(form.return);
+  const session = await demoSession(c.var.tenant, typeof form.code === 'string' ? form.code : '', deviceNameFromUA(c.req.header('User-Agent') ?? ''));
+  if (!session) {
+    const settings = await loadSettings(c.var.tenant);
+    return c.html(demoSignInHTML(settings.app_name, returnTo, 'That isn’t the demo code.'), 401);
+  }
+  c.header('Set-Cookie', sessionCookie(session.sessionToken));
+  return c.redirect(returnTo, 303);
 });
 
 app.post('/logout', async (c) => {
@@ -392,7 +458,7 @@ app.post('/logout', async (c) => {
       'DELETE FROM sessions WHERE (token = ? AND token_hashed = 1) OR (token = ? AND token_hashed = 0)'
     ).bind(hash, token).run();
   }
-  c.header('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/`);
+  c.header('Set-Cookie', sessionCookie(''));
   return c.redirect('/login');
 });
 
@@ -434,25 +500,39 @@ function joinRefusal(row: InviteToken): JoinRefusal | null {
 type Redeemed = { sessionToken: string; sessionId: number; userId: number; name: string; role: string; pilotId: number | null };
 
 /**
+ * A new session's token, its hash (for the caller's INSERT), and `created`, the statement that
+ * reads the session back with its user: the last of the caller's batch, so the response comes
+ * from the same transaction. `redeemed` turns its result into the session, or null when the
+ * batch inserted none.
+ */
+async function newSession(db: D1Database) {
+  const sessionToken = generateToken();
+  const sessionHash = await sha256Hex(sessionToken);
+  const created = db.prepare(
+    `SELECT s.id, s.user_id, u.name, u.role, u.pilot_id FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token = ? AND s.token_hashed = 1`
+  ).bind(sessionHash);
+  const redeemed = (result: D1Result): Redeemed | null => {
+    const session = result.results[0] as { id: number; user_id: number; name: string; role: string; pilot_id: number | null } | undefined;
+    return session ? { sessionToken, sessionId: session.id, userId: session.user_id, name: session.name, role: session.role, pilotId: session.pilot_id } : null;
+  };
+  return { sessionHash, created, redeemed };
+}
+
+/**
  * Redeems a join token for a new session named deviceName: the web's POST /join/:token
  * and the app's POST /api/app/pair both sign in through here, so the two can't drift. An
  * invite also creates its account. Returns the new session, or the refusal when another
  * request redeemed the token first or it expired since joinRefusal looked.
  */
 async function redeemJoinToken(db: D1Database, row: InviteToken, deviceName: string): Promise<{ ok: true; session: Redeemed } | { ok: false; refusal: JoinRefusal }> {
-  const sessionToken = generateToken();
-  const sessionHash = await sha256Hex(sessionToken);
+  const { sessionHash, created, redeemed } = await newSession(db);
   const now = Math.floor(Date.now() / 1000);
 
   // One D1 batch (a single transaction): the conditional consume goes first and every
   // later statement is guarded by changes() = 1, so a lost race inserts nothing and a
   // failure can't burn the link without creating the session (or the account).
   const consume = db.prepare('UPDATE invite_tokens SET used = 1 WHERE id = ? AND used = 0 AND expires_at >= ?').bind(row.id, now);
-  // Last, in the same transaction: the new session and its user, for the caller's response.
-  const created = db.prepare(
-    `SELECT s.id, s.user_id, u.name, u.role, u.pilot_id FROM sessions s JOIN users u ON u.id = s.user_id
-     WHERE s.token = ? AND s.token_hashed = 1`
-  ).bind(sessionHash);
   const batch = row.type === 'invite'
     ? await db.batch([
       consume,
@@ -467,10 +547,10 @@ async function redeemJoinToken(db: D1Database, row: InviteToken, deviceName: str
         .bind(row.user_id!, sessionHash, deviceName),
       created,
     ]);
-  const session = batch.at(-1)!.results[0] as { id: number; user_id: number; name: string; role: string; pilot_id: number | null } | undefined;
+  const session = redeemed(batch.at(-1)!);
   // Lost: joinRefusal looks at the clock again, so a link that expired meanwhile says so.
   if (!session) return { ok: false, refusal: joinRefusal(row) ?? usedRefusal(row) };
-  return { ok: true, session: { sessionToken, sessionId: session.id, userId: session.user_id, name: session.name, role: session.role, pilotId: session.pilot_id } };
+  return { ok: true, session };
 }
 
 app.get('/join/:token', async (c) => {
@@ -510,7 +590,7 @@ app.post('/join/:token', async (c) => {
   const redeemed = await redeemJoinToken(c.var.db, row, deviceNameFromUA(c.req.header('User-Agent') ?? ''));
   if (!redeemed.ok) return c.html(joinErrorHTML(redeemed.refusal.message, appName), redeemed.refusal.status);
 
-  c.header('Set-Cookie', `${SESSION_COOKIE}=${redeemed.session.sessionToken}; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_MAX_AGE}; Path=/`);
+  c.header('Set-Cookie', sessionCookie(redeemed.session.sessionToken));
   return c.redirect('/');
 });
 
@@ -519,6 +599,12 @@ app.post('/join/:token', async (c) => {
 // bearer, and the session is named after the phone rather than its User-Agent.
 app.post('/api/app/pair', valid('json', PairRequest), async (c) => {
   const body = c.req.valid('json');
+  const deviceName = pairedDeviceName(body.device_name, c.req.header('User-Agent') ?? '');
+  // The app's X-Wingbeat-App header is recorded from its next request, not this one.
+  const paired = ({ sessionToken, sessionId, userId, name, role, pilotId }: Redeemed) =>
+    c.json({ token: sessionToken, me: meJson({ id: userId, name, role, pilot_id: pilotId, sessionId, device_name: deviceName }) });
+  const demo = await demoSession(c.var.tenant, body.token, deviceName);
+  if (demo) return paired(demo);
   const row = await findJoinToken(c.var.db, body.token);
   if (!row) return c.json({ error: INVALID_LINK.message }, INVALID_LINK.status);
   const refusal = joinRefusal(row);
@@ -528,12 +614,9 @@ app.post('/api/app/pair', valid('json', PairRequest), async (c) => {
     return c.json({ error: INVALID_LINK.message }, INVALID_LINK.status);
   }
 
-  const deviceName = pairedDeviceName(body.device_name, c.req.header('User-Agent') ?? '');
   const redeemed = await redeemJoinToken(c.var.db, row, deviceName);
   if (!redeemed.ok) return c.json({ error: redeemed.refusal.message }, redeemed.refusal.status);
-  // The app's X-Wingbeat-App header is recorded from its next request, not this one.
-  const { sessionToken, sessionId, userId, name, role, pilotId } = redeemed.session;
-  return c.json({ token: sessionToken, me: meJson({ id: userId, name, role, pilot_id: pilotId, sessionId, device_name: deviceName }) });
+  return paired(redeemed.session);
 });
 
 /** A PKCE verifier's S256 challenge. */
@@ -553,7 +636,10 @@ app.get(APP_CONNECT_PATH, async (c) => {
   if (!isCodeChallenge(challenge) || !isConnectState(state)) {
     return c.html(joinErrorHTML('This sign-in request is invalid. Go back to the app and try again.', appName), 400);
   }
-  if (!session) return c.html(appConnectSignedOutHTML(appName));
+  if (!session) {
+    if (c.var.tenant.demo) return c.html(demoSignInHTML(appName, APP_CONNECT_PATH + new URL(c.req.url).search));
+    return c.html(appConnectSignedOutHTML(appName));
+  }
   return c.html(appConnectHTML(session.name, challenge, state, appName));
 });
 
@@ -691,7 +777,7 @@ app.get('/api/bootstrap', async (c) => {
 app.delete('/api/me', async (c) => {
   const refusal = await deleteUserAccount(c.var.db, c.get('user').id);
   if (refusal) return c.json({ error: refusal.error }, refusal.status);
-  c.header('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/`);
+  c.header('Set-Cookie', sessionCookie(''));
   return c.json({ ok: true });
 });
 
@@ -2908,7 +2994,7 @@ export default {
           console.error(`Binding "${bindingName}" not found for host ${hostname}; skipping`);
           continue;
         }
-        const tenant: Tenant = { db, key: bindingName, host: hostname, expoAccessToken: env.EXPO_ACCESS_TOKEN };
+        const tenant: Tenant = { db, key: bindingName, host: hostname, expoAccessToken: env.EXPO_ACCESS_TOKEN, demo: isDemoBinding(env, bindingName) };
         try {
           await pollAllActive(tenant, { geocode: true });
         } catch (err) {

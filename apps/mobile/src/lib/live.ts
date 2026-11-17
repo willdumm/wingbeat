@@ -27,6 +27,8 @@ export interface StatusCard {
   inFlight: boolean;
   /** "GPS 5 min ago", from its newest point of any kind; null before its first point. */
   gps: string | null;
+  /** Its newest point's time (Unix seconds), as gps says; null before its first point. */
+  gpsTime: number | null;
   gpsFresh: boolean;
   /** Altitude and speed while in flight ("1,200 ft · 95.0 kt"); null otherwise. */
   metrics: string | null;
@@ -55,12 +57,32 @@ export function statusCards(
       color: trackerColor(trackers, t.id) ?? fallbackColor,
       inFlight,
       gps: gpsTime ? 'GPS ' + relativeTime(now, gpsTime) : null,
+      gpsTime: gpsTime ?? null,
       gpsFresh: gpsTime ? isGpsFresh(now, gpsTime) : false,
       metrics,
       location: d?.location_label ?? null,
       position: d ? [d.lon, d.lat] : null,
     };
   });
+}
+
+export interface CardStack {
+  shown: StatusCard[];
+  /** In-flight cards not shown, which the open list has. */
+  moreInFlight: number;
+}
+
+/**
+ * The Live tab's status cards, as its top bar stacks them. Open: every card. Collapsed: the
+ * pinned ones, in the cards' order; with none, the card that last reported.
+ */
+export function cardStack(cards: StatusCard[], pinnedIds: number[], open: boolean): CardStack {
+  if (open) return { shown: cards, moreInFlight: 0 };
+  const shown = cards.filter((c) => pinnedIds.includes(c.trackerId));
+  if (!shown.length && cards.length) {
+    shown.push(cards.reduce((a, b) => ((b.gpsTime ?? -Infinity) > (a.gpsTime ?? -Infinity) ? b : a)));
+  }
+  return { shown, moreInFlight: cards.filter((c) => c.inFlight && !shown.includes(c)).length };
 }
 
 /**
@@ -278,25 +300,31 @@ export interface DayMap {
   points: GeoJSON.FeatureCollection<GeoJSON.Point>;
   /** The flights drawn, in order, with their numbers and colors (the day map's list). */
   flights: { flight: Flight; n: number; color: string }[];
-  /** The trackers, when there are several (the web's legend). */
-  legend: { label: string; color: string }[];
-  /** [west, south, east, north]; null when no flight has a track. */
+  /**
+   * The trackers, when there are several (the web's legend), each hidden or not; its entries
+   * filter the day by aircraft.
+   */
+  legend: { trackerId: number | null; label: string; color: string; hidden: boolean }[];
+  /** [west, south, east, north] of the flights drawn; null when none has a track. */
   bounds: [number, number, number, number] | null;
 }
 
 /**
  * A day's flights drawn at once, as the dashboard's day view does: each track in its
  * tracker's color, a dot at its start and its number (core's dayFlightNumbers) at its end.
- * flights: getAll()'s (chronological); inProgress(f): whether f is still in the air.
+ * flights: getAll()'s (chronological); inProgress(f): whether f is still in the air; hidden:
+ * the trackers (null: manual flights) the legend has hidden, whose flights aren't drawn but
+ * keep their numbers.
  */
 export function dayMap(
   tz: string,
   dayKey: string,
   flights: Flight[],
-  { colorFor, labelFor, inProgress }: {
+  { colorFor, labelFor, inProgress, hidden = [] }: {
     colorFor: (trackerId: number | null) => string;
     labelFor: (trackerId: number | null) => string;
     inProgress: (f: Flight) => boolean;
+    hidden?: (number | null)[];
   },
 ): DayMap {
   const day = flights.filter((f) => unixToTzDateStr(tz, f.start_time) === dayKey);
@@ -307,7 +335,7 @@ export function dayMap(
   const drawn: DayMap['flights'] = [];
   day.forEach((f, i) => {
     const n = numbers[i];
-    if (n == null || !f.points?.length) return;
+    if (n == null || !f.points?.length || hidden.includes(f.tracker_id)) return;
     const coords = f.points.map((p) => [p.lon, p.lat] as [number, number]);
     const color = colorFor(f.tracker_id);
     drawn.push({ flight: f, n, color });
@@ -318,12 +346,15 @@ export function dayMap(
       points.push({ type: 'Feature', id: 'end-' + f.id, geometry: { type: 'Point', coordinates: coords.at(-1)! }, properties: { color, inFlight: false, label: String(n) } });
     }
   });
-  const trackerIds = [...new Set(day.filter((_, i) => numbers[i] != null).map((f) => f.tracker_id))];
+  // The trackers with a track to draw: hiding all but one leaves something on the map.
+  const trackerIds = [...new Set(day.filter((f, i) => numbers[i] != null && f.points?.length).map((f) => f.tracker_id))];
   return {
     tracks: { type: 'FeatureCollection', features: tracks },
     points: { type: 'FeatureCollection', features: points },
     flights: drawn,
-    legend: trackerIds.length > 1 ? trackerIds.map((id) => ({ label: labelFor(id), color: colorFor(id) })) : [],
+    legend: trackerIds.length > 1
+      ? trackerIds.map((id) => ({ trackerId: id, label: labelFor(id), color: colorFor(id), hidden: hidden.includes(id) }))
+      : [],
     bounds: bboxOf(all),
   };
 }

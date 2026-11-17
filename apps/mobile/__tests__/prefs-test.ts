@@ -1,5 +1,5 @@
 import { emptyFilterState } from '@wingbeat/core/filters';
-import { accountPrefKey, dutyTabShown, parseDutyTab, parseElevationPref, parseFlightFilter, parseMapChoice, parseTheme, parseTimeSensitive, staleAccountPrefKeys, THEME_KEY } from '@/lib/prefs';
+import { accountPrefKey, dutyTabShown, parseDutyTab, parseElevationPref, parseFlightFilter, parseLivePinned, parseMapChoice, parseTheme, parseTimeSensitive, staleAccountPrefKeys, THEME_KEY } from '@/lib/prefs';
 
 const A = 'a.wingbeat.dummthings.dev';
 const B = 'b.wingbeat.dummthings.dev';
@@ -34,6 +34,10 @@ describe('parse functions', () => {
     expect(parseMapChoice(undefined)).toEqual({ basemap: null, overlays: null });
     expect(parseMapChoice({ basemap: 'esri', overlays: [3, 'x', 5] })).toEqual({ basemap: 'esri', overlays: [3, 5] });
     expect(parseMapChoice({ basemap: 7, overlays: 'all' })).toEqual({ basemap: null, overlays: null });
+    expect(parseLivePinned([4, 7])).toEqual([4, 7]);
+    expect(parseLivePinned(4)).toEqual([4]);
+    expect(parseLivePinned([4, '5', 1.5])).toEqual([4]);
+    for (const v of [undefined, null, '4', 1.5]) expect(parseLivePinned(v)).toEqual([]);
   });
 
   test('flight filter: a known preset and every field of the filter', () => {

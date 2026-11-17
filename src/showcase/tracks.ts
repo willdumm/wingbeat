@@ -18,6 +18,26 @@ export interface TrackTerrain {
   elevations: ArrayLike<number>;
 }
 
+// Height kept above the terrain grid. The grid holds each cell's highest point, so the
+// real margin is usually more.
+export const TERRAIN_CLEARANCE_M = 150;
+// Cruise is picked from the ground more than this far from either end: nearer than that,
+// the aircraft is climbing out or descending in anyway.
+export const CRUISE_EXEMPT_KM = 8;
+const FT = 0.3048;
+
+/** A seeded PRNG (synthesizeTrack has its own copy, since it must stay self-contained). */
+export function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 /**
  * Synthesizes an inReach-style track between two places for the showcase's sample data:
  * one fix every `intervalSec`, a takeoff/landing speed ramp, a climb and descent at
@@ -114,4 +134,54 @@ export function synthesizeTrack(
     fixes[i][5] = Math.round((brg + 360) % 360);
   }
   return fixes;
+}
+
+/**
+ * The cruise speed at which synthesizeTrack's track from `from` to `to` lasts `totalS`
+ * seconds. It restates synthesizeTrack's flat-earth distance and 90 s ramp (total = distance /
+ * speed + ramp), which that function can't share. If they drift, the demo's legs stop lasting two slots and
+ * test/demo-feed.test.mjs's "two trackers are flying" fails.
+ */
+export function cruiseKmhForDuration(from: [number, number], to: [number, number], totalS: number): number {
+  const kmPerDegLon = 111.32 * Math.cos((from[0] + to[0]) / 2 * Math.PI / 180);
+  const distKm = Math.max(0.5, Math.hypot((to[1] - from[1]) * kmPerDegLon, (to[0] - from[0]) * 110.57));
+  return distKm / ((totalS - 90) / 3600);
+}
+
+/**
+ * A leg's cruise altitude: `usualM`, or the next 500 ft above the highest ground along the
+ * route plus clearance, whichever is higher. `probe` is a track along the route at any
+ * altitude (a route's shape comes from its seed alone).
+ */
+export function cruiseAltitudeM(terrain: TrackTerrain, probe: TrackFix[], usualM: number): number {
+  const ground = highestGround(terrain, probe, CRUISE_EXEMPT_KM);
+  return Math.max(usualM, Math.round(Math.ceil((ground + TERRAIN_CLEARANCE_M) / (500 * FT)) * 500 * FT));
+}
+
+/**
+ * Highest terrain under a track, sampled about every 500 m, more than `exemptKm` from its
+ * ends (nearer than that, the aircraft is climbing out or descending in anyway).
+ */
+export function highestGround(terrain: TrackTerrain, track: TrackFix[], exemptKm: number): number {
+  const kmPerDegLat = 110.57;
+  const kmPerDegLon = 111.32 * Math.cos(track[0][1] * Math.PI / 180);
+  const km = (a: TrackFix, b: TrackFix): number => Math.hypot((b[1] - a[1]) * kmPerDegLat, (b[2] - a[2]) * kmPerDegLon);
+  const total = track.slice(1).reduce((sum, p, i) => sum + km(track[i], p), 0);
+  let highest = 0, along = 0;
+  for (let i = 0; i < track.length - 1; i++) {
+    const [a, b] = [track[i], track[i + 1]];
+    const segKm = km(a, b);
+    const steps = Math.max(1, Math.ceil(segKm / 0.5));
+    for (let k = 0; k < steps; k++) {
+      const f = k / steps;
+      const d = along + segKm * f;
+      if (d < exemptKm || total - d < exemptKm) continue;
+      const row = Math.floor((terrain.north - (a[1] + (b[1] - a[1]) * f)) / terrain.cellLat);
+      const col = Math.floor((a[2] + (b[2] - a[2]) * f - terrain.west) / terrain.cellLon);
+      if (row < 0 || row >= terrain.rows || col < 0 || col >= terrain.cols) continue;
+      highest = Math.max(highest, terrain.elevations[row * terrain.cols + col] * terrain.unitM);
+    }
+    along += segKm;
+  }
+  return highest;
 }

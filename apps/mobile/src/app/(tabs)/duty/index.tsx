@@ -28,7 +28,8 @@ import { useNow } from '@/lib/use-now';
  * header's Export PDF menu shares the web's PDF of the month, a quarter or 12 months, or
  * opens Custom (export.tsx) to pick the months. An admin plans or edits a day in the day
  * form (day.tsx): from a day, an Upcoming row, or the header's + (tomorrow, since rest is
- * designated ahead, as the web's Plan duty or rest).
+ * designated ahead, as the web's Plan duty or rest). The + menu also adds a manual flight
+ * (flight.tsx) for the pilot, today; the day form adds one on its day.
  * The alerts screen opens a pilot's with params pilot, which picks them. It's in the Duty tab's
  * stack, or in Settings' when that tab is hidden (duty-tab.ts).
  */
@@ -75,6 +76,7 @@ export default function DutyScreen() {
   const offered = dutyPilots(pilots, pilot.id);
   const openDay = tab.isAdmin && log
     ? (date: string) => router.push({ pathname: `${base}/day`, params: { pilot: String(pilot.id), date } }) : null;
+  const today = () => unixToTzDateStr(tab.tz, Math.floor(Date.now() / 1000));
   const notice = pdf.status ?? (failed
     ? (log ? 'Couldn’t refresh the duty records; showing the copy saved earlier.' : 'Couldn’t load the duty records. Pull down to try again.')
     : (log ? null : 'Loading…'));
@@ -93,8 +95,15 @@ export default function DutyScreen() {
       <Stack.Screen options={{ title: pilot.name }} />
       <Stack.Toolbar placement="right">
         {openDay && (
-          <Stack.Toolbar.Button icon="plus" accessibilityLabel="Plan Duty or Rest"
-            onPress={() => openDay(tzAddDays(unixToTzDateStr(tab.tz, Math.floor(Date.now() / 1000)), 1))} />
+          <Stack.Toolbar.Menu icon="plus" accessibilityLabel="Add" title="Add">
+            <Stack.Toolbar.MenuAction icon="calendar" onPress={() => openDay(tzAddDays(today(), 1))}>
+              Plan Duty or Rest
+            </Stack.Toolbar.MenuAction>
+            <Stack.Toolbar.MenuAction icon="airplane"
+              onPress={() => router.push({ pathname: `${base}/flight`, params: { pilot: String(pilot.id), date: today() } })}>
+              Add Flight
+            </Stack.Toolbar.MenuAction>
+          </Stack.Toolbar.Menu>
         )}
         {exportOptions.length > 0 && (
           <Stack.Toolbar.Menu icon="square.and.arrow.up" accessibilityLabel="Export PDF" title="Export PDF" disabled={pdf.status != null}>

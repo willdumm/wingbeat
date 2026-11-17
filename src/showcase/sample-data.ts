@@ -20,7 +20,7 @@ import { computeLiveLabel } from '../geocoding';
 import { haversineKm } from '@wingbeat/core/regions';
 import { eventTitle, eventMessage, NotificationEvent } from '../notifications';
 import { formatLocalDateTime } from '../shared/format';
-import { synthesizeTrack, TrackFix, TrackTerrain } from './tracks';
+import { cruiseAltitudeM, mulberry32, synthesizeTrack, TERRAIN_CLEARANCE_M, TrackFix, TrackTerrain } from './tracks';
 
 export interface GeoFeature {
   geometry: { type: string; coordinates: unknown };
@@ -138,15 +138,8 @@ const BASE = 'Kodiak';
 const NOW_MINUTE = 14 * 60 + 20;
 const GROUND_FIX_AGE_SEC = 190;
 
-// Height kept above the terrain grid. The grid holds each cell's highest point, so the
-// real margin is usually more.
-const TERRAIN_CLEARANCE_M = 150;
 // The grid ships to the browser as one byte per cell, in 10 m steps (rounded up).
 const TERRAIN_UNIT_M = 10;
-// Cruise is picked from the ground more than this far from either end: nearer than that,
-// the aircraft is climbing out or descending in anyway.
-const CRUISE_EXEMPT_KM = 8;
-const FT = 0.3048;
 
 const FLEET = [
   { tail: 'N100DM', name: 'Beaver', tracker: 'inReach · Beaver', kmh: 185, altM: 500 },
@@ -177,17 +170,6 @@ const TODAY = [
   { route: ['Kodiak', 'Old Harbor', 'Akhiok', 'Kodiak'], landedAgoMin: 38 },
 ];
 
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6D2B79F5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 function buildPlaces(namedPoints: GeoCollection): { places: SamplePlace[]; index: Map<string, number> } {
   const wanted = [BASE, ...GROUPS.flatMap((g) => g.names)];
   const places: SamplePlace[] = [];
@@ -200,31 +182,6 @@ function buildPlaces(namedPoints: GeoCollection): { places: SamplePlace[]; index
     places.push([name, lat, lon]);
   }
   return { places, index };
-}
-
-/** Highest terrain under a track, sampled about every 500 m, away from its ends. */
-function highestGround(terrain: TrackTerrain, track: TrackFix[]): number {
-  const kmPerDegLat = 110.57;
-  const kmPerDegLon = 111.32 * Math.cos(track[0][1] * Math.PI / 180);
-  const km = (a: TrackFix, b: TrackFix): number => Math.hypot((b[1] - a[1]) * kmPerDegLat, (b[2] - a[2]) * kmPerDegLon);
-  const total = track.slice(1).reduce((sum, p, i) => sum + km(track[i], p), 0);
-  let highest = 0, along = 0;
-  for (let i = 0; i < track.length - 1; i++) {
-    const [a, b] = [track[i], track[i + 1]];
-    const segKm = km(a, b);
-    const steps = Math.max(1, Math.ceil(segKm / 0.5));
-    for (let k = 0; k < steps; k++) {
-      const f = k / steps;
-      const d = along + segKm * f;
-      if (d < CRUISE_EXEMPT_KM || total - d < CRUISE_EXEMPT_KM) continue;
-      const row = Math.floor((terrain.north - (a[1] + (b[1] - a[1]) * f)) / terrain.cellLat);
-      const col = Math.floor((a[2] + (b[2] - a[2]) * f - terrain.west) / terrain.cellLon);
-      if (row < 0 || row >= terrain.rows || col < 0 || col >= terrain.cols) continue;
-      highest = Math.max(highest, terrain.elevations[row * terrain.cols + col] * terrain.unitM);
-    }
-    along += segKm;
-  }
-  return highest;
 }
 
 export function buildSampleData(namedPoints: GeoCollection, regions: GeoCollection, terrainGrid: TerrainGrid): SampleData {
@@ -267,14 +224,11 @@ export function buildSampleData(namedPoints: GeoCollection, regions: GeoCollecti
     return index.get(names[Math.floor(rand() * names.length)])!;
   }
 
-  // One leg: the aircraft's usual altitude, or the next 500 ft above the highest ground
-  // along the route plus clearance, whichever is higher. (The route's shape comes from the
-  // seed alone, so the first track finds the ground the second one cruises over.)
+  // One leg, at the altitude cruiseAltitudeM picks from a first track along the route.
   function planLeg(from: number, to: number, ac: typeof FLEET[number]): { seed: number; altM: number; track: TrackFix[] } {
     const seed = Math.floor(rand() * 2 ** 31);
     const usual = ac.altM + Math.round((rand() - 0.5) * 200);
-    const ground = highestGround(terrain, synth(from, to, seed, ac.kmh, usual));
-    const altM = Math.max(usual, Math.round(Math.ceil((ground + TERRAIN_CLEARANCE_M) / (500 * FT)) * 500 * FT));
+    const altM = cruiseAltitudeM(terrain, synth(from, to, seed, ac.kmh, usual), usual);
     return { seed, altM, track: synth(from, to, seed, ac.kmh, altM) };
   }
   const legSeconds = (track: TrackFix[]): number => track[track.length - 1][0];

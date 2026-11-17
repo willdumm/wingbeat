@@ -27,7 +27,7 @@ import { ChoicePicker, ToggleSection } from './choice-list';
 import { ElevationChrome, ElevationLayers, useElevationTool } from './elevation-tool';
 import { EndMarkers, endMarkerGroups, groupsKey, type EndMarker } from './end-markers';
 import { followWait, type TrackPick } from './live';
-import { MapTools, type MapTool } from './map-tools';
+import { MapTools, TOOL_SIZE, type MapTool } from './map-tools';
 import { defaultBasemapId, defaultOverlayIds, liveMapStyle, type MapBasemap } from './map-style';
 import { accountPrefKey, parseMapChoice } from './prefs';
 import { useStoredState } from './stored-state';
@@ -46,7 +46,9 @@ export interface LiveMapRef {
 }
 
 /** The plane markers' and the picked point's arrow's images: signed distance fields, tinted per
- * marker (scripts/gen-map-icons.mjs). */
+ * marker (scripts/gen-map-icons.mjs). The field reaches 6 image pixels out from the outline,
+ * and a halo-width counts halo-width / icon-size of them: at icon-size 1/3 a halo of 2 or more
+ * reaches the field's end and fills the whole image square, so the halos are 1.5. */
 const IMAGES = {
   plane: { source: require('../../assets/plane.png'), sdf: true },
   arrow: { source: require('../../assets/arrow.png'), sdf: true },
@@ -67,8 +69,13 @@ interface LiveMapProps {
   tracks: GeoJSON.FeatureCollection;
   /** Tools after Layers. */
   tools?: MapTool[];
-  /** Shown along the top, below the status bar or the header. */
+  /** Shown at the top right, below the status bar or the header (clear of a back button). */
   overlay?: ReactNode;
+  /**
+   * Bottom right, left of MapLibre's attribution (i) button and centred on it (the Wingbeat
+   * lockup); it takes no touches.
+   */
+  watermark?: ReactNode;
   /**
    * A full-width bar along the top, on the floating surface (as the overlay's), running up
    * under the status bar.
@@ -99,7 +106,10 @@ interface LiveMapProps {
   ref?: Ref<LiveMapRef>;
 }
 
-export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, topBar, sheetHeight, fit, fitKey, followKey = null, onPress, onLongPress, picks = [], ref }: LiveMapProps) {
+// MapLibre iOS's attribution button (a UIButtonTypeInfoLight).
+const ATTRIBUTION_SIZE = 22;
+
+export function LiveMap({ basemaps, overlays, origin, initialView, positions, tracks, tools = [], overlay, watermark, topBar, sheetHeight, fit, fitKey, followKey = null, onPress, onLongPress, picks = [], ref }: LiveMapProps) {
   const t = useTokens();
   const camera = useRef<CameraRef>(null);
   const mapRef = useRef<MapRef>(null);
@@ -305,7 +315,7 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
           }} paint={{
             'icon-color': ['get', 'color'],
             'icon-halo-color': t['surface-1'],
-            'icon-halo-width': 2,
+            'icon-halo-width': 1.5,
           }} />
         </GeoJSONSource>
         <EndMarkers ends={ends} groups={groups} />
@@ -319,13 +329,24 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
           {topBar}
         </View>
       ) : overlay ? (
-        <View style={{ position: 'absolute', top, left: gutter, right: gutter, alignItems: 'center' }}
+        <View style={{ position: 'absolute', top, left: gutter, right: gutter, alignItems: 'flex-end' }} pointerEvents="box-none"
           onLayout={(ev) => setTopEdge(top + ev.nativeEvent.layout.height)}>
           {overlay}
         </View>
       ) : null}
       <ElevationChrome tool={elevation} center={crosshair} top={Math.max(top, topEdge) + px(t['space-2'])} side={gutter} onReadoutHeight={setReadoutHeight} />
       {toolsShown && <MapTools tools={[...(basemaps.length + overlays.length > 1 ? [layersTool] : []), elevation.tool, ...tools]} left={gutter} bottom={toolsBottom} />}
+      {/* Without a sheet the (i) button sits space-2 above the bottom inset (attributionPosition
+          above); with one it moves top left, and the lockup centres on the tools' row instead. */}
+      {toolsShown && watermark && (
+        <View pointerEvents="none" style={{
+          position: 'absolute', right: sheetHeight ? gutter : gutter + ATTRIBUTION_SIZE + px(t['space-2']),
+          bottom: sheetHeight ? toolsBottom : insets.bottom + px(t['space-2']),
+          height: sheetHeight ? TOOL_SIZE : ATTRIBUTION_SIZE, justifyContent: 'center',
+        }}>
+          {watermark}
+        </View>
+      )}
     </View>
   );
 }

@@ -171,7 +171,9 @@ export interface ParsedPoint {
   velocity_kmh: number | null;
   course_deg: number | null;
   event: string | null;
-  raw_kml: string;
+  raw_kml: string | null;
+  /** The pilot flying, when the feed knows (the demo feed's shifts); else the tracker's. */
+  pilot_id?: number | null;
 }
 
 export interface User {
@@ -250,6 +252,9 @@ export interface Env {
   // The app publisher's Expo access token, for app push (see app-push.ts). Set only on
   // hosted instances; without it the Worker sends no app push.
   EXPO_ACCESS_TOKEN?: string;
+  // JSON array of the D1 bindings whose tenants are demos (the hosting config's "demo": true):
+  // their `demo:<n>` trackers read the simulated feed (demo-feed.ts).
+  DEMO_BINDINGS?: string;
 }
 
 /**
@@ -264,4 +269,6 @@ export interface Tenant {
   host: string;
   /** Env.EXPO_ACCESS_TOKEN, when set. */
   expoAccessToken?: string;
+  /** A demo tenant (Env.DEMO_BINDINGS lists its binding). */
+  demo?: boolean;
 }
