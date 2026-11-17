@@ -1,6 +1,6 @@
 /**
- * The aircraft status cards (the dashboard's status bar), at the top of the Live tab: a floating
- * SwiftUI card, Liquid Glass on iOS 26 and a blurred material before it. Each row has the tail
+ * The aircraft status cards (the dashboard's status bar), at the top of the Live tab above the
+ * lockup: a floating SwiftUI card, Liquid Glass on iOS 26 and a blurred material before it. Each row has the tail
  * on a pill in the tracker's color, in flight / on ground and GPS age (with a dot only while
  * fresh), then altitude, speed and the place. Collapsed, the rows are the pinned ones, or with
  * none the one that last reported (live.ts cardStack); "All Aircraft" under them expands the
@@ -36,7 +36,7 @@ function Row({ card, pinned, width }: { card: StatusCard; pinned: boolean; width
   const details = [card.metrics, card.location].filter(Boolean).join(' · ');
   return (
     <VStack alignment="leading" spacing={3} modifiers={[
-      frame({ width, alignment: 'leading' }), padding({ horizontal: px(t['space-3']), vertical: px(t['space-2']) }),
+      padding({ horizontal: px(t['space-3']), vertical: px(t['space-2']) }), frame({ width, alignment: 'leading' }),
       // The whole row takes the tap, not just its text.
       contentShape(shapes.rectangle()),
     ]}>
@@ -58,7 +58,8 @@ function Row({ card, pinned, width }: { card: StatusCard; pinned: boolean; width
           </Text>
         )}
         <Spacer />
-        {pinned && <Image systemName="pin.fill" size={12} color={t['accent']} />}
+        {/* Pinned, as Notes and Messages mark it: a filled pin, tilted, in the secondary color. */}
+        {pinned && <Image systemName="pin.fill" size={11} modifiers={[foregroundStyle({ type: 'hierarchical', style: 'secondary' }), rotationEffect(45)]} />}
       </HStack>
       {!!details && (
         <Text modifiers={[font({ size: 13, weight: 'medium' }), lineLimit(1), foregroundStyle(t['text-primary'])]}>{details}</Text>
@@ -128,8 +129,8 @@ export function StatusCards({ cards, pinnedIds, onSelect, onPin, width }: {
         {open && pinned.length === 0 && (
           <VStack spacing={0}>
             <Divider />
-            <Text modifiers={[font({ size: 12 }), foregroundStyle(t['text-muted']), frame({ width, alignment: 'leading' }),
-              padding({ horizontal: px(t['space-3']), vertical: px(t['space-1']) })]}>
+            <Text modifiers={[font({ size: 12 }), foregroundStyle(t['text-muted']),
+              padding({ horizontal: px(t['space-3']), vertical: px(t['space-2']) }), frame({ width, alignment: 'leading' })]}>
               Touch and hold an aircraft to pin its card here. Unpinned, the one that last reported shows.
             </Text>
           </VStack>
@@ -138,7 +139,7 @@ export function StatusCards({ cards, pinnedIds, onSelect, onPin, width }: {
           <VStack spacing={0}>
             <Divider />
             <Button onPress={() => setOpen((o) => !o)} modifiers={[buttonStyle('plain'), accessibilityLabel(open ? 'Show less' : toggle)]}>
-              <HStack spacing={6} modifiers={[frame({ width }), padding({ vertical: px(t['space-2']) }), contentShape(shapes.rectangle())]}>
+              <HStack spacing={6} modifiers={[padding({ vertical: px(t['space-2']) }), frame({ width }), contentShape(shapes.rectangle())]}>
                 <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(t['accent'])]}>{toggle}</Text>
                 <Image systemName="chevron.down" size={12} color={t['accent']}
                   modifiers={[rotationEffect(open ? 180 : 0), animation(Animation.snappy(), open)]} />

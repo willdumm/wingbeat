@@ -132,12 +132,14 @@ export default function LiveScreen() {
         onLongPress={(lngLat) => { if (tz) pick(spotDetails(tz, lngLat)); }}
         topBar={(
           <>
-            <View pointerEvents="none" style={{ alignItems: 'center', paddingTop: px(t['space-1']), paddingBottom: px(t['space-2']) }}>
+            {cards.length > 0 && (
+              <View style={{ paddingTop: px(t['space-1']) }} pointerEvents="box-none">
+                <StatusCards cards={cards} pinnedIds={pinned} onSelect={select} onPin={setPinned} width={screenWidth - 2 * px(t['space-3'])} />
+              </View>
+            )}
+            <View pointerEvents="none" style={{ alignItems: 'center', paddingTop: px(t['space-2']), paddingBottom: px(t['space-2']) }}>
               <InstanceLockup />
             </View>
-            {cards.length > 0 && (
-              <StatusCards cards={cards} pinnedIds={pinned} onSelect={select} onPin={setPinned} width={screenWidth - 2 * px(t['space-3'])} />
-            )}
           </>
         )}
       />
