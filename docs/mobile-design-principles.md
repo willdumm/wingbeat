@@ -18,9 +18,9 @@ with the date and, where the user made it, their words.
 - When a native control behaves differently from what we'd design, take the native behavior.
   The flight detail's sheet covers the tab bar, because sheets do ("it would be fine if it
   covered the tab bar"), and a hand-built RN bottom panel was rejected for the native sheet.
-- React Native views are for what has no system equivalent: the map, its markers and the
-  floating chrome over it (the status top bar, the day banner), and dense custom rows (the
-  flight list, see 4).
+- React Native views are for what has no system equivalent: the map, its markers and some
+  floating chrome over it (the day banner), and dense custom rows (the flight list, see 4).
+  The status card was RN and looked hand-built; it's SwiftUI now (see 5).
 - Before writing a control, check `@expo/ui` for it in the installed version
   (`apps/mobile/node_modules/@expo/ui/build/{universal,swift-ui,jetpack-compose}/`) and the
   docs (docs.expo.dev, SDK 58), not memory: it grows every SDK.
@@ -121,20 +121,27 @@ interactive. Decide when Android is built, and keep `MapSheet`'s props the same 
 
 ## 5. Surfaces over the map
 
-- Floating chrome (the status top bar, the day banner) uses `surface-float` with a
-  `glass-border` border and `shadow-md`. A SwiftUI material blur was tried and dropped.
+- RN floating chrome (the day banner) uses `surface-float` with a `glass-border` border and
+  `shadow-md`.
 - Map tools are a column of round glass buttons at the map's bottom left, each a native menu;
   an active tool's button is prominent in the accent.
-- The status card: the tail on a pill in the tracker's color; IN FLIGHT / ON GROUND and the GPS
-  age; altitude, speed and place on the first line when they fit. That's measured off-screen
-  (an unseen copy), so where the text goes can't change what's measured and the layout can't
-  oscillate. The cards stack down the top bar (no sideways scroll): the pinned ones, or the one
-  that last reported, with "All Aircraft" under them to open the rest. Each card's pin button is
-  always visible (outlined until pinned), so pinning needs no explaining.
+- The status card (2026-11-17, `status-cards.tsx`) is a persistent reference, so it stays on
+  the map rather than in a sheet, which would cover the tab bar. It's one floating SwiftUI card
+  inset from the edges at the top of the Live tab: Liquid Glass (`glassEffect`) on iOS 26, a
+  `regular` material before it, over a top bar with no surface of its own (the map runs up
+  under the status bar). Each row is centred: the tail on a pill in the tracker's color, IN
+  FLIGHT / ON GROUND and the GPS age, and a tilted secondary `pin.fill` when pinned (as Notes
+  and Messages mark one), then altitude, speed and place on a second line. The rows stack (no
+  sideways scroll): the pinned ones, or the one that last reported, with "All Aircraft" under
+  them expanding the card with SwiftUI's animation; past about half the screen it scrolls.
+  Touch and hold a row for a native Pin/Unpin menu, as the Settings account list signs out.
+  SwiftUI applies modifiers in order: pad a row before giving it the card's width, or the
+  padding lands outside the card.
 - Small chrome that doesn't need the full width (the day map's legend) goes at the top right,
   clear of the back button. Anything tappable in it is a full 44-point row.
-- The brand: a small Wingbeat lockup (`brand.tsx`) beside the map tools' bottom, as Maps puts
-  its logo; it takes no touches.
+- The brand: a small Wingbeat lockup with the instance's name (`brand.tsx`, `InstanceLockup`)
+  as the Flights and Duty tabs' navigation-bar title, above their large titles. The Live tab
+  has none: on the map it overlapped the tools, and the top is the status card's.
 
 ## 6. Native-layout lessons
 

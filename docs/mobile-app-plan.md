@@ -2214,7 +2214,8 @@ Done after step 9, from the first device runs (2026-11-13; the rules they settle
   an undismissable sheet with peek, medium and large detents, the track refits above it, the
   Layers button rides on it, and the tab bar hides.
 - **Status cards on the float surface:** the tail on a pill in the tracker's color, the
-  details on the first line when they fit.
+  details on the first line when they fit. (Since 2026-11-17 a SwiftUI glass card; see the
+  parity table and `docs/mobile-design-principles.md` 5.)
 
 Done next (2026-11-13): the native-debt cleanup below (Settings, the filter and the
 assignment edit are SwiftUI `Form`s; native `Stack.Toolbar` buttons; pull to refresh on
@@ -2257,6 +2258,14 @@ update (the lockup move, "Try the Demo" to the production demo). Built non-inter
 (removing `UIBackgroundModes` changes no capability), source maps uploaded for release
 `dev.dummthings.wingbeat@0.1.0+7`, and submitted with `eas submit`. Updates publish from the
 tree as is (its fingerprint is build 7's).
+
+Updates on `preview` for build 7 (2026-11-17, before Beta App Review; hold updates during the
+review): the lockup became the Flights and Duty tabs' navigation-bar title, off the map, where
+it overlapped "Fit all"; switching accounts no longer saves the previous account's instance
+name and user onto the new one (the accounts and bootstrap contexts now keep the client and
+the bootstrap with the account they were loaded for, since both were stale for the render
+before their effects ran); and the status cards became a floating SwiftUI glass card with
+centred rows, pinned by touch and hold, with no lockup on the Live tab. Last group: `eb7190bf`.
 
 Step 11 (2026-11-16, `demo-tenant`): the demo feed, the demo sign-in and the app's "Try the
 Demo" (JavaScript only, so it ships as an update), the seed script, and tests
@@ -2342,7 +2351,7 @@ layers need no Android counterpart; only the chrome around the map does.
 | Plane marker turned to its heading | Done | MapLibre `SymbolLayer` with an image (`Images`), `iconRotate` from the heading | same | heading from the last points (`live`) |
 | Each tracker's current or latest flight (the default view), fitted on opening the tab | Done, on the phone: per tracker, where the web shows every flight in progress, else the one newest flight; a takeoff dot in the tracker's color, as the web's | MapLibre `LineLayer`, the camera's `fitBounds` on each visit | same | `live` |
 | Ground trails (taxi between flights) | Done | MapLibre `LineLayer`, dashed | same | move the web's trail rule to `live` |
-| Status cards | Done (top bar): stacked, the pinned ones, or else the one that last reported; "All Aircraft" under them opens every card (and counts the in-flight ones not shown). Each card's pin button pins or unpins it (stored per account). A tap opens its location sheet | RN views on the float surface (no system equivalent) | the same RN component | `live` (`statusCards`; the app's `cardStack`) |
+| Status cards | Done (top of the map): stacked, the pinned ones, or else the one that last reported; "All Aircraft" under them expands to every card (and counts the in-flight ones not shown). Touch and hold a card to pin or unpin it (stored per account). A tap opens its location sheet | a floating SwiftUI card (`@expo/ui`): Liquid Glass on iOS 26, a material before; centred rows, a context menu to pin | to do: the SwiftUI card has no Android rendering (was the shared RN component); `@expo/ui` Compose | `live` (`statusCards`; the app's `cardStack`) |
 | Location popup (coordinates, details, links, copy) | Done (location sheet) | `BottomSheet` + `Form` + `LabeledContent`, `Link`, Copy (`expo-clipboard`) | universal `BottomSheet` (`ModalBottomSheet`) with `ListItem`s, `Share.share` | `live` (`locationDetails`) |
 | Basemap and overlays | Done (Layers menu) | `Menu` with a `Picker` and `Toggle`s | `DropdownMenu` with radio and checkbox items | `basemaps` |
 | Map a day's flights ("Map all") | Done, on the phone: "Map all" on the Flights list's day headers opens the day on the map with its flights in the `MapSheet`, arrows to the older and newer day; the Live tab's Day menu and calendar are gone. The legend, stacked at the map's top right (clear of the back button), filters the day by aircraft: tapping an entry hides or shows its flights, on the map and in the sheet's list. The day and a flight are one screen (`flight-map-screen.tsx`), so tapping a flight in the day's sheet swaps the sheet and map to it, with a back button to the day; no tab bar, as on the flight detail | a header button, the map + `MapSheet` (as the flight detail) | the same, with its Android sheet | `dayFlightNumbers`, `groupEndMarkers` |
