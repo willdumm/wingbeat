@@ -2311,7 +2311,9 @@ the bootstrap with the account they were loaded for, since both were stale for t
 before their effects ran); and the status cards became a floating SwiftUI glass card with
 centred rows, pinned by touch and hold, with no lockup on the Live tab (group `eb7190bf`). Then,
 before the user submitted build 7 for review: push channels and the tracker events' View on Map
-and Open MapShare actions (group `92ffcdc0`, the last).
+and Open MapShare actions (group `92ffcdc0`, the last). The user submitted build 7 to Beta App Review on
+2026-11-17, for an external group, with the Test Information filled in ("Try the Demo" and
+the demo code `kodiak` in the review notes). No OTA updates until the review is done.
 
 Step 11 (2026-11-16, `demo-tenant`): the demo feed, the demo sign-in and the app's "Try the
 Demo" (JavaScript only, so it ships as an update), the seed script, and tests
