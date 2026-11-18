@@ -6,6 +6,7 @@ import { flightEditsScript } from '../../shared/flight-edits';
 import { filterScript } from '../../shared/filters';
 import { settingsModalScript } from '../../shared/settings';
 import { formModalScript } from '../../shared/form-modal';
+import { downloadScript } from '../../shared/download';
 import { segmentedControlScript } from '../../shared/segmented-control';
 import { pilotDutyScript } from '../../shared/pilot-duty';
 import { flightEditorScript } from '../../shared/flight-editor';
@@ -30,6 +31,7 @@ export function analyticsScripts(env: Env): string {
     flightEditsScript(),
     filterScript(),
     formModalScript(),
+    downloadScript(),
     editHistoryScript(),
     segmentedControlScript(),
     settingsModalScript(),

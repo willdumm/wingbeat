@@ -1518,6 +1518,19 @@ const trackerList = SAMPLE.trackers;
     }
   
 
+    // Saves blob as filename through a temporary link. The object URL is revoked on the next
+    // tick rather than at once: some browsers (Safari) start the download asynchronously
+    // and fail it if the URL is already gone.
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+  
+
     // ── Pilot duty log rendering ──────────────────────────────────────────────
 
     const _DUTY_ICON_EDIT      = "<i data-lucide=\"pencil\" class=\"wb-icon\" style=\"width:13px;height:13px\" aria-hidden=\"true\"></i>";
@@ -1760,13 +1773,7 @@ const trackerList = SAMPLE.trackers;
       onStatus('Compiling PDF…');
       const pdfBytes = await _typstInstance.pdf({ mainContent: dutyLogTypstSource(months) });
 
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href = url;
-      a.download = dutyLogPdfName(months);
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(new Blob([pdfBytes], { type: 'application/pdf' }), dutyLogPdfName(months));
     }
 
     // Export PDF button behavior: disables the button and, on the first export, shows the

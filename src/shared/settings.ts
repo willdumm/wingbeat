@@ -2103,12 +2103,7 @@ export function settingsModalScript(): string {
         const blob = fmt === 'csv'
           ? new Blob([flightsCsv(rows)], { type: 'text/csv' })
           : new Blob([flightsJson(rows, opts)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = flightExportFileName(fmt, from, to);
-        a.click();
-        URL.revokeObjectURL(url);
+        downloadBlob(blob, flightExportFileName(fmt, from, to));
         close();
       });
     });
@@ -3333,13 +3328,7 @@ export function settingsModalScript(): string {
     // read: fetchRegions or fetchNamedPoints. A failed read downloads nothing.
     async function _downloadGeoJSON(read, filename) {
       try {
-        const blob = new Blob([JSON.stringify(await read())], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
+        downloadBlob(new Blob([JSON.stringify(await read())], { type: 'application/json' }), filename);
       } catch (_) {}
     }
 

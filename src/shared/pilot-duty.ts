@@ -500,13 +500,7 @@ export function pilotDutyRenderScript(): string {
       onStatus('Compiling PDF…');
       const pdfBytes = await _typstInstance.pdf({ mainContent: dutyLogTypstSource(months) });
 
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href = url;
-      a.download = dutyLogPdfName(months);
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(new Blob([pdfBytes], { type: 'application/pdf' }), dutyLogPdfName(months));
     }
 
     // Export PDF button behavior: disables the button and, on the first export, shows the

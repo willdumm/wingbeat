@@ -19,6 +19,7 @@ import { dashboardScriptsTrackRender } from './track-render';
 import { dashboardScriptsRefresh } from './refresh';
 import { settingsModalScript } from '../../shared/settings';
 import { formModalScript } from '../../shared/form-modal';
+import { downloadScript } from '../../shared/download';
 import { segmentedControlScript } from '../../shared/segmented-control';
 import { htmlEscapeScript } from '../../shared/html';
 import { editHistoryScript } from '../../shared/edit-history';
@@ -62,6 +63,7 @@ export function dashboardScripts(env: Env): string {
     dashboardScriptsFlightList(),
     dashboardScriptsRefresh(),
     formModalScript(),
+    downloadScript(),
     editHistoryScript(),
     segmentedControlScript(),
     settingsModalScript(),

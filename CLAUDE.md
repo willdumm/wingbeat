@@ -32,6 +32,8 @@ specs all come from there. Before writing new UI:
      theme switcher); reuse its classes for any new 2–3-way inline toggle
    - `toggle.ts` — collapsible-section open/close behavior (pairs with
      `.chevron[data-open]`)
+   - `download.ts` — `downloadBlob(blob, filename)`, for any file a page builds and
+     saves (exports, GeoJSON, the duty PDF)
    - `map-controls.ts`, `sidebar.ts`, `settings.ts`, `filters.ts`,
      `aircraft-info.ts`, `elevation.ts` — map chrome, sidebar/panel toggle,
      settings modal, the shared filter section, and other larger composite
