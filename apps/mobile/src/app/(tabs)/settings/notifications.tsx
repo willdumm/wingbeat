@@ -6,11 +6,12 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import * as Notifications from 'expo-notifications';
-import { Alert, Linking } from 'react-native';
+import { Alert } from 'react-native';
 import { ApiHttpError } from '@wingbeat/core/api/client';
 import { getPushSubscriptions, setPushSubscriptions, type TrackerPushEvent } from '@wingbeat/core/api/push';
 import { activeTrackers } from '@wingbeat/core/live';
 import { useAccounts } from '@/lib/accounts-context';
+import { openAppSettings } from '@/lib/app-settings';
 import { errorText } from '@/lib/api';
 import { useBootstrap } from '@/lib/bootstrap-context';
 import { EmptyState } from '@/lib/empty-state';
@@ -63,7 +64,7 @@ export default function NotificationsScreen() {
         if (await askPushPermission() === 'denied') {
           Alert.alert('Notifications are off', 'Turn on notifications for Wingbeat in the Settings app.', [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            { text: 'Open Settings', onPress: openAppSettings },
           ]);
           return;
         }
