@@ -11,9 +11,10 @@ import { useBootstrap } from './bootstrap-context';
 import { fetchUpdateInBackground, updateForServer } from './handshake';
 import { useTokens } from './theme';
 
-/** The app's store page; iOS has none until the App Store record exists (phase 5, step 12). */
+/** The app's store page (App Store Connect's app ID, as in eas.json's `ascAppId`). */
 const STORE_URL = Platform.select({
   android: 'https://play.google.com/store/apps/details?id=dev.dummthings.wingbeat',
+  ios: 'https://apps.apple.com/app/id6834605241',
   default: null,
 });
 

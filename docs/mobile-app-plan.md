@@ -2314,6 +2314,19 @@ before the user submitted build 7 for review: push channels and the tracker even
 and Open MapShare actions (group `92ffcdc0`, the last). The user submitted build 7 to Beta App Review on
 2026-11-17, for an external group, with the Test Information filled in ("Try the Demo" and
 the demo code `kodiak` in the review notes). No OTA updates until the review is done.
+In the end one went out during it (2026-11-18, group `761d4421`): Open Settings shows where to go
+when iOS refuses to open it, and the map holds its camera fits while its tab is hidden (both from
+Sentry; the first on what was likely App Review's device). An update can't be counted on to
+reach a reviewer, who reviews the build as submitted.
+
+Build 8 (2026-11-18, 1.0.0, fingerprint `e7a47ea5…`): the release candidate. The `production`
+profile (channel `production`, EAS environment `production`), iPhone only
+(`supportsTablet: false`), and the iOS store link on "Update the app". Built non-interactively
+from main after #16 and submitted with `--auto-submit-with-profile production`. App Review was
+testing build 7 on an iPad, since it was universal. The iPad layouts aren't polished, so the
+first release is iPhone only, and iPad support comes later in its own build. Once a version
+that supports iPad is on the App Store, later builds can't drop it. OTA updates for build 8
+publish to `production`; build 7 (`preview`, `1e182fbd…`) takes none from this tree.
 
 Step 11 (2026-11-16, `demo-tenant`): the demo feed, the demo sign-in and the app's "Try the
 Demo" (JavaScript only, so it ships as an update), the seed script, and tests

@@ -12,7 +12,7 @@ const config: ExpoConfig = {
   name: 'Wingbeat',
   slug: 'wingbeat',
   owner: 'dummsoftware',
-  version: '0.1.0',
+  version: '1.0.0',
   scheme: 'wingbeat',
   orientation: 'portrait',
   icon: './assets/icon.png',
@@ -26,7 +26,7 @@ const config: ExpoConfig = {
   },
   ios: {
     bundleIdentifier: 'dev.dummthings.wingbeat',
-    supportsTablet: true,
+    supportsTablet: false,
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
     },
