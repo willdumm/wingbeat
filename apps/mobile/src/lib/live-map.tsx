@@ -20,6 +20,7 @@ import { useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNo
 import { PixelRatio, StyleSheet, View } from 'react-native';
 import { Camera, GeoJSONSource, Images, Layer, Map, type CameraRef, type InitialViewState, type MapRef, type ViewState, type ViewStateChangeEvent } from '@maplibre/maplibre-react-native';
 import type { TileOverlay } from '@wingbeat/core/api/bootstrap';
+import { useIsFocused } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SafeAreaView } from 'react-native-screens/experimental';
 import { useAccounts } from './accounts-context';
@@ -149,11 +150,14 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
   const fitted = useRef<{ key: unknown } | null>(null);
   // The top bar too, so the fit stays below it.
   const measured = safe.height > 0 && (!topBar || topEdge > 0);
+  // A screen that isn't shown (another tab, or under a pushed screen) may not have its native
+  // camera view, and a command sent to it fails, so fits wait until it's shown again.
+  const focused = useIsFocused();
   useEffect(() => {
-    if (!fit || !measured || (fitted.current && fitted.current.key === fitKey)) return;
+    if (!fit || !measured || !focused || (fitted.current && fitted.current.key === fitKey)) return;
     fitBounds(fit, fitted.current ? 800 : 0);
     fitted.current = { key: fitKey };
-  }, [fit, measured, fitKey]);
+  }, [fit, measured, focused, fitKey]);
 
   // Following: the latest fit and fitBounds for a timer that fires later, and when the user last
   // moved the map (a gesture, not a fit or a fly).
@@ -210,9 +214,10 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
     },
   });
   // A change owes a refit, paid once the map's been left alone (and the elevation tool, whose
-  // reference sits under the crosshair, is off); a gesture in the meantime puts it off again.
+  // reference sits under the crosshair, is off, and the screen is shown); a gesture in the
+  // meantime puts it off again.
   useEffect(() => {
-    if (followKey == null || elevation.on || !measured) {
+    if (followKey == null || elevation.on || !measured || !focused) {
       if (followTimer.current) clearTimeout(followTimer.current);
       followTimer.current = null;
       return;
@@ -228,7 +233,7 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
       owed.current = false;
     };
     if (owed.current && !followTimer.current) pay();
-  }, [followKey, elevation.on, measured]);
+  }, [followKey, elevation.on, measured, focused]);
   useEffect(() => () => { if (followTimer.current) clearTimeout(followTimer.current); }, []);
 
   const onView = ({ nativeEvent: v }: { nativeEvent: ViewState }) => {

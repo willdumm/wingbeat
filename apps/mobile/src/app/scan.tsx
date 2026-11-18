@@ -5,7 +5,8 @@
  */
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useIsFocused } from 'expo-router';
-import { Button, Linking, StyleSheet, Text, View } from 'react-native';
+import { Button, StyleSheet, Text, View } from 'react-native';
+import { openAppSettings } from '@/lib/app-settings';
 import { PairingStatusView } from '@/lib/pairing-status';
 import { useTokens } from '@/lib/theme';
 import { usePairing } from '@/lib/use-pairing';
@@ -28,7 +29,7 @@ export default function ScanScreen() {
         {permission.canAskAgain ? (
           <Button title="Allow camera" color={t['accent']} onPress={requestPermission} />
         ) : (
-          <Button title="Open Settings" color={t['accent']} onPress={() => Linking.openSettings()} />
+          <Button title="Open Settings" color={t['accent']} onPress={openAppSettings} />
         )}
       </View>
     );
