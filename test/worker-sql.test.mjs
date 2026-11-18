@@ -1648,6 +1648,28 @@ describe('email: sign-in, invites and addresses', async () => {
     assert.deepEqual(await e.all('SELECT user_id FROM user_emails WHERE email = ?', 'shared@example.com'), [{ user_id: a }]);
   });
 
+  test('a link to an address another user got first, opened signed in, says so', async () => {
+    const a = await userWith('Tia Taken', 'taken@example.com');
+    const b = await userWith('Uma Unlucky');
+    await e.run("INSERT INTO sessions (user_id, token, token_hashed, device_name) VALUES (?, 'uma-session', 0, 'Test')", b);
+    await e.run("INSERT INTO invite_tokens (token, type, user_id, expires_at, email) VALUES (?, 'device_link', ?, unixepoch() + 600, ?)",
+      'f'.repeat(64), b, 'taken@example.com');
+    const opened = await e.request('POST', '/join/' + 'f'.repeat(64), undefined, { as: null, headers: { cookie: 'session=uma-session' } });
+    assert.equal(opened.status, 409);
+    assert.match(opened.body, /taken@example\.com is already on another account here/);
+    assert.deepEqual(await e.all('SELECT user_id FROM user_emails WHERE email = ?', 'taken@example.com'), [{ user_id: a }]);
+  });
+
+  test('on the hour, the cron deletes join tokens a day past their expiry', async () => {
+    const at = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000);
+    const now = at.getTime() / 1000;
+    await e.run("INSERT INTO invite_tokens (token, type, invited_name, invited_role, expires_at) VALUES ('old-invite', 'invite', 'Old', 'viewer', ?)", now - 86400 - 1);
+    await e.run("INSERT INTO invite_tokens (token, type, invited_name, invited_role, expires_at) VALUES ('recent-invite', 'invite', 'Recent', 'viewer', ?)", now - 3600);
+    await e.scheduled({ scheduledTime: at });
+    const left = (await e.all("SELECT token FROM invite_tokens WHERE token IN ('old-invite', 'recent-invite')")).map(r => r.token);
+    assert.deepEqual(left, ['recent-invite']);
+  });
+
   test('a user’s own addresses; opened in their own signed-in browser, the link only confirms', async () => {
     await sent();
     assert.deepEqual(await me.getMyEmails(admin), { emails: [], pending_emails: [] });

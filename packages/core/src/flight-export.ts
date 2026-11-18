@@ -57,7 +57,9 @@ export interface FlightExportOptions {
   aircraft?: { tail_number: string; name?: string | null }[];
 }
 
-// Date.UTC with the seconds as an overflowing field: the epoch in UTC, never the device's zone.
+// Date.UTC with the seconds as an overflowing field: the epoch in UTC. Not new Date(unix * 1000):
+// core never constructs a Date from a bare number (test/device-time.test.mjs, "core never reads the
+// device clock or timezone").
 const iso = (unix: number) => new Date(Date.UTC(1970, 0, 1, 0, 0, unix)).toISOString().replace('.000Z', 'Z');
 const local = (tz: string, unix: number) =>
   unixToTzDateStr(tz, unix) + ' ' + unixToTzTime(tz, unix) + ' ' + tzAbbrev(tz, unix);

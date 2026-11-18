@@ -94,7 +94,9 @@ export function StatusCards({ cards, pinnedIds, onSelect, onPin, width }: {
     const row = (
       <Button onPress={() => pick(c)} modifiers={[
         buttonStyle('plain'), disabled(!open && !c.position),
-        accessibilityLabel(`${c.label}, ${c.inFlight ? 'in flight' : 'on ground'}${isPinned ? ', pinned' : ''}`),
+        // Everything the row shows, since the label replaces it for VoiceOver.
+        accessibilityLabel([c.label, c.inFlight ? 'in flight' : 'on ground', c.gps && 'GPS ' + c.gps, c.metrics, c.location, isPinned && 'pinned']
+          .filter(Boolean).join(', ')),
       ]}>
         <Row card={c} pinned={isPinned} width={width} />
       </Button>
@@ -137,7 +139,7 @@ export function StatusCards({ cards, pinnedIds, onSelect, onPin, width }: {
         {listed && (
           <VStack spacing={0}>
             <Divider />
-            <Button onPress={() => setOpen((o) => !o)} modifiers={[buttonStyle('plain'), accessibilityLabel(open ? 'Show less' : toggle)]}>
+            <Button onPress={() => setOpen((o) => !o)} modifiers={[buttonStyle('plain'), accessibilityLabel(toggle)]}>
               <HStack spacing={6} modifiers={[padding({ vertical: px(t['space-2']) }), frame({ width }), contentShape(shapes.rectangle())]}>
                 <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(t['accent'])]}>{toggle}</Text>
                 <Image systemName="chevron.down" size={12} color={t['accent']}

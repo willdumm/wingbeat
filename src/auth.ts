@@ -278,7 +278,7 @@ export function loginHTML(appName: string, returnTo: string, error: string | nul
     ${formError(error)}
     <form method="POST" action="/login">
       <input type="hidden" name="return" value="${escapeHtml(returnTo)}" />
-      <input type="email" name="email" placeholder="Email address" autocomplete="email" autocapitalize="none" spellcheck="false" required autofocus />
+      <input type="email" name="email" placeholder="Email address" aria-label="Email address" autocomplete="email" autocapitalize="none" spellcheck="false" required autofocus />
       <button type="submit">Email me a sign-in code</button>
     </form>
     <p style="margin-top: 1.5rem; font-size: 0.85rem; color: var(--text-secondary);">No address on your account yet?
@@ -297,7 +297,7 @@ export function loginCodeHTML(appName: string, email: string, returnTo: string, 
     <form method="POST" action="/login/code">
       <input type="hidden" name="return" value="${escapeHtml(returnTo)}" />
       <input type="hidden" name="email" value="${escapeHtml(email)}" />
-      <input name="code" placeholder="6-digit code" inputmode="numeric" pattern="[0-9 ]*" autocomplete="one-time-code" maxlength="7" required autofocus />
+      <input name="code" placeholder="6-digit code" aria-label="Sign-in code" inputmode="numeric" pattern="[0-9 ]*" autocomplete="one-time-code" maxlength="7" required autofocus />
       <button type="submit">Sign in</button>
     </form>
     <a class="back" href="/login${returnTo === '/' ? '' : '?return=' + encodeURIComponent(returnTo)}">Use a different address</a>`);

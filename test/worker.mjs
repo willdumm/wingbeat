@@ -62,26 +62,6 @@ export function splitSql(sql) {
 }
 
 /**
- * Starts the Worker on a fresh database: migrations applied, an admin (user 1, "Ada
- * Admin") and a viewer (user 2) signed in. Call dispose() when done (it stops workerd).
- *
- * Returns { db, request, adminFetch, sql, all, first, dispose, migrations }:
- *   request(method, path, body?, { as: 'admin' | 'viewer' | null, headers, raw })  → { status, body }
- *                                         (as: null sends no session cookie; headers are added to the request; raw sends a
- *                                         string body as it is; the result also has the response `headers`)
- *   adminFetch(url, init)                 fetch as the signed-in admin, for @wingbeat/core's API client
- *   fetch(url, init)                      fetch with no session cookie, for the app's client (bearer or none)
- * startWorker({ bindings }) overrides Worker bindings (a value of undefined leaves one unset).
- * startWorker({ outbound }) answers the Worker's own fetches: outbound(request) → Response.
- * startWorker({ email: true }) gives the Worker an EMAIL binding (and EMAIL_FROM), which
- *   records each message in the test_sent_emails table (to, from_email, from_name, subject,
- *   text, html) of the same database; a message to an address at bounce.test is refused.
- *   scheduled({ scheduledTime })          runs the cron handler once (polls, receipt checks, alerts), at
- *                                         scheduledTime (a Date, default now)
- *   db                                    the D1 binding, for seeding and checking rows
- *   all(sql, ...params) / first(sql, ...params) / run(sql, ...params)  shorthands on it
- */
-/**
  * The EMAIL stub (startWorker({ email: true })): a second Worker whose entrypoint stands in for
  * the send_email binding's send(), over RPC, and records each message in the shared database.
  */
@@ -102,6 +82,26 @@ export class Sender extends WorkerEntrypoint {
 export default { fetch: () => new Response('') };
 `;
 
+/**
+ * Starts the Worker on a fresh database: migrations applied, an admin (user 1, "Ada
+ * Admin") and a viewer (user 2) signed in. Call dispose() when done (it stops workerd).
+ *
+ * Returns { db, request, adminFetch, sql, all, first, dispose, migrations }:
+ *   request(method, path, body?, { as: 'admin' | 'viewer' | null, headers, raw })  → { status, body }
+ *                                         (as: null sends no session cookie; headers are added to the request; raw sends a
+ *                                         string body as it is; the result also has the response `headers`)
+ *   adminFetch(url, init)                 fetch as the signed-in admin, for @wingbeat/core's API client
+ *   fetch(url, init)                      fetch with no session cookie, for the app's client (bearer or none)
+ *   scheduled({ scheduledTime })          runs the cron handler once (polls, receipt checks, alerts), at
+ *                                         scheduledTime (a Date, default now)
+ *   db                                    the D1 binding, for seeding and checking rows
+ *   all(sql, ...params) / first(sql, ...params) / run(sql, ...params)  shorthands on it
+ * startWorker({ bindings }) overrides Worker bindings (a value of undefined leaves one unset).
+ * startWorker({ outbound }) answers the Worker's own fetches: outbound(request) → Response.
+ * startWorker({ email: true }) gives the Worker an EMAIL binding (and EMAIL_FROM), which
+ *   records each message in the test_sent_emails table (to, from_email, from_name, subject,
+ *   text, html) of the same database; a message to an address at bounce.test is refused.
+ */
 export async function startWorker({ bindings: overrides = {}, outbound, email = false } = {}) {
   const bundle = await build({
     entryPoints: [path.join(ROOT, 'src/index.ts')],

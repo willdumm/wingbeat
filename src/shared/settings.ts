@@ -185,7 +185,7 @@ export function settingsModalMarkup(): string {
                 <summary>Invite someone</summary>
                 <div class="settings-add-inner">
                   <input type="text" id="settings-invite-name" placeholder="Name" autocomplete="off" />
-                  <input type="email" id="settings-invite-email" placeholder="Email (optional: we'll send the invite)" autocomplete="off" style="display:none" />
+                  <input type="email" id="settings-invite-email" placeholder="Email (optional: we'll send the invite)" aria-label="Email (optional)" autocomplete="off" style="display:none" />
                   <select id="settings-invite-role">
                     <option value="viewer">Viewer</option>
                     <option value="admin">Admin</option>
@@ -2101,7 +2101,8 @@ export function settingsModalScript(): string {
         if (!rows.length) { errorEl.textContent = 'No flights in that range.'; return; }
         const fmt = format();
         const blob = fmt === 'csv'
-          ? new Blob([flightsCsv(rows)], { type: 'text/csv' })
+          // A byte-order mark, or Excel reads the UTF-8 (names, remarks) as the system's code page.
+          ? new Blob(['\\uFEFF' + flightsCsv(rows)], { type: 'text/csv;charset=utf-8' })
           : new Blob([flightsJson(rows, opts)], { type: 'application/json' });
         downloadBlob(blob, flightExportFileName(fmt, from, to));
         close();
@@ -2691,6 +2692,7 @@ export function settingsModalScript(): string {
       const input = document.createElement('input');
       input.type = 'email';
       input.placeholder = 'Add an address';
+      input.setAttribute('aria-label', 'Email address to add');
       input.autocomplete = 'off';
       form.appendChild(input);
       const hint = document.createElement('p');
@@ -3325,11 +3327,13 @@ export function settingsModalScript(): string {
       el.style.color = isError ? 'var(--danger-fg)' : '';
     }
 
-    // read: fetchRegions or fetchNamedPoints. A failed read downloads nothing.
+    // read: fetchRegions or fetchNamedPoints. A failed read downloads nothing, and says why.
     async function _downloadGeoJSON(read, filename) {
       try {
         downloadBlob(new Blob([JSON.stringify(await read())], { type: 'application/json' }), filename);
-      } catch (_) {}
+      } catch (err) {
+        alert(apiErrorMessage(err, 'Failed to export.'));
+      }
     }
 
     // write: importRegions or importNamedPoints. A file that isn't JSON fails like a refused one.
