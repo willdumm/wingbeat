@@ -51,6 +51,7 @@ describe('flightExportRows', () => {
   test('each end\'s elevation (ft) and speed (kt) come from the track point nearest its time', () => {
     const [r] = x.flightExportRows(TZ, [tracked]);
     assert.deepEqual([r.start_elevation_ft, r.start_speed_kt], [33, 10.8]);
+    // The last fix has neither: blank, not an earlier fix's from the air.
     assert.deepEqual([r.end_elevation_ft, r.end_speed_kt], [null, null]);
     // Corrected times: the nearest points, not the first and last.
     const corrected = { ...tracked, start_time: at('2026-07-03 09:04'), end_time: at('2026-07-03 10:24') };
@@ -76,6 +77,15 @@ describe('flightsCsv and flightsJson', () => {
     assert.equal(head, x.FLIGHT_EXPORT_COLUMNS.join(','));
     assert.match(row, /,"Ferry, ""test"""$/);
     assert.match(row, /,Old Harbor,,/);
+  });
+
+  test('CSV text that starts like a formula is shown, not run; numbers are left alone', () => {
+    const formula = { ...manual, origin_label: '=HYPERLINK("x")', edit: { ...manual.edit, remark: '@SUM(1)' } };
+    const [, row] = x.flightsCsv(x.flightExportRows(TZ, [formula])).trimEnd().split('\r\n');
+    assert.match(row, /,"'=HYPERLINK\(""x""\)",/);
+    assert.match(row, /,'@SUM\(1\)$/);
+    const [, tracked1] = x.flightsCsv(x.flightExportRows(TZ, [tracked])).trimEnd().split('\r\n');
+    assert.match(tracked1, /,-152\.49,/);
   });
 
   test('JSON carries the range and timezone', () => {

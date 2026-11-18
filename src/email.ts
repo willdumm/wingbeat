@@ -63,44 +63,50 @@ ${paragraphs.map((s) => p(escapeHtml(s))).join('\n')}
   return { text, html };
 }
 
+const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'}`;
+
+/** How long a link lasts, in words: whole days, else whole hours, else minutes. */
+function validFor(secs: number): string {
+  if (secs >= 86400 && secs % 86400 === 0) return plural(secs / 86400, 'day');
+  if (secs >= 3600) return plural(Math.floor(secs / 3600), 'hour');
+  return plural(Math.round(secs / 60), 'minute');
+}
+
 const joinUrl = (ctx: EmailContext, token: string) => `https://${ctx.host}/join/${token}`;
 
 /** /login's email: a link that signs in the browser that opens it, and a code for another one. */
-export function sendSignInEmail(ctx: EmailContext, to: string, token: string, code: string): Promise<void> {
+export function sendSignInEmail(ctx: EmailContext, to: string, token: string, code: string, validForSecs: number): Promise<void> {
   const where = `${ctx.appName} (${ctx.host})`;
   return send(ctx, to, {
     subject: `Your ${ctx.appName} sign-in code: ${code}`,
     ...body([
       `Someone asked to sign in to ${where} with this address.`,
       `Open the link to sign in on the device you're reading this on, or enter this code on the sign-in page: ${code}`,
-      'The link and the code work once, for 15 minutes.',
+      `The link and the code work once, for ${validFor(validForSecs)}.`,
     ], { url: joinUrl(ctx, token), label: 'Sign in' },
     `If you didn't ask to sign in, you can ignore this email.`),
   });
 }
 
 /** An admin's invite: the link creates the account (and confirms this address for it). */
-export function sendInviteEmail(ctx: EmailContext, to: string, token: string, invitedName: string, inviterName: string, validForHours: number): Promise<void> {
-  const days = validForHours / 24;
-  const hours = Math.floor(validForHours);
-  const validFor = Number.isInteger(days) ? `${days} day${days === 1 ? '' : 's'}` : `${hours} hour${hours === 1 ? '' : 's'}`;
+export function sendInviteEmail(ctx: EmailContext, to: string, token: string, invitedName: string, inviterName: string, validForSecs: number): Promise<void> {
   return send(ctx, to, {
     subject: `${inviterName} invited you to ${ctx.appName}`,
     ...body([
       `${inviterName} invited you to join ${ctx.appName} (${ctx.host}) as ${invitedName}.`,
-      `Open the link to set up your account. It works once, for ${validFor}.`,
+      `Open the link to set up your account. It works once, for ${validFor(validForSecs)}.`,
     ], { url: joinUrl(ctx, token), label: 'Accept the invite' },
     `If you weren't expecting this, you can ignore this email.`),
   });
 }
 
 /** A new address on an existing account (added by the user or an admin): the link confirms it and signs in. */
-export function sendConfirmEmail(ctx: EmailContext, to: string, token: string, userName: string): Promise<void> {
+export function sendConfirmEmail(ctx: EmailContext, to: string, token: string, userName: string, validForSecs: number): Promise<void> {
   return send(ctx, to, {
     subject: `Confirm your email for ${ctx.appName}`,
     ...body([
       `This address was added to ${userName}'s account on ${ctx.appName} (${ctx.host}).`,
-      'Open the link to confirm it. After that, you can sign in with this address. The link also signs in the device that opens it, and works once, for 7 days.',
+      `Open the link to confirm it. After that, you can sign in with this address. The link also signs in the device that opens it, and works once, for ${validFor(validForSecs)}.`,
     ], { url: joinUrl(ctx, token), label: 'Confirm and sign in' },
     `If this isn't your account, you can ignore this email.`),
   });

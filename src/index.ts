@@ -494,7 +494,7 @@ async function emailSignInLink(c: Context<{ Bindings: Env; Variables: Variables 
            AND (SELECT COUNT(*) FROM invite_tokens WHERE email = ?5 AND code_hash IS NOT NULL) < ?7`
       ).bind(token, now, LOGIN_LINK_TTL_SECS, await loginCodeHash(token, code), email, MAX_LIVE_LOGIN_LINKS, MAX_DAILY_LOGIN_LINKS),
     ]);
-    if (inserted.meta.changes === 1) await sendSignInEmail(emailContext(c, appName), email, token, code);
+    if (inserted.meta.changes === 1) await sendSignInEmail(emailContext(c, appName), email, token, code, LOGIN_LINK_TTL_SECS);
   } catch (err) {
     console.error('Sign-in email failed', err);
   }
@@ -1108,7 +1108,7 @@ async function addUserEmail(c: Context<{ Bindings: Env; Variables: Variables }>,
     .bind(token, user.id, expiresAt, email).run();
   const settings = await loadSettings(c.var.tenant);
   try {
-    await sendConfirmEmail(emailContext(c, settings.app_name), email, token, user.name);
+    await sendConfirmEmail(emailContext(c, settings.app_name), email, token, user.name, EMAIL_LINK_TTL_SECS);
   } catch (err) {
     console.error('Confirmation email failed', err);
     await db.prepare('DELETE FROM invite_tokens WHERE token = ?').bind(token).run();
@@ -1332,7 +1332,8 @@ app.post('/api/invites', requireAdmin, valid('json', InviteRequest), async (c) =
   if (email && await db.prepare('SELECT 1 FROM user_emails WHERE email = ?').bind(email).first()) {
     return c.json({ error: 'That address is on another account' }, 409);
   }
-  const expiresAt = Math.floor(Date.now() / 1000) + Math.floor(expiresInHours * 3600);
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = now + Math.floor(expiresInHours * 3600);
   const token = generateToken();
   await db.prepare(
     `INSERT INTO invite_tokens (token, type, invited_name, invited_role, expires_at, email) VALUES (?, 'invite', ?, ?, ?, ?)`
@@ -1340,7 +1341,7 @@ app.post('/api/invites', requireAdmin, valid('json', InviteRequest), async (c) =
   if (email) {
     const settings = await loadSettings(c.var.tenant);
     try {
-      await sendInviteEmail(emailContext(c, settings.app_name), email, token, name, c.get('user').name, expiresInHours);
+      await sendInviteEmail(emailContext(c, settings.app_name), email, token, name, c.get('user').name, expiresAt - now);
     } catch (err) {
       console.error('Invite email failed', err);
       await db.prepare('DELETE FROM invite_tokens WHERE token = ?').bind(token).run();

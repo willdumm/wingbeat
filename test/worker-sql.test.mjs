@@ -1489,6 +1489,7 @@ describe('email: sign-in, invites and addresses', async () => {
     const [mail] = await sent(1);
     assert.deepEqual([mail.to, mail.from_email, mail.from_name], ['lee@example.com', 'accounts@wingbeat.test', 'Wingbeat Accounts']);
     assert.match(mail.text, /localhost/);
+    assert.match(mail.text, /for 15 minutes/);
     const code = codeIn(mail);
     assert.ok(mail.subject.includes(code));
 

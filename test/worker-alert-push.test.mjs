@@ -132,7 +132,7 @@ describe('alert notifications', () => {
 
     await w.run('UPDATE flights SET pilot_id = NULL WHERE id = 1');
     // Not an alert-check minute.
-    await w.scheduled({ scheduledTime: tick(2 + 1 / 60) });
+    await w.scheduled({ scheduledTime: new Date(tick(2).getTime() + 60_000) });
     assert.equal(sends.length, before);
     await w.scheduled({ scheduledTime: tick(3) });
     assert.deepEqual(sent(before).map(m => m.title), ['Unassigned flight']);

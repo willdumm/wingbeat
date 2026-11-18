@@ -6,6 +6,7 @@
  * Times are given both as UTC ISO 8601 and in the operator's timezone.
  */
 import type { EffectiveFlight } from './flight-edits';
+import type { FlightPoint } from './api/flights';
 import { tzAbbrev, unixToTzDateStr, unixToTzTime } from './time';
 
 export interface FlightExportRow {
@@ -63,14 +64,14 @@ const local = (tz: string, unix: number) =>
 const numOrNull = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const strOrNull = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null);
 
-interface TrackPoint { t: number; v?: number | null; e?: number | null }
-
 // The track point nearest a flight end's time. A corrected start or end time can fall
 // inside the track (taxi trimmed off) or beyond it, so this takes the point nearest the
 // effective time rather than the first or last point; for an uncorrected flight that is
-// the first or last point. None for a manual flight (no points).
-function pointNearest(points: TrackPoint[], t: number): TrackPoint | null {
-  let best: TrackPoint | null = null;
+// the first or last point. None for a manual flight (no points). Its elevation and speed are
+// the tracker's at that fix: blank when the fix has none (often the last one, on the ground),
+// rather than an earlier fix's from the air.
+function pointNearest(points: FlightPoint[], t: number): FlightPoint | null {
+  let best: FlightPoint | null = null;
   for (const p of points) if (!best || Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
   return best;
 }
@@ -89,7 +90,7 @@ export function flightExportRows(tz: string, flights: EffectiveFlight[], opts: F
     if ((opts.from && date < opts.from) || (opts.to && date > opts.to)) continue;
     const minutes = f.end_time != null ? Math.round((f.end_time - f.start_time) / 60) : null;
     const tail = strOrNull(f.aircraft_tail);
-    const points = Array.isArray(f.points) ? (f.points as TrackPoint[]) : [];
+    const points = Array.isArray(f.points) ? (f.points as FlightPoint[]) : [];
     const startPoint = pointNearest(points, f.start_time);
     const endPoint = f.end_time != null ? pointNearest(points, f.end_time) : null;
     rows.push({
@@ -127,9 +128,12 @@ export function flightExportRows(tz: string, flights: EffectiveFlight[], opts: F
   return rows;
 }
 
+// A text cell that starts like a formula (=, +, -, @, or a tab or CR before one) gets a leading
+// apostrophe, so a spreadsheet shows it rather than running it: remarks and labels are free text.
+// Numbers are left alone (a negative longitude stays a number).
 function csvCell(v: unknown): string {
   if (v == null) return '';
-  const s = String(v);
+  const s = typeof v === 'string' && /^[=+\-@\t\r]/.test(v) ? "'" + v : String(v);
   return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
