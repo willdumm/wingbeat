@@ -136,8 +136,19 @@ export function settingsModalMarkup(): string {
               <div class="settings-section-label">My Devices</div>
               <div id="settings-devices-list"></div>
             </div>
+            <div class="settings-section" id="settings-section-emails" style="display:none">
+              <div class="settings-section-label">Email addresses</div>
+              <div id="settings-emails-list"></div>
+            </div>
             <div class="settings-section">
               <div class="settings-section-label">Data</div>
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <div class="settings-row-title">Export flights</div>
+                  <div class="settings-row-desc">Times, pilot, aircraft and start and end places, as CSV or JSON. No tracks.</div>
+                </div>
+                <button id="settings-export-flights" class="settings-action-btn">Export</button>
+              </div>
               <div class="settings-row">
                 <div class="settings-row-info">
                   <div class="settings-row-title">Clear local cache</div>
@@ -174,6 +185,7 @@ export function settingsModalMarkup(): string {
                 <summary>Invite someone</summary>
                 <div class="settings-add-inner">
                   <input type="text" id="settings-invite-name" placeholder="Name" autocomplete="off" />
+                  <input type="email" id="settings-invite-email" placeholder="Email (optional: we'll send the invite)" aria-label="Email (optional)" autocomplete="off" style="display:none" />
                   <select id="settings-invite-role">
                     <option value="viewer">Viewer</option>
                     <option value="admin">Admin</option>
@@ -1244,6 +1256,7 @@ export function settingsModalScript(): string {
 
       // Load devices (all users) and users list (admin only)
       renderSettingsDevicesList();
+      renderSettingsEmails();
       if (isAdmin) renderSettingsUsersList();
 
       // Refresh lists in case they changed since last load.
@@ -2054,6 +2067,48 @@ export function settingsModalScript(): string {
       } catch (_) {}
     });
 
+    // Export flights: the completed effective flights (flightExportRows, @wingbeat/core/
+    // flight-export) between two optional operator dates, downloaded as CSV or JSON.
+    document.getElementById('settings-export-flights').addEventListener('click', () => {
+      if (!flightStore) return;
+      const { modal, close } = openFormModal({
+        id: 'flight-export-modal',
+        title: 'Export flights',
+        bodyHtml:
+          '<p class="form-modal-hint">One row per flight, in the flight list’s corrected form. Leave a date ' +
+            'empty to export from the first flight or through the last.</p>' +
+          '<div class="form-field">' + segmentedHtml('format', [['csv', 'CSV'], ['json', 'JSON']], 'csv',
+            { label: 'Format' }) + '</div>' +
+          '<div class="form-field-row">' +
+            '<div class="form-field"><label for="flight-x-from">From</label><input type="date" id="flight-x-from" /></div>' +
+            '<div class="form-field"><label for="flight-x-to">To</label><input type="date" id="flight-x-to" /></div>' +
+          '</div>' +
+          '<div class="form-modal-error" role="alert"></div>',
+        footerHtml:
+          '<span class="form-modal-footer-spacer"></span>' +
+          '<button class="btn-secondary btn-md" data-act="cancel">Cancel</button>' +
+          '<button class="btn-primary btn-md" data-act="export">Export</button>',
+      });
+      const format = wireSegmented(modal, 'format');
+      const errorEl = modal.querySelector('.form-modal-error');
+      modal.querySelector('[data-act="cancel"]').addEventListener('click', close);
+      modal.querySelector('[data-act="export"]').addEventListener('click', () => {
+        const from = modal.querySelector('#flight-x-from').value || null;
+        const to = modal.querySelector('#flight-x-to').value || null;
+        if (from && to && from > to) { errorEl.textContent = 'From must be on or before To.'; return; }
+        const opts = { from, to, trackers: trackerList || [], aircraft: aircraftList || [] };
+        const rows = flightExportRows(flightStore.getCompleted(), opts);
+        if (!rows.length) { errorEl.textContent = 'No flights in that range.'; return; }
+        const fmt = format();
+        const blob = fmt === 'csv'
+          // A byte-order mark, or Excel reads the UTF-8 (names, remarks) as the system's code page.
+          ? new Blob(['\\uFEFF' + flightsCsv(rows)], { type: 'text/csv;charset=utf-8' })
+          : new Blob([flightsJson(rows, opts)], { type: 'application/json' });
+        downloadBlob(blob, flightExportFileName(fmt, from, to));
+        close();
+      });
+    });
+
     document.getElementById('settings-delete-account').addEventListener('click', async (e) => {
       if (!confirm('Delete your account? All your devices will be signed out, and you’ll need a new invite to come back. ${DELETE_ACCOUNT_KEEPS}')) return;
       const btn = e.currentTarget;
@@ -2576,6 +2631,114 @@ export function settingsModalScript(): string {
       }
     }
 
+    // ── Email addresses (the user's own; an admin's editing of anyone's) ────────
+
+    // Fills container with a user's addresses (any of them signs in at /login), those sent a
+    // link that hasn't been opened yet, and a field that sends a new one its link. ops: add(email)
+    // and remove(emailId), each followed by reload().
+    function settingsRenderEmails(container, data, ops) {
+      container.innerHTML = '';
+      const addRow = (text, sub, inactive, action) => {
+        const row = document.createElement('div');
+        row.className = 'settings-aircraft-row' + (inactive ? ' settings-aircraft-inactive' : '');
+        const info = document.createElement('div');
+        info.className = 'settings-aircraft-info';
+        const nameEl = document.createElement('span');
+        nameEl.className = 'settings-aircraft-name';
+        nameEl.textContent = text;
+        const subEl = document.createElement('span');
+        subEl.className = 'settings-aircraft-sub';
+        subEl.textContent = sub;
+        info.appendChild(nameEl);
+        info.appendChild(subEl);
+        row.appendChild(info);
+        if (action) {
+          const actions = document.createElement('div');
+          actions.className = 'settings-aircraft-actions';
+          actions.appendChild(action);
+          row.appendChild(actions);
+        }
+        container.appendChild(row);
+      };
+      for (const e of data.emails) {
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'settings-action-btn';
+        removeBtn.textContent = 'Remove';
+        removeBtn.addEventListener('click', async () => {
+          if (!confirm('Remove ' + e.email + '? It will no longer sign in.')) return;
+          removeBtn.disabled = true;
+          try {
+            await ops.remove(e.id);
+            ops.reload();
+          } catch (err) {
+            alert(apiErrorMessage(err, 'Failed to remove the address.'));
+            removeBtn.disabled = false;
+          }
+        });
+        addRow(e.email, 'Verified', false, removeBtn);
+      }
+      for (const pending of data.pending_emails) {
+        addRow(pending.email + ' (not verified)', 'Verification link sent · Expires ' + fmtTzDate(pending.expires_at), true, null);
+      }
+      if (data.emails.length === 0 && data.pending_emails.length === 0) {
+        const none = document.createElement('p');
+        none.className = 'settings-msg';
+        none.textContent = 'No email addresses yet.';
+        container.appendChild(none);
+      }
+
+      const form = document.createElement('div');
+      form.className = 'settings-edit-form';
+      const input = document.createElement('input');
+      input.type = 'email';
+      input.placeholder = 'Add an address';
+      input.setAttribute('aria-label', 'Email address to add');
+      input.autocomplete = 'off';
+      form.appendChild(input);
+      const hint = document.createElement('p');
+      hint.className = 'settings-msg';
+      hint.textContent = 'Verified email addresses can be used to sign in.';
+      form.appendChild(hint);
+      const actionsDiv = document.createElement('div');
+      actionsDiv.className = 'settings-edit-form-actions';
+      const sendBtn = document.createElement('button');
+      sendBtn.className = 'settings-action-btn save-edit-btn';
+      sendBtn.textContent = 'Verify email';
+      actionsDiv.appendChild(sendBtn);
+      form.appendChild(actionsDiv);
+      sendBtn.addEventListener('click', async () => {
+        const email = input.value.trim();
+        if (!email) return;
+        sendBtn.disabled = true;
+        try {
+          await ops.add(email);
+          ops.reload();
+        } catch (err) {
+          alert(apiErrorMessage(err, 'Failed to send the verification email.'));
+          sendBtn.disabled = false;
+        }
+      });
+      container.appendChild(form);
+    }
+
+    // Shown only when the instance sends email (window.APP_SETTINGS.email).
+    async function renderSettingsEmails() {
+      const section = document.getElementById('settings-section-emails');
+      if (!section || !window.APP_SETTINGS.email) return;
+      section.style.display = '';
+      const container = document.getElementById('settings-emails-list');
+      container.innerHTML = '<p class="settings-msg">Loading&hellip;</p>';
+      try {
+        settingsRenderEmails(container, await fetchMyEmails(), {
+          add: (email) => addMyEmail({ email }),
+          remove: (id) => removeMyEmail(id),
+          reload: renderSettingsEmails,
+        });
+      } catch (_) {
+        container.innerHTML = '<p class="settings-msg">Failed to load your email addresses.</p>';
+      }
+    }
+
     // ── Users section (admin only) ────────────────────────────────────────────
 
     async function renderSettingsUsersList() {
@@ -2607,6 +2770,8 @@ export function settingsModalScript(): string {
               ' · ' + user.device_count + ' device' + (user.device_count !== 1 ? 's' : '');
             const pilot = user.pilot_id != null ? pilotList.find(p => p.id === user.pilot_id) : null;
             if (pilot) subEl.textContent += ' · Pilot ' + pilot.name;
+            for (const e of user.emails ?? []) subEl.textContent += ' · ' + e.email;
+            for (const e of user.pending_emails ?? []) subEl.textContent += ' · ' + e.email + ' (not verified)';
             info.appendChild(nameEl);
             info.appendChild(subEl);
             const actions = document.createElement('div');
@@ -2617,6 +2782,13 @@ export function settingsModalScript(): string {
               pilotBtn.textContent = 'Designate pilot';
               pilotBtn.addEventListener('click', () => settingsToggleUserPilot(row, user, userList));
               actions.appendChild(pilotBtn);
+            }
+            if (!user.is_env_admin && window.APP_SETTINGS.email) {
+              const emailBtn = document.createElement('button');
+              emailBtn.className = 'settings-action-btn';
+              emailBtn.textContent = 'Email';
+              emailBtn.addEventListener('click', () => settingsToggleUserEmails(row, user));
+              actions.appendChild(emailBtn);
             }
             if (!user.is_env_admin && user.id !== _settingsUser?.id) {
               const deleteBtn = document.createElement('button');
@@ -2641,7 +2813,8 @@ export function settingsModalScript(): string {
             nameEl.textContent = invite.invited_name + ' (invite pending)';
             const subEl = document.createElement('span');
             subEl.className = 'settings-aircraft-sub';
-            subEl.textContent = (invite.invited_role === 'admin' ? 'Admin' : 'Viewer') + ' · Expires ' + fmtTzDate(invite.expires_at);
+            subEl.textContent = (invite.invited_role === 'admin' ? 'Admin' : 'Viewer') +
+              (invite.email ? ' · Emailed to ' + invite.email : '') + ' · Expires ' + fmtTzDate(invite.expires_at);
             info.appendChild(nameEl);
             info.appendChild(subEl);
             const actions = document.createElement('div');
@@ -2735,6 +2908,35 @@ export function settingsModalScript(): string {
       row.appendChild(form);
     }
 
+    // A user's addresses, which an admin adds (each is emailed a link that confirms it) and removes.
+    function settingsToggleUserEmails(row, user) {
+      const actions = row.querySelector('.settings-aircraft-actions');
+      const existing = row.querySelector('.settings-user-emails');
+      if (existing) {
+        existing.remove();
+        actions.style.display = '';
+        row.classList.remove('editing');
+        return;
+      }
+      actions.style.display = 'none';
+      row.classList.add('editing');
+      const panel = document.createElement('div');
+      panel.className = 'settings-user-emails';
+      const list = document.createElement('div');
+      panel.appendChild(list);
+      settingsRenderEmails(list, { emails: user.emails ?? [], pending_emails: user.pending_emails ?? [] }, {
+        add: (email) => addUserEmail(user.id, { email }),
+        remove: (id) => removeUserEmail(user.id, id),
+        reload: renderSettingsUsersList,
+      });
+      const doneBtn = document.createElement('button');
+      doneBtn.className = 'settings-action-btn settings-cancel-btn';
+      doneBtn.textContent = 'Done';
+      doneBtn.addEventListener('click', () => settingsToggleUserEmails(row, user));
+      list.querySelector('.settings-edit-form-actions').appendChild(doneBtn);
+      row.appendChild(panel);
+    }
+
     async function settingsRevokeUser(user, btn) {
       if (!confirm('Remove ' + user.name + '? All their sessions will be deleted.')) return;
       btn.disabled = true;
@@ -2758,20 +2960,26 @@ export function settingsModalScript(): string {
     document.getElementById('settings-invite-submit').addEventListener('click', async () => {
       const name = document.getElementById('settings-invite-name').value.trim();
       const role = document.getElementById('settings-invite-role').value;
+      const emailInput = document.getElementById('settings-invite-email');
+      const email = window.APP_SETTINGS.email ? emailInput.value.trim() : '';
       if (!name) return;
       const submitBtn = document.getElementById('settings-invite-submit');
       submitBtn.disabled = true;
       try {
-        const data = await createInvite({ name, role });
+        const data = await createInvite(email ? { name, role, email } : { name, role });
         const url = window.location.origin + data.url;
         const inner = document.getElementById('settings-invite-form').querySelector('.settings-add-inner');
         const nameInput = document.getElementById('settings-invite-name');
         const roleSelect = document.getElementById('settings-invite-role');
         const actionsDiv = inner.querySelector('.settings-add-actions');
-        [nameInput, roleSelect, actionsDiv].forEach(el => { el.style.display = 'none'; });
-        const card = settingsCreateLinkPanel(url, 'Invite link for ' + name, () => {
+        const fields = [nameInput, emailInput, roleSelect, actionsDiv];
+        fields.forEach(el => { el.style.display = 'none'; });
+        const title = data.emailed ? 'Invite emailed to ' + email + '. Its link, to share another way:' : 'Invite link for ' + name;
+        const card = settingsCreateLinkPanel(url, title, () => {
           nameInput.value = '';
-          [nameInput, roleSelect, actionsDiv].forEach(el => { el.style.display = ''; });
+          emailInput.value = '';
+          fields.forEach(el => { el.style.display = ''; });
+          if (!window.APP_SETTINGS.email) emailInput.style.display = 'none';
           card.remove();
           document.getElementById('settings-invite-form').open = false;
           submitBtn.disabled = false;
@@ -2784,8 +2992,11 @@ export function settingsModalScript(): string {
       }
     });
 
+    if (window.APP_SETTINGS.email) document.getElementById('settings-invite-email').style.display = '';
+
     document.getElementById('settings-invite-cancel').addEventListener('click', () => {
       document.getElementById('settings-invite-name').value = '';
+      document.getElementById('settings-invite-email').value = '';
       document.getElementById('settings-invite-form').open = false;
     });
 
@@ -3116,17 +3327,13 @@ export function settingsModalScript(): string {
       el.style.color = isError ? 'var(--danger-fg)' : '';
     }
 
-    // read: fetchRegions or fetchNamedPoints. A failed read downloads nothing.
+    // read: fetchRegions or fetchNamedPoints. A failed read downloads nothing, and says why.
     async function _downloadGeoJSON(read, filename) {
       try {
-        const blob = new Blob([JSON.stringify(await read())], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-      } catch (_) {}
+        downloadBlob(new Blob([JSON.stringify(await read())], { type: 'application/json' }), filename);
+      } catch (err) {
+        alert(apiErrorMessage(err, 'Failed to export.'));
+      }
     }
 
     // write: importRegions or importNamedPoints. A file that isn't JSON fails like a refused one.

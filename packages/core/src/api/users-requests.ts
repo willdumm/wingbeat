@@ -5,11 +5,23 @@
  */
 import * as z from 'zod/mini';
 
-/** POST /api/invites (the handler checks the name's length, the role and the expiry's range). */
+/**
+ * POST /api/invites (the handler checks the name's length, the role and the expiry's range).
+ * email, when given and not blank, is where the instance emails the invite.
+ */
 export const InviteRequest = z.object({
   name: z.optional(z.string()),
   role: z.optional(z.string()),
   expires_in_hours: z.optional(z.number()),
+  email: z.nullish(z.string()),
+});
+
+/**
+ * POST /api/users/:id/emails and POST /api/me/emails: an address to add to the account. The
+ * instance emails it a link, and the address is added once the link is opened.
+ */
+export const EmailAddRequest = z.object({
+  email: z.string(),
 });
 
 /** PATCH /api/users/:id: the pilot the user is, or null for none (absent leaves it). */
@@ -19,3 +31,4 @@ export const UserUpdateRequest = z.object({
 
 export type InviteRequest = z.input<typeof InviteRequest>;
 export type UserUpdateRequest = z.input<typeof UserUpdateRequest>;
+export type EmailAddRequest = z.input<typeof EmailAddRequest>;

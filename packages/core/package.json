@@ -55,6 +55,7 @@
     "./filters": "./src/filters.ts",
     "./format": "./src/format.ts",
     "./flight-edits": "./src/flight-edits.ts",
+    "./flight-export": "./src/flight-export.ts",
     "./flight-store": "./src/flight-store.ts",
     "./live": "./src/live.ts",
     "./maintenance": "./src/maintenance.ts",

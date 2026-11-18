@@ -1,4 +1,5 @@
-import { Tenant } from './types';
+import { Env, Tenant } from './types';
+import { emailEnabled } from './email';
 import { jsonForScript } from './shared/html';
 import type { InstanceSettings } from '@wingbeat/core/api/bootstrap';
 
@@ -65,25 +66,31 @@ export async function loadSettings(tenant: Tenant): Promise<AppSettings> {
   };
 }
 
-export function settingsAsClientObject(s: AppSettings): string {
+export function settingsAsClientObject(s: AppSettings, env: Env): string {
   // The pages and the app get the same non-secret settings: settingsAsInstance picks them.
-  const instance = settingsAsInstance(s);
+  const instance = settingsAsInstance(s, env);
   return jsonForScript({
     appName:        instance.app_name,
     timezone:       instance.timezone,
     mapDefaultLat:  instance.map_default_lat,
     mapDefaultLng:  instance.map_default_lng,
     mapDefaultZoom: instance.map_default_zoom,
+    // Whether this instance sends email: Settings' email fields.
+    email:          instance.email,
   });
 }
 
-/** The same settings for the app (GET /api/bootstrap's `instance`); never the secrets. */
-export function settingsAsInstance(s: AppSettings): InstanceSettings {
+/**
+ * The same settings for the app (GET /api/bootstrap's `instance`); never the secrets. email
+ * says whether this deployment sends email (sign-in by email, email invites, users' addresses).
+ */
+export function settingsAsInstance(s: AppSettings, env: Env): InstanceSettings {
   return {
     app_name:         s.app_name,
     timezone:         s.timezone,
     map_default_lat:  s.map_default_lat,
     map_default_lng:  s.map_default_lng,
     map_default_zoom: s.map_default_zoom,
+    email:            emailEnabled(env),
   };
 }

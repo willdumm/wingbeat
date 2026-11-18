@@ -59,7 +59,9 @@ describe('app push through Expo', () => {
       assert.equal(m.title, 'Silent: signal gap');
       assert.match(m.body, /^No location update for 10 min while in flight/);
       assert.ok(!m.body.includes('MapShare:') && !m.body.includes('Tracker:'), m.body);
-      assert.deepEqual(m.data, { type: 'gap', tracker_id: 1, host: 'localhost' });
+      assert.deepEqual(m.data, { type: 'gap', tracker_id: 1, host: 'localhost', mapshare_url: 'https://example.com/s1' });
+      assert.equal(m.channelId, 'signal-gaps');
+      assert.equal(m.categoryId, 'tracker');
       assert.equal(m.interruptionLevel, 'time-sensitive');
     }
     assert.deepEqual(await w.all('SELECT ticket_id, device_id FROM push_tickets'), [{ ticket_id: 'ticket-ExponentPushToken[admin]', device_id: 1 }]);

@@ -15,7 +15,8 @@ import { flightCorrectionKey } from '@wingbeat/core/flight-store';
 import { coreBundle, coreBundlePath } from './shared/core-bundle';
 import { dashboardHTML } from './dashboard';
 import { analyticsHTML } from './analytics';
-import { generateToken, sha256Hex, deviceNameFromUA, pairedDeviceName, noAccessHTML, joinHTML, joinErrorHTML, appPairLink, appConnectHTML, appConnectSignedOutHTML, demoSignInHTML } from './auth';
+import { generateToken, sha256Hex, deviceNameFromUA, pairedDeviceName, noAccessHTML, joinHTML, joinErrorHTML, appPairLink, appConnectHTML, appConnectSignedOutHTML, demoSignInHTML, loginHTML, loginCodeHTML } from './auth';
+import { emailEnabled, normalizeEmail, sendConfirmEmail, sendInviteEmail, sendSignInEmail, type EmailContext } from './email';
 import { loadSettings, invalidateSettingsCache, settingsAsInstance } from './settings';
 import { envBasemapPresets, readEnvSecret } from './shared/map-controls';
 import { keyedBasemapPreset, substituteTileUrl, TILE_SUBDOMAINS } from '@wingbeat/core/basemaps';
@@ -29,7 +30,7 @@ import { PushDeviceRequest, PushSubscriptionsRequest } from '@wingbeat/core/api/
 import { PairRequest } from '@wingbeat/core/api/app-requests';
 import { APP_CONNECT_PATH, appConnectCallbackUrl, base64url, isCodeChallenge, isCodeVerifier, isConnectState } from '@wingbeat/core/app-connect';
 import { API_VERSION, APP_VERSION_HEADER, MAX_APP_VERSION_LENGTH, MIN_CLIENT_LEVEL } from '@wingbeat/core/api/version';
-import { InviteRequest, UserUpdateRequest } from '@wingbeat/core/api/users-requests';
+import { EmailAddRequest, InviteRequest, UserUpdateRequest } from '@wingbeat/core/api/users-requests';
 import { ApplyAssignmentRequest, TestFeedRequest, TrackerCreateRequest, TrackerUpdateRequest } from '@wingbeat/core/api/trackers-requests';
 import { OverlayRequest } from '@wingbeat/core/api/overlays-requests';
 import { AircraftCreateRequest, AircraftUpdateRequest } from '@wingbeat/core/api/aircraft-requests';
@@ -342,7 +343,7 @@ const isAdminPath = (path: string) => path === '/api/admin' || path.startsWith('
 app.use('*', async (c, next) => {
   const path = c.req.path;
 
-  if (path === '/login' || path === '/location' || path === DEMO_SIGN_IN_PATH) return next();
+  if (path === '/login' || path === LOGIN_CODE_PATH || path === '/location' || path === DEMO_SIGN_IN_PATH) return next();
   if (path.startsWith('/join/') || path === '/api/app/pair') return next();
   // Reads the session cookie itself, to say "not signed in" there rather than redirect.
   if (path === APP_CONNECT_PATH) return next();
@@ -402,8 +403,147 @@ async function resolveTrackerId(tenant: Tenant, param: string | undefined): Prom
 
 app.get('/login', async (c) => {
   const settings = await loadSettings(c.var.tenant);
-  if (c.var.tenant.demo) return c.html(demoSignInHTML(settings.app_name, '/'));
+  const returnTo = signInReturnPath(c.req.query('return'));
+  if (c.var.tenant.demo) return c.html(demoSignInHTML(settings.app_name, returnTo));
+  if (emailEnabled(c.env)) return c.html(loginHTML(settings.app_name, returnTo));
   return c.html(noAccessHTML(settings.app_name));
+});
+
+// ── Email sign-in ────────────────────────────────────────────────────────────
+//
+// docs/mobile-app-plan.md, "Email sign-in, email invites and finding your instance" (2). The
+// /login form emails a device link (signs in the browser that opens it) and a 6-digit code
+// (signs in this browser, with the address, at LOGIN_CODE_PATH). Both answers are the same
+// whether or not the address has an account here.
+
+const LOGIN_CODE_PATH = '/login/code';
+const RATE_LIMITED_MESSAGE = 'Too many tries. Wait a minute and try again.';
+const ENTER_EMAIL_MESSAGE = 'Enter an email address.';
+const ADDRESS_TAKEN_MESSAGE = 'That address is on another account';
+const TOO_MANY_PENDING_MESSAGE = 'Too many confirmation emails are waiting to be opened. Open one, or try again in a few days.';
+/** A /login link and code last as long as any device link. */
+const LOGIN_LINK_TTL_SECS = DEVICE_LINK_TTL_SECS;
+/** How long an emailed invite's or a new address's link lasts. */
+const EMAIL_LINK_TTL_SECS = 7 * 24 * 3600;
+/** Wrong codes that use a /login token up. */
+const MAX_LOGIN_CODE_ATTEMPTS = 5;
+/**
+ * /login tokens an address may have unexpired (used or not, so a token burned by wrong codes
+ * still counts), and in a day; past either, /login sends nothing. With MAX_LOGIN_CODE_ATTEMPTS,
+ * they cap guesses at an address's code at 15 per 15 minutes and 50 a day.
+ */
+const MAX_LIVE_LOGIN_LINKS = 3;
+const MAX_DAILY_LOGIN_LINKS = 10;
+const DAY_SECS = 24 * 3600;
+/** Pending address confirmations a user may have at once: distinct addresses, and links in all (resends). */
+const MAX_PENDING_EMAILS = 5;
+const MAX_PENDING_EMAIL_LINKS = 10;
+
+/** A random 6-digit code. */
+function loginCode(): string {
+  const [n] = crypto.getRandomValues(new Uint32Array(1));
+  return String(n % 1_000_000).padStart(6, '0');
+}
+
+/** The stored form of a code: hashed with its token, so equal codes hash differently. */
+const loginCodeHash = (token: string, code: string) => sha256Hex(`${token}:${code}`);
+
+/** Whether this client IP is over the login rate limit (Env.LOGIN_RATE_LIMIT; none when unset). */
+async function loginRateLimited(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<boolean> {
+  const limiter = c.env.LOGIN_RATE_LIMIT;
+  if (!limiter) return false;
+  const ip = c.req.header('CF-Connecting-IP') ?? 'unknown';
+  const { success } = await limiter.limit({ key: `${c.var.tenant.key}:${ip}` });
+  return !success;
+}
+
+const emailContext = (c: Context<{ Bindings: Env; Variables: Variables }>, appName: string): EmailContext =>
+  ({ env: c.env, appName, host: new URL(c.req.url).host });
+
+app.post('/login', async (c) => {
+  const settings = await loadSettings(c.var.tenant);
+  const appName = settings.app_name;
+  if (c.var.tenant.demo || !emailEnabled(c.env)) return c.redirect('/login', 303);
+  const form = await c.req.parseBody();
+  const returnTo = signInReturnPath(form.return);
+  const email = normalizeEmail(form.email);
+  if (!email) return c.html(loginHTML(appName, returnTo, ENTER_EMAIL_MESSAGE), 400);
+  if (await loginRateLimited(c)) return c.html(loginHTML(appName, returnTo, RATE_LIMITED_MESSAGE), 429);
+
+  // After the response, so its timing can't tell an address with an account from one without.
+  c.executionCtx.waitUntil(emailSignInLink(c, appName, email));
+  return c.html(loginCodeHTML(appName, email, returnTo));
+});
+
+/**
+ * Emails `email` a sign-in link and code, when it's a user's address and under the caps
+ * (MAX_LIVE_LOGIN_LINKS, MAX_DAILY_LOGIN_LINKS); otherwise does nothing. Never throws: the
+ * page can't differ either way, so a failure is said only in the log.
+ */
+async function emailSignInLink(c: Context<{ Bindings: Env; Variables: Variables }>, appName: string, email: string): Promise<void> {
+  try {
+    const db = c.var.db;
+    const now = Math.floor(Date.now() / 1000);
+    const token = generateToken();
+    const code = loginCode();
+    // One statement, so concurrent requests can't both pass the caps. A token's age comes from
+    // its expiry (the TTL is fixed); this address's tokens older than a day go first.
+    const [, inserted] = await db.batch([
+      db.prepare('DELETE FROM invite_tokens WHERE email = ? AND code_hash IS NOT NULL AND expires_at < ?')
+        .bind(email, now + LOGIN_LINK_TTL_SECS - DAY_SECS),
+      db.prepare(
+        `INSERT INTO invite_tokens (token, type, user_id, expires_at, email, code_hash)
+         SELECT ?1, 'device_link', e.user_id, ?2 + ?3, e.email, ?4 FROM user_emails e
+         WHERE e.email = ?5
+           AND (SELECT COUNT(*) FROM invite_tokens WHERE email = ?5 AND code_hash IS NOT NULL AND expires_at >= ?2) < ?6
+           AND (SELECT COUNT(*) FROM invite_tokens WHERE email = ?5 AND code_hash IS NOT NULL) < ?7`
+      ).bind(token, now, LOGIN_LINK_TTL_SECS, await loginCodeHash(token, code), email, MAX_LIVE_LOGIN_LINKS, MAX_DAILY_LOGIN_LINKS),
+    ]);
+    if (inserted.meta.changes === 1) await sendSignInEmail(emailContext(c, appName), email, token, code, LOGIN_LINK_TTL_SECS);
+  } catch (err) {
+    console.error('Sign-in email failed', err);
+  }
+}
+
+app.post(LOGIN_CODE_PATH, async (c) => {
+  const settings = await loadSettings(c.var.tenant);
+  const appName = settings.app_name;
+  if (c.var.tenant.demo || !emailEnabled(c.env)) return c.redirect('/login', 303);
+  const form = await c.req.parseBody();
+  const returnTo = signInReturnPath(form.return);
+  const email = normalizeEmail(form.email);
+  if (!email) return c.html(loginHTML(appName, returnTo, ENTER_EMAIL_MESSAGE), 400);
+  const code = typeof form.code === 'string' ? form.code.replace(/\s/g, '') : '';
+  const wrong = (status: 400 | 429) =>
+    c.html(loginCodeHTML(appName, email, returnTo, status === 429 ? RATE_LIMITED_MESSAGE : 'That code is wrong or has expired.'), status);
+  if (await loginRateLimited(c)) return wrong(429);
+  if (!/^\d{6}$/.test(code)) return wrong(400);
+
+  const db = c.var.db;
+  const now = Math.floor(Date.now() / 1000);
+  // Each try claims one of the address's newest token's attempts before the code is compared,
+  // so concurrent tries can't get past MAX_LOGIN_CODE_ATTEMPTS. It's a write whether or not
+  // there's a token, so the timing doesn't say whether the address has an account.
+  const row = await db.prepare(
+    `UPDATE invite_tokens SET attempts = attempts + 1 WHERE id = (
+       SELECT id FROM invite_tokens WHERE email = ? AND code_hash IS NOT NULL AND used = 0 AND expires_at >= ? AND attempts < ?
+       ORDER BY id DESC LIMIT 1)
+     RETURNING *`
+  ).bind(email, now, MAX_LOGIN_CODE_ATTEMPTS).first<InviteToken>();
+  const [given, expected] = await Promise.all([
+    sha256(await loginCodeHash(row?.token ?? '', code)),
+    sha256(row?.code_hash ?? ''),
+  ]);
+  if (!row || !crypto.subtle.timingSafeEqual(given, expected)) {
+    // The last wrong try uses the token up, its link too.
+    if (row && row.attempts >= MAX_LOGIN_CODE_ATTEMPTS) await db.prepare('UPDATE invite_tokens SET used = 1 WHERE id = ?').bind(row.id).run();
+    return wrong(400);
+  }
+
+  const redeemed = await redeemJoinToken(db, row, deviceNameFromUA(c.req.header('User-Agent') ?? ''));
+  if (!redeemed.ok) return wrong(400);
+  c.header('Set-Cookie', sessionCookie(redeemed.session.sessionToken));
+  return c.redirect(returnTo, 303);
 });
 
 // ── The demo tenant's sign-in ────────────────────────────────────────────────
@@ -413,8 +553,8 @@ app.get('/login', async (c) => {
 // demo code in settings (demo_code) signs anyone in as the demo user (demo_user_id): typed on
 // the signed-out pages here, or sent by the app's "Try the Demo" to POST /api/app/pair.
 
-/** The return paths the demo sign-in goes back to: home, or the app's connect page. */
-function demoReturnPath(raw: unknown): string {
+/** The return paths a sign-in (the demo code, or by email) goes back to: home, or the app's connect page. */
+function signInReturnPath(raw: unknown): string {
   return typeof raw === 'string' && raw.startsWith(APP_CONNECT_PATH + '?') ? raw : '/';
 }
 
@@ -447,7 +587,7 @@ async function demoUserId(db: D1Database): Promise<number | null> {
 app.post(DEMO_SIGN_IN_PATH, async (c) => {
   if (!c.var.tenant.demo) return c.text('Not Found', 404);
   const form = await c.req.parseBody();
-  const returnTo = demoReturnPath(form.return);
+  const returnTo = signInReturnPath(form.return);
   const session = await demoSession(c.var.tenant, typeof form.code === 'string' ? form.code : '', deviceNameFromUA(c.req.header('User-Agent') ?? ''));
   if (!session) {
     const settings = await loadSettings(c.var.tenant);
@@ -472,10 +612,8 @@ app.post('/logout', async (c) => {
 // ── Join routes (invite / device-link) ───────────────────────────────────────
 
 // A device that already has a session here doesn't need another one: opening a device
-// link (e.g. again, or from an old deployment's "moved" screen) just takes it to the app.
-async function hasSession(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<boolean> {
-  return (await cookieSession(c)) !== null;
-}
+// link (e.g. again, or from an old deployment's "moved" screen) just takes it to the app
+// (signedInAs, below, which also handles the emailed links).
 
 /** This browser's session, from its cookie alone, or null. */
 async function cookieSession(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<SessionLookup | null> {
@@ -540,24 +678,52 @@ async function redeemJoinToken(db: D1Database, row: InviteToken, deviceName: str
   // later statement is guarded by changes() = 1, so a lost race inserts nothing and a
   // failure can't burn the link without creating the session (or the account).
   const consume = db.prepare('UPDATE invite_tokens SET used = 1 WHERE id = ? AND used = 0 AND expires_at >= ?').bind(row.id, now);
+  // A token emailed to an address confirms it: the address joins the user's, through the new
+  // session (so only when the redemption won). One another user holds is left with them,
+  // and the sign-in goes ahead.
+  const confirmEmail = row.email
+    ? [db.prepare(
+      `INSERT INTO user_emails (user_id, email) SELECT user_id, ? FROM sessions WHERE token = ? AND token_hashed = 1
+       ON CONFLICT (email) DO NOTHING`
+    ).bind(row.email, sessionHash)]
+    : [];
   const batch = row.type === 'invite'
     ? await db.batch([
       consume,
       db.prepare('INSERT INTO users (name, role) SELECT ?, ? WHERE changes() = 1').bind(row.invited_name!, row.invited_role!),
       db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT last_insert_rowid(), ?, 1, ? WHERE changes() = 1')
         .bind(sessionHash, deviceName),
+      ...confirmEmail,
       created,
     ])
     : await db.batch([
       consume,
       db.prepare('INSERT INTO sessions (user_id, token, token_hashed, device_name) SELECT ?, ?, 1, ? WHERE changes() = 1')
         .bind(row.user_id!, sessionHash, deviceName),
+      ...confirmEmail,
       created,
     ]);
   const session = redeemed(batch.at(-1)!);
   // Lost: joinRefusal looks at the clock again, so a link that expired meanwhile says so.
   if (!session) return { ok: false, refusal: joinRefusal(row) ?? usedRefusal(row) };
   return { ok: true, session };
+}
+
+/**
+ * Uses up an emailed device link opened by its own user's signed-in browser: the address joins
+ * theirs, with no new session. 'taken' when another user got the address first (the link is
+ * used up either way); 'refused' when another request used the link first or it expired
+ * meanwhile.
+ */
+async function confirmEmailToken(db: D1Database, row: InviteToken): Promise<'confirmed' | 'taken' | 'refused'> {
+  const now = Math.floor(Date.now() / 1000);
+  const [consumed, added] = await db.batch([
+    db.prepare('UPDATE invite_tokens SET used = 1 WHERE id = ? AND used = 0 AND expires_at >= ?').bind(row.id, now),
+    db.prepare('INSERT INTO user_emails (user_id, email) SELECT ?, ? WHERE changes() = 1 ON CONFLICT (email) DO NOTHING')
+      .bind(row.user_id!, row.email!),
+  ]);
+  if (consumed.meta.changes !== 1) return 'refused';
+  return added.meta.changes === 1 ? 'confirmed' : 'taken';
 }
 
 app.get('/join/:token', async (c) => {
@@ -567,13 +733,14 @@ app.get('/join/:token', async (c) => {
   const appName = settings.app_name;
   // A "Sign in with Browser" token is only for the app that holds its verifier.
   if (!row || row.code_challenge) return c.html(joinErrorHTML(INVALID_LINK.message, appName), INVALID_LINK.status);
-  if (row.type === 'device_link' && await hasSession(c)) return c.redirect('/');
+  const signedIn = row.type === 'device_link' ? await signedInAs(c, row) : null;
+  if (signedIn === 'other') return c.redirect('/');
   const refusal = joinRefusal(row);
   if (refusal) return c.html(joinErrorHTML(refusal.message, appName), refusal.status);
 
   // ?from=app: the app's "Open on the Web" (Settings) sent this browser here, so it's not
   // offered the app back.
-  const appLink = c.req.query('from') === 'app' ? null : appPairLink(c.req.header('User-Agent') ?? '', new URL(c.req.url).host, token);
+  const appLink = c.req.query('from') === 'app' || signedIn ? null : appPairLink(c.req.header('User-Agent') ?? '', new URL(c.req.url).host, token);
   if (row.type === 'invite') {
     return c.html(joinHTML('invite', row.invited_name!, token, appName, appLink));
   }
@@ -581,8 +748,28 @@ app.get('/join/:token', async (c) => {
   const user = await c.var.db.prepare('SELECT name FROM users WHERE id = ?')
     .bind(row.user_id).first<{ name: string }>();
   if (!user) return c.html(joinErrorHTML('This link is no longer valid.', appName), 404);
-  return c.html(joinHTML('device_link', user.name, token, appName, appLink));
+  const kind = signedIn === 'same' ? 'confirm_email_signed_in'
+    : row.code_hash ? 'sign_in'
+    : row.email ? 'confirm_email'
+    : 'device_link';
+  return c.html(joinHTML(kind, user.name, token, appName, appLink, row.email));
 });
+
+/**
+ * How a device link meets a browser that's already signed in: 'other' when the link has
+ * nothing to do here (it wasn't emailed, so it only adds a device, or it's this user's own
+ * /login link), 'same' when a new address's link was emailed to this browser's user (opening
+ * it only confirms the address), or null: not signed
+ * in, or an emailed link of another user's, which signs this browser in to that account.
+ */
+async function signedInAs(c: Context<{ Bindings: Env; Variables: Variables }>, row: InviteToken): Promise<'same' | 'other' | null> {
+  const session = await cookieSession(c);
+  if (!session) return null;
+  if (!row.email) return 'other';
+  if (session.user_id !== row.user_id) return null;
+  // A /login link (its address is already the user's) has nothing to confirm either.
+  return row.code_hash ? 'other' : 'same';
+}
 
 app.post('/join/:token', async (c) => {
   const [row, settings] = await Promise.all([findJoinToken(c.var.db, c.req.param('token')), loadSettings(c.var.tenant)]);
@@ -590,9 +777,17 @@ app.post('/join/:token', async (c) => {
   const appName = settings.app_name;
   // A "Sign in with Browser" token is only for the app that holds its verifier.
   if (!row || row.code_challenge) return c.html(joinErrorHTML(INVALID_LINK.message, appName), INVALID_LINK.status);
-  if (row.type === 'device_link' && await hasSession(c)) return c.redirect('/');
+  const signedIn = row.type === 'device_link' ? await signedInAs(c, row) : null;
+  if (signedIn === 'other') return c.redirect('/');
   const refusal = joinRefusal(row);
   if (refusal) return c.html(joinErrorHTML(refusal.message, appName), refusal.status);
+
+  if (signedIn === 'same') {
+    const confirmed = await confirmEmailToken(c.var.db, row);
+    if (confirmed === 'refused') return c.html(joinErrorHTML((joinRefusal(row) ?? usedRefusal(row)).message, appName), 410);
+    if (confirmed === 'taken') return c.html(joinErrorHTML(`${row.email} is already on another account here.`, appName), 409);
+    return c.redirect('/');
+  }
 
   const redeemed = await redeemJoinToken(c.var.db, row, deviceNameFromUA(c.req.header('User-Agent') ?? ''));
   if (!redeemed.ok) return c.html(joinErrorHTML(redeemed.refusal.message, appName), redeemed.refusal.status);
@@ -645,7 +840,7 @@ app.get(APP_CONNECT_PATH, async (c) => {
   }
   if (!session) {
     if (c.var.tenant.demo) return c.html(demoSignInHTML(appName, APP_CONNECT_PATH + new URL(c.req.url).search));
-    return c.html(appConnectSignedOutHTML(appName));
+    return c.html(appConnectSignedOutHTML(appName, APP_CONNECT_PATH + new URL(c.req.url).search, emailEnabled(c.env)));
   }
   return c.html(appConnectHTML(session.name, challenge, state, appName));
 });
@@ -658,7 +853,7 @@ app.post(APP_CONNECT_PATH, async (c) => {
   if (!isCodeChallenge(challenge) || !isConnectState(state)) {
     return c.html(joinErrorHTML('This sign-in request is invalid. Go back to the app and try again.', appName), 400);
   }
-  if (!session) return c.html(appConnectSignedOutHTML(appName), 401);
+  if (!session) return c.html(appConnectSignedOutHTML(appName, APP_CONNECT_PATH + '?' + new URLSearchParams({ challenge, state }), emailEnabled(c.env)), 401);
 
   // Each press makes a row, so this user's spent ones (used or expired) go first.
   const token = generateToken();
@@ -773,7 +968,7 @@ app.get('/api/bootstrap', async (c) => {
   ]);
   return c.json({
     me: meJson(c.get('user')), trackers, aircraft, pilots, overlays, basemaps: envBasemapPresets(c.env),
-    instance: settingsAsInstance(settings),
+    instance: settingsAsInstance(settings, c.env),
     api_version: API_VERSION, min_client_level: MIN_CLIENT_LEVEL,
   });
 });
@@ -845,6 +1040,130 @@ app.post('/api/me/device-link', async (c) => {
   ).bind(token, u.id, expiresAt).run();
   return c.json({ url: `/join/${token}` });
 });
+
+// ── Users' email addresses (the user's own here; an admin's for anyone, below) ──
+//
+// A user has any number of addresses (user_emails), and any of them signs in at /login. Adding
+// one emails it a device link; the address is added when the link is opened (redeemJoinToken,
+// confirmEmailToken), so every stored address is verified. Until then it's pending.
+
+type UserEmails = {
+  emails: { id: number; email: string }[];
+  pending_emails: { email: string; expires_at: number }[];
+};
+
+/** Each user's addresses and pending ones (sent, not yet confirmed), for one user or all. */
+async function queryUserEmails(db: D1Database, userId: number | null): Promise<Map<number, UserEmails>> {
+  const now = Math.floor(Date.now() / 1000);
+  const [emails, pending] = await Promise.all([
+    db.prepare('SELECT id, user_id, email FROM user_emails WHERE ?1 IS NULL OR user_id = ?1 ORDER BY id')
+      .bind(userId).all<{ id: number; user_id: number; email: string }>(),
+    // An address confirmed meanwhile (by another link to it) isn't pending.
+    db.prepare(
+      `SELECT t.user_id, t.email, MAX(t.expires_at) AS expires_at FROM invite_tokens t
+       WHERE t.type = 'device_link' AND t.email IS NOT NULL AND t.code_hash IS NULL AND t.used = 0 AND t.expires_at >= ?1
+         AND (?2 IS NULL OR t.user_id = ?2)
+         AND NOT EXISTS (SELECT 1 FROM user_emails e WHERE e.email = t.email AND e.user_id = t.user_id)
+       GROUP BY t.user_id, t.email ORDER BY MIN(t.id)`
+    ).bind(now, userId).all<{ user_id: number; email: string; expires_at: number }>(),
+  ]);
+  const byUser = new Map<number, UserEmails>();
+  const of = (id: number) => {
+    let entry = byUser.get(id);
+    if (!entry) byUser.set(id, entry = { emails: [], pending_emails: [] });
+    return entry;
+  };
+  for (const { id, user_id, email } of emails.results) of(user_id).emails.push({ id, email });
+  for (const { user_id, email, expires_at } of pending.results) of(user_id).pending_emails.push({ email, expires_at });
+  return byUser;
+}
+
+const NO_EMAILS: UserEmails = { emails: [], pending_emails: [] };
+
+/**
+ * Sends an email carrying the join token, and deletes the token when sending fails, so an
+ * address or invite isn't left pending with a link nobody got. True when it failed (logged).
+ */
+async function sendOrDropToken(db: D1Database, token: string, send: () => Promise<void>): Promise<boolean> {
+  try {
+    await send();
+    return false;
+  } catch (err) {
+    console.error('Email failed', err);
+    await db.prepare('DELETE FROM invite_tokens WHERE token = ?').bind(token).run();
+    return true;
+  }
+}
+
+/**
+ * Emails `raw` a link that adds it to the user's addresses (and signs in the device that opens
+ * it). Sending it again sends another link (the earlier one still works), up to
+ * MAX_PENDING_EMAIL_LINKS unopened in all, so the form can't email an address without end.
+ */
+async function addUserEmail(c: Context<{ Bindings: Env; Variables: Variables }>, user: { id: number; name: string }, raw: string) {
+  if (!emailEnabled(c.env)) return c.json({ error: 'This instance doesn’t send email' }, 400);
+  const email = normalizeEmail(raw);
+  if (!email) return c.json({ error: 'Enter an email address' }, 400);
+  const db = c.var.db;
+  const now = Math.floor(Date.now() / 1000);
+  // The user's unopened confirmation links: their other addresses, and the links in all.
+  const pendingSql = `SELECT COUNT(DISTINCT CASE WHEN email != ?2 THEN email END) AS addresses, COUNT(*) AS links FROM invite_tokens
+       WHERE user_id = ?1 AND email IS NOT NULL AND code_hash IS NULL AND used = 0 AND expires_at >= ?3
+         AND NOT EXISTS (SELECT 1 FROM user_emails e WHERE e.email = invite_tokens.email)`;
+  const [owner, pending] = await Promise.all([
+    db.prepare('SELECT user_id FROM user_emails WHERE email = ?').bind(email).first<{ user_id: number }>(),
+    db.prepare(pendingSql).bind(user.id, email, now).first<{ addresses: number; links: number }>(),
+  ]);
+  if (owner) {
+    return c.json({ error: owner.user_id === user.id ? 'That address is already on this account' : ADDRESS_TAKEN_MESSAGE }, 409);
+  }
+  if ((pending?.addresses ?? 0) >= MAX_PENDING_EMAILS) {
+    return c.json({ error: `${MAX_PENDING_EMAILS} addresses are already waiting to be confirmed` }, 429);
+  }
+  if ((pending?.links ?? 0) >= MAX_PENDING_EMAIL_LINKS) return c.json({ error: TOO_MANY_PENDING_MESSAGE }, 429);
+
+  const token = generateToken();
+  const expiresAt = now + EMAIL_LINK_TTL_SECS;
+  // The caps again, in the insert itself, so concurrent requests can't both pass them.
+  const { meta } = await db.prepare(
+    `INSERT INTO invite_tokens (token, type, user_id, expires_at, email)
+     SELECT ?4, 'device_link', ?1, ?5, ?2 FROM (${pendingSql}) WHERE addresses < ?6 AND links < ?7`
+  ).bind(user.id, email, now, token, expiresAt, MAX_PENDING_EMAILS, MAX_PENDING_EMAIL_LINKS).run();
+  if (meta.changes !== 1) return c.json({ error: TOO_MANY_PENDING_MESSAGE }, 429);
+  const settings = await loadSettings(c.var.tenant);
+  const failed = await sendOrDropToken(db, token, () =>
+    sendConfirmEmail(emailContext(c, settings.app_name), email, token, user.name, EMAIL_LINK_TTL_SECS));
+  if (failed) return c.json({ error: 'The email couldn’t be sent. Try again later.' }, 502);
+  return c.json({ ok: true, pending_email: { email, expires_at: expiresAt } });
+}
+
+/**
+ * Removes one of a user's addresses (by its id); it no longer signs in. Its unopened links go
+ * too: a /login code sent to it, or a confirmation link that would add it back.
+ */
+async function removeUserEmail(c: Context<{ Bindings: Env; Variables: Variables }>, userId: number) {
+  const id = parseInt(c.req.param('emailId') ?? '', 10);
+  if (isNaN(id)) return c.json({ error: 'Invalid email id' }, 400);
+  const db = c.var.db;
+  const [, removed] = await db.batch([
+    db.prepare(
+      `DELETE FROM invite_tokens WHERE user_id = ?2 AND used = 0
+         AND email = (SELECT email FROM user_emails WHERE id = ?1 AND user_id = ?2)`
+    ).bind(id, userId),
+    db.prepare('DELETE FROM user_emails WHERE id = ? AND user_id = ?').bind(id, userId),
+  ]);
+  if (removed.meta.changes === 0) return c.json({ error: 'Email not found' }, 404);
+  return c.json({ ok: true });
+}
+
+app.get('/api/me/emails', async (c) => {
+  const u = c.get('user');
+  return c.json((await queryUserEmails(c.var.db, u.id)).get(u.id) ?? NO_EMAILS);
+});
+
+app.post('/api/me/emails', valid('json', EmailAddRequest), (c) => addUserEmail(c, c.get('user'), c.req.valid('json').email));
+
+app.delete('/api/me/emails/:emailId', (c) => removeUserEmail(c, c.get('user').id));
 
 app.post('/api/me/ping', async (c) => {
   const u = c.get('user');
@@ -925,7 +1244,22 @@ app.get('/api/users', requireAdmin, async (c) => {
     GROUP BY u.id
     ORDER BY u.created_at ASC
   `).all<{ id: number; name: string; role: string; is_env_admin: number; pilot_id: number | null; created_at: number; device_count: number }>();
-  return c.json({ users: results });
+  const emails = await queryUserEmails(c.var.db, null);
+  return c.json({ users: results.map((u) => ({ ...u, ...(emails.get(u.id) ?? NO_EMAILS) })) });
+});
+
+app.post('/api/users/:id/emails', requireAdmin, valid('json', EmailAddRequest), async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  if (isNaN(id)) return c.json({ error: 'Invalid user id' }, 400);
+  const user = await c.var.db.prepare('SELECT id, name FROM users WHERE id = ?').bind(id).first<{ id: number; name: string }>();
+  if (!user) return c.json({ error: 'User not found' }, 404);
+  return addUserEmail(c, user, c.req.valid('json').email);
+});
+
+app.delete('/api/users/:id/emails/:emailId', requireAdmin, (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  if (isNaN(id)) return c.json({ error: 'Invalid user id' }, 400);
+  return removeUserEmail(c, id);
 });
 
 // Links a user to the pilot they are (or unlinks them, with null): the app opens a linked
@@ -991,11 +1325,11 @@ app.delete('/api/users/:id', requireAdmin, async (c) => {
 app.get('/api/invites', requireAdmin, async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const { results } = await c.var.db.prepare(`
-    SELECT id, token, invited_name, invited_role, expires_at
+    SELECT id, token, invited_name, invited_role, expires_at, email
     FROM invite_tokens
     WHERE type = 'invite' AND used = 0 AND expires_at > ?
     ORDER BY id DESC
-  `).bind(now).all<{ id: number; token: string; invited_name: string; invited_role: string; expires_at: number }>();
+  `).bind(now).all<{ id: number; token: string; invited_name: string; invited_role: string; expires_at: number; email: string | null }>();
   return c.json({ invites: results });
 });
 
@@ -1010,12 +1344,30 @@ app.post('/api/invites', requireAdmin, valid('json', InviteRequest), async (c) =
   if (!Number.isFinite(expiresInHours) || expiresInHours < 1 || expiresInHours > 720) {
     return c.json({ error: 'expires_in_hours must be a number from 1 to 720' }, 400);
   }
-  const expiresAt = Math.floor(Date.now() / 1000) + Math.floor(expiresInHours * 3600);
+  // A blank email is none: the admin copies the link, as without email.
+  const rawEmail = body.email?.trim() ?? '';
+  const email = rawEmail ? normalizeEmail(rawEmail) : null;
+  if (rawEmail && !email) return c.json({ error: 'Enter an email address, or leave it blank' }, 400);
+  if (email && !emailEnabled(c.env)) return c.json({ error: 'This instance doesn’t send email' }, 400);
+  const db = c.var.db;
+  if (email && await db.prepare('SELECT 1 FROM user_emails WHERE email = ?').bind(email).first()) {
+    return c.json({ error: ADDRESS_TAKEN_MESSAGE }, 409);
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = now + Math.floor(expiresInHours * 3600);
   const token = generateToken();
-  await c.var.db.prepare(
-    `INSERT INTO invite_tokens (token, type, invited_name, invited_role, expires_at) VALUES (?, 'invite', ?, ?, ?)`
-  ).bind(token, name, body.role, expiresAt).run();
-  return c.json({ url: `/join/${token}`, token });
+  await db.prepare(
+    `INSERT INTO invite_tokens (token, type, invited_name, invited_role, expires_at, email) VALUES (?, 'invite', ?, ?, ?, ?)`
+  ).bind(token, name, body.role, expiresAt, email).run();
+  if (email) {
+    const settings = await loadSettings(c.var.tenant);
+    const failed = await sendOrDropToken(db, token, () =>
+      sendInviteEmail(emailContext(c, settings.app_name), email, token, name, c.get('user').name, expiresAt - now));
+    if (failed) {
+      return c.json({ error: 'The email couldn’t be sent. Try again later, or leave the email blank and share the link.' }, 502);
+    }
+  }
+  return c.json({ url: `/join/${token}`, token, emailed: !!email });
 });
 
 app.delete('/api/invites/:id', requireAdmin, async (c) => {
@@ -3003,6 +3355,14 @@ async function pruneDemoTenant(tenant: Tenant, nowSec: number): Promise<void> {
   ]);
 }
 
+/**
+ * Deletes join tokens (invites, device links, emailed links) a day past their expiry: by then
+ * they only refuse. The day keeps /login's daily cap (emailSignInLink) counting them.
+ */
+async function pruneJoinTokens(tenant: Tenant, nowSec: number): Promise<void> {
+  await tenant.db.prepare('DELETE FROM invite_tokens WHERE expires_at < ?').bind(nowSec - DAY_SECS).run();
+}
+
 export default {
   fetch: app.fetch,
 
@@ -3047,6 +3407,13 @@ export default {
           await checkAlerts(tenant, event.scheduledTime);
         } catch (err) {
           console.error(`Alert check failed for ${hostname} ("${bindingName}"):`, String(err));
+        }
+        if (new Date(event.scheduledTime).getUTCMinutes() === 0) {
+          try {
+            await pruneJoinTokens(tenant, Math.floor(event.scheduledTime / 1000));
+          } catch (err) {
+            console.error(`Join token pruning failed for ${hostname} ("${bindingName}"):`, String(err));
+          }
         }
         // Hourly is often enough: an hour adds about 80 points.
         if (tenant.demo && new Date(event.scheduledTime).getUTCMinutes() === 0) {

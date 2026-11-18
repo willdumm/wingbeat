@@ -39,7 +39,8 @@ lists read-only):
 
 ## Users
 
-Invite new users (name + role), link a user to the pilot they are, and manage
+Invite new users (name + role, and an email address to send the invite to), link a user
+to the pilot they are, add and remove a user's email addresses (**Email**), and manage
 existing accounts. See
 [Users & Devices](../../features/users-and-devices).
 

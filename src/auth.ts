@@ -132,14 +132,27 @@ export function noAccessHTML(appName: string): string {
 }
 
 /**
- * The invite or device-link page. appLink, on an iPhone or iPad, also offers the sign-in in the
- * app (wingbeat://pair, which the app confirms before signing in).
+ * What a join link does, which its page says: an invite; a device link made on a signed-in
+ * device; one from the /login form (sign_in); one sent to confirm an address added to the
+ * account (confirm_email), which opened in that user's own signed-in browser only confirms it.
  */
-export function joinHTML(type: 'invite' | 'device_link', name: string, token: string, appName: string, appLink: string | null = null): string {
-  const heading = type === 'invite'
-    ? `You've been invited to join as <strong>${escapeHtml(name)}</strong>.`
-    : `Add a new device to <strong>${escapeHtml(name)}</strong>'s account?`;
-  const btnLabel = type === 'invite' ? 'Set up this device' : 'Add this device';
+export type JoinKind = 'invite' | 'device_link' | 'sign_in' | 'confirm_email' | 'confirm_email_signed_in';
+
+/**
+ * The invite or device-link page. appLink, on an iPhone or iPad, also offers the sign-in in the
+ * app (wingbeat://pair, which the app confirms before signing in). email is the address a
+ * confirm_email link was sent to.
+ */
+export function joinHTML(kind: JoinKind, name: string, token: string, appName: string, appLink: string | null = null, email: string | null = null): string {
+  const who = `<strong>${escapeHtml(name)}</strong>`;
+  const address = `<strong>${escapeHtml(email ?? '')}</strong>`;
+  const [heading, btnLabel] = {
+    invite: [`You've been invited to join as ${who}.`, 'Set up this device'],
+    device_link: [`Add a new device to ${who}'s account?`, 'Add this device'],
+    sign_in: [`Sign in to ${escapeHtml(appName)} as ${who}?`, 'Sign in'],
+    confirm_email: [`Confirm ${address} for ${who}'s account, and sign in on this device?`, 'Confirm and sign in'],
+    confirm_email_signed_in: [`Add ${address} to your account? You'll be able to sign in with it.`, 'Confirm'],
+  }[kind];
   return `<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
@@ -218,6 +231,10 @@ export function appConnectHTML(name: string, challenge: string, state: string, a
     </form>`);
 }
 
+/** The error line above a sign-in form, or nothing. */
+const formError = (error: string | null) =>
+  error ? `<p style="color: var(--danger-fg); margin-bottom: 1rem;">${escapeHtml(error)}</p>` : '';
+
 /**
  * The demo tenant's signed-out page (/login and the app's connect page): the demo code signs
  * this browser in as the demo user, then goes back to returnTo.
@@ -226,7 +243,7 @@ export function demoSignInHTML(appName: string, returnTo: string, error: string 
   return authPage(appName, `
     <p style="margin-bottom: 1rem;">This is the ${escapeHtml(appName)} demo: three simulated aircraft, two of
       them always flying. Enter the demo code to sign in.</p>
-    ${error ? `<p style="color: var(--danger-fg); margin-bottom: 1rem;">${escapeHtml(error)}</p>` : ''}
+    ${formError(error)}
     <form method="POST" action="/demo/sign-in">
       <input type="hidden" name="return" value="${escapeHtml(returnTo)}" />
       <input name="code" placeholder="Demo code" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false" required autofocus />
@@ -234,10 +251,54 @@ export function demoSignInHTML(appName: string, returnTo: string, error: string 
     </form>`);
 }
 
-/** GET /app/connect in a browser that isn't signed in here: how to sign in first. */
-export function appConnectSignedOutHTML(appName: string): string {
+/**
+ * GET /app/connect in a browser that isn't signed in here: how to sign in first. With email
+ * (the instance sends it), the email sign-in, which comes back here to connect the app.
+ */
+export function appConnectSignedOutHTML(appName: string, returnTo: string, email: boolean): string {
+  if (email) {
+    return authPage(appName, `
+      <p style="margin-bottom: 1rem;">This browser isn't signed in to ${escapeHtml(appName)}.</p>
+      <p style="margin-bottom: 1.5rem;">Sign in with your email address, then connect the app.</p>
+      <form method="GET" action="/login">
+        <input type="hidden" name="return" value="${escapeHtml(returnTo)}" />
+        <button type="submit">Sign in with email</button>
+      </form>`);
+  }
   return authPage(appName, `
     <p style="margin-bottom: 1rem;">This browser isn't signed in to ${escapeHtml(appName)}.</p>
     <p>Open your sign-in link in Safari first, then try again in the app. Or, on a device that's
       signed in, open Settings → Devices, choose Get link, and scan its code with the app.</p>`);
+}
+
+/** /login on an instance that sends email: an address, which POST /login emails a link and a code. */
+export function loginHTML(appName: string, returnTo: string, error: string | null = null): string {
+  return authPage(appName, `
+    <p style="margin-bottom: 1rem;">Enter your email address, and we'll email you a link and a code to sign in.</p>
+    ${formError(error)}
+    <form method="POST" action="/login">
+      <input type="hidden" name="return" value="${escapeHtml(returnTo)}" />
+      <input type="email" name="email" placeholder="Email address" aria-label="Email address" autocomplete="email" autocapitalize="none" spellcheck="false" required autofocus />
+      <button type="submit">Email me a sign-in code</button>
+    </form>
+    <p style="margin-top: 1.5rem; font-size: 0.85rem; color: var(--text-secondary);">No address on your account yet?
+      Ask your administrator for a sign-in link.</p>`);
+}
+
+/**
+ * After POST /login: the same answer whether or not the address has an account. The code from
+ * the email signs this browser in (POST /login/code); the email's link signs in wherever it's opened.
+ */
+export function loginCodeHTML(appName: string, email: string, returnTo: string, error: string | null = null): string {
+  return authPage(appName, `
+    <p style="margin-bottom: 1rem;">If <strong>${escapeHtml(email)}</strong> has an account here, we've sent it a
+      link and a code. Open the link, or enter the code here.</p>
+    ${formError(error)}
+    <form method="POST" action="/login/code">
+      <input type="hidden" name="return" value="${escapeHtml(returnTo)}" />
+      <input type="hidden" name="email" value="${escapeHtml(email)}" />
+      <input name="code" placeholder="6-digit code" aria-label="Sign-in code" inputmode="numeric" pattern="[0-9 ]*" autocomplete="one-time-code" maxlength="7" required autofocus />
+      <button type="submit">Sign in</button>
+    </form>
+    <a class="back" href="/login${returnTo === '/' ? '' : '?return=' + encodeURIComponent(returnTo)}">Use a different address</a>`);
 }

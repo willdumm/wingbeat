@@ -28,6 +28,12 @@ export function pushRoute(data: Record<string, unknown> | null | undefined): Pus
   return null;
 }
 
+/** The MapShare page Open MapShare goes to: the push's mapshare_url, if it's https. */
+export function pushMapShareUrl(data: Record<string, unknown> | null | undefined): string | null {
+  const url = data?.mapshare_url;
+  return typeof url === 'string' && url.startsWith('https://') ? url : null;
+}
+
 export interface Subscription { tracker_id: number | null; event: PushEvent }
 
 /** On for `sub` itself, or for its event on every tracker. */

@@ -3,6 +3,7 @@ import { checkPublicHttpsUrl } from './safe-fetch';
 import { loadSettings } from './settings';
 import { toKnots, toFeet, formatLocalDateTime } from './shared/format';
 import { sendAppPushes, subscribedDevices, wantsTimeSensitive } from './app-push';
+import { pushChannel, TRACKER_PUSH_CATEGORY, type TrackerPushEvent } from '@wingbeat/core/api/push-requests';
 
 interface BaseNotificationEvent {
   tracker_id: number;
@@ -37,7 +38,7 @@ export type NotificationEvent =
  * should hear that they've ended without editing existing targets (whose stored events
  * lists predate these types).
  */
-function subscriptionKey(eventType: NotificationEvent['type']): string {
+function subscriptionKey(eventType: NotificationEvent['type']): TrackerPushEvent {
   return eventType === 'gap_resolved' || eventType === 'gap_timeout' ? 'gap' : eventType;
 }
 
@@ -152,8 +153,13 @@ async function sendEventPushes(tenant: Tenant, events: NotificationEvent[], getT
     const push = {
       title: eventTitle(event),
       body: eventMessage(event, timezone, { links: false }),
-      // host: which of the app's accounts it's for.
-      data: { type: event.type, tracker_id: event.tracker_id, host: tenant.host },
+      // host: which of the app's accounts it's for; mapshare_url, for Open MapShare.
+      data: {
+        type: event.type, tracker_id: event.tracker_id, host: tenant.host,
+        ...(event.mapshare_url ? { mapshare_url: event.mapshare_url } : {}),
+      },
+      channelId: pushChannel(key),
+      ...(event.mapshare_url ? { categoryId: TRACKER_PUSH_CATEGORY } : {}),
     };
     // Each device chooses which events are Time Sensitive (POST /api/me/push-devices).
     for (const timeSensitive of [true, false]) {

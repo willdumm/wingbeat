@@ -14,6 +14,7 @@ import { filterScript } from '../shared/filters';
 import { sharedSidebarToggleScripts } from '../shared/sidebar';
 import { aircraftInfoRenderScript } from '../shared/aircraft-info';
 import { pilotDutyRenderScript } from '../shared/pilot-duty';
+import { downloadScript } from '../shared/download';
 import { flightEditsScript } from '../shared/flight-edits';
 import { dashboardScriptsHelpers } from '../dashboard/scripts/helpers';
 import { dashboardScriptsIcons } from '../dashboard/scripts/icons';
@@ -78,6 +79,7 @@ export function showcaseScript(sample: SampleData): string {
     dashboardScriptsFlightListRender(),
     aircraftInfoRenderScript(),
     flightEditsScript(),
+    downloadScript(),
     pilotDutyRenderScript(),
     analyticsScriptsRegion(),
     `REGIONS = SAMPLE.regions;`,

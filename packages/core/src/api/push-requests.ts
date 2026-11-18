@@ -16,6 +16,25 @@ export type TrackerPushEvent = (typeof TRACKER_PUSH_EVENTS)[number];
 /** What a device that hasn't said gets as Time Sensitive. */
 export const DEFAULT_TIME_SENSITIVE: TrackerPushEvent[] = ['gap'];
 
+/**
+ * The app's Android notification channels, one per kind of push, so a user sets each one's
+ * sound and importance in system settings. The app creates them; each push names its own.
+ */
+export const PUSH_CHANNELS = { flights: 'flights', gaps: 'signal-gaps', alerts: 'alerts' } as const;
+export type PushChannel = (typeof PUSH_CHANNELS)[keyof typeof PUSH_CHANNELS];
+
+/** A subscription's channel: takeoff and landing are flights, gap (with its follow-ups) gaps. */
+export function pushChannel(event: PushEvent): PushChannel {
+  return event === 'gap' ? PUSH_CHANNELS.gaps : event === 'alerts' ? PUSH_CHANNELS.alerts : PUSH_CHANNELS.flights;
+}
+
+/**
+ * The notification category of a tracker event whose tracker has a MapShare page (its data
+ * carries mapshare_url): touch and hold it for View on Map or Open MapShare.
+ */
+export const TRACKER_PUSH_CATEGORY = 'tracker';
+export const PUSH_ACTIONS = { viewOnMap: 'view-on-map', openMapShare: 'open-mapshare' } as const;
+
 /** The longest push token or endpoint stored. Expo's are about 40 characters. */
 export const MAX_PUSH_ENDPOINT_LENGTH = 512;
 

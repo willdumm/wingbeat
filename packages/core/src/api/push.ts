@@ -9,8 +9,8 @@ import type { ApiClient } from './client';
 import { PUSH_EVENTS, type PushDeviceRequest, type PushSubscriptionsRequest } from './push-requests';
 
 export {
-  PUSH_EVENTS, TRACKER_PUSH_EVENTS, DEFAULT_TIME_SENSITIVE,
-  type PushEvent, type TrackerPushEvent, type PushDeviceRequest, type PushSubscriptionsRequest,
+  PUSH_EVENTS, TRACKER_PUSH_EVENTS, DEFAULT_TIME_SENSITIVE, PUSH_CHANNELS, pushChannel, TRACKER_PUSH_CATEGORY, PUSH_ACTIONS,
+  type PushEvent, type TrackerPushEvent, type PushChannel, type PushDeviceRequest, type PushSubscriptionsRequest,
 } from './push-requests';
 
 /** POST /api/me/push-devices: the device's row. */

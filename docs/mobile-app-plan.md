@@ -1010,7 +1010,11 @@ access token. Without it, anyone holding a device's push token can send to it.
 ### Native details
 
 - **Android channels** per event type (Takeoff/Landing, Signal gap), so users control sound
-  and importance in system settings.
+  and importance in system settings. **Done 2026-11-17:** `PUSH_CHANNELS` in core's
+  `api/push-requests.ts` (`flights`, `signal-gaps`, `alerts`; `pushChannel()` maps a
+  subscription to its channel); every push names its `channelId`, and the app creates the
+  three at launch (`initPush`, "Takeoffs and Landings" high, "Signal Gaps" max, "Alerts"
+  default). JavaScript only, so it shipped with build 7's fingerprint.
 - **iOS Time Sensitive** interruption level (entitlement, build 6), so they get through Focus
   modes. Which tracker events (takeoff, landing, gap) are Time Sensitive is the phone's
   choice, in Settings → Notifications ("Time Sensitive"), gap alone by default (decided
@@ -1020,7 +1024,10 @@ access token. Without it, anyone holding a device's push token can send to it.
   stored choice stays, and a device that never said gets gap). A change registers again with
   every signed-in account. Alerts are never Time Sensitive.
 - **Notification categories with actions**, e.g. on a gap alert "Open MapShare" and "View on
-  map".
+  map". **Done 2026-11-17:** a tracker event whose tracker has a MapShare page carries
+  `categoryId: 'tracker'` (`TRACKER_PUSH_CATEGORY`) and `mapshare_url` in its `data`; the
+  app registers the category at launch with View on Map (the tap's route) and Open MapShare
+  (opens the page, `pushMapShareUrl` taking https only). Alerts have no category.
 - Tapping a notification deep-links to the tracker or flight (`wingbeat://flight/123`).
   Each push's `data` carries a `type`, the same types as Web Push. An app that doesn't know
   the type opens to its home screen instead of following a link it can't handle, and
@@ -1041,8 +1048,9 @@ limit) notifies the users subscribed to `alerts` when an alert first appears, no
 digest: core's `computeAlerts` already flags maintenance before it's due and duty at 90% of
 a limit, so an alert appearing is the advance warning.
 
-- **Done 2026-11-15 (phase 7):** `src/alert-push.ts`. On every fifth minute's cron tick
-  (`ALERT_CHECK_MINUTES`, from the tick's scheduled time, so no stored timestamp) and only
+- **Done 2026-11-15 (phase 7):** `src/alert-push.ts`. Once an hour, on the hour's cron tick
+  (`ALERT_CHECK_MINUTES`, 60 since 2026-11-17, when the user found every fifth minute more
+  than needed; from the tick's scheduled time, so no stored timestamp) and only
   with `EXPO_ACCESS_TOKEN`, `checkAlerts()` builds the page's `AlertLists` from D1 (the
   effective flights of active trackers and the manual ones through `applyFlightEdits`, as the
   flight store's `getAll()`, and the bootstrap's aircraft, pilots and trackers), runs
@@ -1718,9 +1726,10 @@ account whose operator is in another zone, that's the only correct reading of a 
 
 ### Email sign-in, email invites and finding your instance (proposed 2026-11-15)
 
-Proposed; nothing here is built. The user reviewed it on 2026-11-15, settled most of the open
-questions ("Decided" at the end), and said to hold off: "I don't want to implement this now,
-just write it up." It started from the user's note that typing the
+Built for the web on 2026-11-17 (`app-polish`, not yet deployed; "Status" below). The user reviewed it on 2026-11-15, settled most of the
+open questions ("Decided" at the end), and held off then ("I don't want to implement this
+now, just write it up"). On 2026-11-17 they started it and approved simplifying 1 and 2 to
+reuse the join links. It started from the user's note that typing the
 instance's address is "a little awkward for the app-first flow", and their follow-up: "I'll
 also want to be able to invite new users through email (so the existing admin user would be
 able to create a new user, enter their email, and the invite would be sent with a link that
@@ -1744,76 +1753,89 @@ tenants. Self-hosted instances get the same flow once they configure email sendi
 someone on several instances adds each one separately. That's rare today (one customer), and
 the central directory below stays possible later without undoing any of this.
 
-#### 1. Emails on users, and email invites (web, admin)
+#### 1. Emails on users, sent as join links (web, admin)
 
-- **Migration `0009_`** (or whatever number is next when this is built): `users.email`
-  (lowercased, nullable, verified addresses only) with a partial unique index
-  (`WHERE email IS NOT NULL`), `users.pending_email` (an address waiting for its code), the
-  `email_codes` table (2), and `invite_tokens.invited_email`. `users` has no `edit_history`
-  trigger, so none needs recreating.
-- **Invite by email.** The admin's invite form gets an optional Email field
-  (`InviteRequest` in `packages/core/src/api/…-requests.ts` gains `email`, or the handler
-  never sees it). With one, `POST /api/invites` stores it in `invited_email` and the instance
-  emails the `https://<host>/join/<token>` link (default expiry 7 days, as now), along with
-  the inviter's name and the instance's name. Redeeming the invite creates the user with
-  that email, already verified, since opening the link proves the inbox, and signs them in.
-  It works through either redemption path: the web's `/join/<token>` (cookie) and the app's
-  `POST /api/app/pair` (an iPhone opening the link already gets "Open in Wingbeat app"). Both
-  use the same consumption code, so the email is set in one place. Without an email, invites
-  work as today (copy the link).
-- **A forwarded invite** signs in whoever opens it first, as a copied invite link does
-  today. It's single-use, and the new user shows up in the Users list.
-- **Every email is verified before it signs anyone in** ("all emails should require
-  verification by code"). The invite email's link counts, since it carries the secret; every
-  other address is confirmed with a code entered by the user while signed in. Email sign-in
-  (2) only ever matches a verified address.
-- **Changing an email.** A user can change their own in Settings: the instance emails a
-  code to the new address, and the change takes effect once they enter it there. The old
-  address keeps working until then. An admin can also add or change a user's email in the
-  Users list, which shows it as "not yet confirmed": it's stored as pending, and the user
-  sees a "Confirm your email" prompt (with Send Code) the next time they're signed in. So
-  an address the admin mistyped can't sign anyone in: its owner gets a code that only works
-  for someone already signed in as that user. Only admins see other users' emails.
+Revised 2026-11-17 (the user approved): an email is a `/join/<token>` link, so the email
+features reuse `invite_tokens`, `redeemJoinToken` and the `/join` pages instead of adding a
+codes table and a link page of their own. That page is already safe from mail scanners (its
+`GET` only shows a button; the `POST` signs in), already offers "Open in Wingbeat app" on an
+iPhone, and the app already redeems the same tokens at `POST /api/app/pair`.
 
-#### 2. Sign in with an email code (web and app)
+- **Several addresses per user** (the user, 2026-11-17: "I'll want to be able to add
+  multiple email addresses to an account"; and "make sure that we don't allow two users to
+  have the same email address listed"). **Migration `0009_email`**: a `user_emails` table
+  (`user_id`, `email` lowercased and `UNIQUE`, so an address belongs to one user at most;
+  verified addresses only), and on `invite_tokens`: `email` (the address the link was sent
+  to), `code_hash` and `attempts` (2). The token rows fit the table's existing CHECK (an
+  `invite` keeps its name and role, a `device_link` its `user_id`), so it isn't rebuilt.
+  Neither table has an `edit_history` trigger.
+- **One rule verifies addresses: redeeming a token that has an `email` adds the address to
+  that user's**, since opening the link proves the inbox. Redeeming an invite creates the
+  user with it. An admin adding an address, an email invite, a user adding their own and a
+  sign-in from `/login` all send the same kind of link; until it's opened, the address is
+  shown as pending (from the unused token). The user accepted the one consequence
+  (2026-11-17): a link sent to an address an admin mistyped signs in whoever opens it, as a
+  forwarded invite does. An address another user already holds is refused when added (409),
+  and if two users were each sent a link to it, the first opened gets it: the other
+  redemption still signs in but adds nothing (`ON CONFLICT DO NOTHING`). An emailed link
+  opened in its own user's signed-in browser only confirms the address, without a second
+  session.
+- **Invite by email.** The admin's invite form gets an optional Email field (`InviteRequest`
+  in `packages/core/src/api/…-requests.ts` gains `email`, or the handler never sees it). With
+  one, `POST /api/invites` stores it on the token and emails the link (expiry 7 days, as now),
+  with the inviter's name and the instance's name. Without one, invites work as today (copy
+  the link).
+- **An admin adds a user's addresses** in the Users list (**Email**; `POST/DELETE
+  /api/users/:id/emails`): the instance emails the address a device link (expiry 7 days) that
+  confirms it and signs in. Until it's opened, the Users list shows it as not confirmed. A
+  user adds and removes their own in Settings → Email addresses (`GET/POST/DELETE
+  /api/me/emails`). Only admins see other users' addresses.
+- **Email sign-in (2) only ever matches `user_emails`**, which holds only addresses
+  confirmed this way.
 
-- **A 6-digit code and a link that does the whole sign-in**, in the same email ("The email
-  should absolutely carry a link that does the whole sign-in"). The code covers reading the
-  email on a different device from the one signing in. iOS offers it from Mail above the
-  keyboard (`textContentType('oneTimeCode')`).
-- **The link** is `https://<host>/login/email?request=<request_id>&code=<code>`, and signs
-  in the browser that opens it. Its `GET` only shows a "Sign In" button, and the `POST`
-  behind it signs in. Mail scanners (Outlook's Safe Links, say) fetch links in advance, and
-  a `GET` that consumed the code would sign the scanner in or use the code up. On an iPhone
-  the page also offers "Open in Wingbeat app", as `/join/<token>` does, opening
-  `wingbeat://login?host=…&request=…&code=…`. The app confirms it, as `pair.tsx` does, and
-  redeems it with `email-verify`. The request records whether the app or the web asked for
-  the code, and the page leads with that button. The custom-scheme risk is the same as the
-  `wingbeat://pair` fallback's: the code is single-use and expires in 10 minutes. The
-  verification email for a changed address carries the same kind of link, which confirms the
-  address only in a browser already signed in as that user.
-- **Routes.** `POST /api/auth/email-code { email }` → `{ request_id }`, and
-  `POST /api/auth/email-verify { request_id, code, device_name? }`. The web's new `/login`
-  page uses both (a session cookie on success). The app uses both under `/api/app/…` and gets
-  the same response as `/api/app/pair`. Each gets request and response schemas in core and
-  shape tests in `test/worker-sql.test.mjs`.
-- **Table `email_codes`:** `user_id`, `request_id` (random, unique), `code`, `purpose`
-  (`sign_in` or `verify`, the latter for `pending_email`), `origin` (`app` or `web`, for the
-  link's page), `expires_at` (10 minutes), `attempts`, `used`. A code is single-use, and 5
-  wrong tries end its request, so guessing needs a new request, which the rate limits below
-  cap. A `verify` code is accepted only from a session of its user.
-- **No account enumeration.** `email-code` answers the same way whether or not the address
-  has an account ("If that address has an account here, we've sent a code"). An unknown
-  address gets a `request_id` that can never verify.
-- **Rate limits:** a few codes per address per hour and a cap per IP, counted in D1 (or the
-  Workers rate-limiting binding).
-- **Sending:** Cloudflare Email Service through a `send_email` binding (check the current
-  docs when building; there's a `cloudflare-email-service` skill). Hosted instances send
-  from one address, `wingbeat@dummthings.dev` or `accounts@wingbeat.dummthings.dev` (not yet
-  chosen), which needs SPF/DKIM set up for its domain. Self-hosted: the
-  email features (the invite Email field, `/login`'s form, the app's email option) appear
-  only when the binding is configured, so an instance without email keeps working as today.
-  Tests stub the binding in Miniflare.
+#### 2. Sign in with an email code (web first)
+
+- **`/login`** (today the "no access" page) gets an Email field. Submitting it makes a
+  device link for the user with that address (`email` set, expiry 15 minutes) and emails
+  the `/join/<token>` link and a 6-digit code ("The email should absolutely carry a link that
+  does the whole sign-in"). The link signs in the browser that opens it. The code covers
+  reading the email on another device: the page moves on to a code field, and email + code
+  signs in that browser (`POST /login/code`, which redeems the same token through
+  `redeemJoinToken`). The demo tenant's sign-in stays on the page.
+- **The code** is stored hashed (`code_hash`) on the token. The code form sends the email
+  with the code, matched against that address's newest unused, unexpired token, so the
+  browser holds no request id. 5 wrong tries (`attempts`) use the token up, link included;
+  each try claims its attempt before the code is compared, so tries sent at once get no more.
+  Guessing needs a new email, which the rate limits cap.
+- **No account enumeration.** `/login` answers the same way whether or not the address has
+  an account ("If that address has an account here, we've sent a link and a code"), and
+  sends after the response (`waitUntil`) so its timing doesn't differ either; `/login/code`
+  makes the same write whether or not a token exists.
+- **Rate limits** (decided while building, tightened in review the same day): per address in
+  D1, which needs no config: an address gets at most 3 sign-in emails until they expire (15
+  minutes; a used or burned token still counts) and 10 a day, which caps guesses at its code
+  at 15 per 15 minutes and 50 a day. A user's address confirmations are capped at 5 addresses
+  and 10 unopened links (resends add a link rather than replacing one). Per IP: the Workers rate-limiting binding `LOGIN_RATE_LIMIT` on `POST
+  /login` and `/login/code`, keyed `<tenant>:<CF-Connecting-IP>`, optional (the hosting repo
+  sets it; a self-hosted instance may not). The binding counts per Cloudflare location and
+  isn't exact, which is fine for this.
+- **Wording.** `joinHTML` gets a sign-in variant ("Sign in as <name>?") for a device link
+  sent by email, and `appConnectSignedOutHTML` points to `/login`.
+- **The app** gets email sign-in through "Sign in with Browser": its auth session shows the
+  signed-out connect page, which leads to `/login`, and the code signs in there. A native
+  email option comes later, only if that isn't enough.
+- **Sending:** Cloudflare Email Service through a `send_email` binding (`EMAIL`), from
+  `EMAIL_FROM` with the display name `EMAIL_FROM_NAME` (Worker vars). The hosting repo sets
+  the binding and both vars (`accounts@wingbeat.dummthings.dev`, "Wingbeat Accounts"); this
+  repo only reads them, and names the instance (its app name and host) in each email, since
+  one Worker serves several tenants. The sending domain `wingbeat.dummthings.dev` is
+  onboarded to Email Sending on its own (a subdomain is a separate sending domain; the apex
+  `dummthings.dev` already is). Without the binding (a self-hosted instance without email),
+  the email features (the invite Email field, the Users list's and Settings' email fields,
+  `/login`'s form) don't appear, and the instance works as today. Tests stub the binding in
+  Miniflare.
+- Each route gets request and response schemas in core and shape tests in
+  `test/worker-sql.test.mjs`.
 
 #### 3. The app: find your instance, then sign in
 
@@ -1857,29 +1879,51 @@ Not planned now: the instance list plus per-instance codes covers today's users.
 
 #### Order
 
-1. Migration 0009, emails on users, email invites, and Email Service setup on staging.
-2. Email code sign-in: the web's `/login`, then the app's email option.
-3. If wanted: the instance list and the app's Find screen.
+1. Migration 0009, the hosting repo's binding and vars, the sending domain onboarded, and a
+   test email from staging.
+2. `/login` (email, link and code), admin-set emails in the Users list, email invites, and
+   changing your own address in Settings: web only, one staging deploy.
+3. If wanted: a native email option in the app, the instance list and the app's Find screen.
 
-Each is its own deploy to staging, and the web parts ship before the app depends on them,
-like the bearer middleware did. Emails are new personal data, so the privacy policy (Store
-review, below) covers them. Deleting the account (`DELETE /api/me`) already deletes the user
-row, which takes the email with it.
+Emails are new personal data, so the privacy policy (Store review, below) covers them.
+Deleting the account (`DELETE /api/me`) already deletes the user row, which takes the email
+with it.
 
 #### Decided (the user, 2026-11-15)
 
-- Not to implement it yet: "just write it up".
 - The email carries a link that does the whole sign-in, as well as the code (2).
-- Users can change their own email, and every address is verified, by a code or the
-  invite's link, before it signs anyone in (1).
+- Users can change their own email, and every address is verified (by opening a link sent
+  to it) before it signs anyone in (1).
 - The instance list, if built, is served by a Worker deployed from the hosting repo.
+
+#### Decided (the user, 2026-11-17)
+
+- Build it now, web only first ("Let's work on the email login flow, which will initially be
+  web-only").
+- Email links are `/join/<token>` device links and invites; no separate codes table or link
+  page (1).
+- An admin-entered address is confirmed by the first link opened from it, not by a code
+  entered while signed in (1).
+- Sender `accounts@wingbeat.dummthings.dev`, display name "Wingbeat Accounts", set in the
+  hosting repo rather than here.
 
 #### Still open
 
 - Whether to build the instance list at all, its hostname, and whether Sea Hawk Air wants
   to be listed.
-- The sender address: `wingbeat@dummthings.dev`, `accounts@wingbeat.dummthings.dev`, or
-  similar, and its display name.
+
+#### Status (2026-11-17)
+
+Order step 2 is built on `app-polish` (web only), with tests in `test/worker-sql.test.mjs`
+("email: sign-in, invites and addresses"; `test/worker.mjs`'s `email: true` stubs the
+binding with a second Worker that records each message in D1). The bootstrap's
+`instance.email` and the pages' `APP_SETTINGS.email` say whether the instance sends email.
+`wingbeat.dummthings.dev` is onboarded to Email Sending (the hosting shell's wrangler 4.83
+can't; a newer wrangler under Node 22 did), the hosting repo sets `EMAIL`, the sender vars
+and `LOGIN_RATE_LIMIT`, and staging runs it with migration 0009 applied. The user tested it
+on staging ("it seems to work great") and asked for tighter Settings wording ("Verified email
+addresses can be used to sign on", a "Verify email" button), done the same day. Production
+waits for the merge.
 
 ### Account deletion
 
@@ -2214,7 +2258,8 @@ Done after step 9, from the first device runs (2026-11-13; the rules they settle
   an undismissable sheet with peek, medium and large detents, the track refits above it, the
   Layers button rides on it, and the tab bar hides.
 - **Status cards on the float surface:** the tail on a pill in the tracker's color, the
-  details on the first line when they fit.
+  details on the first line when they fit. (Since 2026-11-17 a SwiftUI glass card; see the
+  parity table and `docs/mobile-design-principles.md` 5.)
 
 Done next (2026-11-13): the native-debt cleanup below (Settings, the filter and the
 assignment edit are SwiftUI `Form`s; native `Stack.Toolbar` buttons; pull to refresh on
@@ -2257,6 +2302,18 @@ update (the lockup move, "Try the Demo" to the production demo). Built non-inter
 (removing `UIBackgroundModes` changes no capability), source maps uploaded for release
 `dev.dummthings.wingbeat@0.1.0+7`, and submitted with `eas submit`. Updates publish from the
 tree as is (its fingerprint is build 7's).
+
+Updates on `preview` for build 7 (2026-11-17, before Beta App Review; hold updates during the
+review): the lockup became the Flights and Duty tabs' navigation-bar title, off the map, where
+it overlapped "Fit all"; switching accounts no longer saves the previous account's instance
+name and user onto the new one (the accounts and bootstrap contexts now keep the client and
+the bootstrap with the account they were loaded for, since both were stale for the render
+before their effects ran); and the status cards became a floating SwiftUI glass card with
+centred rows, pinned by touch and hold, with no lockup on the Live tab (group `eb7190bf`). Then,
+before the user submitted build 7 for review: push channels and the tracker events' View on Map
+and Open MapShare actions (group `92ffcdc0`, the last). The user submitted build 7 to Beta App Review on
+2026-11-17, for an external group, with the Test Information filled in ("Try the Demo" and
+the demo code `kodiak` in the review notes). No OTA updates until the review is done.
 
 Step 11 (2026-11-16, `demo-tenant`): the demo feed, the demo sign-in and the app's "Try the
 Demo" (JavaScript only, so it ships as an update), the seed script, and tests
@@ -2342,7 +2399,7 @@ layers need no Android counterpart; only the chrome around the map does.
 | Plane marker turned to its heading | Done | MapLibre `SymbolLayer` with an image (`Images`), `iconRotate` from the heading | same | heading from the last points (`live`) |
 | Each tracker's current or latest flight (the default view), fitted on opening the tab | Done, on the phone: per tracker, where the web shows every flight in progress, else the one newest flight; a takeoff dot in the tracker's color, as the web's | MapLibre `LineLayer`, the camera's `fitBounds` on each visit | same | `live` |
 | Ground trails (taxi between flights) | Done | MapLibre `LineLayer`, dashed | same | move the web's trail rule to `live` |
-| Status cards | Done (top bar): stacked, the pinned ones, or else the one that last reported; "All Aircraft" under them opens every card (and counts the in-flight ones not shown). Each card's pin button pins or unpins it (stored per account). A tap opens its location sheet | RN views on the float surface (no system equivalent) | the same RN component | `live` (`statusCards`; the app's `cardStack`) |
+| Status cards | Done (top of the map): stacked, the pinned ones, or else the one that last reported; "All Aircraft" under them expands to every card (and counts the in-flight ones not shown). Touch and hold a card to pin or unpin it (stored per account). A tap opens its location sheet | a floating SwiftUI card (`@expo/ui`): Liquid Glass on iOS 26, a material before; centred rows, a context menu to pin | to do: the SwiftUI card has no Android rendering (was the shared RN component); `@expo/ui` Compose | `live` (`statusCards`; the app's `cardStack`) |
 | Location popup (coordinates, details, links, copy) | Done (location sheet) | `BottomSheet` + `Form` + `LabeledContent`, `Link`, Copy (`expo-clipboard`) | universal `BottomSheet` (`ModalBottomSheet`) with `ListItem`s, `Share.share` | `live` (`locationDetails`) |
 | Basemap and overlays | Done (Layers menu) | `Menu` with a `Picker` and `Toggle`s | `DropdownMenu` with radio and checkbox items | `basemaps` |
 | Map a day's flights ("Map all") | Done, on the phone: "Map all" on the Flights list's day headers opens the day on the map with its flights in the `MapSheet`, arrows to the older and newer day; the Live tab's Day menu and calendar are gone. The legend, stacked at the map's top right (clear of the back button), filters the day by aircraft: tapping an entry hides or shows its flights, on the map and in the sheet's list. The day and a flight are one screen (`flight-map-screen.tsx`), so tapping a flight in the day's sheet swaps the sheet and map to it, with a back button to the day; no tab bar, as on the flight detail | a header button, the map + `MapSheet` (as the flight detail) | the same, with its Android sheet | `dayFlightNumbers`, `groupEndMarkers` |
@@ -2408,7 +2465,7 @@ layers need no Android counterpart; only the chrome around the map does.
 | Documentation link | Removed (v0.6.1): every docs page's logo leads to the home page and its pricing, which the app mustn't link to (guideline 3.1.1, see above). Return it with docs pages that can't reach pricing | — | — | `docs` (`docsHref`, the web's) |
 | Clear local cache | Done: "Clear Flight Cache" in the active account's section, with a confirmation, then a full download | a destructive `Button`, `Alert` | same | `flight-cache.ts`, the flight store's `clearCache` |
 | My Devices (rename, sign out) | Phase 11 (first in Settings) | a `List` with `SwipeActions`; an `Alert` with a text field to rename | a long-press menu, an `AlertDialog` with a `TextField` | `api/me` |
-| Notification subscriptions | Phase 7 | a `Form` of `Toggle`s | `Switch` `ListItem`s | phase 7's routes |
+| Notification subscriptions | Done (Settings → Notifications: per tracker and event, Alerts, and which events are Time Sensitive; Android channels and the tracker events' actions, 2026-11-17) | a `Form` of `Toggle`s | `Switch` `ListItem`s | phase 7's routes |
 | Aircraft, pilots, trackers (add, edit, test a feed) | Phase 11 | `Form`s pushed on the Settings stack | `ListItem` screens | the settings request schemas |
 | Users and invites (with the "Add phone" QR code) | Phase 11 | a `Form`; the QR code in a sheet, `ShareLink` | same | — |
 | General, duty limits, timezone (with its warning) | Phase 11 | `Form`, `Picker`, `Stepper` | `ListItem`s, `ExposedDropdownMenuBox` | `settings` |
@@ -2564,6 +2621,10 @@ were, so references elsewhere in this doc stay valid.
    release (iOS, individual account). Android goes to Play once the Play organization account
    exists; until then it stays on EAS internal distribution. Then move the operators you
    host off Pushover and retire it (see "Retiring Pushover").
+   **Status (2026-11-17):** everything up to the release is built: app push for tracker events
+   and alerts (hourly), subscriptions, Time Sensitive, deep links, Android channels and the
+   tracker events' actions. Left: an alert and a gap push seen on a device, the first App
+   Store release (after Beta App Review), then moving operators off Pushover.
 8. **Passive matching** (a planned native release): the presence module from the probe
    (CoreLocation on iOS, AltBeacon on Android), location fixes around beacons, the offline
    event queue and `POST /api/presence/events`, `trackers.current_*` and stamping from them

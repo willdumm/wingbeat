@@ -7,6 +7,7 @@
  *   sed 's/fill:#000000/fill:#E9EEF2/I' logo_plain.svg | rsvg-convert -h 72 -o apps/mobile/assets/logo-mark-dark.png
  */
 import { Image, Text, useColorScheme, View } from 'react-native';
+import { useBootstrap } from './bootstrap-context';
 import { px, useTokens } from './theme';
 
 const MARK = require('../../assets/logo-mark.png');
@@ -32,4 +33,10 @@ export function LogoLockup({ appName, height = 28 }: { appName: string; height?:
       </Text>
     </View>
   );
+}
+
+/** The lockup with the active account's instance name, in the Flights and Duty tabs' navigation bars. */
+export function InstanceLockup() {
+  const { bootstrap } = useBootstrap();
+  return <LogoLockup appName={bootstrap?.instance?.app_name ?? 'Wingbeat'} />;
 }

@@ -1,4 +1,4 @@
-import { DEFAULT_TIME_SENSITIVE } from '@wingbeat/core/api/push-requests';
+import { DEFAULT_TIME_SENSITIVE, type PushChannel } from '@wingbeat/core/api/push-requests';
 import { Tenant } from './types';
 
 // App push through Expo's push service (docs/mobile-app-plan.md, "Step 2: app push for hosted
@@ -24,6 +24,10 @@ export interface AppPush {
   // The app routes a tap by data.type; a type it doesn't know opens its home screen.
   data: Record<string, unknown>;
   timeSensitive?: boolean;
+  /** Its Android channel (PUSH_CHANNELS), which the app creates. */
+  channelId: PushChannel;
+  /** Its notification category (TRACKER_PUSH_CATEGORY), for its actions; none without one. */
+  categoryId?: string;
 }
 
 interface ExpoTicket { status: 'ok' | 'error'; id?: string; message?: string; details?: { error?: string } }
@@ -74,6 +78,8 @@ export async function sendAppPushes(tenant: Tenant, pushes: { push: AppPush; dev
       body: push.body,
       data: push.data,
       sound: 'default',
+      channelId: push.channelId,
+      ...(push.categoryId ? { categoryId: push.categoryId } : {}),
       // iOS Time Sensitive gets through Focus; it needs the app's entitlement and is
       // ignored without it.
       ...(push.timeSensitive ? { interruptionLevel: 'time-sensitive' } : {}),
