@@ -168,7 +168,12 @@ if that matters). Upload it, with the
 `basemaps-assets` fonts and sprites, to the R2 bucket that serves the dummthings.dev overlays.
 That bucket's CORS must allow range requests from the app. Credit:
 `© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://protomaps.com">Protomaps</a>`.
-Uploading needs the user's go-ahead and the bucket name.
+Hosted (2026-11-20): an Alaska extract made earlier (2026-11-04 OSM data, basemap v4.15.2,
+zoom 0–13) was already in the `kodiak-imagery` R2 bucket as
+`https://tiledata.dummthings.dev/pmtiles/alaska-basemap.pmtiles`, with CORS and range requests
+working, so it's reused; the `basemaps-assets` fonts (all four fontstacks, with `OFL.txt`) and
+`sprites/v4` are beside it under `pmtiles/basemaps-assets/`. That bucket is public. To refresh
+the extract, make a new one as above and upload it over the same key.
 
 The app finds a vector basemap's glyphs and sprites at `basemaps-assets/` beside its archive
 (`vectorAssetsBase()` in `apps/mobile/src/lib/map-style.ts`): `<dir>/alaska.pmtiles`,
@@ -182,9 +187,9 @@ below.
 Migration `0010`, `/api/basemaps`, Settings > Basemaps (`src/shared/basemap-settings.ts`),
 `scripts/basemaps-legacy.sql`, `scripts/basemaps-demo.sql` (also in `demo-seed.mjs sql`), the
 showcase on USGS tiles, the Mapterhorn credit on web and app, and the app's vector basemap
-(`@protomaps/basemaps`; the Expo fingerprint is unchanged). Not done: the Protomaps archive
-and its assets aren't hosted yet, so no tenant has a vector row, and the Alaska basemap hasn't
-been drawn on a device.
+(`@protomaps/basemaps`; the Expo fingerprint is unchanged). The Protomaps archive and its
+assets are hosted, and `scripts/basemaps-demo.sql` gives the demo the Alaska vector row. Not
+done: the Alaska basemap hasn't been drawn on a device.
 
 ## Rollout
 
