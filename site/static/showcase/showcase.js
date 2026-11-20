@@ -3024,7 +3024,7 @@ REGIONS = SAMPLE.regions;
     // unclamped means createTile always receives the same coords.z/x/y as the
     // basemap layer at the current zoom, and does 100% of the overzoom upscaling
     // itself, pixel by pixel.
-    const elevationTintLayer = new ElevationTintLayer({ attribution: "Elevation: <a href=\"https://mapterhorn.com/attribution\" target=\"_blank\">Mapterhorn</a>" });
+    const elevationTintLayer = new ElevationTintLayer({ attribution: "Elevation: <a href=\"https://mapterhorn.com/attribution\" target=\"_blank\">Mapterhorn</a>, including © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA" });
 
     function _ftSetElevationReference(latlng, elevM) {
       elevationReferenceElevM = elevM;

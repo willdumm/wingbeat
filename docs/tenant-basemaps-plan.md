@@ -150,7 +150,9 @@ isn't set (as now). The API can't set `tile_proxy`, only the legacy script can.
 ## Mapterhorn credit
 
 `DEM_ATTRIBUTION` in `packages/core/src/elevation.ts`:
-`Elevation: <a href="https://mapterhorn.com/attribution">Mapterhorn</a>`. The web's tint layer
+`Elevation: <a href="https://mapterhorn.com/attribution">Mapterhorn</a>, including © DLR e.V.
+2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European
+Union and ESA` (the credit Copernicus GLO-30, part of Alaska's DEM, requires). The web's tint layer
 carries it, so the map's attribution row shows it while the elevation tool is on (the page
 script is served by the Worker, so this is server-side). The app sets it as the
 `RasterDEMSource`'s attribution, in the OTA update.
