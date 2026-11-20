@@ -33,7 +33,7 @@ REQUIRES A WINGBEAT ACCOUNT
 This app is not standalone. It connects to your operation's Wingbeat Flight Tracker, which must already be set up with your trackers, aircraft and pilots. Ask your operator for an invite to sign in. To explore the app first, tap "Try the Demo" when adding an account to explore a sample fleet.
 
 LIVE MAP
-See every aircraft on one map: where it is, whether it's flying or on the ground, its altitude and speed, and how long ago its tracker last reported. Positions are described with your operation's own place names ("9.5 miles SW of Womens Bay"), and in-flight tracks draw as they're flown. Switch between a street map, satellite imagery, terrain, and your own custom map layers.
+See every aircraft on one map: where it is, whether it's flying or on the ground, its altitude and speed, and how long ago its tracker last reported. Positions are described with your operation's own place names ("9.5 miles SW of Womens Bay"), and in-flight tracks draw as they're flown. Switch between USGS topographic and imagery maps, an OpenStreetMap vector map, and your operation's own map layers, and tint the terrain by elevation (Mapterhorn).
 
 FLIGHTS ARE LOGGED AUTOMATICALLY
 Wingbeat works with the satellite trackers your aircraft already carry, such as a Garmin inReach. There is no start or stop button for pilots: takeoffs and landings are detected from the tracker's movement, and each leg is recorded with its departure and arrival times, origin, destination, aircraft and pilot. Open any flight to see its track, or map a whole day at once. Recorded flights can be edited in the app to correct start and end times and other metadata.
@@ -113,8 +113,8 @@ own location, and has no location modules. Phase 8's presence features add Preci
 - **Category:** Business (primary), Productivity (secondary).
 - **Age rating:** answer None or No to every question (no web browsing, no user-to-user
   messaging or public content, no in-app purchases). The result is 4+.
-- **Content rights:** yes, the app shows third-party content (basemap, satellite and terrain
-  tiles), with each provider's attribution on the map.
+- **Content rights:** yes, the app shows third-party content (USGS topographic and imagery
+  tiles, OpenStreetMap data via Protomaps, Mapterhorn elevation), each credited on the map.
 - **EU Digital Services Act trader status:** Wingbeat is offered commercially, so declaring it
   makes you a trader, and Apple then shows your address, phone and email on EU storefronts. On
   the individual account those are your own. Until the account moves to Dumm Software LLC, leave
