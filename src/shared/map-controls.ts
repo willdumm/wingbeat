@@ -1,5 +1,5 @@
 import { Env } from '../types';
-import { overlayDefaultEnabled } from '@wingbeat/core/basemaps';
+import { FALLBACK_BASEMAP, overlayDefaultEnabled } from '@wingbeat/core/basemaps';
 
 /**
  * Local (per-device) basemap state, stored in localStorage — intentionally NOT synced to
@@ -28,6 +28,8 @@ export function readEnvSecret(env: Env, key: string): string | undefined {
  *                                 (window.APP_BASEMAPS, from the page; Settings replaces it
  *                                 after an admin changes them)
  *   _ftActiveLayerDefs()        — the layer defs that should currently be on every map
+ *                                  (core's FALLBACK_BASEMAP if there are none, so a map
+ *                                  always has one)
  *   _ftMakeTileLayer(def)        — builds an L.tileLayer from a basemap def
  *   _ftMapRefreshers             — one callback per initialized map (pushed by
  *                                  sharedMapControlsScripts); _ftNotifyLayersChanged()
@@ -41,7 +43,7 @@ export function mapLayersRuntimeScript(): string {
     var _ftMapRefreshers = [];
     try { ${JSON.stringify(LEGACY_MAP_LAYER_KEYS)}.forEach(function(k) { localStorage.removeItem(k); }); } catch (_) {}
 
-    function _ftActiveLayerDefs() { return _ftPresets.slice(); }
+    function _ftActiveLayerDefs() { return _ftPresets.length > 0 ? _ftPresets.slice() : [${JSON.stringify(FALLBACK_BASEMAP)}]; }
 
     // Leaflet only substitutes lowercase {s}/{z}/{x}/{y}/{r} — a template pasted from a
     // tile provider's own docs in a different case (e.g. the OGC-style {Z}/{X}/{Y} some
@@ -59,8 +61,12 @@ export function mapLayersRuntimeScript(): string {
     // past which Leaflet keeps upscaling the deepest tiles.
     var _FT_MAP_MAX_ZOOM = 22;
 
+    // What a tile layer is built from, so a refresh rebuilds one only when its def changed
+    // (not when it only moved).
+    function _ftDefKey(def) { return JSON.stringify([def.url, def.label, def.attribution, def.maxZoom, !!def.detectRetina]); }
+
     function _ftMakeTileLayer(def) {
-      var opts = { attribution: def.attribution || '', _ftLabel: def.label || def.id, maxZoom: _FT_MAP_MAX_ZOOM };
+      var opts = { attribution: def.attribution || '', _ftLabel: def.label || def.id, _ftDefKey: _ftDefKey(def), maxZoom: _FT_MAP_MAX_ZOOM };
       if (def.maxZoom) opts.maxNativeZoom = def.maxZoom;
       if (def.detectRetina) {
         opts.detectRetina = true;
@@ -100,10 +106,6 @@ export function sharedTileLayerDefs(
   return `
     ${tld} = {};
     _ftActiveLayerDefs().forEach(function(def) { ${tileLayersVar}[def.id] = _ftMakeTileLayer(def); });
-    if (Object.keys(${tileLayersVar}).length === 0) {
-      // Safety net: never leave the map with zero layers (the server always sends one).
-      ${tileLayersVar}[_ftPresets[0].id] = _ftMakeTileLayer(_ftPresets[0]);
-    }
     var _ftStoredBasemap = localStorage.getItem('${MAP_BASEMAP_KEY}');
     var ${initStyleVar} = (_ftStoredBasemap && ${tileLayersVar}[_ftStoredBasemap]) ? _ftStoredBasemap : Object.keys(${tileLayersVar})[0];
     ${cld} = ${tileLayersVar}[${initStyleVar}];
@@ -627,23 +629,20 @@ export function sharedMapControlsScripts(
       }
       _ftRebuildStyleButtons();
 
-      // Re-derives tileLayersVar from the tenant's current basemaps (_ftPresets):
-      // adds newly-shown layers, tears down newly-hidden/deleted ones (switching the
-      // map off of one if it was the active style), then rebuilds the style buttons.
+      // Re-derives tileLayersVar from the tenant's current basemaps (_ftPresets), in their
+      // order (the style buttons follow its key order): keeps a layer whose def is
+      // unchanged, rebuilds an edited one, drops a hidden/deleted one (switching the map off
+      // of it if it was the active style), then rebuilds the style buttons.
       function _ftRefreshLayers() {
-        var desired = _ftActiveLayerDefs();
-        var desiredIds = desired.map(function(d) { return d.id; });
-        Object.keys(${tileLayersVar}).forEach(function(id) {
-          if (desiredIds.indexOf(id) !== -1) return;
-          if (${mapVar}.hasLayer(${tileLayersVar}[id])) ${mapVar}.removeLayer(${tileLayersVar}[id]);
-          delete ${tileLayersVar}[id];
+        var old = {};
+        Object.keys(${tileLayersVar}).forEach(function(id) { old[id] = ${tileLayersVar}[id]; delete ${tileLayersVar}[id]; });
+        _ftActiveLayerDefs().forEach(function(def) {
+          var prev = old[def.id];
+          ${tileLayersVar}[def.id] = prev && prev.options._ftDefKey === _ftDefKey(def) ? prev : _ftMakeTileLayer(def);
         });
-        desired.forEach(function(def) {
-          if (!${tileLayersVar}[def.id]) ${tileLayersVar}[def.id] = _ftMakeTileLayer(def);
+        Object.keys(old).forEach(function(id) {
+          if (old[id] !== ${tileLayersVar}[id] && old[id] !== ${currentLayerVar} && ${mapVar}.hasLayer(old[id])) ${mapVar}.removeLayer(old[id]);
         });
-        if (Object.keys(${tileLayersVar}).length === 0) {
-          ${tileLayersVar}[_ftPresets[0].id] = _ftMakeTileLayer(_ftPresets[0]);
-        }
         var curId = ${mapVar}.getContainer().getAttribute('data-basemap');
         if (!${tileLayersVar}[curId]) curId = Object.keys(${tileLayersVar})[0];
         _ftSwitchStyle(curId);

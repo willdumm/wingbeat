@@ -1364,6 +1364,9 @@ export function settingsModalScript(): string {
     // an explicit override for that basemap.
     function _buildBasemapDefaultsFields(container, existingDefaults) {
       container.innerHTML = '';
+      // Read back with the selects, so a basemap with no select here (hidden or vector before
+      // basemapList loads) keeps its override.
+      container._ftExistingDefaults = existingDefaults || {};
       const choices = basemapList.length > 0 ? basemapList.map(function(b) { return { id: b.key, label: b.label }; })
         : _ftActiveLayerDefs();
       choices.forEach(function(p) {
@@ -1386,12 +1389,17 @@ export function settingsModalScript(): string {
       });
     }
 
-    // Reads the selects built above back into a default_enabled_by_basemap object
-    // (or null if every select is still "Default", i.e. no overrides were made).
+    // Reads the selects built above back into a default_enabled_by_basemap object, keeping
+    // the overrides of basemaps that had no select (or null if there are no overrides).
     function _readBasemapDefaultsFields(container) {
       const result = {};
       let has = false;
-      container.querySelectorAll('select').forEach((sel) => {
+      const selects = container.querySelectorAll('select');
+      const shown = new Set([...selects].map((sel) => sel.dataset.basemapId));
+      for (const [id, on] of Object.entries(container._ftExistingDefaults || {})) {
+        if (!shown.has(id)) { result[id] = on; has = true; }
+      }
+      selects.forEach((sel) => {
         if (sel.value === 'on') { result[sel.dataset.basemapId] = true; has = true; }
         else if (sel.value === 'off') { result[sel.dataset.basemapId] = false; has = true; }
       });

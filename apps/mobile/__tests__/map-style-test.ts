@@ -35,6 +35,15 @@ test("the basemaps to offer are the server's raster ones, then its vector ones; 
   expect(defaultBasemapId([])).toBeNull();
 });
 
+test("with each one's order, the basemaps follow the tenant's order across both kinds", () => {
+  const offered = availableBasemaps({
+    basemaps: [raster('usgstopo', { order: 1 }), raster('satellite', { order: 2 })],
+    vector_basemaps: [{ ...alaska, order: 0 }],
+  });
+  expect(offered.map((b) => b.id)).toEqual(['alaska', 'usgstopo', 'satellite']);
+  expect(defaultBasemapId(offered)).toBe('alaska');
+});
+
 test("overlays default on per basemap, else by default_enabled", () => {
   const overlays = [overlay(1, { default_enabled: 1 }), overlay(2, { default_enabled_by_basemap: { topo: true } })];
   expect(defaultOverlayIds(overlays, 'topo')).toEqual([1, 2]);

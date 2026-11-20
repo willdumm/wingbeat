@@ -13,15 +13,19 @@ import type { Basemap, BootstrapResponse, TileOverlay, VectorBasemap } from '@wi
 
 /** A basemap as the map uses it: the server's raster basemaps (bootstrap `basemaps`) or vector ones (`vector_basemaps`). */
 export type MapBasemap =
-  | ({ kind: 'raster' } & Pick<Basemap, 'id' | 'label' | 'url' | 'attribution' | 'maxZoom' | 'detectRetina'>)
-  | ({ kind: 'vector' } & Pick<VectorBasemap, 'id' | 'label' | 'url' | 'attribution' | 'maxZoom'>);
+  | ({ kind: 'raster' } & Pick<Basemap, 'id' | 'label' | 'url' | 'attribution' | 'maxZoom' | 'detectRetina' | 'order'>)
+  | ({ kind: 'vector' } & Pick<VectorBasemap, 'id' | 'label' | 'url' | 'attribution' | 'maxZoom' | 'order'>);
 
-/** The basemaps to offer: the server's raster ones, then its vector ones (a server older than the app has none). */
+/**
+ * The basemaps to offer, in the tenant's order (each one's `order`). A server older than the
+ * app sends no order (and no vector ones): its raster ones, then any vector ones.
+ */
 export function availableBasemaps(bootstrap: Pick<BootstrapResponse, 'basemaps' | 'vector_basemaps'> | null): MapBasemap[] {
-  return [
+  const all: MapBasemap[] = [
     ...(bootstrap?.basemaps ?? []).map((b) => ({ kind: 'raster' as const, ...b })),
     ...(bootstrap?.vector_basemaps ?? []).map((b) => ({ kind: 'vector' as const, ...b })),
   ];
+  return all.every((b) => b.order !== undefined) ? all.sort((a, b) => a.order! - b.order!) : all;
 }
 
 /** The basemap shown until the user picks one: the first the server sends. */

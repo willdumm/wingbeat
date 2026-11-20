@@ -11,7 +11,7 @@
 
 export function basemapSettingsMarkup(): string {
   return `
-    <p class="settings-section-desc">The base layers in the map's style switcher, the same for everyone. Hidden basemaps stay configured. A vector basemap (a PMTiles archive) is drawn by the mobile app only.</p>
+    <p class="settings-section-desc">The base layers in the map's style switcher, the same for everyone. Hidden basemaps stay configured. A vector basemap is drawn by the mobile app only: a Protomaps basemap PMTiles archive, with Protomaps' basemaps-assets (fonts and sprites) copied to <code>basemaps-assets/</code> beside it.</p>
     <div id="settings-basemap-list"></div>
     <details id="settings-add-basemap" class="settings-add-tracker">
       <summary>Add basemap</summary>
@@ -122,6 +122,8 @@ export function basemapSettingsScript(): string {
         return true;
       } catch (err) {
         alert(apiErrorMessage(err, failMessage));
+        // A 409 means the list here is stale (another admin changed it): show theirs.
+        loadSettingsBasemaps();
         return false;
       }
     }

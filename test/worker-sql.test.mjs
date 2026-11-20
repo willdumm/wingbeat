@@ -1070,15 +1070,20 @@ describe('the settings modal’s requests, through the core client', async () =>
 
     let boot = await getBootstrap(client);
     assert.deepEqual(boot.basemaps.map(b => b.id), ['usgstopo', 'usgsimagerytopo', 'usgsimagerytopo2']);
-    assert.deepEqual(boot.vector_basemaps, [{ id: 'alaska', label: 'Alaska', url: 'https://example.com/alaska.pmtiles', attribution: '' }]);
+    assert.deepEqual(boot.vector_basemaps, [{ id: 'alaska', label: 'Alaska', url: 'https://example.com/alaska.pmtiles', attribution: '', order: 3 }]);
 
     assert.deepEqual(await bm.updateBasemap(client, imagery.id, { label: 'Imagery', shown: false }), { ok: true });
+    // A reorder lists every basemap once: a stale page's list is refused.
+    await assert.rejects(bm.reorderBasemaps(client, { ids: [vector.id, again.id, 1] }), refused(409, 'The basemaps have changed since this page loaded them.'));
+    await assert.rejects(bm.reorderBasemaps(client, { ids: [vector.id, again.id, imagery.id, imagery.id] }), refused(409, 'The basemaps have changed since this page loaded them.'));
     assert.deepEqual(await bm.reorderBasemaps(client, { ids: [vector.id, again.id, imagery.id, 1] }), { ok: true });
     const rows = (await bm.getBasemaps(client)).basemaps;
     assert.deepEqual(rows.map(b => [b.key, b.label, b.shown]),
       [['alaska', 'Alaska', 1], ['usgsimagerytopo2', 'USGS Imagery Topo', 1], ['usgsimagerytopo', 'Imagery', 0], ['usgstopo', 'USGS Topo', 1]]);
     boot = await getBootstrap(client);
     assert.deepEqual(boot.basemaps.map(b => b.id), ['usgsimagerytopo2', 'usgstopo']);
+    // Each carries its place among the shown ones of both kinds, so the app can merge them.
+    assert.deepEqual([...boot.basemaps, ...boot.vector_basemaps].map(b => [b.id, b.order]), [['usgsimagerytopo2', 1], ['usgstopo', 2], ['alaska', 0]]);
 
     // Validation, and what the API can't set.
     await assert.rejects(bm.createBasemap(client, { label: 'x', url: 'https://example.com/tiles' }), refused(400, 'url must include {z}, {x}, and {y} placeholders'));

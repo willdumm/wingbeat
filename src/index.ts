@@ -177,16 +177,18 @@ async function queryBasemaps(db: D1Database): Promise<BasemapRow[]> {
 /**
  * The basemaps as clients draw them: the shown rows, raster ones as `basemaps` (a keyed one
  * through the same-origin proxy, and left out when this Worker doesn't hold its secret) and
- * vector ones (the app only) as `vector_basemaps`. The web's pages inline `basemaps`.
+ * vector ones (the app only) as `vector_basemaps`. The web's pages inline `basemaps`. Each
+ * carries its `order` among both, so the app can list them in the tenant's order.
  */
 function clientBasemaps(rows: BasemapRow[], env: Env): { basemaps: BasemapPreset[]; vector_basemaps: VectorBasemap[] } {
   const basemaps: BasemapPreset[] = [];
   const vector_basemaps: VectorBasemap[] = [];
+  let order = 0;
   for (const r of rows) {
     if (!r.shown) continue;
     const attribution = r.attribution ?? '';
     if (r.kind === 'vector') {
-      vector_basemaps.push({ id: r.key, label: r.label, url: r.url, attribution, ...(r.max_zoom ? { maxZoom: r.max_zoom } : {}) });
+      vector_basemaps.push({ id: r.key, label: r.label, url: r.url, attribution, ...(r.max_zoom ? { maxZoom: r.max_zoom } : {}), order: order++ });
       continue;
     }
     let url = r.url;
@@ -195,7 +197,7 @@ function clientBasemaps(rows: BasemapRow[], env: Env): { basemaps: BasemapPreset
       if (!provider || !readEnvSecret(env, provider.secretEnvVar)) continue;
       url = basemapProxyUrl(r.key);
     }
-    basemaps.push({ id: r.key, label: r.label, url, attribution, maxZoom: r.max_zoom ?? 18, ...(r.detect_retina ? { detectRetina: true } : {}) });
+    basemaps.push({ id: r.key, label: r.label, url, attribution, maxZoom: r.max_zoom ?? 18, ...(r.detect_retina ? { detectRetina: true } : {}), order: order++ });
   }
   return { basemaps: basemaps.length > 0 ? basemaps : [FALLBACK_BASEMAP], vector_basemaps };
 }
@@ -1953,16 +1955,28 @@ app.post('/api/basemaps', requireAdmin, valid('json', BasemapRequest), async (c)
   let key = base;
   for (let n = 2; taken.has(key); n++) key = base + n;
 
-  const result = await c.var.db.prepare(
-    `INSERT INTO basemaps (key, label, kind, url, attribution, max_zoom, shown, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM basemaps))`
-  ).bind(key, body.label, kind, body.url!, body.attribution || null, body.max_zoom ?? null, body.shown === false ? 0 : 1).run();
-  return c.json({ ok: true, id: result.meta.last_row_id as number, key });
+  try {
+    const result = await c.var.db.prepare(
+      `INSERT INTO basemaps (key, label, kind, url, attribution, max_zoom, shown, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM basemaps))`
+    ).bind(key, body.label, kind, body.url!, body.attribution || null, body.max_zoom ?? null, body.shown === false ? 0 : 1).run();
+    return c.json({ ok: true, id: result.meta.last_row_id as number, key });
+  } catch (err) {
+    // Another create took the same key between the read above and this insert.
+    if (String(err).includes('UNIQUE')) return c.json({ error: 'A basemap with that name was just added; try again.' }, 409);
+    throw err;
+  }
 });
 
 // Before /:id so "order" isn't read as an id.
 app.put('/api/basemaps/order', requireAdmin, valid('json', BasemapOrderRequest), async (c) => {
   const { ids } = c.req.valid('json');
+  // Every basemap, once each: a list from a stale page would leave orders that collide.
+  const { results } = await c.var.db.prepare('SELECT id FROM basemaps').all<{ id: number }>();
+  const all = new Set(results.map(r => r.id));
+  if (ids.length !== all.size || new Set(ids).size !== ids.length || !ids.every(id => all.has(id))) {
+    return c.json({ error: 'The basemaps have changed since this page loaded them.' }, 409);
+  }
   await c.var.db.batch(ids.map((id, i) => c.var.db.prepare('UPDATE basemaps SET sort_order = ? WHERE id = ?').bind(i, id)));
   return c.json({ ok: true });
 });

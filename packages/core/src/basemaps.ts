@@ -18,6 +18,8 @@ export interface BasemapPreset {
    * screens) instead of real @2x tiles, which is what overloaded OpenTopoMap's
    * server and caused gray tiles on iPad/iPhone. */
   detectRetina?: boolean;
+  /** Its place among the tenant's shown basemaps, both kinds (the app merges the two lists by it). */
+  order?: number;
 }
 
 /**

@@ -55,6 +55,8 @@ export const Basemap = z.looseObject({
   attribution: z.string(),
   maxZoom: z.number(),
   detectRetina: z.optional(z.boolean()),
+  /** Its place among all the shown basemaps, raster and vector (the tenant's order). */
+  order: z.optional(z.number()),
 });
 
 /**
@@ -67,6 +69,8 @@ export const VectorBasemap = z.looseObject({
   url: z.string(),
   attribution: z.string(),
   maxZoom: z.optional(z.number()),
+  /** Its place among all the shown basemaps, raster and vector (the tenant's order). */
+  order: z.optional(z.number()),
 });
 
 /** GET /api/bootstrap */

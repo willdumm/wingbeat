@@ -32,12 +32,12 @@ import { SampleData } from './sample-data';
 import { formatLocalDateTime } from '../shared/format';
 import { synthesizeTrack } from './tracks';
 import { demoMarkup, demoStylesheets } from './demos';
+import { FALLBACK_BASEMAP } from '@wingbeat/core/basemaps';
 
-const USGS_ATTRIBUTION = 'Tiles courtesy of the <a href="https://www.usgs.gov/" target="_blank">U.S. Geological Survey</a>';
+// The demo's: core's USGS Topo, and USGS Imagery Topo (the same server, credit and zoom).
 const SHOWCASE_BASEMAPS = [
-  { id: 'usgstopo', label: 'USGS Topo', maxZoom: 16, attribution: USGS_ATTRIBUTION,
-    url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}' },
-  { id: 'usgsimagerytopo', label: 'USGS Imagery Topo', maxZoom: 16, attribution: USGS_ATTRIBUTION,
+  FALLBACK_BASEMAP,
+  { id: 'usgsimagerytopo', label: 'USGS Imagery Topo', maxZoom: FALLBACK_BASEMAP.maxZoom, attribution: FALLBACK_BASEMAP.attribution,
     url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/MapServer/tile/{z}/{y}/{x}' },
 ];
 
