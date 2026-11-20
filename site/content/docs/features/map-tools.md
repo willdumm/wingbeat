@@ -46,7 +46,7 @@ overlays back to that basemap's default.
 
 A toggleable overlay that tints the map relative to a reference elevation you
 set by clicking the map, plus a cursor elevation readout. Backed by a public
-terrain tile archive (Mapterhorn, credited on the map while the tool is on), decoded
+terrain tile archive (Mapterhorn, credited under the map's (i) button while the tool is on), decoded
 client-side — no separate elevation API calls.
 Mutually exclusive with the point picker (activating one deactivates the
 other).

@@ -86,9 +86,9 @@ detail on satellite imagery, and a pilot's Duty view.
 ## App Review Information
 
 The **Notes** field takes the text of `app-review-notes.txt` beside this file, as is. Apple's
-limit is 4,000 characters (`wc -m`; it's 3,988), so recount after any edit. Fill in its two
-placeholders (the screen recording's link and the iOS version it was recorded on) before
-submitting. Sign-in isn't required: the notes point the reviewer to "Try the Demo".
+limit is 4,000 characters (`wc -m`; it's 3,944), so recount after any edit. The screen recording
+goes in the section's Attachment field. Sign-in isn't required: the notes point the reviewer to
+"Try the Demo".
 
 ## App-level pages
 
@@ -120,8 +120,9 @@ own location, and has no location modules. Phase 8's presence features add Preci
 - **Category:** Business (primary), Productivity (secondary).
 - **Age rating:** answer None or No to every question (no web browsing, no user-to-user
   messaging or public content, no in-app purchases). The result is 4+.
-- **Content rights:** yes, the app shows third-party content (USGS topographic and imagery
-  tiles, OpenStreetMap data via Protomaps, Mapterhorn elevation), each credited on the map.
+- **Content rights:** a single checkbox confirming you have the rights to any third-party
+  content. The app shows USGS topographic and imagery tiles, OpenStreetMap data via Protomaps
+  and Mapterhorn elevation, each under its license and credited on the map.
 - **EU Digital Services Act trader status:** Wingbeat is offered commercially, so declaring it
   makes you a trader, and Apple then shows your address, phone and email on EU storefronts. On
   the individual account those are your own. Until the account moves to Dumm Software LLC, leave
