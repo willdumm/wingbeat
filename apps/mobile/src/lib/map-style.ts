@@ -1,25 +1,41 @@
 /**
- * The Live map's MapLibre style, from the bootstrap's basemaps and tile overlays: one raster
- * source and layer for the basemap and each overlay that's on. MapLibre takes a list of tile
+ * The Live map's MapLibre style, from the bootstrap's basemaps and tile overlays: the basemap
+ * (a raster source and layer, or a Protomaps vector basemap read from its PMTiles archive) and
+ * one raster source and layer for each overlay that's on. MapLibre takes a list of tile
  * URLs rather than Leaflet's `{s}`, so a template's `{s}` becomes one URL per subdomain, and
  * `{r}` becomes `@2x` on a high-density screen. A keyed basemap's proxy path (`/api/tiles/…`)
  * is made absolute on the account's instance, whose requests carry the bearer (tile-auth.ts).
  */
 import type { StyleSpecification } from '@maplibre/maplibre-react-native';
-import { clientBasemapPresets, DEFAULT_ENABLED_BASEMAPS, overlayDefaultEnabled, TILE_SUBDOMAINS } from '@wingbeat/core/basemaps';
-import type { Basemap, BootstrapResponse, TileOverlay } from '@wingbeat/core/api/bootstrap';
+import { layers as protomapsLayers, namedFlavor } from '@protomaps/basemaps';
+import { overlayDefaultEnabled, TILE_SUBDOMAINS } from '@wingbeat/core/basemaps';
+import type { Basemap, BootstrapResponse, TileOverlay, VectorBasemap } from '@wingbeat/core/api/bootstrap';
 
-/** A basemap as the map uses it: the server's (bootstrap `basemaps`) or core's preset. */
-export type MapBasemap = Pick<Basemap, 'id' | 'label' | 'url' | 'attribution' | 'maxZoom' | 'detectRetina'>;
+/** A basemap as the map uses it: the server's raster basemaps (bootstrap `basemaps`) or vector ones (`vector_basemaps`). */
+export type MapBasemap =
+  | ({ kind: 'raster' } & Pick<Basemap, 'id' | 'label' | 'url' | 'attribution' | 'maxZoom' | 'detectRetina'>)
+  | ({ kind: 'vector' } & Pick<VectorBasemap, 'id' | 'label' | 'url' | 'attribution' | 'maxZoom'>);
 
-/** The basemaps to offer: the server's, or core's keyless presets from a server older than `basemaps`. */
-export function availableBasemaps(bootstrap: Pick<BootstrapResponse, 'basemaps'> | null): MapBasemap[] {
-  return bootstrap?.basemaps ?? clientBasemapPresets(() => false);
+/** The basemaps to offer: the server's raster ones, then its vector ones (a server older than the app has none). */
+export function availableBasemaps(bootstrap: Pick<BootstrapResponse, 'basemaps' | 'vector_basemaps'> | null): MapBasemap[] {
+  return [
+    ...(bootstrap?.basemaps ?? []).map((b) => ({ kind: 'raster' as const, ...b })),
+    ...(bootstrap?.vector_basemaps ?? []).map((b) => ({ kind: 'vector' as const, ...b })),
+  ];
 }
 
-/** The basemap shown until the user picks one: the first of the web's defaults on offer. */
+/** The basemap shown until the user picks one: the first the server sends. */
 export function defaultBasemapId(basemaps: MapBasemap[]): string | null {
-  return (basemaps.find((b) => DEFAULT_ENABLED_BASEMAPS.includes(b.id)) ?? basemaps[0])?.id ?? null;
+  return basemaps[0]?.id ?? null;
+}
+
+/**
+ * Where a vector basemap's glyphs and sprites are: `basemaps-assets/` beside its PMTiles
+ * archive (Protomaps' basemaps-assets, copied to the same host). MapLibre has no built-in
+ * fonts, and the Protomaps flavor draws labels and icons.
+ */
+export function vectorAssetsBase(archiveUrl: string): string {
+  return archiveUrl.replace(/[^/]*$/, '') + 'basemaps-assets';
 }
 
 /** The overlays on by default over a basemap, by id. */
@@ -59,7 +75,20 @@ export function liveMapStyle({ basemap, overlays, origin, pixelRatio, background
     sources: {},
     layers: [{ id: 'background', type: 'background', paint: { 'background-color': background } }],
   };
-  if (basemap) {
+  if (basemap?.kind === 'vector') {
+    // The flavor draws its own background, and its layers read from this source.
+    const id = basemapSourceId(basemap.id);
+    const assets = vectorAssetsBase(basemap.url);
+    style.glyphs = assets + '/fonts/{fontstack}/{range}.pbf';
+    style.sprite = assets + '/sprites/v4/light';
+    style.sources[id] = {
+      type: 'vector',
+      url: 'pmtiles://' + basemap.url,
+      ...(basemap.maxZoom ? { maxzoom: basemap.maxZoom } : {}),
+      attribution: basemap.attribution,
+    };
+    style.layers = protomapsLayers(id, namedFlavor('light'), { lang: 'en' });
+  } else if (basemap) {
     const id = basemapSourceId(basemap.id);
     // A detectRetina basemap (no `{r}`) fetches a zoom level deeper on a high-density
     // screen, as Leaflet's detectRetina does: half-size tiles.
