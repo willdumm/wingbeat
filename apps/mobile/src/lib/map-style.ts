@@ -84,14 +84,14 @@ export function liveMapStyle({ basemap, overlays, origin, pixelRatio, background
     const id = basemapSourceId(basemap.id);
     const assets = vectorAssetsBase(basemap.url);
     style.glyphs = assets + '/fonts/{fontstack}/{range}.pbf';
-    style.sprite = assets + '/sprites/v4/light';
+    style.sprite = assets + '/sprites/v4/white';
     style.sources[id] = {
       type: 'vector',
       url: 'pmtiles://' + basemap.url,
       ...(basemap.maxZoom ? { maxzoom: basemap.maxZoom } : {}),
       attribution: basemap.attribution,
     };
-    style.layers = protomapsLayers(id, namedFlavor('light'), { lang: 'en' });
+    style.layers = protomapsLayers(id, namedFlavor('white'), { lang: 'en' });
   } else if (basemap) {
     const id = basemapSourceId(basemap.id);
     // A detectRetina basemap (no `{r}`) fetches a zoom level deeper on a high-density

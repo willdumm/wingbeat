@@ -72,7 +72,7 @@ test('a vector basemap: its PMTiles archive as the source, the Protomaps layers,
     type: 'vector', url: 'pmtiles://https://tiles.example/pm/alaska.pmtiles', maxzoom: 15, attribution: 'OSM',
   });
   expect(style.glyphs).toBe('https://tiles.example/pm/basemaps-assets/fonts/{fontstack}/{range}.pbf');
-  expect(style.sprite).toBe('https://tiles.example/pm/basemaps-assets/sprites/v4/light');
+  expect(style.sprite).toBe('https://tiles.example/pm/basemaps-assets/sprites/v4/white');
   const ids = style.layers.map((l) => l.id);
   expect(new Set(ids).size).toBe(ids.length);
   expect(ids[0]).toBe('background');

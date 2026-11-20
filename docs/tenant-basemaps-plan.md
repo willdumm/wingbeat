@@ -141,7 +141,7 @@ isn't set (as now). The API can't set `tile_proxy`, only the legacy script can.
 - `apps/mobile/src/lib/map-style.ts`: offer `vector_basemaps` after the raster ones. A vector
   basemap is a MapLibre vector source with `url: 'pmtiles://' + url` (the app already reads
   PMTiles this way for the DEM, `elevation-tool.tsx:125`), and layers from `@protomaps/basemaps`
-  (`layers('protomaps', namedFlavor('light'), { lang: 'en' })`, a JavaScript-only package).
+  (`layers('protomaps', namedFlavor('white'), { lang: 'en' })`, a JavaScript-only package).
   Glyphs and sprites come from Protomaps' `basemaps-assets`, copied into the same R2 bucket.
 - The default basemap is the first one the server sends. Drop `DEFAULT_ENABLED_BASEMAPS` and
   the `clientBasemapPresets` fallback (servers older than `basemaps` are gone).
@@ -178,7 +178,7 @@ the extract, make a new one as above and upload it over the same key.
 The app finds a vector basemap's glyphs and sprites at `basemaps-assets/` beside its archive
 (`vectorAssetsBase()` in `apps/mobile/src/lib/map-style.ts`): `<dir>/alaska.pmtiles`,
 `<dir>/basemaps-assets/fonts/{fontstack}/{range}.pbf` and
-`<dir>/basemaps-assets/sprites/v4/light.{json,png}` (and `light@2x`). Once it's hosted, an
+`<dir>/basemaps-assets/sprites/v4/white.{json,png}` (and `white@2x`). Once it's hosted, an
 admin adds the vector row in Settings > Basemaps (or the demo script does) with the credit
 below.
 
