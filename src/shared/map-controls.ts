@@ -1,5 +1,6 @@
 import { Env } from '../types';
 import { FALLBACK_BASEMAP, overlayDefaultEnabled } from '@wingbeat/core/basemaps';
+import { icon } from './icons';
 
 /**
  * Local (per-device) basemap state, stored in localStorage — intentionally NOT synced to
@@ -125,6 +126,8 @@ export function sharedTileLayerDefs(
  * sharedMapControlsScripts() from whatever layers are currently active, since the set
  * of layers is tenant data — this only emits the empty container for them.
  * Optionally appends an extra group of buttons (pass the inner button HTML, without wrapper divs).
+ * The map's credits sit above the bar behind an (i) button, as MapLibre's compact attribution
+ * does in the app: some (the elevation tint's) run to several lines.
  */
 export function sharedMapControlsMarkup(extraButtons?: string, idPrefix = ''): string {
   const extra = extraButtons
@@ -132,7 +135,10 @@ export function sharedMapControlsMarkup(extraButtons?: string, idPrefix = ''): s
     : '';
   return `
       <div id="${idPrefix}map-controls" class="map-controls-wrap">
-        <div id="${idPrefix}map-attribution" class="map-controls-attribution"></div>
+        <div id="${idPrefix}map-attribution-row" class="map-controls-attribution-row" data-open="false" hidden>
+          <button id="${idPrefix}map-attribution-toggle" type="button" class="map-attribution-toggle" title="Map credits" aria-label="Map credits" aria-expanded="false" aria-controls="${idPrefix}map-attribution">${icon('info', { size: 14 })}</button>
+          <div id="${idPrefix}map-attribution" class="map-controls-attribution"></div>
+        </div>
         <div id="${idPrefix}map-controls-bar" class="map-controls-bar">
           <div class="controls-group">
             <button id="${idPrefix}zoom-in" class="controls-btn map-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
@@ -163,14 +169,53 @@ export function sharedMapControlsStyles(): string {
     /* The page-level map runs to the screen's bottom edge: clear the home indicator. */
     #map-controls { bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px)); }
 
+    .map-controls-attribution-row {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      max-width: min(320px, calc(100vw - 1rem));
+      pointer-events: auto;
+    }
+    .map-controls-attribution-row[hidden] { display: none; }
+    .map-controls-attribution-row[data-open="true"] {
+      padding: 0.2rem 0.6rem 0.2rem 0.2rem;
+      background: var(--surface-float);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius-md);
+      backdrop-filter: blur(14px) saturate(1.1);
+      -webkit-backdrop-filter: blur(14px) saturate(1.1);
+      box-shadow: var(--shadow-md);
+    }
+    .map-controls-attribution-row:not([data-open="true"]) .map-controls-attribution { display: none; }
+
+    .map-attribution-toggle {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.5rem;
+      height: 1.5rem;
+      padding: 0;
+      color: var(--text-muted);
+      background: var(--surface-float);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius-pill);
+      box-shadow: var(--shadow-md);
+      cursor: pointer;
+      transition: color var(--duration-fast) var(--ease-standard);
+    }
+    .map-attribution-toggle:hover { color: var(--text-secondary); }
+    .map-controls-attribution-row[data-open="true"] .map-attribution-toggle {
+      background: none;
+      border-color: transparent;
+      box-shadow: none;
+    }
+
     #map-attribution, .map-controls-attribution {
       font-family: var(--font-body);
       font-size: 0.63rem;
       color: var(--text-muted);
-      text-align: center;
-      max-width: 320px;
       line-height: 1.4;
-      pointer-events: auto;
     }
 
     #map-attribution a, .map-controls-attribution a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
@@ -569,6 +614,14 @@ export function sharedMapControlsScripts(
         return frag;
       }
 
+      var _attribRow = ${rootExpr}.getElementById('${idPrefix}map-attribution-row');
+      var _attribToggle = ${rootExpr}.getElementById('${idPrefix}map-attribution-toggle');
+      _attribToggle.addEventListener('click', function() {
+        var open = _attribRow.getAttribute('data-open') !== 'true';
+        _attribRow.setAttribute('data-open', open ? 'true' : 'false');
+        _attribToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+
       function _updateAttrib() {
         var el = ${rootExpr}.getElementById('${idPrefix}map-attribution');
         if (!el || !${mapVar}) return;
@@ -580,6 +633,7 @@ export function sharedMapControlsScripts(
         add(${currentLayerVar});
         ${mapVar}.eachLayer(function(l) { if (l instanceof L.GridLayer) add(l); });
         el.textContent = '';
+        _attribRow.hidden = !parts.length;
         parts.forEach(function(p, i) {
           if (i > 0) el.appendChild(document.createTextNode(' · '));
           el.appendChild(_attribNodes(p));
