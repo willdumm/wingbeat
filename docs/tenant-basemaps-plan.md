@@ -150,9 +150,10 @@ isn't set (as now). The API can't set `tile_proxy`, only the legacy script can.
 ## Mapterhorn credit
 
 `DEM_ATTRIBUTION` in `packages/core/src/elevation.ts`:
-`Elevation: <a href="https://mapterhorn.com/attribution">Mapterhorn</a>`. The web adds it to
-the map's attribution row while the elevation tool is on (server-side). The app sets it as
-the `RasterDEMSource`'s attribution, or shows it under the readout, in the OTA update.
+`Elevation: <a href="https://mapterhorn.com/attribution">Mapterhorn</a>`. The web's tint layer
+carries it, so the map's attribution row shows it while the elevation tool is on (the page
+script is served by the Worker, so this is server-side). The app sets it as the
+`RasterDEMSource`'s attribution, in the OTA update.
 
 ## Protomaps hosting
 
@@ -161,11 +162,29 @@ pmtiles extract https://build.protomaps.com/<YYYYMMDD>.pmtiles alaska.pmtiles --
 ```
 
 The region crosses the antimeridian (the western Aleutians), so it needs a GeoJSON
-MultiPolygon with one part on each side, not a single `--bbox`. Upload it, with the
+MultiPolygon with one part on each side, not a single `--bbox`: `scripts/alaska.geojson` is a
+rough one (two rectangles, so it takes a little of Yukon and British Columbia too; tighten it
+if that matters). Upload it, with the
 `basemaps-assets` fonts and sprites, to the R2 bucket that serves the dummthings.dev overlays.
 That bucket's CORS must allow range requests from the app. Credit:
 `© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://protomaps.com">Protomaps</a>`.
 Uploading needs the user's go-ahead and the bucket name.
+
+The app finds a vector basemap's glyphs and sprites at `basemaps-assets/` beside its archive
+(`vectorAssetsBase()` in `apps/mobile/src/lib/map-style.ts`): `<dir>/alaska.pmtiles`,
+`<dir>/basemaps-assets/fonts/{fontstack}/{range}.pbf` and
+`<dir>/basemaps-assets/sprites/v4/light.{json,png}` (and `light@2x`). Once it's hosted, an
+admin adds the vector row in Settings > Basemaps (or the demo script does) with the credit
+below.
+
+## Built (2026-11-20)
+
+Migration `0010`, `/api/basemaps`, Settings > Basemaps (`src/shared/basemap-settings.ts`),
+`scripts/basemaps-legacy.sql`, `scripts/basemaps-demo.sql` (also in `demo-seed.mjs sql`), the
+showcase on USGS tiles, the Mapterhorn credit on web and app, and the app's vector basemap
+(`@protomaps/basemaps`; the Expo fingerprint is unchanged). Not done: the Protomaps archive
+and its assets aren't hosted yet, so no tenant has a vector row, and the Alaska basemap hasn't
+been drawn on a device.
 
 ## Rollout
 
