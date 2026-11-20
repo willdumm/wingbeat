@@ -1,6 +1,6 @@
 ---
 title: Admin Settings
-description: "Admin-only Wingbeat settings: the setup checklist, fleet management, overlays, users, and global settings."
+description: "Admin-only Wingbeat settings: the setup checklist, fleet management, basemaps, overlays, users, and global settings."
 weight: 2
 ---
 
@@ -76,6 +76,14 @@ the last one is shown ("Last changed by …").
 
 The shared Pushover application token, plus the list of webhook/Pushover
 notification targets. See [Notifications](../../features/notifications).
+
+### Basemaps
+
+Add, edit, show or hide, reorder or delete the map's basemaps, for everyone. A
+raster basemap needs a `{z}/{x}/{y}` tile URL; a vector one (mobile app only) an
+`https` URL of a `.pmtiles` archive. Hidden basemaps stay configured. The map
+always keeps at least one shown raster basemap. Add only sources you're entitled
+to use: each provider sets its own terms for tiles and for credit.
 
 ### Overlays
 

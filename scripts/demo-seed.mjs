@@ -5,8 +5,8 @@
 //   node scripts/demo-seed.mjs sql > demo-seed.sql
 //     SQL for a freshly migrated D1: settings (with the demo code), aircraft, pilots and
 //     their default duty, the three demo trackers (inactive), the demo user (an admin who
-//     is a pilot), named points and regions. Apply it with the hosting repo's
-//     `scripts/d1-query.mjs --customer demo --env <env> --file demo-seed.sql`. It only
+//     is a pilot), named points, regions and basemaps (scripts/basemaps-demo.sql). Apply it with
+//     the hosting repo's `scripts/d1-query.mjs --customer demo --env <env> --file demo-seed.sql`. It only
 //     inserts, so it fails on a D1 that already has them rather than overwrite anything.
 //
 //   node scripts/demo-seed.mjs history --host demo.staging.wingbeat.dummthings.dev [--days 30]
@@ -111,6 +111,8 @@ function seedSql() {
   for (const f of geo('regions.geojson').features) {
     out.push(insert('regions', { name: f.properties.Name ?? f.properties.name, geojson: JSON.stringify(f.geometry) }));
   }
+  // The demo's basemaps: USGS Topo from migration 0010, and scripts/basemaps-demo.sql's imagery.
+  out.push(readFileSync(path.join(ROOT, 'scripts/basemaps-demo.sql'), 'utf8'));
   return out.join('\n') + '\n';
 }
 

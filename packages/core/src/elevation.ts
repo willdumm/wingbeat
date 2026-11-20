@@ -10,6 +10,9 @@
 /** Mapterhorn's public DEM archive: Terrarium-encoded WebP tiles, DEM_TILE_SIZE px square. */
 export const DEM_PMTILES_URL = 'https://download.mapterhorn.com/planet.pmtiles';
 
+/** The credit Mapterhorn asks for, shown wherever the DEM is drawn (HTML, like a basemap's attribution). */
+export const DEM_ATTRIBUTION = 'Elevation: <a href="https://mapterhorn.com/attribution" target="_blank">Mapterhorn</a>';
+
 /** pmtiles.js, which reads the archive in the browser (the web's pages and the app's WebView). */
 export const PMTILES_SCRIPT_URL = 'https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js';
 export const PMTILES_SCRIPT_SRI = 'sha384-QfbOCebHNw8pQiPAOd2IFee2v2A5VYZxBk0+JGZ5H+3mfzVIp6zsQNkTsfGJot93';

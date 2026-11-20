@@ -17,9 +17,9 @@ synced across a user's sessions.
 
 ## Map layers
 
-Which basemaps are enabled, the active basemap choice, and per-layer color
-correction (saturation/contrast/brightness). Also where a custom tile URL can
-be added. Stored per device — see [Map Tools](../../features/map-tools).
+The active basemap choice and per-basemap color correction
+(saturation/contrast/brightness). Which basemaps there are is set by an Admin.
+Stored per device — see [Map Tools](../../features/map-tools).
 
 ## My Devices
 

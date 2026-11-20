@@ -43,7 +43,7 @@ export const InstanceSettings = z.looseObject({
 });
 
 /**
- * A built-in basemap as the client sees it (clientBasemapPresets() in ../basemaps.ts):
+ * A raster basemap as the client sees it (the tenant's shown raster rows):
  * `url` is a tile template with `{z}`/`{x}`/`{y}`, and may have `{s}` (a subdomain,
  * TILE_SUBDOMAINS) and `{r}` (`@2x` on a high-density screen, or nothing). A keyed one's
  * `url` is a path on the instance (`/api/tiles/…`) that needs the session. attribution is HTML.
@@ -57,6 +57,18 @@ export const Basemap = z.looseObject({
   detectRetina: z.optional(z.boolean()),
 });
 
+/**
+ * A vector basemap as the app sees it: `url` is an https PMTiles archive. Only the app draws
+ * these; the web's maps are raster-only. attribution is HTML.
+ */
+export const VectorBasemap = z.looseObject({
+  id: z.string(),
+  label: z.string(),
+  url: z.string(),
+  attribution: z.string(),
+  maxZoom: z.optional(z.number()),
+});
+
 /** GET /api/bootstrap */
 export const BootstrapResponse = z.looseObject({
   me: Me,
@@ -64,8 +76,10 @@ export const BootstrapResponse = z.looseObject({
   aircraft: z.array(Aircraft),
   pilots: z.array(Pilot),
   overlays: z.array(TileOverlay),
-  /** The built-in basemaps, in display order (absent from servers older than the app). */
+  /** The tenant's shown raster basemaps, in display order (absent from servers older than the app). */
   basemaps: z.optional(z.array(Basemap)),
+  /** The tenant's shown vector basemaps, in display order (the app offers them after the raster ones). */
+  vector_basemaps: z.optional(z.array(VectorBasemap)),
   /** Absent from servers older than the handshake, like api_version. */
   instance: z.optional(InstanceSettings),
   /** The server's API level (absent from servers older than the handshake). */
@@ -76,6 +90,7 @@ export const BootstrapResponse = z.looseObject({
 
 export type Me = z.infer<typeof Me>;
 export type Basemap = z.infer<typeof Basemap>;
+export type VectorBasemap = z.infer<typeof VectorBasemap>;
 export type InstanceSettings = z.infer<typeof InstanceSettings>;
 export type BootstrapResponse = z.infer<typeof BootstrapResponse>;
 

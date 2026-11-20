@@ -6,10 +6,8 @@
  * Because the demos call the real renderers, a change to the app UI shows up here on
  * the next `npm run docs:showcase`.
  */
-import { Env } from '../types';
 import { themeRuntimeScript } from '../shared/theme';
 import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, sharedTileLayerDefs, sharedMapControlsScripts } from '../shared/map-controls';
-import { staticSiteBasemapPresets } from '@wingbeat/core/basemaps';
 import { filterScript } from '../shared/filters';
 import { sharedSidebarToggleScripts } from '../shared/sidebar';
 import { aircraftInfoRenderScript } from '../shared/aircraft-info';
@@ -34,7 +32,14 @@ import { SampleData } from './sample-data';
 import { formatLocalDateTime } from '../shared/format';
 import { synthesizeTrack } from './tracks';
 import { demoMarkup, demoStylesheets } from './demos';
-import { SHOWCASE_TILE_KEY_META } from './page';
+
+const USGS_ATTRIBUTION = 'Tiles courtesy of the <a href="https://www.usgs.gov/" target="_blank">U.S. Geological Survey</a>';
+const SHOWCASE_BASEMAPS = [
+  { id: 'usgstopo', label: 'USGS Topo', maxZoom: 16, attribution: USGS_ATTRIBUTION,
+    url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}' },
+  { id: 'usgsimagerytopo', label: 'USGS Imagery Topo', maxZoom: 16, attribution: USGS_ATTRIBUTION,
+    url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/MapServer/tile/{z}/{y}/{x}' },
+];
 
 // Where both maps start before they fit to their data: Kodiak Island and the Katmai coast.
 const MAP_DEFAULT = { lat: 57.75, lng: -153.6, zoom: 7 };
@@ -62,15 +67,9 @@ export function showcaseScript(sample: SampleData): string {
     htmlEscapeScript(),
     themeRuntimeScript(),
     mapLayerColorRuntimeScript(),
-    // No app Worker behind the docs site to hold the Carto key, so keyed basemaps use a
-    // public, referrer-restricted key that Hugo writes into the page (see
-    // SHOWCASE_TILE_KEY_META), and are left out when there isn't one.
-    mapLayersRuntimeScript({} as Env, staticSiteBasemapPresets()),
-    `(() => {
-      const key = document.querySelector('meta[name="${SHOWCASE_TILE_KEY_META}"]')?.content;
-      _ftPresets = _ftPresets.flatMap(p => !p.secretEnvVar ? [p]
-        : key ? [{ ...p, url: p.url.replace('{KEY}', encodeURIComponent(key)) }] : []);
-    })();`,
+    mapLayersRuntimeScript(),
+    // No app Worker behind the docs site: the demo maps' basemaps are public-domain USGS tiles.
+    `_ftPresets = ${JSON.stringify(SHOWCASE_BASEMAPS)};`,
     filterScript(),
     dashboardScriptsHelpers(),
     dashboardScriptsIcons(),

@@ -13,9 +13,10 @@ import { formModalStyles } from './shared/form-modal';
 import { flightEditsStyles } from './shared/flight-edits';
 import { flightEditorStyles } from './shared/flight-editor';
 import { AppSettings, settingsAsClientObject } from './settings';
-import { escapeHtml } from './shared/html';
+import { escapeHtml, jsonForScript } from './shared/html';
 import { coreBundleScript } from './shared/core-bundle';
 import { Env } from './types';
+import type { BasemapPreset } from '@wingbeat/core/basemaps';
 
 /** The dashboard's stylesheet after the font import and theme tokens. The docs-site
  * showcase (src/showcase/) adopts it as-is for its dashboard demos. */
@@ -23,7 +24,7 @@ export function dashboardPageStyles(): string {
   return brandStyles() + iconStyles() + statusStyles() + segmentedControlStyles() + formModalStyles() + flightEditsStyles() + flightEditorStyles() + dashboardStyles();
 }
 
-export function dashboardHTML(settings: AppSettings, env: Env, nonce: string): string {
+export function dashboardHTML(settings: AppSettings, env: Env, nonce: string, basemaps: BasemapPreset[]): string {
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -44,9 +45,10 @@ export function dashboardHTML(settings: AppSettings, env: Env, nonce: string): s
 </head>
 <body>
 <script nonce="${nonce}">window.APP_SETTINGS=${settingsAsClientObject(settings, env)};</script>
+<script nonce="${nonce}">window.APP_BASEMAPS=${jsonForScript(basemaps)};</script>
 ${dashboardMarkup(settings.app_name)}
   ${coreBundleScript(nonce)}
-  <script nonce="${nonce}">${iconRuntimeScript()}${dashboardScripts(env)}</script>
+  <script nonce="${nonce}">${iconRuntimeScript()}${dashboardScripts()}</script>
 </body>
 </html>`;
 }

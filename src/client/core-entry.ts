@@ -46,6 +46,7 @@ import * as aircraftApi from '@wingbeat/core/api/aircraft';
 import * as pilotsApi from '@wingbeat/core/api/pilots';
 import * as meApi from '@wingbeat/core/api/me';
 import * as usersApi from '@wingbeat/core/api/users';
+import * as basemapsApi from '@wingbeat/core/api/basemaps';
 import * as overlaysApi from '@wingbeat/core/api/overlays';
 import * as settingsApi from '@wingbeat/core/api/settings';
 import * as webhooksApi from '@wingbeat/core/api/webhooks';
@@ -212,6 +213,7 @@ Object.assign(globalThis, {
   fetchAircraft: () => aircraftApi.getAircraft(api),
   fetchPilots: () => pilotsApi.getPilots(api),
   fetchOverlays: () => overlaysApi.getOverlays(api),
+  fetchBasemaps: () => basemapsApi.getBasemaps(api),
   // The signed-in user, their devices and their account (Settings; the dashboard's heartbeat).
   fetchMe: () => meApi.getMe(api),
   fetchSessions: () => meApi.getSessions(api),
@@ -245,6 +247,10 @@ Object.assign(globalThis, {
   fetchInvites: () => usersApi.getInvites(api),
   createInvite: (body: usersApi.InviteRequest) => usersApi.createInvite(api, body),
   deleteInvite: (id: number) => usersApi.deleteInvite(api, id),
+  createBasemap: (body: basemapsApi.BasemapRequest) => basemapsApi.createBasemap(api, body),
+  updateBasemap: (id: number, body: basemapsApi.BasemapRequest) => basemapsApi.updateBasemap(api, id, body),
+  reorderBasemaps: (body: basemapsApi.BasemapOrderRequest) => basemapsApi.reorderBasemaps(api, body),
+  deleteBasemap: (id: number) => basemapsApi.deleteBasemap(api, id),
   createOverlay: (body: overlaysApi.OverlayRequest) => overlaysApi.createOverlay(api, body),
   updateOverlay: (id: number, body: overlaysApi.OverlayRequest) => overlaysApi.updateOverlay(api, id, body),
   deleteOverlay: (id: number) => overlaysApi.deleteOverlay(api, id),
