@@ -83,6 +83,13 @@ check that no corner pokes out past the pill's rounded ends.
 Build 8's set, in order: the Live map with all aircraft cards expanded, the Flights list, a flight's
 detail on satellite imagery, and a pilot's Duty view.
 
+## App Review Information
+
+The **Notes** field takes the text of `app-review-notes.txt` beside this file, as is. Apple's
+limit is 4,000 characters (`wc -m`; it's 3,988), so recount after any edit. Fill in its two
+placeholders (the screen recording's link and the iOS version it was recorded on) before
+submitting. Sign-in isn't required: the notes point the reviewer to "Try the Demo".
+
 ## App-level pages
 
 These live outside the version page, under the app's General section, and are not part of the
