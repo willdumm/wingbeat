@@ -110,9 +110,16 @@ export function useElevationTool({ picks, center }: {
 
 export type ElevationTool = ReturnType<typeof useElevationTool>;
 
+/** live-map's lowest layer (its tracks), always mounted. */
+const BELOW_LAYER = 'tracks';
+
 type ColorReliefPaint = NonNullable<ColorReliefLayerSpecification['paint']>;
 
-/** The tint and the reference's dot, inside the Map (under the tracks). */
+/**
+ * The tint and the reference's dot, inside the Map, under the tracks and markers. They mount
+ * when the tool turns on, after live-map's layers, so MapLibre would add them on top: beforeId
+ * puts them under its lowest layer instead.
+ */
 export function ElevationLayers({ tool }: { tool: ElevationTool }) {
   const t = useTokens();
   if (!tool.on || !tool.reference) return null;
@@ -124,14 +131,14 @@ export function ElevationLayers({ tool }: { tool: ElevationTool }) {
           source takes the encoding from there only (defaulting to mapbox: everything red). */}
       <RasterDEMSource id="elevation" tiles={['pmtiles://' + DEM_PMTILES_URL]} maxzoom={DEM_MAX_ZOOM} tileSize={512} encoding="terrarium"
         attribution={DEM_ATTRIBUTION}>
-        <Layer id="elevation" type="color-relief" paint={{
+        <Layer id="elevation" type="color-relief" beforeId={BELOW_LAYER} paint={{
           // The ramp, rebuilt around each reference.
           'color-relief-color': color,
           'color-relief-opacity': tool.pref.opacity / 100,
         }} />
       </RasterDEMSource>
       <GeoJSONSource id="elevation-reference" data={{ type: 'Feature', geometry: { type: 'Point', coordinates: tool.reference.lngLat }, properties: {} }}>
-        <Layer id="elevation-reference" type="circle" paint={{
+        <Layer id="elevation-reference" type="circle" beforeId={BELOW_LAYER} paint={{
           'circle-radius': 5, 'circle-color': t['text-primary'], 'circle-stroke-color': t['surface-1'], 'circle-stroke-width': 2,
         }} />
       </GeoJSONSource>
