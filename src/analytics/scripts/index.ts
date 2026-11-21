@@ -1,4 +1,3 @@
-import { Env } from '../../types';
 import { themeRuntimeScript } from '../../shared/theme';
 import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, overlayLegendRuntimeScript } from '../../shared/map-controls';
 import { toggleScript } from '../../shared/toggle';
@@ -20,11 +19,11 @@ import { analyticsScriptsLayers } from './layers';
 import { analyticsScriptsMap } from './map';
 import { analyticsScriptsInfoPopup } from './info-popup';
 
-export function analyticsScripts(env: Env): string {
+export function analyticsScripts(): string {
   const body = [
     themeRuntimeScript(),
     mapLayerColorRuntimeScript(),
-    mapLayersRuntimeScript(env),
+    mapLayersRuntimeScript(),
     overlayLegendRuntimeScript(),
     toggleScript(),
     htmlEscapeScript(),

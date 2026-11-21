@@ -27,7 +27,7 @@
  * active at once — the one addition this doc's Touch points list didn't spell out.
  */
 
-import { DEM_PMTILES_URL, DEM_TILE_SIZE } from '@wingbeat/core/elevation';
+import { DEM_ATTRIBUTION, DEM_PMTILES_URL, DEM_TILE_SIZE } from '@wingbeat/core/elevation';
 
 const ELEV_RANGE_KEY = 'ft_elev_range_m';
 const ELEV_OPACITY_KEY = 'ft_elev_opacity';
@@ -252,7 +252,7 @@ export function elevationToolScript(rootExpr = 'document'): string {
     // unclamped means createTile always receives the same coords.z/x/y as the
     // basemap layer at the current zoom, and does 100% of the overzoom upscaling
     // itself, pixel by pixel.
-    const elevationTintLayer = new ElevationTintLayer();
+    const elevationTintLayer = new ElevationTintLayer({ attribution: ${JSON.stringify(DEM_ATTRIBUTION)} });
 
     function _ftSetElevationReference(latlng, elevM) {
       elevationReferenceElevM = elevM;

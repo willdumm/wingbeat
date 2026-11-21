@@ -6,6 +6,7 @@
     "@expo/ui": "~58.0.28",
     "@maplibre/maplibre-react-native": "^11.5.1",
     "@noble/hashes": "^1.8.0",
+    "@protomaps/basemaps": "^5.7.2",
     "@sentry/react-native": "~8.28.0",
     "@wingbeat/core": "file:../../packages/core",
     "expo": "~58.0.25",

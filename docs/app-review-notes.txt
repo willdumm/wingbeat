@@ -1,0 +1,36 @@
+SCREEN RECORDING
+(Provided as an attachment)
+Recorded on an iPhone 13 Pro running iOS 27. It shows launch, logging in to a real operator's Wingbeat instance using the browser, logging in with a QR code, switching between accounts and signing out, and finally logging in with "Try the Demo", the Live map, Flights, a flight's detail and editing a flight, a pilot's Duty log and PDF export, turning on notifications, and deleting that user (Settings > Delete My Account).
+
+1. PURPOSE AND AUDIENCE
+Wingbeat is the iPhone app for Wingbeat Flight Tracker, a flight-following and records service for small air taxi, charter and bush operators. These operators fly aircraft that carry satellite trackers such as the Garmin inReach. Before Wingbeat, the pilot or a dispatcher had to watch each tracker's web page and copy times into a logbook by hand. Wingbeat puts the whole fleet on one map, logs each takeoff and landing automatically from the tracker data, and tracks pilots' duty and flight time against the US Part 135 limits. Its users are an operation's pilots, dispatchers and managers.
+
+Wingbeat is a commercial multi-tenant service, not an app built for one company. Any operator can sign up at https://wingbeat.dummthings.dev, and each gets its own instance with its own trackers, aircraft and pilots. The app works with any instance. As with other business companion apps, users need an account from their operator. Operators sign up and pay for wingbeat instance hosting under a business service agreement; the app sells nothing and has no in-app purchases.
+
+2. SETUP AND ACCESS
+No credentials are needed. On first launch, tap "Try the Demo". This signs you in to our demo operation: three simulated aircraft, two of them always flying, with sample flights and pilots. From there:
+- Live: the fleet map. Tap an aircraft for its altitude, speed and last report.
+- Flights: automatically logged flights. Open one to see its track or edit its times and details.
+- Duty: each pilot's flight and duty time against the Part 135 limits, with a PDF export.
+- Settings: notification choices, accounts, and Delete My Account.
+
+Real users join by an invite from their operator's administrator, then sign in with "Sign in with Browser" (entering their operation's Wingbeat address) or by scanning a sign-in code from Wingbeat on the web.
+
+Account deletion: Settings > Delete My Account, with a confirmation. On a real account, this deletes the user and signs out all their devices. The operator keeps its flight records, which it may be required to retain. On the shared demo account it only signs this device out, so the demo stays available; the recording shows a full deletion.
+
+There is no public user-generated content and no messaging: flight edits and duty entries stay inside the user's own operation.
+
+3. EXTERNAL SERVICES
+- Satellite tracker data feeds (Garmin inReach / Garmin Explore, SPOT), which the operator's trackers report to
+- Cloudflare, which hosts the Wingbeat service and its data
+- Apple Push Notification service (through Expo's push service), for takeoff, landing and tracker-gap alerts
+- Maps: USGS topographic and imagery tiles, an OpenStreetMap map (Protomaps format, hosted by us) and Mapterhorn elevation data, each credited on the map
+- Sentry, for crash reports (no flight or location data)
+- Email sign-in codes and invites, which the service sends
+No AI services, payment processors or third-party sign-in providers are used.
+
+4. REGIONAL DIFFERENCES
+The app works the same in every region where it's available.
+
+5. REGULATED INDUSTRY
+Wingbeat is a record-keeping and flight-following tool. It does not provide any regulated services for air taxi or air charter operators. Part 135 operators are responsible for their own compliance with FAA regulations and their operations manuals, and use Wingbeat at their discretion within those rules. The map data in section 3 is used under each source's terms, with credit.

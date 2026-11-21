@@ -1,10 +1,12 @@
 /**
- * The built-in basemaps: the catalog every map offers (the web's Leaflet maps and the app's
- * MapLibre map), and the pure functions over it that the Worker's keyed-tile proxy and the
- * clients share. Reading a tile-provider secret stays in the Worker (readEnvSecret() in
- * src/shared/map-controls.ts); the functions here take its result as a parameter.
+ * Basemap helpers shared by the Worker's keyed-tile proxy and the clients: the registry of
+ * keyed tile providers, URL validation, and the per-basemap overlay defaults. The basemaps
+ * themselves are tenant data (the `basemaps` table, docs/tenant-basemaps-plan.md). Reading a
+ * tile-provider secret stays in the Worker (readEnvSecret() in src/shared/map-controls.ts);
+ * the functions here take its result as a parameter.
  */
 
+/** A raster basemap as a client draws it (`Basemap` in api/bootstrap.ts). */
 export interface BasemapPreset {
   id: string;
   label: string;
@@ -16,88 +18,46 @@ export interface BasemapPreset {
    * screens) instead of real @2x tiles, which is what overloaded OpenTopoMap's
    * server and caused gray tiles on iPad/iPhone. */
   detectRetina?: boolean;
-  /**
-   * Set only for presets that require a hoster-held key (e.g. Carto). `url` is then
-   * the *upstream* template — fetched server-side by the `/api/tiles/:providerId`
-   * proxy, never by the client directly — with `{KEY}` substituted for the secret
-   * named here (a Worker secret, never per-tenant D1 data).
-   */
-  secretEnvVar?: string;
+  /** Its place among the tenant's shown basemaps, both kinds (the app merges the two lists by it). */
+  order?: number;
 }
 
 /**
- * Built-in basemap choices. Order here is the default display order.
- *
- * This is also the server-side registry for the keyed-tile proxy (`/api/tiles/...`
- * in src/index.ts) — the *only* place allowed to construct an upstream tile URL. A
- * preset's `url` is the real upstream template regardless of whether it's keyed;
- * `clientBasemapPresets()` is what rewrites it to a same-origin proxy path for
- * presets that have a `secretEnvVar`.
+ * A provider whose tiles need a hoster-held key. `url` is the *upstream* template, fetched
+ * server-side by the `/api/tiles/:key` proxy and never by a client, with `{KEY}` replaced by
+ * the Worker secret named by `secretEnvVar` (never per-tenant D1 data). A basemap row opts in
+ * with `tile_proxy` (set only by scripts/basemaps-legacy.sql, never the API); the upstream
+ * URL always comes from here, so an admin can't point the secret at another host.
  */
-export const BASEMAP_PRESETS: readonly BasemapPreset[] = [
-  {
-    id: 'map',
-    label: 'Map',
+export interface KeyedTileProvider {
+  url: string;
+  secretEnvVar: string;
+}
+
+/** Keyed tile providers by the `tile_proxy` name a basemap row refers to them by. */
+export const KEYED_TILE_PROVIDERS: Readonly<Record<string, KeyedTileProvider>> = {
+  carto: {
     url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key={KEY}',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    maxZoom: 18,
     secretEnvVar: 'CARTO_API_KEY',
   },
-  {
-    id: 'topo',
-    label: 'Topo',
-    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; <a href="https://opentopomap.org" target="_blank">OpenTopoMap</a> (CC-BY-SA)',
-    maxZoom: 17,
-  },
-  {
-    id: 'usgstopo',
-    label: 'USGS Topo',
-    url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Tiles courtesy of the <a href="https://www.usgs.gov/" target="_blank">U.S. Geological Survey</a>',
-    maxZoom: 16,
-  },
-  {
-    id: 'usgsimagerytopo',
-    label: 'USGS Imagery Topo',
-    url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Tiles courtesy of the <a href="https://www.usgs.gov/" target="_blank">U.S. Geological Survey</a>',
-    maxZoom: 16,
-  },
-  {
-    id: 'satellite',
-    label: 'Satellite',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
-    maxZoom: 18,
-    detectRetina: true,
-  },
-];
-
-/** Layers enabled by default on a device that has never touched this setting. */
-export const DEFAULT_ENABLED_BASEMAPS: readonly string[] = ['map', 'topo', 'satellite'];
-
-/** The subdomains a `{s}` in a preset's `url` takes (Leaflet's default `subdomains`). */
-export const TILE_SUBDOMAINS: readonly string[] = ['a', 'b', 'c'];
+};
 
 /**
- * The preset list for a page with no app Worker behind it (the docs site's showcase):
- * every preset, with keyed ones still carrying their `{KEY}` placeholder. The page
- * fills it in at runtime from a public, referrer-restricted key, or drops those presets
- * when it has none (see src/showcase/scripts.ts).
+ * What a client draws when the tenant has no shown raster basemap it can use (a keyed one
+ * whose Worker secret is unset, say), so a map never has zero layers. USGS data is public domain.
  */
-export function staticSiteBasemapPresets(): BasemapPreset[] {
-  return [...BASEMAP_PRESETS];
-}
+export const FALLBACK_BASEMAP: BasemapPreset = {
+  id: 'usgstopo',
+  label: 'USGS Topo',
+  url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}',
+  attribution: 'Tiles courtesy of the <a href="https://www.usgs.gov/" target="_blank">U.S. Geological Survey</a>',
+  maxZoom: 16,
+};
 
-/** Looks up a keyed preset by id for the tile proxy route. Returns undefined for an
- * unknown id or a preset that isn't keyed (proxying a keyless preset is undesirable, so
- * the route 404s on it same as an unknown id). */
-export function keyedBasemapPreset(id: string): BasemapPreset | undefined {
-  return BASEMAP_PRESETS.find((p) => p.id === id && p.secretEnvVar);
-}
+/** The subdomains a `{s}` in a basemap's `url` takes (Leaflet's default `subdomains`). */
+export const TILE_SUBDOMAINS: readonly string[] = ['a', 'b', 'c'];
 
-/** Substitutes `{s}`/`{z}`/`{x}`/`{y}`/`{r}`/`{KEY}` into a preset's upstream URL
+/** Substitutes `{s}`/`{z}`/`{x}`/`{y}`/`{r}`/`{KEY}` into a provider's upstream URL
  * template. The only place allowed to build an upstream tile-provider URL. */
 export function substituteTileUrl(
   template: string,
@@ -112,33 +72,39 @@ export function substituteTileUrl(
     .replace(/\{KEY\}/g, encodeURIComponent(params.key));
 }
 
-/** The same-origin proxy path a keyed preset's tiles are fetched from. */
-export function basemapProxyUrl(id: string): string {
-  return `/api/tiles/${id}/{z}/{x}/{y}{r}.png`;
+/** The same-origin proxy path a keyed basemap's tiles are fetched from. */
+export function basemapProxyUrl(key: string): string {
+  return `/api/tiles/${key}/{z}/{x}/{y}{r}.png`;
 }
 
-/**
- * The preset list as a *client* should see it: keyless presets pass through unchanged;
- * a keyed preset is only included when `hasSecret(secretEnvVar)` says its secret is
- * configured, and its `url` is rewritten to the same-origin proxy path so the key itself
- * never reaches the client. A preset whose secret is unset is simply absent — no error
- * state, no disabled/"fixed" entry. The web inlines it into the page
- * (mapLayersRuntimeScript() in src/shared/map-controls.ts); the app gets it as
- * `basemaps` in GET /api/bootstrap.
- */
-export function clientBasemapPresets(hasSecret: (name: string) => boolean): BasemapPreset[] {
-  return BASEMAP_PRESETS.flatMap((p) => {
-    if (!p.secretEnvVar) return [p];
-    if (!hasSecret(p.secretEnvVar)) return [];
-    return [{ ...p, url: basemapProxyUrl(p.id) }];
-  });
+/** Whether `url` is an absolute URL with `{z}`, `{x}` and `{y}` placeholders. */
+export function validTileTemplate(url: unknown): url is string {
+  if (typeof url !== 'string' || !url) return false;
+  try { new URL(url); } catch { return false; }
+  return /\{x\}/i.test(url) && /\{y\}/i.test(url) && /\{z\}/i.test(url);
+}
+
+/** Whether `url` is an `https://` PMTiles archive (a vector basemap's source). */
+export function validPmtilesUrl(url: unknown): url is string {
+  if (typeof url !== 'string' || !url) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && u.pathname.toLowerCase().endsWith('.pmtiles');
+  } catch { return false; }
+}
+
+/** A basemap key from its label: lowercase letters and digits, at most 24 of them
+ * ("USGS Imagery Topo" → "usgsimagerytopo"), "basemap" when the label has none. A caller
+ * that needs it unique appends a number. */
+export function basemapKeyFromLabel(label: string): string {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 24) || 'basemap';
 }
 
 /**
  * Whether a tile overlay is on by default over a basemap: its default_enabled_by_basemap
  * entry for that basemap, else default_enabled (also for a basemap the admin couldn't
- * name, like a viewer's own custom one). Self-contained: the web embeds it in its page
- * script with toString() (overlayLegendRuntimeScript() in src/shared/map-controls.ts).
+ * name). Self-contained: the web embeds it in its page script with toString()
+ * (overlayLegendRuntimeScript() in src/shared/map-controls.ts).
  */
 export function overlayDefaultEnabled(
   overlay: { default_enabled: number | boolean; default_enabled_by_basemap?: Record<string, boolean> | null },

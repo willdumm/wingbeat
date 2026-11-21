@@ -42,8 +42,8 @@ EAS_PROJECT_ROOT=$(realpath ../..) EAS_NO_VCS=1 npx eas-cli@latest build --profi
 Reporting is on only in a bundle built with `EXPO_PUBLIC_SENTRY_DSN` set (`src/lib/sentry.ts`).
 It and `SENTRY_ORG` / `SENTRY_PROJECT` (plain) and `SENTRY_AUTH_TOKEN` (secret) are EAS
 environment variables of the `preview` and `production` environments, so EAS Build reads them
-and its builds upload their source maps (the `testflight` profile sets `SENTRY_ALLOW_FAILURE`, so a
-failed upload doesn't fail the build: check its log for the upload). The `development` profile sets
+and its builds upload their source maps (the `testflight` and `production` profiles set
+`SENTRY_ALLOW_FAILURE`, so a failed upload doesn't fail the build: check its log for the upload). The `development` profile sets
 `SENTRY_DISABLE_AUTO_UPLOAD` (a dev client loads its JS from Metro). An EAS Update bundles on
 this machine, so EAS never uploads its maps and can't lend its secret token: upload them after
 publishing. The script reads the token from `.env.sentry-build-plugin` here (`SENTRY_AUTH_TOKEN=…`,
@@ -51,7 +51,7 @@ gitignored, the user's own; never print it), and needs `SENTRY_URL` set as well,
 config doesn't name the server:
 
 ```bash
-EAS_NO_VCS=1 npx eas-cli@latest update --channel preview --environment preview --platform ios --message "..."
+EAS_NO_VCS=1 npx eas-cli@latest update --channel production --environment production --platform ios --message "..."
 SENTRY_URL=https://sentry.io/ SENTRY_ORG=dumm-software-llc SENTRY_PROJECT=wingbeat-mobile npx sentry-expo-upload-sourcemaps dist
 ```
 
@@ -59,9 +59,14 @@ SENTRY_URL=https://sentry.io/ SENTRY_ORG=dumm-software-llc SENTRY_PROJECT=wingbe
 (no `react-native-web`). The runtime version is the native fingerprint, so an update reaches only
 builds with the same one: `npx expo-updates fingerprint:generate --platform ios` gives the local
 hash, and `eas build:list --json` shows each build's `fingerprint.hash`. Check the hash
-matches the target build's before publishing (the current TestFlight build is 7,
-`1e182fbd…`). The app icon and `.gitignore` are in the fingerprint, so changing either needs a
-new build.
+matches the target build's before publishing. Build 8 (1.0.0, the `production` profile and
+channel, iPhone only) is `e7a47ea5…`. Build 7 (0.1.0, `preview`, `1e182fbd…`) takes no update
+from a tree with build 8's native config. The app icon and `.gitignore` are in the fingerprint,
+so changing either needs a new build.
+
+Reading Sentry events, not only uploading maps, needs a token with event read scopes: the
+user's personal one is `SENTRY_READ_TOKEN=…` in `.env.sentry-read.local` here (gitignored; load
+it into a variable, never print it), for `https://sentry.io/api/0/organizations/dumm-software-llc/issues/`.
 
 `.gitignore` must keep ignoring `.env.sentry-build-plugin`, `dist/` and `.expo/`: otherwise a jj
 snapshot commits the token file to `@`. If that happens, restore `.gitignore` and

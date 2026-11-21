@@ -44,7 +44,7 @@ Copy `wrangler.example.toml` to `wrangler.toml` (it's gitignored) and fill in th
 wrangler d1 migrations apply YOUR_DATABASE_NAME
 ```
 
-`0001_initial.sql` creates the full schema and seeds generic settings (app name, UTC timezone, a world map view). There are no trackers, aircraft, named points or regions until you add them in the app. See [Database migrations](#database-migrations) before adding a new one.
+`0001_initial.sql` creates the full schema and seeds generic settings (app name, UTC timezone, a world map view); `0010` adds the `basemaps` table with one basemap, USGS Topo (public domain). There are no trackers, aircraft, named points or regions until you add them in the app. See [Database migrations](#database-migrations) before adding a new one.
 
 ### 3. Configure environment variables
 
@@ -59,7 +59,7 @@ wrangler secret put CARTO_API_KEY  # optional, see below
 |---|---|---|
 | `POLLER_SECRET` | yes | Bearer token required for `/api/admin/*` routes and poller endpoints |
 | `CUSTOMER_ROUTING` | yes | JSON map of `hostname → D1 binding name`, e.g. `'{"your-domain.com": "DB"}'`; hostname only, no port — must be set even for single-customer deployments |
-| `CARTO_API_KEY` | no | API key for the "Map" basemap (Carto Voyager tiles), proxied through `/api/tiles/map/...` so the key never reaches the browser. Shared by every tenant on this deployment — it's a hoster fact, not per-tenant data. If unset, "Map" simply doesn't appear in the basemap switcher; other basemaps (Topo, USGS, Satellite) are unaffected. If the key has a referrer allowlist, include your deployment's domains: the proxy sends the requesting site as `Referer`. |
+| `CARTO_API_KEY` | no | API key for a basemap proxied under it (CARTO Voyager tiles, `tile_proxy = 'carto'` on its `basemaps` row), served through `/api/tiles/<basemap key>/...` so the key never reaches the browser. Only a tenant given that basemap by `scripts/basemaps-legacy.sql` has one. Shared by every tenant on this deployment — it's a hoster fact, not per-tenant data. If unset, that basemap doesn't appear in the switcher; the others are unaffected. If the key has a referrer allowlist, include your deployment's domains: the proxy sends the requesting site as `Referer`. |
 | `EMAIL` | no | A [`send_email` binding](https://developers.cloudflare.com/email-service/) (Cloudflare Email Service) for sign-in by email, email invites and users' email addresses. Needs `EMAIL_FROM` too; without both, those features don't appear and access is by invite link only. The sending domain must be onboarded to Email Sending (`wrangler email sending enable <domain>`). |
 | `EMAIL_FROM` | with `EMAIL` | The sender address (a var, not a secret), on the onboarded domain and in the binding's `allowed_sender_addresses`. |
 | `EMAIL_FROM_NAME` | no | The sender's display name (default "Wingbeat"). Each email also names the instance (its app name and host). |
@@ -200,7 +200,7 @@ controllable clock.
 `migrations/0001_initial.sql` creates the full schema. Schema changes go in new, sequentially
 numbered files (`0002_…`, `0003_…`); never edit a migration that has shipped, since existing
 databases have already recorded it as applied. Tenant-specific data (trackers, named points,
-regions) doesn't belong in migrations; it's added through the app.
+regions, basemaps beyond the default) doesn't belong in migrations; it's added through the app or a script in `scripts/`.
 
 ---
 

@@ -1,6 +1,7 @@
 import { namedPointsEditorMarkup, namedPointsEditorScript } from './named-points-editor';
 import { regionsEditorMarkup, regionsEditorScript } from './regions-editor';
 import { mapLayersSettingsRowsMarkup, mapLayersSettingsScript } from './map-controls';
+import { basemapSettingsMarkup, basemapSettingsScript } from './basemap-settings';
 import { icon } from './icons';
 import { docsLinkMarkup } from './help';
 import { pilotDutyMarkup, typstLoadOverlayMarkup } from './pilot-duty';
@@ -307,6 +308,10 @@ export function settingsModalMarkup(): string {
                 </div>
               </details>
               <p id="settings-webhooks-status" class="settings-msg" style="display:none"></p>
+            </div>
+            <div class="settings-section">
+              <div class="settings-section-label">Basemaps</div>
+              ${basemapSettingsMarkup()}
             </div>
             <div class="settings-section">
               <div class="settings-section-label">Overlays</div>
@@ -1136,6 +1141,7 @@ export function settingsModalScript(): string {
     // ── Settings modal ────────────────────────────────────────────────────────
 
     ${mapLayersSettingsScript()}
+    ${basemapSettingsScript()}
 
     // Page-level hooks — each page reassigns these before the modal can open.
     let settingsAfterTrackerChange = () => {};
@@ -1227,6 +1233,7 @@ export function settingsModalScript(): string {
       document.getElementById('settings-modal').classList.remove('hidden');
       _syncThemeButtons();
       renderMapLayersSettings();
+      renderSettingsBasemapsList();
       renderSettingsOverlaysList();
       renderSettingsTrackerList();
       renderSettingsAircraftList();
@@ -1241,18 +1248,15 @@ export function settingsModalScript(): string {
       const appSection = document.getElementById('settings-section-app');
       if (appSection) appSection.style.display = isAdmin ? '' : 'none';
 
-      for (const id of ['settings-add-aircraft', 'settings-add-pilot', 'settings-add-tracker', 'settings-add-overlay']) {
+      for (const id of ['settings-add-aircraft', 'settings-add-pilot', 'settings-add-tracker', 'settings-add-basemap', 'settings-add-overlay']) {
         const el = document.getElementById(id);
         if (el) el.style.display = isAdmin ? '' : 'none';
       }
-      // Anyone can add a per-device basemap, but the lookup fetches a URL server-side,
-      // so /api/tile-metadata (and this button) is admin-only.
-      const layerLookup = document.getElementById('settings-add-layer-lookup');
-      if (layerLookup) layerLookup.style.display = isAdmin ? '' : 'none';
-
-      // Re-render tracker/overlay lists now that role is known (action buttons depend on it)
+      // Re-render tracker/basemap/overlay lists now that role is known (action buttons depend on it)
       renderSettingsTrackerList();
+      renderSettingsBasemapsList();
       renderSettingsOverlaysList();
+      loadSettingsBasemaps();
 
       // Load devices (all users) and users list (admin only)
       renderSettingsDevicesList();
@@ -1354,15 +1358,18 @@ export function settingsModalScript(): string {
     // ── Overlays (tenant-scoped tile layers shown in the map's overlay legend) ──
 
     // Populates the given container with one "Default / On / Off" <select> per
-    // currently-enabled base layer (from _ftActiveLayerDefs(), defined by
-    // mapLayersRuntimeScript — presets and custom layers this device has active,
-    // same set _ftOverlayDefaultEnabled in map-controls.ts resolves basemap ids
-    // against). Deleted/disabled layers are excluded since an override keyed to
-    // one would never match a live basemap id. "Default" means inherit the
-    // general fallback checkbox rather than an explicit override for that basemap.
+    // tenant basemap (basemapList, from basemap-settings.ts; the shown raster ones until it
+    // has loaded), keyed by the basemap's key, which is the id the map resolves overlay
+    // defaults against. "Default" means inherit the general fallback checkbox rather than
+    // an explicit override for that basemap.
     function _buildBasemapDefaultsFields(container, existingDefaults) {
       container.innerHTML = '';
-      _ftActiveLayerDefs().forEach(function(p) {
+      // Read back with the selects, so a basemap with no select here (hidden or vector before
+      // basemapList loads) keeps its override.
+      container._ftExistingDefaults = existingDefaults || {};
+      const choices = basemapList.length > 0 ? basemapList.map(function(b) { return { id: b.key, label: b.label }; })
+        : _ftActiveLayerDefs();
+      choices.forEach(function(p) {
         const row = document.createElement('label');
         const span = document.createElement('span');
         span.textContent = p.label;
@@ -1382,12 +1389,17 @@ export function settingsModalScript(): string {
       });
     }
 
-    // Reads the selects built above back into a default_enabled_by_basemap object
-    // (or null if every select is still "Default", i.e. no overrides were made).
+    // Reads the selects built above back into a default_enabled_by_basemap object, keeping
+    // the overrides of basemaps that had no select (or null if there are no overrides).
     function _readBasemapDefaultsFields(container) {
       const result = {};
       let has = false;
-      container.querySelectorAll('select').forEach((sel) => {
+      const selects = container.querySelectorAll('select');
+      const shown = new Set([...selects].map((sel) => sel.dataset.basemapId));
+      for (const [id, on] of Object.entries(container._ftExistingDefaults || {})) {
+        if (!shown.has(id)) { result[id] = on; has = true; }
+      }
+      selects.forEach((sel) => {
         if (sel.value === 'on') { result[sel.dataset.basemapId] = true; has = true; }
         else if (sel.value === 'off') { result[sel.dataset.basemapId] = false; has = true; }
       });
@@ -1571,6 +1583,10 @@ export function settingsModalScript(): string {
 
     const _addOverlayBasemapDefaults = document.getElementById('settings-add-overlay-basemap-defaults');
     if (_addOverlayBasemapDefaults) _buildBasemapDefaultsFields(_addOverlayBasemapDefaults, null);
+    // The add form's per-basemap defaults, redrawn when the basemap list changes.
+    function _refreshOverlayBasemapDefaults() {
+      if (_addOverlayBasemapDefaults) _buildBasemapDefaultsFields(_addOverlayBasemapDefaults, null);
+    }
 
     const _addOverlaySubmit = document.getElementById('settings-add-overlay-submit');
     if (_addOverlaySubmit) {

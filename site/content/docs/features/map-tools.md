@@ -8,28 +8,28 @@ weight: 7
 
 ## Basemaps
 
-Available basemaps, toggleable and switchable from the map layer controls
-(bottom of the map):
+The map's base layers, switchable from the map layer controls (bottom of the map).
+Which basemaps there are, and which of them appear in that switcher, is tenant
+configuration: an Admin adds, edits, hides, reorders and deletes them under
+Settings → Admin → Global Settings → Basemaps, the same way as overlays. A new
+Wingbeat instance starts with one, USGS Topo (public domain). An Admin can add
+any raster tile source whose terms they're entitled to use, by its
+`{z}/{x}/{y}` URL.
 
-| Basemap | Source |
-|---|---|
-| Map | Carto Voyager (requires a hoster-configured API key — hidden if unset) |
-| Topo | OpenTopoMap |
-| USGS Topo | USGS National Map |
-| USGS Imagery Topo | USGS National Map |
-| Satellite | Esri World Imagery |
+The mobile app can also draw a **vector** basemap (a PMTiles archive, for
+instance an OpenStreetMap extract from Protomaps). The web's maps are raster
+only, so they leave those out.
 
-Which layers are enabled, the active basemap, and per-layer color correction
-(saturation/contrast/brightness) are stored **locally per device**, not
-synced to the server — picking a style is a personal preference, not a tenant
-setting. A custom tile URL can also be added from Settings → Map layers.
+The basemap you've picked, and per-basemap color correction
+(saturation/contrast/brightness), are stored **locally per device**, not synced
+to the server — picking a style is a personal preference, not a tenant setting.
 
 ## Overlays
 
 Tenant-configured extra tile layers shown on top of the basemap — a sectional
 chart, custom imagery, or any other `{z}/{x}/{y}` tile source — added by an
 Admin from Settings → Admin → Global Settings → Overlays. Unlike basemaps,
-which are per-device and mutually exclusive, overlays are shared tenant config and independently
+which are mutually exclusive, overlays are independently
 toggleable: any number can be on at once, and everyone sees the same list.
 
 An overlay's starting on/off state is set by an Admin, and can optionally
@@ -46,7 +46,8 @@ overlays back to that basemap's default.
 
 A toggleable overlay that tints the map relative to a reference elevation you
 set by clicking the map, plus a cursor elevation readout. Backed by a public
-terrain tile archive, decoded client-side — no separate elevation API calls.
+terrain tile archive (Mapterhorn, credited under the map's (i) button while the tool is on), decoded
+client-side — no separate elevation API calls.
 Mutually exclusive with the point picker (activating one deactivates the
 other).
 

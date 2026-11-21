@@ -1,4 +1,3 @@
-import { Env } from '../../types';
 import { themeRuntimeScript } from '../../shared/theme';
 import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, overlayLegendRuntimeScript } from '../../shared/map-controls';
 import { toggleScript } from '../../shared/toggle';
@@ -38,11 +37,11 @@ import { dashboardScriptsInit } from './init';
  * declarations are hoisted within the IIFE, so the ordering of function-only
  * chunks is flexible, but we keep a logical reading order regardless.
  */
-export function dashboardScripts(env: Env): string {
+export function dashboardScripts(): string {
   const body = [
     themeRuntimeScript(),
     mapLayerColorRuntimeScript(),
-    mapLayersRuntimeScript(env),
+    mapLayersRuntimeScript(),
     toggleScript(),
     htmlEscapeScript(),
     dashboardScriptsState(),

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Builds the docs site into public/: vendors the theme, then runs Hugo. Workers Builds'
-# build command; set HUGO_PARAMS_SHOWCASECARTOKEY in the environment for the showcase's
-# Carto basemap (see README.md).
+# build command.
 #
 # Hugo is pinned in .hugo-version, and has to be the extended build (the theme compiles
 # its SCSS with libsass). When the hugo on PATH isn't that, as on Workers Builds, which

@@ -1,15 +1,17 @@
 import { Env } from '../types';
-import { clientBasemapPresets, DEFAULT_ENABLED_BASEMAPS, overlayDefaultEnabled, type BasemapPreset } from '@wingbeat/core/basemaps';
+import { FALLBACK_BASEMAP, overlayDefaultEnabled } from '@wingbeat/core/basemaps';
+import { icon } from './icons';
 
 /**
- * Local (per-device) basemap layer configuration, stored in localStorage —
- * intentionally NOT synced to D1/server settings. Shared by every map instance
- * (dashboard, analytics, and the editors) so picking a style anywhere sticks
- * everywhere, and so does enabling/disabling a layer or adding a custom one.
+ * Local (per-device) basemap state, stored in localStorage — intentionally NOT synced to
+ * D1/server settings: which basemap is showing, and the color corrections for each. Shared by
+ * every map instance (dashboard, analytics, and the editors) so picking a style anywhere sticks
+ * everywhere. Which basemaps exist, and which are in the picker, is tenant data (the
+ * `basemaps` table, Settings > Basemaps).
  */
 const MAP_BASEMAP_KEY = 'ft_map_basemap';
-const MAP_LAYERS_ENABLED_KEY = 'ft_map_layers_enabled';
-const MAP_LAYERS_CUSTOM_KEY = 'ft_map_layers_custom';
+/** Per-device keys of the removed per-device basemap list, cleared when a page loads. */
+const LEGACY_MAP_LAYER_KEYS = ['ft_map_layers_enabled', 'ft_map_layers_custom'];
 const MAP_LAYER_COLORS_KEY = 'ft_map_layer_colors';
 
 /** Reads a hoster/deployment-level tile provider secret out of the Worker's `env`.
@@ -19,62 +21,30 @@ export function readEnvSecret(env: Env, key: string): string | undefined {
   return (env as unknown as Record<string, string | undefined>)[key] || undefined;
 }
 
-/** The client preset list (clientBasemapPresets() in @wingbeat/core/basemaps) for the
- * secrets this Worker has configured. The pages inline it; GET /api/bootstrap returns it
- * as `basemaps` for the app. */
-export function envBasemapPresets(env: Env): BasemapPreset[] {
-  return clientBasemapPresets((name) => !!readEnvSecret(env, name));
-}
-
 /**
  * Runtime script for the page IIFE (called once per page, before any
  * `sharedTileLayerDefs`/`sharedMapControlsScripts` call) — defines the shared plumbing
- * for the per-device layer set:
- *   _ftPresets                 — the built-in preset list, projected for the client via
- *                                 envBasemapPresets(env) (parsed once, shared by every map)
- *   _ftGetEnabledIds/_ftSaveEnabledIds     — which preset/custom ids are currently active
- *   _ftGetCustomLayers/_ftSaveCustomLayers — user-added custom layer definitions
- *   _ftActiveLayerDefs()        — ordered list of layer defs (presets, then customs) that
- *                                 should currently be on every map, per localStorage
- *   _ftMakeTileLayer(def)        — builds an L.tileLayer from a preset or custom def
+ * for the tenant's basemaps:
+ *   _ftPresets                 — the tenant's shown raster basemaps in display order
+ *                                 (window.APP_BASEMAPS, from the page; Settings replaces it
+ *                                 after an admin changes them)
+ *   _ftActiveLayerDefs()        — the layer defs that should currently be on every map
+ *                                  (core's FALLBACK_BASEMAP if there are none, so a map
+ *                                  always has one)
+ *   _ftMakeTileLayer(def)        — builds an L.tileLayer from a basemap def
  *   _ftMapRefreshers             — one callback per initialized map (pushed by
  *                                  sharedMapControlsScripts); _ftNotifyLayersChanged()
  *                                  runs all of them so Settings edits apply live, with no
  *                                  page reload needed.
- * `presets` overrides the list for pages without a Worker (see staticSiteBasemapPresets()
- * in @wingbeat/core/basemaps).
+ * The docs-site showcase (no Worker behind it) assigns `_ftPresets` itself.
  */
-export function mapLayersRuntimeScript(env: Env, presets: BasemapPreset[] = envBasemapPresets(env)): string {
+export function mapLayersRuntimeScript(): string {
   return `
-    var _ftPresets = ${JSON.stringify(presets)};
+    var _ftPresets = window.APP_BASEMAPS || [];
     var _ftMapRefreshers = [];
+    try { ${JSON.stringify(LEGACY_MAP_LAYER_KEYS)}.forEach(function(k) { localStorage.removeItem(k); }); } catch (_) {}
 
-    function _ftGetEnabledIds() {
-      try {
-        var raw = localStorage.getItem('${MAP_LAYERS_ENABLED_KEY}');
-        var ids = raw ? JSON.parse(raw) : null;
-        return (Array.isArray(ids) && ids.length > 0) ? ids : ${JSON.stringify(DEFAULT_ENABLED_BASEMAPS)}.slice();
-      } catch (_) { return ${JSON.stringify(DEFAULT_ENABLED_BASEMAPS)}.slice(); }
-    }
-    function _ftSaveEnabledIds(ids) { localStorage.setItem('${MAP_LAYERS_ENABLED_KEY}', JSON.stringify(ids)); }
-    function _ftGetCustomLayers() {
-      try {
-        var raw = localStorage.getItem('${MAP_LAYERS_CUSTOM_KEY}');
-        var arr = raw ? JSON.parse(raw) : [];
-        return Array.isArray(arr) ? arr : [];
-      } catch (_) { return []; }
-    }
-    function _ftSaveCustomLayers(arr) { localStorage.setItem('${MAP_LAYERS_CUSTOM_KEY}', JSON.stringify(arr)); }
-
-    function _ftActiveLayerDefs() {
-      var enabledIds = _ftGetEnabledIds();
-      var defs = [];
-      _ftPresets.forEach(function(p) { if (enabledIds.indexOf(p.id) !== -1) defs.push(p); });
-      _ftGetCustomLayers().forEach(function(c) {
-        if (c && c.id && c.url && enabledIds.indexOf(c.id) !== -1) defs.push(c);
-      });
-      return defs;
-    }
+    function _ftActiveLayerDefs() { return _ftPresets.length > 0 ? _ftPresets.slice() : [${JSON.stringify(FALLBACK_BASEMAP)}]; }
 
     // Leaflet only substitutes lowercase {s}/{z}/{x}/{y}/{r} — a template pasted from a
     // tile provider's own docs in a different case (e.g. the OGC-style {Z}/{X}/{Y} some
@@ -92,8 +62,12 @@ export function mapLayersRuntimeScript(env: Env, presets: BasemapPreset[] = envB
     // past which Leaflet keeps upscaling the deepest tiles.
     var _FT_MAP_MAX_ZOOM = 22;
 
+    // What a tile layer is built from, so a refresh rebuilds one only when its def changed
+    // (not when it only moved).
+    function _ftDefKey(def) { return JSON.stringify([def.url, def.label, def.attribution, def.maxZoom, !!def.detectRetina]); }
+
     function _ftMakeTileLayer(def) {
-      var opts = { attribution: def.attribution || '', _ftLabel: def.label || def.id, maxZoom: _FT_MAP_MAX_ZOOM };
+      var opts = { attribution: def.attribution || '', _ftLabel: def.label || def.id, _ftDefKey: _ftDefKey(def), maxZoom: _FT_MAP_MAX_ZOOM };
       if (def.maxZoom) opts.maxNativeZoom = def.maxZoom;
       if (def.detectRetina) {
         opts.detectRetina = true;
@@ -133,11 +107,6 @@ export function sharedTileLayerDefs(
   return `
     ${tld} = {};
     _ftActiveLayerDefs().forEach(function(def) { ${tileLayersVar}[def.id] = _ftMakeTileLayer(def); });
-    if (Object.keys(${tileLayersVar}).length === 0) {
-      // Safety net: never leave the map with zero layers even if localStorage holds
-      // an empty/corrupt enabled-layers list.
-      ${tileLayersVar}[_ftPresets[0].id] = _ftMakeTileLayer(_ftPresets[0]);
-    }
     var _ftStoredBasemap = localStorage.getItem('${MAP_BASEMAP_KEY}');
     var ${initStyleVar} = (_ftStoredBasemap && ${tileLayersVar}[_ftStoredBasemap]) ? _ftStoredBasemap : Object.keys(${tileLayersVar})[0];
     ${cld} = ${tileLayersVar}[${initStyleVar}];
@@ -155,8 +124,10 @@ export function sharedTileLayerDefs(
  * so sharedMapControlsStyles() covers every instance with one CSS block.
  * The basemap-style buttons themselves are rendered at runtime by
  * sharedMapControlsScripts() from whatever layers are currently active, since the set
- * of layers is per-device configurable — this only emits the empty container for them.
+ * of layers is tenant data — this only emits the empty container for them.
  * Optionally appends an extra group of buttons (pass the inner button HTML, without wrapper divs).
+ * The map's credits sit above the bar behind an (i) button, as MapLibre's compact attribution
+ * does in the app: some (the elevation tint's) run to several lines.
  */
 export function sharedMapControlsMarkup(extraButtons?: string, idPrefix = ''): string {
   const extra = extraButtons
@@ -164,7 +135,10 @@ export function sharedMapControlsMarkup(extraButtons?: string, idPrefix = ''): s
     : '';
   return `
       <div id="${idPrefix}map-controls" class="map-controls-wrap">
-        <div id="${idPrefix}map-attribution" class="map-controls-attribution"></div>
+        <div id="${idPrefix}map-attribution-row" class="map-controls-attribution-row" data-open="false" hidden>
+          <button id="${idPrefix}map-attribution-toggle" type="button" class="map-attribution-toggle" title="Map credits" aria-label="Map credits" aria-expanded="false" aria-controls="${idPrefix}map-attribution">${icon('info', { size: 14 })}</button>
+          <div id="${idPrefix}map-attribution" class="map-controls-attribution"></div>
+        </div>
         <div id="${idPrefix}map-controls-bar" class="map-controls-bar">
           <div class="controls-group">
             <button id="${idPrefix}zoom-in" class="controls-btn map-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
@@ -195,14 +169,53 @@ export function sharedMapControlsStyles(): string {
     /* The page-level map runs to the screen's bottom edge: clear the home indicator. */
     #map-controls { bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px)); }
 
+    .map-controls-attribution-row {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      max-width: min(320px, calc(100vw - 1rem));
+      pointer-events: auto;
+    }
+    .map-controls-attribution-row[hidden] { display: none; }
+    .map-controls-attribution-row[data-open="true"] {
+      padding: 0.2rem 0.6rem 0.2rem 0.2rem;
+      background: var(--surface-float);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius-md);
+      backdrop-filter: blur(14px) saturate(1.1);
+      -webkit-backdrop-filter: blur(14px) saturate(1.1);
+      box-shadow: var(--shadow-md);
+    }
+    .map-controls-attribution-row:not([data-open="true"]) .map-controls-attribution { display: none; }
+
+    .map-attribution-toggle {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.5rem;
+      height: 1.5rem;
+      padding: 0;
+      color: var(--text-muted);
+      background: var(--surface-float);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius-pill);
+      box-shadow: var(--shadow-md);
+      cursor: pointer;
+      transition: color var(--duration-fast) var(--ease-standard);
+    }
+    .map-attribution-toggle:hover { color: var(--text-secondary); }
+    .map-controls-attribution-row[data-open="true"] .map-attribution-toggle {
+      background: none;
+      border-color: transparent;
+      box-shadow: none;
+    }
+
     #map-attribution, .map-controls-attribution {
       font-family: var(--font-body);
       font-size: 0.63rem;
       color: var(--text-muted);
-      text-align: center;
-      max-width: 320px;
       line-height: 1.4;
-      pointer-events: auto;
     }
 
     #map-attribution a, .map-controls-attribution a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
@@ -220,8 +233,8 @@ export function sharedMapControlsStyles(): string {
       box-shadow: var(--shadow-md);
     }
 
-    /* The basemap switcher's button count is per-device configurable (built-in presets
-       plus any custom layers), so on narrow screens it can outgrow the original 3-button
+    /* The basemap switcher's button count depends on the tenant's basemaps,
+       so on narrow screens it can outgrow the original 3-button
        width this bar was designed for. Let it scroll horizontally rather than spilling
        off both edges of the centered, absolutely-positioned wrap. */
     @media (max-width: 640px) {
@@ -430,46 +443,27 @@ export function mapLayerColorRuntimeScript(): string {
 }
 
 /**
- * Settings modal markup for the "Map layers" section: one row per currently-active layer
- * (built-in preset or custom), each with "Colors" and "Delete" buttons, plus a form for
- * adding another layer — either picked from the built-in presets not already active, or
- * a fully custom tile URL. Populated/wired at runtime by mapLayersSettingsScript().
+ * Settings modal markup for the "Map layers" section: one row per basemap in the map's style
+ * switcher, each with a "Colors" disclosure for this device's color corrections. Which
+ * basemaps there are is tenant data, managed in the Basemaps section (basemap-settings.ts).
+ * Populated at runtime by mapLayersSettingsScript().
  */
 export function mapLayersSettingsRowsMarkup(): string {
   return `
-    <p class="settings-section-desc">Basemaps currently in the map style switcher. Adjust a layer's colors, remove one, or add another below — changes apply immediately, on every map.</p>
+    <p class="settings-section-desc">Adjust the colors of each basemap on this device. Changes apply immediately, on every map. Admins choose which basemaps are available under Basemaps.</p>
     <div id="settings-map-layers-list"></div>
-    <details id="settings-add-map-layer" class="settings-add-tracker">
-      <summary>Add layer</summary>
-      <div class="settings-add-inner">
-        <select id="settings-add-layer-preset"></select>
-        <input type="text" id="settings-add-layer-label" placeholder="Label (e.g. My Sectional)" autocomplete="off" />
-        <input type="text" id="settings-add-layer-url" placeholder="Tile URL, e.g. https://example.com/{z}/{x}/{y}.png" autocomplete="off" />
-        <input type="text" id="settings-add-layer-attribution" placeholder="Attribution (optional)" autocomplete="off" />
-        <input type="number" id="settings-add-layer-maxzoom" placeholder="Max zoom (optional)" min="1" max="22" step="1" autocomplete="off" />
-        <p id="settings-add-layer-lookup-status" class="settings-msg" aria-live="polite"></p>
-        <div class="settings-add-actions">
-          <button id="settings-add-layer-submit" class="btn-primary">Add</button>
-          <button id="settings-add-layer-lookup" class="btn-secondary" style="display:none">Look up details</button>
-          <button id="settings-add-layer-cancel" class="btn-secondary">Cancel</button>
-        </div>
-      </div>
-    </details>
   `;
 }
 
 /**
  * Runtime script wiring the "Map layers" settings section: renderMapLayersSettings()
- * (called from openSettings()) builds one row per currently-active layer (preset or
- * custom), each with a "Colors" disclosure (expands _ftBuildColorSliders()) and a
- * Delete button. Also wires the add-layer form, whose preset <select> is repopulated
- * with whatever presets aren't already active and, on selection, fills in the
- * label/URL/attribution/max-zoom fields as an editable starting point. Every mutation
- * calls _ftNotifyLayersChanged() so every map on the page picks it up immediately.
- * Depends on mapLayersRuntimeScript() (storage helpers, _ftPresets) and
- * mapLayerColorRuntimeScript() (_ftBuildColorSliders) having already run — order doesn't
- * matter in practice, since all three are hoisted function declarations sharing one page
- * IIFE, but data reads here happen after both have executed.
+ * (called from openSettings(), and after an admin changes the basemaps) builds one row per
+ * basemap in `_ftPresets`, each with a "Colors" disclosure (expands _ftBuildColorSliders()).
+ * Also defines _ftLookupTileMetadata(), shared by the basemap and overlay forms. Depends on
+ * mapLayersRuntimeScript() (_ftPresets) and mapLayerColorRuntimeScript()
+ * (_ftBuildColorSliders) having already run — order doesn't matter in practice, since all
+ * three are hoisted function declarations sharing one page IIFE, but data reads here happen
+ * after both have executed.
  */
 export function mapLayersSettingsScript(): string {
   return `
@@ -512,7 +506,7 @@ export function mapLayersSettingsScript(): string {
       btn.disabled = false;
     }
 
-    function _ftBuildLayerRow(id, label, isCustom) {
+    function _ftBuildLayerRow(id, label) {
       var row = document.createElement('div');
       row.className = 'settings-aircraft-row';
 
@@ -542,19 +536,6 @@ export function mapLayersSettingsScript(): string {
       });
       actions.appendChild(colorsBtn);
 
-      var deleteBtn = document.createElement('button');
-      deleteBtn.className = 'btn-danger';
-      deleteBtn.textContent = 'Delete';
-      deleteBtn.addEventListener('click', function() {
-        var msg = isCustom ? 'Delete this map layer?' : 'Remove "' + label + '" from the map style switcher? You can add it back later.';
-        if (!confirm(msg)) return;
-        if (isCustom) _ftSaveCustomLayers(_ftGetCustomLayers().filter(function(c) { return c.id !== id; }));
-        _ftSaveEnabledIds(_ftGetEnabledIds().filter(function(eid) { return eid !== id; }));
-        _ftNotifyLayersChanged();
-        renderMapLayersSettings();
-      });
-      actions.appendChild(deleteBtn);
-
       row.appendChild(info);
       row.appendChild(actions);
       var wrap = document.createElement('div');
@@ -563,110 +544,11 @@ export function mapLayersSettingsScript(): string {
       return wrap;
     }
 
-    function _ftRenderAddLayerPresetOptions() {
-      var select = document.getElementById('settings-add-layer-preset');
-      if (!select) return;
-      var enabledIds = _ftGetEnabledIds();
-      select.innerHTML = '';
-      var customOpt = document.createElement('option');
-      customOpt.value = '';
-      customOpt.textContent = 'Custom layer…';
-      select.appendChild(customOpt);
-      _ftPresets.forEach(function(p) {
-        if (enabledIds.indexOf(p.id) !== -1) return;
-        var opt = document.createElement('option');
-        opt.value = p.id;
-        opt.textContent = p.label;
-        select.appendChild(opt);
-      });
-    }
-
     function renderMapLayersSettings() {
       var container = document.getElementById('settings-map-layers-list');
       if (!container) return;
       container.innerHTML = '';
-      var enabledIds = _ftGetEnabledIds();
-      _ftPresets.forEach(function(p) {
-        if (enabledIds.indexOf(p.id) !== -1) container.appendChild(_ftBuildLayerRow(p.id, p.label, false));
-      });
-      _ftGetCustomLayers().forEach(function(c) {
-        if (enabledIds.indexOf(c.id) !== -1) container.appendChild(_ftBuildLayerRow(c.id, c.label || c.id, true));
-      });
-      _ftRenderAddLayerPresetOptions();
-    }
-
-    var _ftAddLayerPreset = document.getElementById('settings-add-layer-preset');
-    if (_ftAddLayerPreset) {
-      _ftAddLayerPreset.addEventListener('change', function() {
-        var preset = _ftPresets.find(function(p) { return p.id === _ftAddLayerPreset.value; });
-        document.getElementById('settings-add-layer-label').value = preset ? preset.label : '';
-        document.getElementById('settings-add-layer-url').value = preset ? preset.url : '';
-        document.getElementById('settings-add-layer-attribution').value = preset ? (preset.attribution || '') : '';
-        document.getElementById('settings-add-layer-maxzoom').value = preset ? String(preset.maxZoom) : '';
-      });
-    }
-
-    var _ftAddLayerSubmit = document.getElementById('settings-add-layer-submit');
-    if (_ftAddLayerSubmit) {
-      _ftAddLayerSubmit.addEventListener('click', function() {
-        var preset = _ftAddLayerPreset ? _ftPresets.find(function(p) { return p.id === _ftAddLayerPreset.value; }) : null;
-        var label = document.getElementById('settings-add-layer-label').value.trim();
-        var url = document.getElementById('settings-add-layer-url').value.trim();
-        var attribution = document.getElementById('settings-add-layer-attribution').value.trim();
-        var maxZoomRaw = document.getElementById('settings-add-layer-maxzoom').value.trim();
-        if (!label || !url) return;
-
-        var enabledIds = _ftGetEnabledIds();
-        // If the fields still match the selected preset verbatim, just re-enable that
-        // preset (keeps its detectRetina flag and any saved per-layer colors) instead of
-        // cloning it into a new custom entry.
-        var matchesPreset = !!preset && preset.label === label && preset.url === url &&
-          (preset.attribution || '') === attribution && String(preset.maxZoom) === maxZoomRaw;
-
-        if (matchesPreset) {
-          if (enabledIds.indexOf(preset.id) === -1) enabledIds.push(preset.id);
-          _ftSaveEnabledIds(enabledIds);
-        } else {
-          var id = 'custom_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-          var entry = { id: id, label: label, url: url, attribution: attribution };
-          if (maxZoomRaw) {
-            var mz = parseInt(maxZoomRaw, 10);
-            if (!isNaN(mz)) entry.maxZoom = mz;
-          }
-          var custom = _ftGetCustomLayers();
-          custom.push(entry);
-          _ftSaveCustomLayers(custom);
-          enabledIds.push(id);
-          _ftSaveEnabledIds(enabledIds);
-        }
-
-        document.getElementById('settings-add-layer-label').value = '';
-        document.getElementById('settings-add-layer-url').value = '';
-        document.getElementById('settings-add-layer-attribution').value = '';
-        document.getElementById('settings-add-layer-maxzoom').value = '';
-        document.getElementById('settings-add-layer-lookup-status').textContent = '';
-        if (_ftAddLayerPreset) _ftAddLayerPreset.value = '';
-        document.getElementById('settings-add-map-layer').open = false;
-        _ftNotifyLayersChanged();
-        renderMapLayersSettings();
-      });
-    }
-    var _ftAddLayerLookup = document.getElementById('settings-add-layer-lookup');
-    if (_ftAddLayerLookup) {
-      _ftAddLayerLookup.addEventListener('click', function() {
-        _ftLookupTileMetadata(_ftAddLayerLookup, document.getElementById('settings-add-layer-lookup-status'), {
-          url: document.getElementById('settings-add-layer-url'),
-          label: document.getElementById('settings-add-layer-label'),
-          attribution: document.getElementById('settings-add-layer-attribution'),
-          maxZoom: document.getElementById('settings-add-layer-maxzoom'),
-        });
-      });
-    }
-    var _ftAddLayerCancel = document.getElementById('settings-add-layer-cancel');
-    if (_ftAddLayerCancel) {
-      _ftAddLayerCancel.addEventListener('click', function() {
-        document.getElementById('settings-add-map-layer').open = false;
-      });
+      _ftPresets.forEach(function(p) { container.appendChild(_ftBuildLayerRow(p.id, p.label)); });
     }
   `;
 }
@@ -674,8 +556,8 @@ export function mapLayersSettingsScript(): string {
 /**
  * JS for wiring the zoom buttons and basemap switcher. The basemap buttons themselves
  * are created here (not in sharedMapControlsMarkup) from whatever layers
- * sharedTileLayerDefs actually built into `tileLayersVar`, since that set is per-device
- * configurable via Settings > Map layers.
+ * sharedTileLayerDefs actually built into `tileLayersVar`, since that set is
+ * tenant-configurable via Settings > Basemaps.
  * Also registers this map's refresh callback with `_ftMapRefreshers` (defined by
  * mapLayersRuntimeScript()), so adding/removing a layer in Settings adds/removes it from
  * `tileLayersVar` and rebuilds the style buttons immediately — no reload needed.
@@ -700,7 +582,8 @@ export function sharedMapControlsScripts(
 
       // Leaflet's own attribution control is off on every map (it would render in
       // Leaflet's styling, in a corner), so this line stands in for it: the active
-      // basemap's credit first, then each tile overlay currently on the map, deduped.
+      // basemap's credit first, then each tile overlay (and the elevation tint) currently on the
+      // map, deduped.
       // Attribution is HTML (links, &copy;), but custom layers' come from this device's
       // localStorage and overlays' from the admin: keep text and plain http(s) links only,
       // built as DOM nodes (no innerHTML), so no tag or attribute of the source survives.
@@ -731,6 +614,14 @@ export function sharedMapControlsScripts(
         return frag;
       }
 
+      var _attribRow = ${rootExpr}.getElementById('${idPrefix}map-attribution-row');
+      var _attribToggle = ${rootExpr}.getElementById('${idPrefix}map-attribution-toggle');
+      _attribToggle.addEventListener('click', function() {
+        var open = _attribRow.getAttribute('data-open') !== 'true';
+        _attribRow.setAttribute('data-open', open ? 'true' : 'false');
+        _attribToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+
       function _updateAttrib() {
         var el = ${rootExpr}.getElementById('${idPrefix}map-attribution');
         if (!el || !${mapVar}) return;
@@ -740,8 +631,9 @@ export function sharedMapControlsScripts(
           if (a && parts.indexOf(a) === -1) parts.push(a);
         }
         add(${currentLayerVar});
-        ${mapVar}.eachLayer(function(l) { if (l instanceof L.TileLayer) add(l); });
+        ${mapVar}.eachLayer(function(l) { if (l instanceof L.GridLayer) add(l); });
         el.textContent = '';
+        _attribRow.hidden = !parts.length;
         parts.forEach(function(p, i) {
           if (i > 0) el.appendChild(document.createTextNode(' · '));
           el.appendChild(_attribNodes(p));
@@ -750,7 +642,7 @@ export function sharedMapControlsScripts(
       _updateAttrib();
       // Overlays are added/removed by the overlay legend, not here; tile-layer events
       // catch those (markers and tracks also fire layeradd, hence the filter).
-      ${mapVar}.on('layeradd layerremove', function(e) { if (e.layer instanceof L.TileLayer) _updateAttrib(); });
+      ${mapVar}.on('layeradd layerremove', function(e) { if (e.layer instanceof L.GridLayer) _updateAttrib(); });
 
       var _styleGroup = ${rootExpr}.getElementById('${idPrefix}map-style-group');
 
@@ -791,23 +683,20 @@ export function sharedMapControlsScripts(
       }
       _ftRebuildStyleButtons();
 
-      // Re-derives tileLayersVar from Settings' current enabled/custom layer state:
-      // adds newly-enabled layers, tears down newly-disabled/deleted ones (switching the
-      // map off of one if it was the active style), then rebuilds the style buttons.
+      // Re-derives tileLayersVar from the tenant's current basemaps (_ftPresets), in their
+      // order (the style buttons follow its key order): keeps a layer whose def is
+      // unchanged, rebuilds an edited one, drops a hidden/deleted one (switching the map off
+      // of it if it was the active style), then rebuilds the style buttons.
       function _ftRefreshLayers() {
-        var desired = _ftActiveLayerDefs();
-        var desiredIds = desired.map(function(d) { return d.id; });
-        Object.keys(${tileLayersVar}).forEach(function(id) {
-          if (desiredIds.indexOf(id) !== -1) return;
-          if (${mapVar}.hasLayer(${tileLayersVar}[id])) ${mapVar}.removeLayer(${tileLayersVar}[id]);
-          delete ${tileLayersVar}[id];
+        var old = {};
+        Object.keys(${tileLayersVar}).forEach(function(id) { old[id] = ${tileLayersVar}[id]; delete ${tileLayersVar}[id]; });
+        _ftActiveLayerDefs().forEach(function(def) {
+          var prev = old[def.id];
+          ${tileLayersVar}[def.id] = prev && prev.options._ftDefKey === _ftDefKey(def) ? prev : _ftMakeTileLayer(def);
         });
-        desired.forEach(function(def) {
-          if (!${tileLayersVar}[def.id]) ${tileLayersVar}[def.id] = _ftMakeTileLayer(def);
+        Object.keys(old).forEach(function(id) {
+          if (old[id] !== ${tileLayersVar}[id] && old[id] !== ${currentLayerVar} && ${mapVar}.hasLayer(old[id])) ${mapVar}.removeLayer(old[id]);
         });
-        if (Object.keys(${tileLayersVar}).length === 0) {
-          ${tileLayersVar}[_ftPresets[0].id] = _ftMakeTileLayer(_ftPresets[0]);
-        }
         var curId = ${mapVar}.getContainer().getAttribute('data-basemap');
         if (!${tileLayersVar}[curId]) curId = Object.keys(${tileLayersVar})[0];
         _ftSwitchStyle(curId);

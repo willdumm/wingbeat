@@ -18,8 +18,12 @@ import { analyticsHTML } from './analytics';
 import { generateToken, sha256Hex, deviceNameFromUA, pairedDeviceName, noAccessHTML, joinHTML, joinErrorHTML, appPairLink, appConnectHTML, appConnectSignedOutHTML, demoSignInHTML, loginHTML, loginCodeHTML } from './auth';
 import { emailEnabled, normalizeEmail, sendConfirmEmail, sendInviteEmail, sendSignInEmail, type EmailContext } from './email';
 import { loadSettings, invalidateSettingsCache, settingsAsInstance } from './settings';
-import { envBasemapPresets, readEnvSecret } from './shared/map-controls';
-import { keyedBasemapPreset, substituteTileUrl, TILE_SUBDOMAINS } from '@wingbeat/core/basemaps';
+import { readEnvSecret } from './shared/map-controls';
+import { basemapKeyFromLabel, basemapProxyUrl, FALLBACK_BASEMAP, KEYED_TILE_PROVIDERS, substituteTileUrl, TILE_SUBDOMAINS, validPmtilesUrl, validTileTemplate } from '@wingbeat/core/basemaps';
+import type { BasemapPreset } from '@wingbeat/core/basemaps';
+import { BasemapOrderRequest, BasemapRequest } from '@wingbeat/core/api/basemaps-requests';
+import type { BasemapRow } from '@wingbeat/core/api/basemaps';
+import type { VectorBasemap } from '@wingbeat/core/api/bootstrap';
 import { lookupTileMetadata, sanitizeAttribution } from './tile-metadata';
 import { MAX_DUTY_DAYS_PER_REQUEST, MAX_FLIGHT_TEXT_LENGTH, MAX_DUTY_NOTE_LENGTH, MAX_FLIGHT_SECS } from '@wingbeat/core/record-limits';
 import { BaseHistoryQuery } from '@wingbeat/core/api/requests';
@@ -158,6 +162,44 @@ async function queryTileOverlays(db: D1Database) {
     attribution: r.attribution ? sanitizeAttribution(r.attribution) || null : null,
     default_enabled_by_basemap: r.default_enabled_by_basemap ? JSON.parse(r.default_enabled_by_basemap) : null,
   }));
+}
+
+const BASEMAP_COLUMNS = 'id, key, label, kind, url, attribution, max_zoom, detect_retina, shown, tile_proxy, sort_order';
+
+/** Every basemap row, hidden ones included, in display order (attribution sanitized, as for overlays). */
+async function queryBasemaps(db: D1Database): Promise<BasemapRow[]> {
+  const { results } = await db.prepare(
+    `SELECT ${BASEMAP_COLUMNS} FROM basemaps ORDER BY sort_order ASC, id ASC`
+  ).all<BasemapRow>();
+  return results.map(r => ({ ...r, attribution: r.attribution ? sanitizeAttribution(r.attribution) || null : null }));
+}
+
+/**
+ * The basemaps as clients draw them: the shown rows, raster ones as `basemaps` (a keyed one
+ * through the same-origin proxy, and left out when this Worker doesn't hold its secret) and
+ * vector ones (the app only) as `vector_basemaps`. The web's pages inline `basemaps`. Each
+ * carries its `order` among both, so the app can list them in the tenant's order.
+ */
+function clientBasemaps(rows: BasemapRow[], env: Env): { basemaps: BasemapPreset[]; vector_basemaps: VectorBasemap[] } {
+  const basemaps: BasemapPreset[] = [];
+  const vector_basemaps: VectorBasemap[] = [];
+  let order = 0;
+  for (const r of rows) {
+    if (!r.shown) continue;
+    const attribution = r.attribution ?? '';
+    if (r.kind === 'vector') {
+      vector_basemaps.push({ id: r.key, label: r.label, url: r.url, attribution, ...(r.max_zoom ? { maxZoom: r.max_zoom } : {}), order: order++ });
+      continue;
+    }
+    let url = r.url;
+    if (r.tile_proxy) {
+      const provider = KEYED_TILE_PROVIDERS[r.tile_proxy];
+      if (!provider || !readEnvSecret(env, provider.secretEnvVar)) continue;
+      url = basemapProxyUrl(r.key);
+    }
+    basemaps.push({ id: r.key, label: r.label, url, attribution, maxZoom: r.max_zoom ?? 18, ...(r.detect_retina ? { detectRetina: true } : {}), order: order++ });
+  }
+  return { basemaps: basemaps.length > 0 ? basemaps : [FALLBACK_BASEMAP], vector_basemaps };
 }
 
 /** Whether s is a real `YYYY-MM-DD` date (not e.g. 2026-02-31, which Date rolls over). */
@@ -873,12 +915,12 @@ app.post(APP_CONNECT_PATH, async (c) => {
 app.get('/', async (c) => {
   const settings = await loadSettings(c.var.tenant);
   c.executionCtx.waitUntil(pollAllActive(c.var.tenant));
-  return c.html(dashboardHTML(settings, c.env, c.get('cspNonce')));
+  return c.html(dashboardHTML(settings, c.env, c.get('cspNonce'), clientBasemaps(await queryBasemaps(c.var.db), c.env).basemaps));
 });
 
 app.get('/analytics', async (c) => {
   const settings = await loadSettings(c.var.tenant);
-  return c.html(analyticsHTML(settings, c.env, c.get('cspNonce')));
+  return c.html(analyticsHTML(settings, c.env, c.get('cspNonce'), clientBasemaps(await queryBasemaps(c.var.db), c.env).basemaps));
 });
 
 app.get('/location', async (c) => {
@@ -892,18 +934,21 @@ app.get('/location', async (c) => {
 
 // ── Tile proxy route (keyed basemap providers) ───────────────────────────────
 //
-// Only presets with `secretEnvVar` set (see BASEMAP_PRESETS in @wingbeat/core/basemaps)
-// route through here — keyless presets are fetched by the browser directly from the
-// upstream CDN, unchanged. This is the only route allowed to build an upstream tile
+// Only basemaps whose row has `tile_proxy` set (a provider in KEYED_TILE_PROVIDERS in
+// @wingbeat/core/basemaps) route through here — the others are fetched by the browser
+// directly from the upstream CDN, unchanged. This is the only route allowed to build an upstream tile
 // URL or read a tile-provider secret.
 
 const TILE_Y_FILE = /^(\d+)(@2x)?\.png$/;
 
-app.get('/api/tiles/:providerId/:z/:x/:yFile', async (c) => {
-  const preset = keyedBasemapPreset(c.req.param('providerId'));
-  if (!preset || !preset.secretEnvVar) return c.text('Not Found', 404);
+app.get('/api/tiles/:basemapKey/:z/:x/:yFile', async (c) => {
+  const basemapKey = c.req.param('basemapKey');
+  const row = await c.var.db.prepare('SELECT tile_proxy FROM basemaps WHERE key = ? AND tile_proxy IS NOT NULL')
+    .bind(basemapKey).first<{ tile_proxy: string }>();
+  const provider = row && KEYED_TILE_PROVIDERS[row.tile_proxy];
+  if (!provider) return c.text('Not Found', 404);
 
-  const key = readEnvSecret(c.env, preset.secretEnvVar);
+  const key = readEnvSecret(c.env, provider.secretEnvVar);
   if (!key) return c.text('Tile provider not configured', 503);
 
   const z = parseInt(c.req.param('z'), 10);
@@ -917,7 +962,7 @@ app.get('/api/tiles/:providerId/:z/:x/:yFile', async (c) => {
   }
 
   const subdomain = TILE_SUBDOMAINS[(x + y) % TILE_SUBDOMAINS.length];
-  const upstreamUrl = substituteTileUrl(preset.url, {
+  const upstreamUrl = substituteTileUrl(provider.url, {
     s: subdomain, z: String(z), x: String(x), y: String(y), r: yMatch[2] ?? '', key,
   });
 
@@ -930,7 +975,7 @@ app.get('/api/tiles/:providerId/:z/:x/:yFile', async (c) => {
     cf: { cacheTtl: 604800, cacheEverything: true },
   });
   if (!upstream.ok) {
-    console.error(`[tiles] ${preset.id} upstream HTTP ${upstream.status}`);
+    console.error(`[tiles] ${basemapKey} upstream HTTP ${upstream.status}`);
     return c.text('Bad Gateway', 502);
   }
 
@@ -939,7 +984,7 @@ app.get('/api/tiles/:providerId/:z/:x/:yFile', async (c) => {
   // Never relay a non-image type (with nosniff, a mislabelled body is a dead tile anyway).
   const contentType = upstream.headers.get('Content-Type') || 'image/png';
   if (!/^image\/(png|jpe?g|webp|gif)\b/i.test(contentType)) {
-    console.error(`[tiles] ${preset.id} upstream content-type ${contentType}`);
+    console.error(`[tiles] ${basemapKey} upstream content-type ${contentType}`);
     return c.text('Bad Gateway', 502);
   }
   return new Response(upstream.body, {
@@ -959,15 +1004,17 @@ app.get('/api/me', (c) => {
 });
 
 app.get('/api/bootstrap', async (c) => {
-  const [trackers, aircraft, pilots, overlays, settings] = await Promise.all([
+  const [trackers, aircraft, pilots, overlays, basemapRows, settings] = await Promise.all([
     queryTrackers(c.var.db, c.get('user').role === 'admin'),
     queryAircraft(c.var.db),
     queryPilots(c.var.db),
     queryTileOverlays(c.var.db),
+    queryBasemaps(c.var.db),
     loadSettings(c.var.tenant),
   ]);
+  const { basemaps, vector_basemaps } = clientBasemaps(basemapRows, c.env);
   return c.json({
-    me: meJson(c.get('user')), trackers, aircraft, pilots, overlays, basemaps: envBasemapPresets(c.env),
+    me: meJson(c.get('user')), trackers, aircraft, pilots, overlays, basemaps, vector_basemaps,
     instance: settingsAsInstance(settings, c.env),
     api_version: API_VERSION, min_client_level: MIN_CLIENT_LEVEL,
   });
@@ -1793,12 +1840,6 @@ app.post('/api/trackers/:id/apply-assignment', requireAdmin, valid('json', Apply
 // uppercase equivalents, which the client normalizes to lowercase before handing
 // the template to Leaflet — see _ftNormalizeTileTemplate in map-controls.ts).
 
-function validOverlayUrl(url: unknown): url is string {
-  if (typeof url !== 'string' || !url) return false;
-  try { new URL(url); } catch { return false; }
-  return /\{x\}/i.test(url) && /\{y\}/i.test(url) && /\{z\}/i.test(url);
-}
-
 // Backs the "Look up details" button in the add-layer and overlay forms (see
 // src/tile-metadata.ts). Admin-only, like Test feed: it fetches a user-supplied URL
 // server-side. A source with no published metadata is a normal, empty result.
@@ -1822,7 +1863,7 @@ app.get('/api/overlays', async (c) => {
 app.post('/api/overlays', requireAdmin, valid('json', OverlayRequest), async (c) => {
   const body = c.req.valid('json');
   if (!body.label) return c.json({ error: 'label is required' }, 400);
-  if (!validOverlayUrl(body.url)) return c.json({ error: 'url must include {z}, {x}, and {y} placeholders' }, 400);
+  if (!validTileTemplate(body.url)) return c.json({ error: 'url must include {z}, {x}, and {y} placeholders' }, 400);
 
   const result = await c.var.db.prepare(
     'INSERT INTO tile_overlays (label, url, attribution, max_zoom, default_enabled, default_enabled_by_basemap) VALUES (?, ?, ?, ?, ?, ?)'
@@ -1850,7 +1891,7 @@ app.put('/api/overlays/:id', requireAdmin, valid('json', OverlayRequest), async 
     sets.push('label = ?'); vals.push(body.label);
   }
   if (body.url !== undefined) {
-    if (!validOverlayUrl(body.url)) return c.json({ error: 'url must include {z}, {x}, and {y} placeholders' }, 400);
+    if (!validTileTemplate(body.url)) return c.json({ error: 'url must include {z}, {x}, and {y} placeholders' }, 400);
     sets.push('url = ?'); vals.push(body.url);
   }
   if (Object.prototype.hasOwnProperty.call(body, 'attribution')) { sets.push('attribution = ?'); vals.push(body.attribution || null); }
@@ -1873,6 +1914,135 @@ app.delete('/api/overlays/:id', requireAdmin, async (c) => {
   if (isNaN(id)) return c.json({ error: 'Invalid overlay id' }, 400);
   const result = await c.var.db.prepare('DELETE FROM tile_overlays WHERE id = ?').bind(id).run();
   if (result.meta.changes === 0) return c.json({ error: 'Overlay not found' }, 404);
+  return c.json({ ok: true });
+});
+
+// ── Basemaps ─────────────────────────────────────────────────────────────────
+//
+// The map's base layers, tenant-wide (docs/tenant-basemaps-plan.md). `key` is made from the
+// label and never changes: overlays' per-basemap defaults, devices' choices and color
+// corrections refer to it. tile_proxy is never set here (BasemapRequest strips it), so an
+// admin can't point the Worker's provider secret at another URL.
+
+async function shownRasterBasemaps(db: D1Database, excludingId?: number): Promise<number> {
+  const row = await db.prepare(
+    "SELECT COUNT(*) AS n FROM basemaps WHERE kind = 'raster' AND shown = 1 AND id != ?"
+  ).bind(excludingId ?? -1).first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+const LAST_BASEMAP_REFUSAL = 'The map needs at least one shown raster basemap';
+
+function validBasemapUrl(kind: 'raster' | 'vector', url: unknown): string | null {
+  if (kind === 'vector') return validPmtilesUrl(url) ? null : 'url must be an https URL of a .pmtiles archive';
+  return validTileTemplate(url) ? null : 'url must include {z}, {x}, and {y} placeholders';
+}
+
+app.get('/api/basemaps', async (c) => {
+  return c.json({ basemaps: await queryBasemaps(c.var.db) });
+});
+
+app.post('/api/basemaps', requireAdmin, valid('json', BasemapRequest), async (c) => {
+  const body = c.req.valid('json');
+  if (!body.label) return c.json({ error: 'label is required' }, 400);
+  const kind = body.kind ?? 'raster';
+  const urlError = validBasemapUrl(kind, body.url);
+  if (urlError) return c.json({ error: urlError }, 400);
+
+  const { results } = await c.var.db.prepare('SELECT key FROM basemaps').all<{ key: string }>();
+  const taken = new Set(results.map(r => r.key));
+  const base = basemapKeyFromLabel(body.label);
+  let key = base;
+  for (let n = 2; taken.has(key); n++) key = base + n;
+
+  try {
+    const result = await c.var.db.prepare(
+      `INSERT INTO basemaps (key, label, kind, url, attribution, max_zoom, shown, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM basemaps))`
+    ).bind(key, body.label, kind, body.url!, body.attribution || null, body.max_zoom ?? null, body.shown === false ? 0 : 1).run();
+    return c.json({ ok: true, id: result.meta.last_row_id as number, key });
+  } catch (err) {
+    // Another create took the same key between the read above and this insert.
+    if (String(err).includes('UNIQUE')) return c.json({ error: 'A basemap with that name was just added; try again.' }, 409);
+    throw err;
+  }
+});
+
+// Before /:id so "order" isn't read as an id.
+app.put('/api/basemaps/order', requireAdmin, valid('json', BasemapOrderRequest), async (c) => {
+  const { ids } = c.req.valid('json');
+  // Every basemap, once each: a list from a stale page would leave orders that collide.
+  const { results } = await c.var.db.prepare('SELECT id FROM basemaps').all<{ id: number }>();
+  const all = new Set(results.map(r => r.id));
+  if (ids.length !== all.size || new Set(ids).size !== ids.length || !ids.every(id => all.has(id))) {
+    return c.json({ error: 'The basemaps have changed since this page loaded them.' }, 409);
+  }
+  await c.var.db.batch(ids.map((id, i) => c.var.db.prepare('UPDATE basemaps SET sort_order = ? WHERE id = ?').bind(i, id)));
+  return c.json({ ok: true });
+});
+
+app.put('/api/basemaps/:id', requireAdmin, valid('json', BasemapRequest), async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  if (isNaN(id)) return c.json({ error: 'Invalid basemap id' }, 400);
+
+  const existing = await c.var.db.prepare('SELECT kind, shown, tile_proxy FROM basemaps WHERE id = ?')
+    .bind(id).first<{ kind: 'raster' | 'vector'; shown: number; tile_proxy: string | null }>();
+  if (!existing) return c.json({ error: 'Basemap not found' }, 404);
+
+  const body = c.req.valid('json');
+  const kind = body.kind ?? existing.kind;
+  const sets: string[] = [];
+  const vals: (string | number | null)[] = [];
+
+  if (body.label !== undefined) {
+    if (!body.label) return c.json({ error: 'label cannot be empty' }, 400);
+    sets.push('label = ?'); vals.push(body.label);
+  }
+  if (existing.tile_proxy && (body.url !== undefined || body.kind !== undefined)) {
+    return c.json({ error: 'The tiles of this basemap come through the server: its url and kind can\'t be changed' }, 400);
+  }
+  if (body.url !== undefined || body.kind !== undefined) {
+    if (body.url !== undefined) {
+      const urlError = validBasemapUrl(kind, body.url);
+      if (urlError) return c.json({ error: urlError }, 400);
+      sets.push('url = ?'); vals.push(body.url);
+    } else {
+      // A kind change alone: the stored url has to suit the new kind.
+      const { url } = (await c.var.db.prepare('SELECT url FROM basemaps WHERE id = ?').bind(id).first<{ url: string }>())!;
+      const urlError = validBasemapUrl(kind, url);
+      if (urlError) return c.json({ error: urlError }, 400);
+    }
+    sets.push('kind = ?'); vals.push(kind);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'attribution')) { sets.push('attribution = ?'); vals.push(body.attribution || null); }
+  if (Object.prototype.hasOwnProperty.call(body, 'max_zoom')) { sets.push('max_zoom = ?'); vals.push(body.max_zoom ?? null); }
+  const shown = body.shown !== undefined ? body.shown : !!existing.shown;
+  if (body.shown !== undefined) { sets.push('shown = ?'); vals.push(body.shown ? 1 : 0); }
+
+  if (sets.length === 0) return c.json({ error: 'Nothing to update' }, 400);
+
+  // Hiding the last shown raster basemap (or changing it to vector) would leave the web's map with none.
+  const wasShownRaster = existing.kind === 'raster' && !!existing.shown;
+  const staysShownRaster = kind === 'raster' && shown;
+  if (wasShownRaster && !staysShownRaster && await shownRasterBasemaps(c.var.db, id) === 0) {
+    return c.json({ error: LAST_BASEMAP_REFUSAL }, 409);
+  }
+
+  vals.push(id);
+  await c.var.db.prepare(`UPDATE basemaps SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  return c.json({ ok: true });
+});
+
+app.delete('/api/basemaps/:id', requireAdmin, async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  if (isNaN(id)) return c.json({ error: 'Invalid basemap id' }, 400);
+  const existing = await c.var.db.prepare('SELECT kind, shown FROM basemaps WHERE id = ?')
+    .bind(id).first<{ kind: string; shown: number }>();
+  if (!existing) return c.json({ error: 'Basemap not found' }, 404);
+  if (existing.kind === 'raster' && existing.shown && await shownRasterBasemaps(c.var.db, id) === 0) {
+    return c.json({ error: LAST_BASEMAP_REFUSAL }, 409);
+  }
+  await c.var.db.prepare('DELETE FROM basemaps WHERE id = ?').bind(id).run();
   return c.json({ ok: true });
 });
 

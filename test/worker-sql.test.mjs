@@ -15,10 +15,10 @@
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import * as z from 'zod/mini';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startWorker } from './worker.mjs';
+import { startWorker, splitSql } from './worker.mjs';
 import { importCore } from './core.mjs';
 
 let w;
@@ -708,21 +708,50 @@ describe('response shapes: bootstrap, trackers, aircraft and pilots', async () =
     assert.equal(boot.aircraft.find(a => a.tail_number === 'N2').maintenance_schedule.length, 3);
     assert.equal(boot.overlays.length, 2);
     assert.ok(boot.pilots.find(p => p.id === 1).default_duties.length >= 1);
-    // No CARTO_API_KEY here, so no Map (Carto) basemap; the keyless ones keep their upstream URL.
-    assert.deepEqual(boot.basemaps.map(b => b.id), ['topo', 'usgstopo', 'usgsimagerytopo', 'satellite']);
+    // A new tenant starts with USGS Topo (migration 0010) and no vector basemap.
+    assert.deepEqual(boot.basemaps.map(b => b.id), ['usgstopo']);
     assert.ok(boot.basemaps.every(b => b.url.startsWith('https://')));
+    assert.deepEqual(boot.vector_basemaps, []);
     assert.deepEqual((await getTrackers(client)).trackers, boot.trackers);
     assert.deepEqual((await getAircraft(client)).aircraft, boot.aircraft);
     assert.deepEqual((await getPilots(client)).pilots, boot.pilots);
   });
 
-  test('with CARTO_API_KEY set: the Map basemap first, as the proxy path, without the key', async () => {
+  // scripts/basemaps-legacy.sql gives an existing tenant its old five basemaps.
+  const applyLegacyBasemaps = (worker) => worker.db.batch(
+    splitSql(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../scripts/basemaps-legacy.sql'), 'utf8')).map(q => worker.db.prepare(q)));
+
+  test('the legacy basemaps script, with CARTO_API_KEY set: Map first, as the proxy path, without the key', async () => {
     const w2 = await startWorker({ bindings: { CARTO_API_KEY: 'test-carto-key' } });
     try {
+      await applyLegacyBasemaps(w2);
       const boot = (await w2.request('GET', '/api/bootstrap')).body;
       assertShape(BootstrapResponse, boot);
-      assert.deepEqual(boot.basemaps[0], { ...boot.basemaps[0], id: 'map', url: '/api/tiles/map/{z}/{x}/{y}{r}.png' });
+      // Map, Topo and Satellite are shown; the two USGS ones stay configured but hidden.
+      assert.deepEqual(boot.basemaps.map(b => b.id), ['map', 'topo', 'satellite']);
+      assert.deepEqual(boot.basemaps[0], { ...boot.basemaps[0], url: '/api/tiles/map/{z}/{x}/{y}{r}.png' });
+      assert.equal(boot.basemaps[2].detectRetina, true);
       assert.ok(!JSON.stringify(boot).includes('test-carto-key'));
+      assert.deepEqual((await w2.all('SELECT key FROM basemaps ORDER BY sort_order')).map(r => r.key),
+        ['map', 'topo', 'usgstopo', 'usgsimagerytopo', 'satellite']);
+      // Run again: the same five rows.
+      await applyLegacyBasemaps(w2);
+      assert.equal((await w2.first('SELECT COUNT(*) AS n FROM basemaps')).n, 5);
+    } finally {
+      await w2.dispose();
+    }
+  });
+
+  test('the legacy basemaps script, without CARTO_API_KEY: no Map, and the tile proxy refuses', async () => {
+    const w2 = await startWorker();
+    try {
+      await applyLegacyBasemaps(w2);
+      const boot = (await w2.request('GET', '/api/bootstrap')).body;
+      assert.deepEqual(boot.basemaps.map(b => b.id), ['topo', 'satellite']);
+      assert.equal((await w2.request('GET', '/api/tiles/map/1/0/0.png')).status, 503);
+      // Only a row with tile_proxy goes through the proxy; an unknown key or a keyless row is a 404.
+      assert.equal((await w2.request('GET', '/api/tiles/topo/1/0/0.png')).status, 404);
+      assert.equal((await w2.request('GET', '/api/tiles/nope/1/0/0.png')).status, 404);
     } finally {
       await w2.dispose();
     }
@@ -1026,6 +1055,56 @@ describe('the settings modal’s requests, through the core client', async () =>
     await assert.rejects(overlays.getTileMetadata(client, ''), refused(400, 'url is required'));
   });
 
+  test('basemaps: added with a made key, edited, hidden, reordered, removed; vector ones go in vector_basemaps; the last shown raster one stays', async () => {
+    const bm = await importCore('api/basemaps');
+    const { getBootstrap } = await importCore('api/bootstrap');
+    const seeded = (await bm.getBasemaps(client)).basemaps;
+    assert.deepEqual(seeded.map(b => [b.key, b.kind, b.shown, b.tile_proxy]), [['usgstopo', 'raster', 1, null]]);
+
+    const imagery = await bm.createBasemap(client, { label: 'USGS Imagery Topo', url: 'https://example.com/{z}/{y}/{x}', max_zoom: 16, attribution: 'USGS' });
+    assert.equal(imagery.key, 'usgsimagerytopo');
+    // A second one with the same label gets a distinct key.
+    const again = await bm.createBasemap(client, { label: 'USGS Imagery Topo', url: 'https://example.com/b/{z}/{y}/{x}' });
+    assert.equal(again.key, 'usgsimagerytopo2');
+    const vector = await bm.createBasemap(client, { label: 'Alaska', kind: 'vector', url: 'https://example.com/alaska.pmtiles' });
+
+    let boot = await getBootstrap(client);
+    assert.deepEqual(boot.basemaps.map(b => b.id), ['usgstopo', 'usgsimagerytopo', 'usgsimagerytopo2']);
+    assert.deepEqual(boot.vector_basemaps, [{ id: 'alaska', label: 'Alaska', url: 'https://example.com/alaska.pmtiles', attribution: '', order: 3 }]);
+
+    assert.deepEqual(await bm.updateBasemap(client, imagery.id, { label: 'Imagery', shown: false }), { ok: true });
+    // A reorder lists every basemap once: a stale page's list is refused.
+    await assert.rejects(bm.reorderBasemaps(client, { ids: [vector.id, again.id, 1] }), refused(409, 'The basemaps have changed since this page loaded them.'));
+    await assert.rejects(bm.reorderBasemaps(client, { ids: [vector.id, again.id, imagery.id, imagery.id] }), refused(409, 'The basemaps have changed since this page loaded them.'));
+    assert.deepEqual(await bm.reorderBasemaps(client, { ids: [vector.id, again.id, imagery.id, 1] }), { ok: true });
+    const rows = (await bm.getBasemaps(client)).basemaps;
+    assert.deepEqual(rows.map(b => [b.key, b.label, b.shown]),
+      [['alaska', 'Alaska', 1], ['usgsimagerytopo2', 'USGS Imagery Topo', 1], ['usgsimagerytopo', 'Imagery', 0], ['usgstopo', 'USGS Topo', 1]]);
+    boot = await getBootstrap(client);
+    assert.deepEqual(boot.basemaps.map(b => b.id), ['usgsimagerytopo2', 'usgstopo']);
+    // Each carries its place among the shown ones of both kinds, so the app can merge them.
+    assert.deepEqual([...boot.basemaps, ...boot.vector_basemaps].map(b => [b.id, b.order]), [['usgsimagerytopo2', 1], ['usgstopo', 2], ['alaska', 0]]);
+
+    // Validation, and what the API can't set.
+    await assert.rejects(bm.createBasemap(client, { label: 'x', url: 'https://example.com/tiles' }), refused(400, 'url must include {z}, {x}, and {y} placeholders'));
+    await assert.rejects(bm.createBasemap(client, { label: 'x', kind: 'vector', url: 'https://example.com/{z}/{x}/{y}.png' }), refused(400, 'url must be an https URL of a .pmtiles archive'));
+    await assert.rejects(bm.createBasemap(client, { label: '', url: 'https://example.com/{z}/{x}/{y}' }), refused(400, 'label is required'));
+    await assert.rejects(bm.updateBasemap(client, 9999, { label: 'x' }), refused(404, 'Basemap not found'));
+    const smuggled = await w.request('POST', '/api/basemaps', { label: 'Sneaky', url: 'https://example.com/{z}/{x}/{y}', key: 'map', tile_proxy: 'carto' });
+    assert.equal(smuggled.body.key, 'sneaky');
+    assert.equal((await w.first('SELECT tile_proxy FROM basemaps WHERE key = ?', 'sneaky')).tile_proxy, null);
+
+    // The last shown raster basemap can't be hidden, changed to vector or deleted.
+    for (const row of (await bm.getBasemaps(client)).basemaps.filter(b => b.kind === 'raster' && b.key !== 'usgstopo')) {
+      assert.deepEqual(await bm.deleteBasemap(client, row.id), { ok: true });
+    }
+    const topo = (await bm.getBasemaps(client)).basemaps.find(b => b.key === 'usgstopo');
+    await assert.rejects(bm.updateBasemap(client, topo.id, { shown: false }), refused(409, 'The map needs at least one shown raster basemap'));
+    await assert.rejects(bm.deleteBasemap(client, topo.id), refused(409, 'The map needs at least one shown raster basemap'));
+    assert.deepEqual(await bm.deleteBasemap(client, vector.id), { ok: true });
+    assert.equal((await w.request('POST', '/api/basemaps', { label: 'V', url: 'https://example.com/{z}/{x}/{y}' }, { as: 'viewer' })).status, 403);
+  });
+
   test('settings: read, Global Settings’ save and the setup guide’s, and the duty records a timezone change would move', async () => {
     assert.deepEqual(await settings.patchSettings(client, { app_name: 'Seahawk', timezone: 'America/Anchorage', map_default_lat: 57.8,
       map_default_lng: -152.4, map_default_zoom: 9, gap_alert_minutes: 30 }), { ok: true });
@@ -1076,6 +1155,8 @@ describe('request validation: the settings modal’s writes', () => {
       ['PUT', '/api/aircraft/N1', { hobbs_correction: null }, /^hobbs_correction: /],
       ['PUT', '/api/pilots/1', { name: ['Pat'] }, /^name: /],
       ['POST', '/api/overlays', { label: 'L', url: 'https://e.com/{z}/{x}/{y}', default_enabled_by_basemap: { osm: 'on' } }, /^default_enabled_by_basemap\.osm: /],
+      ['POST', '/api/basemaps', { label: 'L', url: 'https://e.com/{z}/{x}/{y}', kind: 'hex' }, /^kind: /],
+      ['PUT', '/api/basemaps/order', { ids: 'all' }, /^ids: /],
       ['PATCH', '/api/settings', { app_name: ['x'] }, /^app_name: /],
       ['PATCH', '/api/settings', [1], /: /],
       ['POST', '/api/webhooks', { url: 'https://e.com', events: 'gap' }, /^events: /],

@@ -20,14 +20,6 @@ import { escapeHtml } from '../shared/html';
 import { PMTILES_SCRIPT_SRI, PMTILES_SCRIPT_URL } from '@wingbeat/core/elevation';
 import { SampleNotification, NOTIFICATION_TIME_TOKEN } from './sample-data';
 
-/**
- * Name of the `<meta>` carrying the showcase's Carto key. The key is never in the
- * generated page: site/layouts/home.html adds this tag at Hugo build time from the
- * `showcaseCartoKey` param (HUGO_PARAMS_SHOWCASECARTOKEY), and scripts.ts reads it.
- * Keep the name in sync with home.html.
- */
-export const SHOWCASE_TILE_KEY_META = 'showcase-carto-key';
-
 /** Hero photo (site/static/showcase/), relative so it works wherever Hugo's baseURL puts the site root. */
 const HERO_IMAGE = { large: 'showcase/hero-2000.jpg', small: 'showcase/hero-1200.jpg' };
 

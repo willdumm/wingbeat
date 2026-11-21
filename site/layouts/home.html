@@ -3,10 +3,7 @@
        out the header and footer around it. Everything that comes from the app's code
        (styles, head and body scripts, logo, phone mockup) is data/showcase.json, generated
        by `npm run docs:showcase` (src/showcase/). No `define` here, so baseof.html doesn't
-       wrap it.
-       The Carto key comes from the environment (HUGO_PARAMS_SHOWCASECARTOKEY) so it's
-       never committed. The meta name must match SHOWCASE_TILE_KEY_META in
-       src/showcase/page.ts; without a key the page leaves the Carto basemap out. */ -}}
+       wrap it. */ -}}
 {{- $sc := hugo.Data.showcase -}}
 {{- if not $sc }}{{ errorf "site/data/showcase.json is missing: run npm run docs:showcase" }}{{ end -}}
 <!DOCTYPE html>
@@ -24,9 +21,6 @@
   <meta property="og:image" content="{{ "showcase/hero-1200.jpg" | absURL }}" />
   <meta name="twitter:card" content="summary_large_image" />
   {{ $sc.head | safeHTML }}
-  {{- with site.Params.showcaseCartoKey }}
-  <meta name="showcase-carto-key" content="{{ . }}" />
-  {{- end }}
 </head>
 <body>
   <a class="sc-skip-link" href="#main">Skip to content</a>

@@ -28,14 +28,14 @@ push to `main`, once the repo is connected in the Cloudflare dashboard (Workers 
 | Root directory | `site` |
 | Build command | `./scripts/build.sh` (fetches the Hugo pinned in `.hugo-version` if needed, vendors the theme, runs `hugo`) |
 | Deploy command | `npx wrangler deploy` |
-| Build variables | `HUGO_PARAMS_SHOWCASECARTOKEY` (secret). No `HUGO_VERSION`: Workers Builds installs the standard Hugo, but the theme needs the extended build, so `build.sh` downloads that itself. Bump `.hugo-version` with the flake's Hugo (`build.sh` warns in the dev shell when they differ). |
+| Build variables | None. No `HUGO_VERSION`: Workers Builds installs the standard Hugo, but the theme needs the extended build, so `build.sh` downloads that itself. Bump `.hugo-version` with the flake's Hugo (`build.sh` warns in the dev shell when they differ). |
 
 To make it private, put a Cloudflare Access application on `wingbeat.dummthings.dev`
 (Zero Trust → Access → Applications); nothing in the repo changes.
 
 To deploy by hand, use the dev shell's own `wrangler` (not `npx wrangler`, which runs on the
-shell's Node 20 and refuses to start). The Carto key and account ID come from the gitignored
-repo-root `.env` (`HUGO_PARAMS_SHOWCASECARTOKEY=...`, `CLOUDFLARE_ACCOUNT_ID=...`):
+shell's Node 20 and refuses to start). The account ID comes from the gitignored
+repo-root `.env` (`CLOUDFLARE_ACCOUNT_ID=...`):
 
 ```sh
 nix develop path:../nix --command sh -c 'set -a && . ../.env && set +a && ./scripts/build.sh && wrangler deploy'
@@ -92,11 +92,5 @@ Prose edits in `content/_index.md` don't need it. The sample data is determinist
 the output only changes when the code does. Flight times are stored relative to "today"
 and rebased in the browser, so the page always shows this morning's flying.
 
-The demo maps' Carto basemap uses its own Carto key, restricted in Carto to the docs
-site's referrer (plus `http://localhost:1313` for `hugo server`). It isn't committed:
-`layouts/home.html` writes it into the page at build time from the environment, and
-without it the Carto basemap is simply left out.
-
-```sh
-HUGO_PARAMS_SHOWCASECARTOKEY=<key> nix develop path:../nix --command hugo
-```
+The demo maps' basemaps are USGS Topo and USGS Imagery Topo (public domain, no key), set in
+`src/showcase/scripts.ts`.

@@ -14,6 +14,8 @@
     "./api/aircraft-requests": "./src/api/aircraft-requests.ts",
     "./api/app": "./src/api/app.ts",
     "./api/app-requests": "./src/api/app-requests.ts",
+    "./api/basemaps": "./src/api/basemaps.ts",
+    "./api/basemaps-requests": "./src/api/basemaps-requests.ts",
     "./api/bootstrap": "./src/api/bootstrap.ts",
     "./api/client": "./src/api/client.ts",
     "./api/compat/1": "./src/api/compat/1.ts",
