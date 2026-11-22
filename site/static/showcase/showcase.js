@@ -374,7 +374,7 @@ const trackerList = SAMPLE.trackers;
 
     function _ftNotifyLayersChanged() { _ftMapRefreshers.forEach(function(fn) { fn(); }); }
   
-_ftPresets = [{"id":"usgstopo","label":"USGS Topo","url":"https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}","attribution":"Tiles courtesy of the <a href=\"https://www.usgs.gov/\" target=\"_blank\">U.S. Geological Survey</a>","maxZoom":16},{"id":"usgsimagerytopo","label":"USGS Imagery Topo","maxZoom":16,"attribution":"Tiles courtesy of the <a href=\"https://www.usgs.gov/\" target=\"_blank\">U.S. Geological Survey</a>","url":"https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/MapServer/tile/{z}/{y}/{x}"}];
+_ftPresets = [{"id":"usgstopo","label":"USGS Topo","url":"https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}","attribution":"Tiles courtesy of the <a href=\"https://www.usgs.gov/\" target=\"_blank\">U.S. Geological Survey</a>","maxZoom":16}];
 
     // ── Filter store ──────────────────────────────────────────────────────────
     const _FILTER_KEY = 'ft_filters_v1';
