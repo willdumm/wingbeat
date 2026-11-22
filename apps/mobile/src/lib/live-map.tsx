@@ -17,10 +17,11 @@
  * Live tab and the flight detail share it.
  */
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
-import { PixelRatio, StyleSheet, View } from 'react-native';
+import { PixelRatio, Platform, StyleSheet, View } from 'react-native';
 import { Camera, GeoJSONSource, Images, Layer, Map, type CameraRef, type InitialViewState, type MapRef, type ViewState, type ViewStateChangeEvent } from '@maplibre/maplibre-react-native';
 import type { TileOverlay } from '@wingbeat/core/api/bootstrap';
 import { useIsFocused } from 'expo-router';
+import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SafeAreaView } from 'react-native-screens/experimental';
 import { useAccounts } from './accounts-context';
@@ -111,9 +112,14 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
   // insets are clipped to its bounds), and where the top bar or overlay ends.
   const [{ width, height }, setSize] = useState({ width: 0, height: 0 });
   const [safe, setSafe] = useState({ y: 0, height: 0 });
-  // The top floors at safe-area-context's: without a header, the native view reports none.
+  // The top floors at safe-area-context's (without a header, the native view reports none)
+  // and, on iOS, at the header's bottom: the navigation bar is drawn over the map and takes
+  // every touch inside its frame, which the measured inset can fall short of, and a legend row
+  // up there couldn't be tapped. Android lays its header out above the map instead.
   const { top: statusBar } = useSafeAreaInsets();
-  const insets = { top: Math.max(safe.y, statusBar), bottom: safe.height ? Math.max(0, height - safe.y - safe.height) : 0 };
+  const headerHeight = useHeaderHeight();
+  const header = Platform.OS === 'ios' ? headerHeight : 0;
+  const insets = { top: Math.max(safe.y, statusBar, header), bottom: safe.height ? Math.max(0, height - safe.y - safe.height) : 0 };
   const [topEdge, setTopEdge] = useState(0);
   const [readoutHeight, setReadoutHeight] = useState(0);
   const gutter = px(t['space-3']);
