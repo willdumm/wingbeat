@@ -132,7 +132,7 @@ export function setupGuideScript(): string {
 
       const steps = [
         { title: 'Organization basics', state: basicsDone ? 'done' : 'todo',
-          desc: 'App name, timezone, and the map view everyone starts from (Set from map).',
+          desc: 'Instance name, timezone, and the map view everyone starts from (Set from map).',
           action: 'Open', go: () => _openTenantSettings() },
         { title: 'Aircraft and pilots', state: fleetDone ? 'done' : 'todo',
           desc: 'Add them before trackers, so new flights are assigned automatically.',

@@ -53,7 +53,7 @@ configuration:
 
 | Setting | Description |
 |---|---|
-| App name | Shown in the page title and header |
+| Instance name | Shown in the page title and header, and at the top of the app's Flights and Duty tabs |
 | Timezone | Used for all displayed times and the pilot duty log's day boundaries |
 | Map default lat/lng/zoom | Where the map opens when there's no other context. **Set from map** lets you pan and zoom to it instead of typing coordinates |
 | Gap alert (minutes) | Silence threshold before an in-flight signal-gap notification fires |
