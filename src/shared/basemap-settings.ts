@@ -4,14 +4,14 @@
  * the map's picker, reorder and delete, like the overlays below it. Everyone can read the list
  * (the overlay forms' per-basemap defaults use it); the controls are admin-only. The page's
  * maps are redrawn from GET /api/bootstrap after every change, so an edit applies at once.
- * Depends on mapLayersRuntimeScript() (`_ftPresets`, `_ftNotifyLayersChanged`,
+ * Depends on mapLayersRuntimeScript() (`_ftPresets`, `_ftVectorBasemaps`, `_ftNotifyLayersChanged`,
  * `_ftLookupTileMetadata`) and the page globals `fetchBasemaps`/`createBasemap`/`updateBasemap`/
  * `reorderBasemaps`/`deleteBasemap`/`fetchBootstrap`.
  */
 
 export function basemapSettingsMarkup(): string {
   return `
-    <p class="settings-section-desc">The base layers in the map's style switcher, the same for everyone. Hidden basemaps stay configured. A vector basemap is drawn by the mobile app only: a Protomaps basemap PMTiles archive, with Protomaps' basemaps-assets (fonts and sprites) copied to <code>basemaps-assets/</code> beside it.</p>
+    <p class="settings-section-desc">The base layers in the map's style switcher, the same for everyone. Hidden basemaps stay configured. A vector basemap is a Protomaps basemap PMTiles archive, with Protomaps' basemaps-assets (fonts and sprites) copied to <code>basemaps-assets/</code> beside it. On the web, only the Flight Tracker map draws vector basemaps for now.</p>
     <div id="settings-basemap-list"></div>
     <details id="settings-add-basemap" class="settings-add-tracker">
       <summary>Add basemap</summary>
@@ -19,7 +19,7 @@ export function basemapSettingsMarkup(): string {
         <input type="text" id="settings-add-basemap-label" placeholder="Label (e.g. Imagery)" autocomplete="off" />
         <select id="settings-add-basemap-kind" aria-label="Basemap type">
           <option value="raster">Raster tiles</option>
-          <option value="vector">Vector (PMTiles, mobile app only)</option>
+          <option value="vector">Vector (PMTiles)</option>
         </select>
         <input type="text" id="settings-add-basemap-url" placeholder="Tile URL, e.g. https://example.com/{z}/{x}/{y}.png" autocomplete="off" />
         <input type="text" id="settings-add-basemap-attribution" placeholder="Attribution (optional)" autocomplete="off" />
@@ -41,11 +41,13 @@ export function basemapSettingsScript(): string {
 
     let basemapList = [];   // every basemap row from /api/basemaps, hidden ones too
 
-    // Redraws every map from the server's current list of shown raster basemaps.
+    // Redraws every map from the server's current lists of shown basemaps: raster ones on
+    // every map, vector ones on the MapLibre maps.
     async function _syncClientBasemaps() {
       try {
         const d = await fetchBootstrap();
         if (Array.isArray(d.basemaps) && d.basemaps.length > 0) _ftPresets = d.basemaps;
+        _ftVectorBasemaps = d.vector_basemaps ?? [];
       } catch (_) {}
       _ftNotifyLayersChanged();
       renderMapLayersSettings();
@@ -60,7 +62,7 @@ export function basemapSettingsScript(): string {
     }
 
     function _basemapKindNote(b) {
-      return b.kind === 'vector' ? 'Vector · mobile app only' : 'Raster';
+      return b.kind === 'vector' ? 'Vector' : 'Raster';
     }
 
     function _buildBasemapRow(b, i) {

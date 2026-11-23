@@ -9,7 +9,7 @@ import { icon } from './icons';
  * everywhere. Which basemaps exist, and which are in the picker, is tenant data (the
  * `basemaps` table, Settings > Basemaps).
  */
-const MAP_BASEMAP_KEY = 'ft_map_basemap';
+export const MAP_BASEMAP_KEY = 'ft_map_basemap';
 /** Per-device keys of the removed per-device basemap list, cleared when a page loads. */
 const LEGACY_MAP_LAYER_KEYS = ['ft_map_layers_enabled', 'ft_map_layers_custom'];
 const MAP_LAYER_COLORS_KEY = 'ft_map_layer_colors';
@@ -28,6 +28,9 @@ export function readEnvSecret(env: Env, key: string): string | undefined {
  *   _ftPresets                 — the tenant's shown raster basemaps in display order
  *                                 (window.APP_BASEMAPS, from the page; Settings replaces it
  *                                 after an admin changes them)
+ *   _ftVectorBasemaps          — its shown vector basemaps (window.APP_VECTOR_BASEMAPS),
+ *                                 which only the MapLibre maps draw (maplibre.ts)
+ *   _ftMaplibreMaps             — the page's MapLibre maps (createMap() in maplibre.ts)
  *   _ftActiveLayerDefs()        — the layer defs that should currently be on every map
  *                                  (core's FALLBACK_BASEMAP if there are none, so a map
  *                                  always has one)
@@ -41,6 +44,8 @@ export function readEnvSecret(env: Env, key: string): string | undefined {
 export function mapLayersRuntimeScript(): string {
   return `
     var _ftPresets = window.APP_BASEMAPS || [];
+    var _ftVectorBasemaps = window.APP_VECTOR_BASEMAPS || [];
+    var _ftMaplibreMaps = []; // every map createMap() made (maplibre.ts), each with its _ftRestyle()
     var _ftMapRefreshers = [];
     try { ${JSON.stringify(LEGACY_MAP_LAYER_KEYS)}.forEach(function(k) { localStorage.removeItem(k); }); } catch (_) {}
 
@@ -364,8 +369,9 @@ export function mapLayerColorInitScript(): string {
  *   _ftLayerColor(id)             — read a layer's correction (see layerColorReadLogic)
  *   _ftSetLayerColor(id, ch, val) — persist + reapply if this layer is the active one
  *   _ftApplyActiveLayerColor()    — set the --map-color-* vars from whichever layer is
- *                                   currently active (read from any map's data-basemap
- *                                   attribute, since it's shared across all instances)
+ *                                   currently active (read from any Leaflet map's
+ *                                   data-basemap attribute, since it's shared across all
+ *                                   instances), and restyle the MapLibre maps
  *   _ftBuildColorSliders(el, id)  — fill `el` with the 3 sliders + reset button for `id`
  */
 export function mapLayerColorRuntimeScript(): string {
@@ -390,6 +396,8 @@ export function mapLayerColorRuntimeScript(): string {
       document.documentElement.style.setProperty('${MAP_COLOR_CHANNELS[0].cssVar}', (c.sat / 100).toFixed(3));
       document.documentElement.style.setProperty('${MAP_COLOR_CHANNELS[1].cssVar}', (c.con / 100).toFixed(3));
       document.documentElement.style.setProperty('${MAP_COLOR_CHANNELS[2].cssVar}', (c.bri / 100).toFixed(3));
+      // A MapLibre map's correction is in its style (core's mapColorPaint), not a CSS filter.
+      _ftMaplibreMaps.forEach(function(m) { m._ftRestyle(); });
     }
 
     var _ftColorChannels = [${MAP_COLOR_CHANNELS.map((ch) => `{ id: '${ch.id}', label: '${ch.label}' }`).join(', ')}];
@@ -577,54 +585,16 @@ export function sharedMapControlsScripts(
 ): string {
   return `
     (function() {
-      ${rootExpr}.getElementById('${idPrefix}zoom-in').addEventListener('click', function() { if (${mapVar}) ${mapVar}.zoomIn(); });
-      ${rootExpr}.getElementById('${idPrefix}zoom-out').addEventListener('click', function() { if (${mapVar}) ${mapVar}.zoomOut(); });
+      ${zoomButtonsScript(mapVar, idPrefix, rootExpr)}
 
       // Leaflet's own attribution control is off on every map (it would render in
-      // Leaflet's styling, in a corner), so this line stands in for it: the active
+      // Leaflet's styling, in a corner), so the credits row stands in for it: the active
       // basemap's credit first, then each tile overlay (and the elevation tint) currently on the
       // map, deduped.
-      // Attribution is HTML (links, &copy;), but custom layers' come from this device's
-      // localStorage and overlays' from the admin: keep text and plain http(s) links only,
-      // built as DOM nodes (no innerHTML), so no tag or attribute of the source survives.
-      function _appendAttribNodes(src, dest) {
-        for (var n = src.firstChild; n; n = n.nextSibling) {
-          if (n.nodeType === 3) {
-            dest.appendChild(document.createTextNode(n.nodeValue));
-          } else if (n.nodeType === 1) {
-            var href = n.nodeName === 'A' ? (n.getAttribute('href') || '').trim() : '';
-            if (/^https?:\\/\\//i.test(href)) {
-              var a = document.createElement('a');
-              a.href = href;
-              a.target = '_blank';
-              a.rel = 'noopener noreferrer';
-              _appendAttribNodes(n, a);
-              dest.appendChild(a);
-            } else if (!/^(SCRIPT|STYLE)$/.test(n.nodeName)) {
-              _appendAttribNodes(n, dest);
-            }
-          }
-        }
-      }
-      function _attribNodes(html) {
-        var tpl = document.createElement('template');
-        tpl.innerHTML = html;
-        var frag = document.createDocumentFragment();
-        _appendAttribNodes(tpl.content, frag);
-        return frag;
-      }
-
-      var _attribRow = ${rootExpr}.getElementById('${idPrefix}map-attribution-row');
-      var _attribToggle = ${rootExpr}.getElementById('${idPrefix}map-attribution-toggle');
-      _attribToggle.addEventListener('click', function() {
-        var open = _attribRow.getAttribute('data-open') !== 'true';
-        _attribRow.setAttribute('data-open', open ? 'true' : 'false');
-        _attribToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-      });
+      ${attributionRowScript(idPrefix, rootExpr)}
 
       function _updateAttrib() {
-        var el = ${rootExpr}.getElementById('${idPrefix}map-attribution');
-        if (!el || !${mapVar}) return;
+        if (!${mapVar}) return;
         var parts = [];
         function add(layer) {
           var a = layer && layer.getAttribution && layer.getAttribution();
@@ -632,12 +602,7 @@ export function sharedMapControlsScripts(
         }
         add(${currentLayerVar});
         ${mapVar}.eachLayer(function(l) { if (l instanceof L.GridLayer) add(l); });
-        el.textContent = '';
-        _attribRow.hidden = !parts.length;
-        parts.forEach(function(p, i) {
-          if (i > 0) el.appendChild(document.createTextNode(' · '));
-          el.appendChild(_attribNodes(p));
-        });
+        _showAttrib(parts);
       }
       _updateAttrib();
       // Overlays are added/removed by the overlay legend, not here; tile-layer events
@@ -703,6 +668,141 @@ export function sharedMapControlsScripts(
         _ftRebuildStyleButtons();
       }
       _ftMapRefreshers.push(_ftRefreshLayers);
+    })();
+  `;
+}
+
+/** Wires the controls bar's zoom buttons (sharedMapControlsMarkup()); the same calls on Leaflet and MapLibre. */
+function zoomButtonsScript(mapVar: string, idPrefix: string, rootExpr: string): string {
+  return `
+      ${rootExpr}.getElementById('${idPrefix}zoom-in').addEventListener('click', function() { if (${mapVar}) ${mapVar}.zoomIn(); });
+      ${rootExpr}.getElementById('${idPrefix}zoom-out').addEventListener('click', function() { if (${mapVar}) ${mapVar}.zoomOut(); });
+  `;
+}
+
+/**
+ * The credits row above the controls bar: its (i) toggle, and `_showAttrib(parts)`, which
+ * fills it with each credit (HTML), joined by dots, and hides it when there are none.
+ * Attribution is HTML (links, &copy;), but custom layers' come from this device's
+ * localStorage and overlays' from the admin: keep text and plain http(s) links only, built
+ * as DOM nodes (no innerHTML), so no tag or attribute of the source survives.
+ */
+function attributionRowScript(idPrefix: string, rootExpr: string): string {
+  return `
+      function _appendAttribNodes(src, dest) {
+        for (var n = src.firstChild; n; n = n.nextSibling) {
+          if (n.nodeType === 3) {
+            dest.appendChild(document.createTextNode(n.nodeValue));
+          } else if (n.nodeType === 1) {
+            var href = n.nodeName === 'A' ? (n.getAttribute('href') || '').trim() : '';
+            if (/^https?:\\/\\//i.test(href)) {
+              var a = document.createElement('a');
+              a.href = href;
+              a.target = '_blank';
+              a.rel = 'noopener noreferrer';
+              _appendAttribNodes(n, a);
+              dest.appendChild(a);
+            } else if (!/^(SCRIPT|STYLE)$/.test(n.nodeName)) {
+              _appendAttribNodes(n, dest);
+            }
+          }
+        }
+      }
+      function _attribNodes(html) {
+        var tpl = document.createElement('template');
+        tpl.innerHTML = html;
+        var frag = document.createDocumentFragment();
+        _appendAttribNodes(tpl.content, frag);
+        return frag;
+      }
+
+      var _attribRow = ${rootExpr}.getElementById('${idPrefix}map-attribution-row');
+      var _attribToggle = ${rootExpr}.getElementById('${idPrefix}map-attribution-toggle');
+      _attribToggle.addEventListener('click', function() {
+        var open = _attribRow.getAttribute('data-open') !== 'true';
+        _attribRow.setAttribute('data-open', open ? 'true' : 'false');
+        _attribToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+
+      function _showAttrib(parts) {
+        var el = ${rootExpr}.getElementById('${idPrefix}map-attribution');
+        if (!el) return;
+        el.textContent = '';
+        _attribRow.hidden = !parts.length;
+        parts.forEach(function(p, i) {
+          if (i > 0) el.appendChild(document.createTextNode(' · '));
+          el.appendChild(_attribNodes(p));
+        });
+      }
+  `;
+}
+
+/**
+ * sharedMapControlsScripts() for a MapLibre map (createMap() in maplibre.ts): the zoom
+ * buttons, the credits (each source's `attribution` in the style: the basemap's, the
+ * overlays', then the page's own, e.g. the elevation DEM's) and the basemap switcher, whose
+ * buttons are every basemap _ftMapBasemaps() offers, vector ones too. Switching restyles the
+ * map (_ftRestyle()). Registers with `_ftMapRefreshers`, so a Settings change to the basemaps
+ * applies at once. `idPrefix` and `rootExpr` as for sharedMapControlsScripts().
+ */
+export function maplibreMapControlsScripts(mapVar: string, idPrefix = '', rootExpr = 'document'): string {
+  return `
+    (function() {
+      ${zoomButtonsScript(mapVar, idPrefix, rootExpr)}
+      ${attributionRowScript(idPrefix, rootExpr)}
+
+      var _attribKey = null;
+      function _updateAttrib() {
+        var style = ${mapVar}.getStyle && ${mapVar}.getStyle();
+        if (!style || !style.sources) return;
+        var parts = [];
+        Object.keys(style.sources).forEach(function(id) {
+          var a = style.sources[id].attribution;
+          if (a && parts.indexOf(a) === -1) parts.push(a);
+        });
+        var key = parts.join('\\n');
+        if (key === _attribKey) return;
+        _attribKey = key;
+        _showAttrib(parts);
+      }
+      ${mapVar}.on('styledata', _updateAttrib);
+      ${mapVar}.on('sourcedata', function(e) { if (e.sourceDataType === 'metadata') _updateAttrib(); });
+
+      var _styleGroup = ${rootExpr}.getElementById('${idPrefix}map-style-group');
+
+      function _ftSwitchStyle(id) {
+        ${mapVar}._ftBasemapId = id;
+        ${mapVar}.getContainer().setAttribute('data-basemap', id);
+        localStorage.setItem('${MAP_BASEMAP_KEY}', id);
+        _styleGroup.querySelectorAll('.map-style-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.style === id); b.setAttribute('aria-pressed', b.dataset.style === id ? 'true' : 'false'); });
+        // As on a Leaflet map: overlays go back to the new basemap's defaults.
+        if (typeof _ftClearOverlayOverrides === 'function') _ftClearOverlayOverrides();
+        if (typeof _ftRenderOverlayLegend === 'function') _ftRenderOverlayLegend();
+        _ftRestyle(${mapVar});
+      }
+
+      function _ftRebuildStyleButtons() {
+        _styleGroup.innerHTML = '';
+        _ftMapBasemaps().forEach(function(b) {
+          var btn = document.createElement('button');
+          btn.className = 'controls-btn map-style-btn';
+          btn.dataset.style = b.id;
+          btn.textContent = b.label || b.id;
+          if (b.id === ${mapVar}._ftBasemapId) btn.classList.add('active');
+          btn.addEventListener('click', function() { _ftSwitchStyle(b.id); });
+          _styleGroup.appendChild(btn);
+        });
+      }
+      _ftRebuildStyleButtons();
+
+      // After Settings changes the basemaps: stay on the current one if it's still offered
+      // (redrawn, in case it was edited), else switch to the first.
+      _ftMapRefreshers.push(function() {
+        var basemaps = _ftMapBasemaps();
+        if (basemaps.some(function(b) { return b.id === ${mapVar}._ftBasemapId; })) _ftRestyle(${mapVar});
+        else if (basemaps[0]) _ftSwitchStyle(basemaps[0].id);
+        _ftRebuildStyleButtons();
+      });
     })();
   `;
 }
@@ -870,10 +970,10 @@ export function overlayLegendRuntimeScript(): string {
     // they made it on, not follow them to a different one.
     function _ftClearOverlayOverrides() { localStorage.removeItem('${MAP_OVERLAYS_KEY}'); }
     // The currently active basemap's id, read from whichever map's container carries
-    // it (set by sharedTileLayerDefs()/_ftSwitchStyle() — shared across every map
-    // instance on the page, same as _ftApplyActiveLayerColor() reads it).
+    // it (set by sharedTileLayerDefs()/createMap()/_ftSwitchStyle() — shared across every
+    // map instance on the page).
     function _ftCurrentBasemapId() {
-      var el = document.querySelector('.leaflet-container[data-basemap]');
+      var el = document.querySelector('[data-basemap]');
       return el ? el.getAttribute('data-basemap') : null;
     }
 
@@ -911,8 +1011,7 @@ export function overlayLegendRuntimeScript(): string {
  * legend/layers reflect whatever `overlayList` already holds at mount time.
  */
 export function tileOverlayLegendMountScript(mapVar: string, idPrefix = ''): string {
-  return `
-    (function() {
+  return overlayLegendMountScript(idPrefix, `
       var _ftOverlayLayers = {}; // overlay id -> live L.tileLayer on ${mapVar}, present only while mounted
 
       function _ftSyncOverlayLayer(ov) {
@@ -935,6 +1034,47 @@ export function tileOverlayLegendMountScript(mapVar: string, idPrefix = ''): str
         }
       }
 
+      // Drop layers for any overlay that's no longer in overlayList (deleted in Settings).
+      function _ftPruneOverlayLayers() {
+        Object.keys(_ftOverlayLayers).forEach(function(id) {
+          if (overlayList.some(function(ov) { return String(ov.id) === id; })) return;
+          ${mapVar}.removeLayer(_ftOverlayLayers[id]);
+          delete _ftOverlayLayers[id];
+        });
+      }
+  `);
+}
+
+/**
+ * tileOverlayLegendMountScript() for a MapLibre map (createMap() in maplibre.ts): the
+ * overlays that are on go into the map's style (`_ftOverlays`, restyled by _ftRestyle()),
+ * in overlayList's order. An edited overlay restyles too.
+ */
+export function maplibreOverlayLegendMountScript(mapVar: string, idPrefix = ''): string {
+  return overlayLegendMountScript(idPrefix, `
+      var _ftOverlaysKey = '[]';
+      function _ftSyncOverlayLayer() {
+        var on = (overlayList || []).filter(_ftOverlayEnabled);
+        var key = JSON.stringify(on);
+        if (key === _ftOverlaysKey) return;
+        _ftOverlaysKey = key;
+        ${mapVar}._ftOverlays = on;
+        _ftRestyle(${mapVar});
+      }
+      var _ftPruneOverlayLayers = _ftSyncOverlayLayer;
+  `);
+}
+
+/**
+ * The legend's rows, button and refresh for one map instance. `sync` defines how its map
+ * follows them: `_ftSyncOverlayLayer(ov)` after an overlay's row is drawn or toggled, and
+ * `_ftPruneOverlayLayers()` after every row is drawn (an overlay deleted in Settings).
+ */
+function overlayLegendMountScript(idPrefix: string, sync: string): string {
+  return `
+    (function() {
+      ${sync}
+
       function _ftRenderThisOverlayLegend() {
         var btn = document.getElementById('${idPrefix}overlay-legend-btn');
         var panel = document.getElementById('${idPrefix}overlay-legend-panel');
@@ -945,6 +1085,7 @@ export function tileOverlayLegendMountScript(mapVar: string, idPrefix = ''): str
           btn.style.display = 'none';
           panel.classList.add('hidden');
           btn.classList.remove('active');
+          _ftPruneOverlayLayers();
           return;
         }
 
@@ -971,12 +1112,7 @@ export function tileOverlayLegendMountScript(mapVar: string, idPrefix = ''): str
           list.appendChild(row);
         });
 
-        // Drop layers for any overlay that's no longer in overlayList (deleted in Settings).
-        Object.keys(_ftOverlayLayers).forEach(function(id) {
-          if (overlayList.some(function(ov) { return String(ov.id) === id; })) return;
-          ${mapVar}.removeLayer(_ftOverlayLayers[id]);
-          delete _ftOverlayLayers[id];
-        });
+        _ftPruneOverlayLayers();
       }
 
       _ftOverlayLegendRefreshers.push(_ftRenderThisOverlayLegend);

@@ -35,6 +35,8 @@ import type { AccountingFlight } from '@wingbeat/core/accounting';
 import * as analytics from '@wingbeat/core/analytics';
 import type { StreamInterval } from '@wingbeat/core/analytics';
 import * as elevation from '@wingbeat/core/elevation';
+import * as mapStyle from '@wingbeat/core/map-style';
+import * as mapLayers from '@wingbeat/core/map-layers';
 import * as settings from '@wingbeat/core/settings';
 import { apiErrorMessage, createApiClient } from '@wingbeat/core/api/client';
 import * as dutyApi from '@wingbeat/core/api/duty';
@@ -193,6 +195,15 @@ Object.assign(globalThis, {
   decodeTerrarium: elevation.decodeTerrarium,
   demSubTile: elevation.demSubTile,
   paintElevationTint: elevation.paintElevationTint,
+  // ── map-style, map-layers: the MapLibre maps' style and the layers over it (maplibre.ts) ──
+  availableBasemaps: mapStyle.availableBasemaps,
+  mapStyle: mapStyle.mapStyle,
+  trackLayer: mapLayers.trackLayer,
+  trailLayer: mapLayers.trailLayer,
+  positionLayer: mapLayers.positionLayer,
+  elevationReliefLayer: mapLayers.elevationReliefLayer,
+  elevationReferenceLayer: mapLayers.elevationReferenceLayer,
+  ELEVATION_DEM_SOURCE: mapLayers.ELEVATION_DEM_SOURCE,
   // ── settings: the tracker history import's windows, the timezone-change warning ──
   trackerImportWindows: (from: string) => settings.importWindows(tz(), now(), from),
   trackerImportDefaultFrom: () => settings.importDefaultFrom(tz(), now()),
