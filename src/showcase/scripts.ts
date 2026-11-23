@@ -7,7 +7,8 @@
  * the next `npm run docs:showcase`.
  */
 import { themeRuntimeScript } from '../shared/theme';
-import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, sharedTileLayerDefs, sharedMapControlsScripts } from '../shared/map-controls';
+import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, sharedTileLayerDefs, sharedMapControlsScripts, maplibreMapControlsScripts } from '../shared/map-controls';
+import { maplibreRuntimeScript } from '../shared/maplibre';
 import { filterScript } from '../shared/filters';
 import { sharedSidebarToggleScripts } from '../shared/sidebar';
 import { aircraftInfoRenderScript } from '../shared/aircraft-info';
@@ -67,6 +68,7 @@ export function showcaseScript(sample: SampleData): string {
     mapLayersRuntimeScript(),
     // No app Worker behind the docs site: the demo maps' basemaps are public-domain USGS tiles.
     `_ftPresets = ${JSON.stringify(SHOWCASE_BASEMAPS)};`,
+    maplibreRuntimeScript(),
     filterScript(),
     dashboardScriptsHelpers(),
     dashboardScriptsIcons(),
@@ -245,19 +247,17 @@ function showcaseDriverScript(): string {
       return root;
     }
 
-    // Resolves once the shadow root's Leaflet stylesheet has loaded, so maps measure
-    // their container with the right CSS in place.
-    function leafletCssReady(root) {
-      const link = root.querySelector('link[rel="stylesheet"]');
-      if (!link || link.sheet) return Promise.resolve();
-      return new Promise(resolve => {
+    // Resolves once the shadow root's map stylesheets (Leaflet's, MapLibre's) have loaded,
+    // so maps measure their container with the right CSS in place.
+    function stylesheetsReady(root) {
+      return Promise.all([...root.querySelectorAll('link[rel="stylesheet"]')].map(link => link.sheet ? null : new Promise(resolve => {
         link.addEventListener('load', resolve, { once: true });
         link.addEventListener('error', resolve, { once: true });
         setTimeout(resolve, 4000);
-      });
+      })));
     }
 
-    // Leaflet only re-measures on window resize; a frame can change size on its own
+    // Leaflet only re-measures on window resize (MapLibre watches its container itself); a frame can change size on its own
     // (layout breakpoints, the sidebar drawer), so re-measure whenever the container does.
     function watchMapSize(mapObj, onResize) {
       const el = mapObj.getContainer();
@@ -314,15 +314,17 @@ function showcaseDriverScript(): string {
 
     async function mountFlights(host) {
       const root = attachDemo(host, 'dashboard', DEMO_MARKUP.flights);
-      await leafletCssReady(root);
+      await stylesheetsReady(root);
 
       const sidebar = root.querySelector('aside');
-      const map = L.map(root.getElementById('map'), { zoomControl: false, attributionControl: false, scrollWheelZoom: false })
-        .setView([window.APP_SETTINGS.mapDefaultLat, window.APP_SETTINGS.mapDefaultLng], window.APP_SETTINGS.mapDefaultZoom);
-      watchMapSize(map);
+      // MapLibre's zoom is Leaflet's less one (512 px tiles).
+      const map = createMap(root.getElementById('map'), {
+        center: [window.APP_SETTINGS.mapDefaultLng, window.APP_SETTINGS.mapDefaultLat],
+        zoom: window.APP_SETTINGS.mapDefaultZoom - 1,
+        scrollZoom: false,
+      });
 
-      ${sharedTileLayerDefs('map')}
-      ${sharedMapControlsScripts('map', '', 'tileLayers', 'currentTileLayer', 'root')}
+      ${maplibreMapControlsScripts('map', '', 'root')}
 
       // Track data read by the map-level hover handler (hover.ts).
       let activeLatlngs = [];
@@ -375,11 +377,11 @@ function showcaseDriverScript(): string {
           plane: isLatest && live ? { lat: live.lat, lon: live.lon, course_deg: live.course_deg, color: colorFor(flight.tracker_id) } : null,
         });
         if (!drawn) return;
-        layers.push(drawn.track, drawn.startMarker, drawn.endMarker, drawn.planeMarker);
+        layers.push(drawn.shape, drawn.planeMarker);
         activeLatlngs = drawn.latlngs;
         activePointData = drawn.pointData;
         activePointLabels = drawn.labels;
-        map.fitBounds(drawn.track.getBounds(), { padding: [40, 40] });
+        map.fitBounds(_ftLatLngBounds(drawn.latlngs), { padding: 40 });
       }
 
       function showDay(flights) {
@@ -399,7 +401,7 @@ function showcaseDriverScript(): string {
           legend = buildDayViewLegend(drawn.trackerIds.map(tid => ({ label: tailFor(tid), color: colorFor(tid) })));
           root.getElementById('map').appendChild(legend);
         }
-        if (drawn.allPoints.length) map.fitBounds(L.latLngBounds(drawn.allPoints), { padding: [40, 40] });
+        if (drawn.allPoints.length) map.fitBounds(_ftLatLngBounds(drawn.allPoints), { padding: 40 });
       }
 
       map.on('zoomend', () => {
@@ -540,7 +542,7 @@ function showcaseDriverScript(): string {
 
     async function mountAnalytics(host) {
       const root = attachDemo(host, 'analytics', DEMO_MARKUP.analytics);
-      await leafletCssReady(root);
+      await stylesheetsReady(root);
 
       // zoomSnap 0: fit the data tightly, between whole zoom levels; +/- still step by 1.
       const analyticsMap = L.map(root.getElementById('analytics-map'), { zoomControl: false, attributionControl: false, scrollWheelZoom: false, zoomSnap: 0 })

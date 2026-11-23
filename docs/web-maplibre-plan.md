@@ -106,7 +106,9 @@ showcase's analytics demo. The page stops loading leaflet.heat.
 
 The named points editor, map-view picker, then the regions editor (vertex handles as draggable
 DOM markers, polygons as fill and line layers, midpoint insert, snap and merge). Its touch
-handling needs a phone check.
+handling needs a phone check. The map-view picker stores `map_default_zoom` on Leaflet's
+scale, which the dashboard reads less one (MapLibre's 512 px tiles): a MapLibre picker stores
+its zoom plus one, or the stored values move to MapLibre's scale with a migration.
 
 ### Phase 6: Leaflet removed
 
@@ -144,4 +146,28 @@ comment's Leaflet note; check the doc-shot manifest and re-run `npm run docs:sho
   (which stays raster-only for the Leaflet maps). The vector option's "mobile app only" note is
   now "only the Flight Tracker map, on the web, for now". Core's `mapStyle`,
   `availableBasemaps` and layer builders are page globals.
-- **Phase 2: next.**
+- **Phase 2: done.** The dashboard's map is `createMap()`'s, starting at the default extent
+  (zoom less one) but hidden (`map-pending`) until its first fit (`fitMapTo()` in `state.ts`,
+  instant the first time). `maplibre.ts` adds `addMapShape()` (GeoJSON features on a source of
+  their own, `ft-shape-N`, drawn with core's layer specs, added and removed once the style is
+  ready so a restyle in flight can't drop or revive them), `addHtmlMarker()` /
+  `setHtmlMarker()` (DOM markers: planes, numbered end markers, the hover arrow, the picker's
+  dot; not interactive) and the hover tip's popup CSS. A drawn track is one shape: its line,
+  start dot and end dot, each feature in its color. Core's `positionLayer()` now draws Points
+  only (a circle layer dots every vertex of a line in its source). The hover arrays stay
+  `[lat, lon]`, flipped at each MapLibre call. Map clicks and moves use `e.point` /
+  `e.lngLat`; the tools' crosshair is on the canvas. The sidebar's resize is Leaflet-only
+  (MapLibre watches its container). The showcase's flights demo is MapLibre (its analytics
+  demo is still Leaflet), and the showcase page loads MapLibre's script.
+- **Phase 3: done.** The elevation tint is core's `color-relief` layer on core's DEM source
+  (`ft-elevation`, `ft-elevation-dem`), its tile URL ending in `/{z}/{x}/{y}` (pmtiles.js's
+  protocol reads the tile from there), with the reference dot (`ft-elevation-reference`),
+  both under the first `ft-shape-` layer. As in the app, it shows once a reference is set;
+  the sliders set its paint. The readout and an off-track reference keep the `getZxy` decode,
+  at `map.getZoom()`. The DEM's credit comes from its source.
+- Checked in a browser (local Worker with the doc-shots seed plus two synthetic flights,
+  headless Chromium on SwiftShader): default view, hover tip, a selected flight, a day view
+  with its legend, the point picker, the elevation tint and readout, the credits, phone width,
+  and the showcase's flights demo. Not checked: switching basemaps (the seed has one), vector
+  basemaps, overlays, touch.
+- **Next:** the user's staging check, then phase 4.

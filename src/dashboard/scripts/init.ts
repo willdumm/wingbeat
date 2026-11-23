@@ -1,4 +1,4 @@
-import { sharedMapControlsScripts, tileOverlayLegendMountScript } from '../../shared/map-controls';
+import { maplibreMapControlsScripts, maplibreOverlayLegendMountScript } from '../../shared/map-controls';
 import { sharedSidebarToggleScripts } from '../../shared/sidebar';
 
 export function dashboardScriptsInit(): string {
@@ -88,8 +88,8 @@ export function dashboardScriptsInit(): string {
     ${sharedSidebarToggleScripts('map')}
 
     // ── Zoom controls + basemap switcher ──────────────────────────────────────
-    ${sharedMapControlsScripts('map')}
-    ${tileOverlayLegendMountScript('map')}
+    ${maplibreMapControlsScripts('map')}
+    ${maplibreOverlayLegendMountScript('map')}
 
     // Track user-initiated pan/zoom so poll refreshes don't reset the viewport.
     map.on('movestart', (e) => {
@@ -97,8 +97,8 @@ export function dashboardScriptsInit(): string {
     });
 
     // Any touch, drag, wheel or control press on the map holds off poll-driven re-fits
-    // (see mapInputSettled). Leaflet's own drag/pinch events carry no originalEvent, so
-    // this listens on the DOM instead.
+    // (see mapInputSettled). A tap or a press on a control moves nothing, so this listens
+    // on the DOM rather than for the map's move events.
     (function() {
       const mapWrapper = document.querySelector('.map-wrapper');
       if (!mapWrapper) return;

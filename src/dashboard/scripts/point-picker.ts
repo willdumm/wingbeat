@@ -23,11 +23,18 @@ export function dashboardScriptsPointPicker(rootExpr = 'document'): string {
     const pointPickerDetails  = ${rootExpr}.getElementById('point-picker-details');
     const pointPickerBtn      = ${rootExpr}.getElementById('point-picker-btn');
     let pickerDotPinned = false;
+    const PICKER_DOT_HTML = '<div style="width:12px;height:12px;border-radius:50%;background:var(--accent)"></div>';
+
+    // Shows the picker's dot at latlng ([lat, lon]).
+    function placePickerDot(latlng) {
+      if (pickerDot) setHtmlMarker(pickerDot, latlng, PICKER_DOT_HTML);
+      else pickerDot = addHtmlMarker(map, latlng, PICKER_DOT_HTML);
+    }
 
     function activatePointPicker() {
       pointPickerActive = true;
       pointPickerBtn.classList.add('active');
-      map.getContainer().style.cursor = 'crosshair';
+      map.getCanvas().style.cursor = 'crosshair';
       // Only one "special click mode" tool active at a time.
       if (elevationToolActive) deactivateElevationTool();
       // Clear any pinned hover tooltip so it doesn't linger during picker mode
@@ -42,21 +49,13 @@ export function dashboardScriptsPointPicker(rootExpr = 'document'): string {
       pointPickerActive = false;
       pickerDotPinned = false;
       pointPickerBtn.classList.remove('active');
-      map.getContainer().style.cursor = '';
+      map.getCanvas().style.cursor = '';
       if (pickerDot) { pickerDot.remove(); pickerDot = null; }
     }
 
     function openPickerPopup(lat, lng, routePoint) {
       // Pin the dot at the exact clicked position for the duration of the popup
-      const clickLatLng = L.latLng(lat, lng);
-      if (!pickerDot) {
-        pickerDot = L.circleMarker(clickLatLng, {
-          radius: 5, color: getAccentColor(), fillColor: getAccentColor(), fillOpacity: 1,
-          weight: 2, interactive: false,
-        }).addTo(map);
-      } else {
-        pickerDot.setLatLng(clickLatLng);
-      }
+      placePickerDot([lat, lng]);
       pickerDotPinned = true;
       ${rootExpr}.getElementById('point-picker-route-status').textContent =
         routePoint ? 'on route' : 'off route';
@@ -89,16 +88,8 @@ export function dashboardScriptsPointPicker(rootExpr = 'document'): string {
     // Desktop hover: show a preview dot that snaps to a route point or follows the cursor
     map.on('mousemove', (e) => {
       if (!pointPickerActive || pickerDotPinned) return;
-      const idx = nearestRouteIdx(e.containerPoint);
-      const latlng = idx !== -1 ? activeLatlngs[idx] : e.latlng;
-      if (!pickerDot) {
-        pickerDot = L.circleMarker(latlng, {
-          radius: 5, color: getAccentColor(), fillColor: getAccentColor(), fillOpacity: 1,
-          weight: 2, interactive: false,
-        }).addTo(map);
-      } else {
-        pickerDot.setLatLng(latlng);
-      }
+      const idx = nearestRouteIdx(e.point);
+      placePickerDot(idx !== -1 ? activeLatlngs[idx] : [e.lngLat.lat, e.lngLat.lng]);
     });
 
     map.on('mouseout', () => {
@@ -109,11 +100,10 @@ export function dashboardScriptsPointPicker(rootExpr = 'document'): string {
     // Click / tap: open the popup at the snapped or raw position
     map.on('click', (e) => {
       if (!pointPickerActive) return;
-      const idx = nearestRouteIdx(e.containerPoint);
-      // activeLatlngs stores plain [lat,lon] arrays; normalise to LatLng
-      const ll = idx !== -1 ? L.latLng(activeLatlngs[idx]) : e.latlng;
+      const idx = nearestRouteIdx(e.point);
+      const ll = idx !== -1 ? activeLatlngs[idx] : [e.lngLat.lat, e.lngLat.lng];
       const routePoint = idx !== -1 ? activePointData[idx] : null;
-      openPickerPopup(ll.lat, ll.lng, routePoint);
+      openPickerPopup(ll[0], ll[1], routePoint);
     });
 
     // Toggle picker mode on/off

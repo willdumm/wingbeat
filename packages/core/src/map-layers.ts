@@ -36,11 +36,14 @@ export function trailLayer(): MapLayer {
   };
 }
 
-/** Tracker positions and track starts as dots; a pilot on foot as a ring. */
+/**
+ * Tracker positions and track starts as dots; a pilot on foot as a ring. Points only: a
+ * circle layer would draw a dot on every vertex of a line sharing its source (the web's).
+ */
 export function positionLayer(surface: string): MapLayer {
   return {
     id: 'positions', type: 'circle',
-    filter: ['all', ['!', ['has', 'label']], ['!', ['has', 'plane']], ['!', ['has', 'arrow']]],
+    filter: ['all', ['==', ['geometry-type'], 'Point'], ['!', ['has', 'label']], ['!', ['has', 'plane']], ['!', ['has', 'arrow']]],
     paint: {
       'circle-color': ['case', ['has', 'pilot'], surface, ['get', 'color']],
       'circle-radius': ['case', ['has', 'pilot'], 6, 7],

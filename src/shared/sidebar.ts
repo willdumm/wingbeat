@@ -198,7 +198,8 @@ export function sharedSidebarToggleStyles(sidebarSelector: string, mapWrapperSel
 /**
  * JS for wiring the sidebar toggle buttons.
  * Requires a `sidebar` variable (the aside element) to already be in scope.
- * Calls `mapVar.invalidateSize()` after each sidebar transition completes.
+ * Calls a Leaflet map's `mapVar.invalidateSize()` after each sidebar transition completes
+ * (a MapLibre map resizes itself).
  * `rootExpr` is the JS expression the buttons are looked up in — 'document' for the app
  * pages, a shadow root variable for the docs-site showcase (src/showcase/).
  */
@@ -253,7 +254,7 @@ export function sharedSidebarToggleScripts(mapVar: string, label = 'flight list'
     }
 
     sidebar.addEventListener('transitionend', function() {
-      ${mapVar}.invalidateSize();
+      if (${mapVar}.invalidateSize) ${mapVar}.invalidateSize();
     });
   `;
 }

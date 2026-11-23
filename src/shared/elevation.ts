@@ -1,33 +1,36 @@
 /**
- * Elevation tool: a toggleable Leaflet overlay that tints the map relative to a
- * click-set reference elevation, plus a cursor elevation readout — both backed by
- * Mapterhorn's public Terrarium-encoded `planet.pmtiles` DEM archive, read directly
- * via pmtiles.js's plain byte-fetch API (`PMTiles.getZxy`). No MapLibre, no WebGL —
- * just an `L.GridLayer` subclass painting a `<canvas>` per tile.
+ * Elevation tool: a toggleable tint of the MapLibre map relative to a click-set reference
+ * elevation, plus a cursor elevation readout, both from Mapterhorn's public
+ * Terrarium-encoded `planet.pmtiles` DEM archive. The tint is core's `color-relief` layer
+ * (elevationReliefLayer()) on a `raster-dem` source (ELEVATION_DEM_SOURCE), under the
+ * tracks, as in the app (apps/mobile/src/lib/elevation-tool.tsx); like the app's, it shows
+ * once a reference is set. The readout and a reference set off-track decode the DEM tile
+ * under the cursor themselves, through pmtiles.js's plain byte-fetch API
+ * (`PMTiles.getZxy`). The DEM's credit comes from its source (the map's credits row).
  *
  * Exports mirror the shared/*.ts convention (Markup/Styles/Script) used throughout
  * this codebase (e.g. shared/pilot-duty.ts, shared/settings.ts):
  *   elevationToolMarkup()  — the cursor-readout + reference-readout + sliders panel
  *   elevationToolStyles()  — CSS for the panel and the toggle button
- *   elevationToolScript()  — DEM fetch/cache, the tint GridLayer, cursor-readout
- *                            wiring, reference-click handling, slider wiring
+ *   elevationToolScript()  — DEM fetch/cache, the tint and reference layers,
+ *                            cursor-readout wiring, reference-click handling, slider wiring
  *
  * The tile and pixel math, Terrarium decoding and the color ramp are @wingbeat/core's
- * (packages/core/src/elevation.ts), globals from the core bundle.
+ * (packages/core/src/elevation.ts, map-layers.ts), globals from the core bundle.
  *
  * The toggle button lives in dashboard/markup.ts's mapToolButtonsMarkup() (with
  * point-picker's), passed to sharedMapControlsMarkup()'s extraButtons slot.
  * `rootExpr` names the node the panel's elements are looked up in (a shadow root for
  * the showcase demos).
  *
- * Reads (does not modify): `map`, `nearestRouteIdx`/`activeLatlngs`/`activePointData`
- * (hover.ts), `pointPickerActive`/`deactivatePointPicker` (point-picker.ts), `toFeet`
- * (helpers.ts). point-picker.ts's `activatePointPicker()` calls
- * `deactivateElevationTool()` back, so only one "special click mode" tool is ever
- * active at once — the one addition this doc's Touch points list didn't spell out.
+ * Reads (does not modify): `map` (a MapLibre map, shared/maplibre.ts),
+ * `nearestRouteIdx`/`activeLatlngs`/`activePointData` (hover.ts),
+ * `pointPickerActive`/`deactivatePointPicker` (point-picker.ts), `toFeet` (helpers.ts).
+ * point-picker.ts's `activatePointPicker()` calls `deactivateElevationTool()` back, so
+ * only one "special click mode" tool is ever active at once.
  */
 
-import { DEM_ATTRIBUTION, DEM_PMTILES_URL, DEM_TILE_SIZE } from '@wingbeat/core/elevation';
+import { DEM_PMTILES_URL, DEM_TILE_SIZE } from '@wingbeat/core/elevation';
 
 const ELEV_RANGE_KEY = 'ft_elev_range_m';
 const ELEV_OPACITY_KEY = 'ft_elev_opacity';
@@ -137,11 +140,11 @@ export function elevationToolStyles(): string {
 
 export function elevationToolScript(rootExpr = 'document'): string {
   return `
-    // ── Elevation tool: DEM decode/cache (Mapterhorn planet.pmtiles, Terrarium) ─
+    // ── Elevation tool: DEM decode/cache for the readout (Mapterhorn planet.pmtiles, Terrarium) ─
     const _ftDemPmtiles = new pmtiles.PMTiles('${DEM_PMTILES_URL}');
     const _ftDemCache = new Map();     // "z/x/y" -> Float32Array(${DEM_TILE_SIZE}*${DEM_TILE_SIZE}) elevation meters
     const _ftDemInflight = new Map();  // "z/x/y" -> in-flight Promise, so concurrent
-                                        // callers (mousemove + tile paint) share one fetch
+                                        // callers (mousemove, click) share one fetch
 
     // Fetches+decodes DEM tile (z,x,y) into a cached Float32Array of elevation
     // meters, one entry per pixel (row-major). Returns null if the archive has no
@@ -183,89 +186,60 @@ export function elevationToolScript(rootExpr = 'document'): string {
       return arr ? arr[py * ${DEM_TILE_SIZE} + px] : null;
     }
 
-    // ── Elevation tool: tint layer ──────────────────────────────────────────────
+    // ── Elevation tool: tint and reference layers ───────────────────────────────
     let elevationToolActive = false;
-    let elevationReferenceElevM = null; // meters; null until a reference is set
-    let elevationReferenceMarker = null;
+    let elevationReference = null; // { latlng: [lat, lon], m }; null until one is set
     let elevationRangeM = parseInt(localStorage.getItem('${ELEV_RANGE_KEY}'), 10);
     if (!elevationRangeM || isNaN(elevationRangeM)) elevationRangeM = ${ELEV_DEFAULT_RANGE_M};
     let elevationOpacity = parseInt(localStorage.getItem('${ELEV_OPACITY_KEY}'), 10);
     if (isNaN(elevationOpacity)) elevationOpacity = ${ELEV_DEFAULT_OPACITY};
 
-    // canvas -> { elevArr, sub } (sub: demSubTile()) for currently-mounted tiles,
-    // so a slider change can re-run just the color pass with no refetch/re-decode.
-    // Cleaned up in ElevationTintLayer's _removeTile override.
-    const _ftElevTileRegistry = new Map();
+    const _FT_ELEV_DEM = 'ft-elevation-dem';
+    // pmtiles.js's protocol reads the tile's z/x/y from the end of its URL (the app's
+    // MapLibre Native takes core's archive URL as it is).
+    const _FT_ELEV_DEM_SOURCE = Object.assign({}, ELEVATION_DEM_SOURCE, { tiles: [ELEVATION_DEM_SOURCE.tiles[0] + '/{z}/{x}/{y}'] });
+    const _FT_ELEV_TINT = 'ft-elevation';
+    const _FT_ELEV_REF = 'ft-elevation-reference';
 
-    function _ftPaintElevationTile(canvas, params) {
-      const ctx = canvas.getContext('2d');
-      const imgData = ctx.createImageData(${DEM_TILE_SIZE}, ${DEM_TILE_SIZE});
-      const alpha = Math.round(elevationOpacity / 100 * 255);
-      paintElevationTint(imgData.data, params.elevArr, params.sub, elevationReferenceElevM, elevationRangeM, alpha);
-      ctx.putImageData(imgData, 0, 0);
+    // Under the tracks and markers (addMapShape()'s layers), above the basemap and overlays.
+    function _ftElevBeforeId() {
+      const first = map.getStyle().layers.find(l => l.id.startsWith('ft-shape-'));
+      return first ? first.id : undefined;
     }
 
-    let _ftElevRecolorRAF = null;
-    function _ftScheduleElevRecolor() {
-      if (_ftElevRecolorRAF) return;
-      _ftElevRecolorRAF = requestAnimationFrame(() => {
-        _ftElevRecolorRAF = null;
-        _ftElevTileRegistry.forEach((params, canvas) => _ftPaintElevationTile(canvas, params));
+    // Brings the map's tint and reference dot in line with the tool: there while it's on
+    // with a reference, at its range and opacity; gone otherwise.
+    function _ftSyncElevationLayers() {
+      _ftWhenStyleReady(map, () => {
+        const show = elevationToolActive && elevationReference;
+        if (!show) {
+          [_FT_ELEV_TINT, _FT_ELEV_REF].forEach(id => { if (map.getLayer(id)) map.removeLayer(id); });
+          [_FT_ELEV_DEM, _FT_ELEV_REF].forEach(id => { if (map.getSource(id)) map.removeSource(id); });
+          return;
+        }
+        const relief = elevationReliefLayer(elevationReference.m, elevationRangeM, elevationOpacity);
+        const refData = { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [elevationReference.latlng[1], elevationReference.latlng[0]] } };
+        if (!map.getSource(_FT_ELEV_DEM)) map.addSource(_FT_ELEV_DEM, _FT_ELEV_DEM_SOURCE);
+        if (map.getLayer(_FT_ELEV_TINT)) {
+          map.setPaintProperty(_FT_ELEV_TINT, 'color-relief-color', relief.paint['color-relief-color']);
+          map.setPaintProperty(_FT_ELEV_TINT, 'color-relief-opacity', relief.paint['color-relief-opacity']);
+        } else {
+          map.addLayer(Object.assign({}, relief, { id: _FT_ELEV_TINT, source: _FT_ELEV_DEM }), _ftElevBeforeId());
+        }
+        if (map.getSource(_FT_ELEV_REF)) {
+          map.getSource(_FT_ELEV_REF).setData(refData);
+        } else {
+          map.addSource(_FT_ELEV_REF, { type: 'geojson', data: refData });
+          const ref = elevationReferenceLayer(getCssVar('--text-primary', '#0F1A24'), getCssVar('--surface-1', '#FFFFFF'));
+          map.addLayer(Object.assign({}, ref, { id: _FT_ELEV_REF, source: _FT_ELEV_REF }), _ftElevBeforeId());
+        }
       });
     }
 
-    // GridLayer (not TileLayer) subclass, modeled on pmtiles.js's own
-    // leafletRasterLayer createTile shape. Each tile paints its sub-rectangle of its
-    // z12 DEM parent (demSubTile(), §5 of the design doc).
-    const ElevationTintLayer = L.GridLayer.extend({
-      createTile: function(coords, done) {
-        const canvas = document.createElement('canvas');
-        canvas.width = ${DEM_TILE_SIZE};
-        canvas.height = ${DEM_TILE_SIZE};
-        const sub = demSubTile(coords);
-        ensureDemTile(sub.demZ, sub.parentX, sub.parentY).then((arr) => {
-          if (!arr) { done(undefined, canvas); return; }
-          const params = { elevArr: arr, sub };
-          _ftElevTileRegistry.set(canvas, params);
-          _ftPaintElevationTile(canvas, params);
-          done(undefined, canvas);
-        }).catch(() => done(undefined, canvas));
-        return canvas;
-      },
-      _removeTile: function(key) {
-        const tile = this._tiles[key];
-        if (tile) _ftElevTileRegistry.delete(tile.el);
-        L.GridLayer.prototype._removeTile.call(this, key);
-      },
-    });
-
-    // Added/removed from the map by activate/deactivateElevationTool below, so the
-    // tint disappears along with the rest of the tool when toggled off.
-    //
-    // Deliberately no maxNativeZoom/maxZoom option here: those make Leaflet itself
-    // clamp the tile zoom it hands to createTile and CSS-scale-transform the whole
-    // tile pane to compensate, which fights with createTile's own manual z12 clamp
-    // + sub-rect addressing above (coords.z would already be clamped by Leaflet,
-    // and coords.x/y would live on a different, mismatched grid than the basemap's
-    // own unclamped one) — that double-clamping is what caused the tint tiles to
-    // render at the wrong zoom/offset relative to the basemap. Leaving zoom
-    // unclamped means createTile always receives the same coords.z/x/y as the
-    // basemap layer at the current zoom, and does 100% of the overzoom upscaling
-    // itself, pixel by pixel.
-    const elevationTintLayer = new ElevationTintLayer({ attribution: ${JSON.stringify(DEM_ATTRIBUTION)} });
-
     function _ftSetElevationReference(latlng, elevM) {
-      elevationReferenceElevM = elevM;
-      if (elevationReferenceMarker) {
-        elevationReferenceMarker.setLatLng(latlng);
-      } else {
-        elevationReferenceMarker = L.circleMarker(latlng, {
-          radius: 5, color: '#fff', fillColor: '#0F1A24', fillOpacity: 1,
-          weight: 2, interactive: false,
-        }).addTo(map);
-      }
+      elevationReference = { latlng, m: elevM };
       elevationReferenceReadout.textContent = toFeet(elevM);
-      _ftScheduleElevRecolor();
+      _ftSyncElevationLayers();
     }
 
     // ── UI wiring ────────────────────────────────────────────────────────────
@@ -287,34 +261,32 @@ export function elevationToolScript(rootExpr = 'document'): string {
       elevationRangeM = parseInt(elevationRangeSlider.value, 10);
       elevationRangeValue.textContent = '±' + toFeet(elevationRangeM);
       localStorage.setItem('${ELEV_RANGE_KEY}', String(elevationRangeM));
-      _ftScheduleElevRecolor();
+      _ftSyncElevationLayers();
     });
 
     elevationOpacitySlider.addEventListener('input', () => {
       elevationOpacity = parseInt(elevationOpacitySlider.value, 10);
       elevationOpacityValue.textContent = elevationOpacity + '%';
       localStorage.setItem('${ELEV_OPACITY_KEY}', String(elevationOpacity));
-      _ftScheduleElevRecolor();
+      _ftSyncElevationLayers();
     });
 
     function activateElevationTool() {
       elevationToolActive = true;
       elevationBtn.classList.add('active');
-      map.getContainer().style.cursor = 'crosshair';
+      map.getCanvas().style.cursor = 'crosshair';
       elevationPanel.classList.remove('hidden');
-      elevationTintLayer.addTo(map);
-      // The reference survives a toggle off/on, so its marker comes back with the tint.
-      if (elevationReferenceMarker) elevationReferenceMarker.addTo(map);
+      // The reference survives a toggle off/on, so the tint and its dot come back with it.
+      _ftSyncElevationLayers();
       if (pointPickerActive) deactivatePointPicker();
     }
 
     function deactivateElevationTool() {
       elevationToolActive = false;
       elevationBtn.classList.remove('active');
-      map.getContainer().style.cursor = '';
+      map.getCanvas().style.cursor = '';
       elevationPanel.classList.add('hidden');
-      map.removeLayer(elevationTintLayer);
-      if (elevationReferenceMarker) map.removeLayer(elevationReferenceMarker);
+      _ftSyncElevationLayers();
     }
 
     elevationBtn.addEventListener('click', () => {
@@ -332,7 +304,7 @@ export function elevationToolScript(rootExpr = 'document'): string {
     map.on('mousemove', (e) => {
       if (!elevationToolActive) return;
       const token = ++_ftElevMoveToken;
-      elevationAt(e.latlng.lat, e.latlng.lng, map.getZoom()).then((m) => {
+      elevationAt(e.lngLat.lat, e.lngLat.lng, map.getZoom()).then((m) => {
         if (token !== _ftElevMoveToken) return;
         elevationCursorReadout.textContent = m == null ? 'No data' : toFeet(m);
       });
@@ -348,13 +320,13 @@ export function elevationToolScript(rootExpr = 'document'): string {
     // back to a raw DEM lookup at the clicked lat/lng otherwise.
     map.on('click', (e) => {
       if (!elevationToolActive) return;
-      const idx = nearestRouteIdx(e.containerPoint);
-      if (idx !== -1) {
-        _ftSetElevationReference(L.latLng(activeLatlngs[idx]), activePointData[idx].elevation_m);
+      const idx = nearestRouteIdx(e.point);
+      if (idx !== -1 && activePointData[idx].elevation_m != null) {
+        _ftSetElevationReference(activeLatlngs[idx], activePointData[idx].elevation_m);
         return;
       }
-      const clickLatLng = e.latlng;
-      elevationAt(clickLatLng.lat, clickLatLng.lng, map.getZoom()).then((m) => {
+      const clickLatLng = [e.lngLat.lat, e.lngLat.lng];
+      elevationAt(clickLatLng[0], clickLatLng[1], map.getZoom()).then((m) => {
         if (m == null) return;
         _ftSetElevationReference(clickLatLng, m);
       });

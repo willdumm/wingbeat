@@ -31,11 +31,16 @@ export function maplibreCssLink(): string {
   return `<link rel="stylesheet" href="${MAPLIBRE_CSS.url}" integrity="${MAPLIBRE_CSS.sri}" crossorigin="anonymous" />`;
 }
 
-/** The `<head>` tags: the stylesheet and the script (`window.maplibregl`). The showcase has no nonce. */
-export function maplibreHeadTags(nonce?: string): string {
+/** The script tag alone (`window.maplibregl`). The showcase has no nonce. */
+export function maplibreScriptTag(nonce?: string): string {
   const n = nonce ? ` nonce="${nonce}"` : '';
+  return `<script${n} src="${MAPLIBRE_JS.url}" integrity="${MAPLIBRE_JS.sri}" crossorigin="anonymous"></script>`;
+}
+
+/** The `<head>` tags: the stylesheet and the script. */
+export function maplibreHeadTags(nonce?: string): string {
   return `${maplibreCssLink()}
-  <script${n} src="${MAPLIBRE_JS.url}" integrity="${MAPLIBRE_JS.sri}" crossorigin="anonymous"></script>`;
+  ${maplibreScriptTag(nonce)}`;
 }
 
 /**
@@ -46,6 +51,14 @@ export function maplibreHeadTags(nonce?: string): string {
  *   _ftRestyle(map)               — rebuild map's style from its basemap and overlays
  *   _ftMapBasemaps()              — the basemaps a MapLibre map offers, in the tenant's order
  *   _ftLatLngBounds(latlngs)      — the bounds of [lat, lon] pairs, as MapLibre takes them
+ *   _ftWhenStyleReady(map, fn)    — fn() now, or once the map's style has loaded
+ *   addMapShape(map, features, layers)
+ *                                 — GeoJSON features drawn with core's layer specs; returns
+ *                                   a handle with remove()
+ *   _ftLineFeature(latlngs, props), _ftPointFeature(latlng, props)
+ *                                 — GeoJSON features from [lat, lon] pairs
+ *   addHtmlMarker(map, latlng, html, zIndex), setHtmlMarker(marker, latlng, html)
+ *                                 — a DOM marker (planes, end markers, the hover arrow)
  * createMap() adds each map to mapLayersRuntimeScript()'s `_ftMaplibreMaps`, with its
  * `_ftRestyle()`, which _ftApplyActiveLayerColor() calls.
  */
@@ -101,6 +114,7 @@ export function maplibreRuntimeScript(): string {
     function _ftNoMap(container) {
       var stub = new Proxy(function() {}, {
         get: function(_, key) {
+          if (key === '_ftNoMap') return true;
           if (key === 'getContainer') return function() { return container; };
           if (key === 'project') return function() { return { x: NaN, y: NaN }; };
           if (key === 'then' || typeof key === 'symbol') return undefined;
@@ -156,12 +170,92 @@ export function maplibreRuntimeScript(): string {
       });
       return [[w, s], [e, n]];
     }
+
+    // A style that's still loading (the first, or a restyle MapLibre couldn't diff) takes
+    // no sources or layers yet.
+    function _ftWhenStyleReady(mapObj, fn) {
+      if (mapObj._ftNoMap || (mapObj.style && mapObj.style._loaded)) fn();
+      else mapObj.once('style.load', fn);
+    }
+
+    function _ftLineFeature(latlngs, props) {
+      return { type: 'Feature', properties: props, geometry: { type: 'LineString', coordinates: latlngs.map(function(ll) { return [ll[1], ll[0]]; }) } };
+    }
+
+    function _ftPointFeature(ll, props) {
+      return { type: 'Feature', properties: props, geometry: { type: 'Point', coordinates: [ll[1], ll[0]] } };
+    }
+
+    // Draws GeoJSON features with core's layer specs (trackLayer(), positionLayer(), …) on
+    // a source of their own: ids ft-shape-N and ft-shape-N-<layer id>, above everything
+    // drawn before. Returns { remove() }.
+    var _ftShapeSeq = 0;
+    function addMapShape(mapObj, features, layers) {
+      var id = 'ft-shape-' + (++_ftShapeSeq);
+      var removed = false;
+      _ftWhenStyleReady(mapObj, function() {
+        if (removed) return;
+        mapObj.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: features } });
+        layers.forEach(function(l) { mapObj.addLayer(Object.assign({}, l, { id: id + '-' + l.id, source: id })); });
+      });
+      function drop() {
+        layers.forEach(function(l) { if (mapObj.getLayer(id + '-' + l.id)) mapObj.removeLayer(id + '-' + l.id); });
+        if (mapObj.getSource(id)) mapObj.removeSource(id);
+      }
+      return {
+        remove: function() {
+          removed = true;
+          // A restyle in flight would carry it over (_ftRestyle()), so it goes once that's in.
+          _ftWhenStyleReady(mapObj, drop);
+        },
+      };
+    }
+
+    // A DOM marker centered on latlng ([lat, lon]), its content html. Not interactive:
+    // the map's own events (hover, the point picker) see through it. Above the map's
+    // layers, and above lower-zIndex markers.
+    function addHtmlMarker(mapObj, latlng, html, zIndex) {
+      if (mapObj._ftNoMap) return mapObj;
+      var el = document.createElement('div');
+      el.className = 'map-html-marker';
+      el.innerHTML = html;
+      el._ftHtml = html;
+      if (zIndex) el.style.zIndex = String(zIndex);
+      return new maplibregl.Marker({ element: el }).setLngLat([latlng[1], latlng[0]]).addTo(mapObj);
+    }
+
+    // Moves a marker from addHtmlMarker() and, when it changed, replaces its content.
+    function setHtmlMarker(marker, latlng, html) {
+      marker.setLngLat([latlng[1], latlng[0]]);
+      var el = marker.getElement();
+      if (el._ftHtml !== html) { el.innerHTML = html; el._ftHtml = html; }
+    }
   `;
 }
 
-/** CSS for a map MapLibre couldn't make. */
+/**
+ * CSS for the MapLibre maps: DOM markers, the track hover tip (hover.ts), a map that has
+ * no view yet (`map-pending`, the dashboard's until its first fit), and a map MapLibre
+ * couldn't make.
+ */
 export function maplibreStyles(): string {
   return `
+    .map-html-marker { pointer-events: none; }
+    .map-pending .maplibregl-canvas-container { visibility: hidden; }
+
+    /* Above the markers (addHtmlMarker's zIndex). */
+    .map-hover-tip { pointer-events: none; z-index: 4; }
+    .map-hover-tip .maplibregl-popup-content {
+      padding: var(--space-1) var(--space-2);
+      font-family: var(--font-body);
+      font-size: var(--size-xs);
+      color: var(--text-primary);
+      background: var(--surface-1);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-md);
+    }
+    .map-hover-tip.maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: var(--surface-1); }
+
     .map-unavailable {
       position: absolute;
       inset: 0;

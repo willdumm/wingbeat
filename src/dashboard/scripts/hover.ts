@@ -7,7 +7,25 @@
  */
 export function dashboardScriptsHover(): string {
   return `
-    const hoverTip = L.tooltip({ permanent: true, direction: 'top', offset: [0, -12] });
+    // The tip over the snapped point: show(latlng, html) and remove(). A MapLibre popup,
+    // styled by maplibreStyles() (.map-hover-tip).
+    const hoverTip = (() => {
+      let popup = null;
+      return {
+        show(latlng, html) {
+          if (map._ftNoMap) return;
+          if (!popup) {
+            popup = new maplibregl.Popup({
+              closeButton: false, closeOnClick: false, anchor: 'bottom', offset: 14,
+              className: 'map-hover-tip', maxWidth: 'none',
+            });
+          }
+          popup.setLngLat([latlng[1], latlng[0]]).setHTML(html);
+          if (!popup.isOpen()) popup.addTo(map);
+        },
+        remove() { if (popup) popup.remove(); },
+      };
+    })();
 
     // ── Map-level hover (wider engagement than the 3 px polyline stroke) ──────
 
@@ -23,7 +41,7 @@ export function dashboardScriptsHover(): string {
     // Returns the index into latlngs (default: the drawn track's) of the nearest point
     // within 30 px (core's nearestPointIdx), or -1.
     function nearestRouteIdx(containerPt, latlngs = activeLatlngs) {
-      return nearestPointIdx(containerPt, latlngs, (ll) => map.latLngToContainerPoint(ll));
+      return nearestPointIdx(containerPt, latlngs, (ll) => map.project([ll[1], ll[0]]));
     }
 
     // Snaps to the nearest track point within 30 px of screenPt.
@@ -41,9 +59,9 @@ export function dashboardScriptsHover(): string {
       const refLl = nextLl !== snapLatLng ? nextLl : prevLl;
       const bearing = nearest.course_deg ?? bearingBetween(snapLatLng, refLl);
       if (hoverDot) {
-        hoverDot.setLatLng(snapLatLng).setIcon(makeArrowIcon(bearing));
+        setHtmlMarker(hoverDot, snapLatLng, makeArrowHtml(bearing));
       } else {
-        hoverDot = L.marker(snapLatLng, { icon: makeArrowIcon(bearing), interactive: false }).addTo(map);
+        hoverDot = addHtmlMarker(map, snapLatLng, makeArrowHtml(bearing), MARKER_Z.arrow);
       }
 
       const time = nearest.garmin_time
@@ -59,14 +77,14 @@ export function dashboardScriptsHover(): string {
         ? (nearestTracker.assigned_aircraft || nearestTracker.name)
         : null;
 
-      hoverTip.setContent(
+      hoverTip.show(snapLatLng,
         '<div style="line-height:1.6;white-space:nowrap">' +
         (tipLabel ? '<b>' + escHtml(tipLabel) + '</b><br>' : '') +
         (displayName ? escHtml(displayName) + '<br>' : '') +
         time + '<br>' +
         speed + '&nbsp;&nbsp;' + alt +
         '</div>'
-      ).setLatLng(snapLatLng).addTo(map);
+      );
 
       return true;
     }
@@ -75,7 +93,7 @@ export function dashboardScriptsHover(): string {
       if (pinnedTip) return;
       if (pointPickerActive) return;
       if (!activeLatlngs.length && !trailLatlngs.length) return;
-      const snapped = snapToNearestPoint(e.containerPoint);
+      const snapped = snapToNearestPoint(e.point);
       if (!snapped) {
         hoverTip.remove();
         if (hoverDot) { hoverDot.remove(); hoverDot = null; }
@@ -97,7 +115,7 @@ export function dashboardScriptsHover(): string {
 
       const rect = map.getContainer().getBoundingClientRect();
       const touch = e.changedTouches[0];
-      const touchPt = L.point(touch.clientX - rect.left, touch.clientY - rect.top);
+      const touchPt = { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
       const snapped = snapToNearestPoint(touchPt);
 
       if (!snapped) {
