@@ -122,4 +122,31 @@ comment's Leaflet note; check the doc-shot manifest and re-run `npm run docs:sho
 
 ## Progress
 
-- Phase 0–3: in progress.
+- **Phase 0: done.** `packages/core/src/map-style.ts` (moved from the app, `liveMapStyle` is now
+  `mapStyle`, plus `mapColorPaint` and a `color` option) and `map-layers.ts` (track, trail,
+  position, plane, arrow, elevation relief and reference layers; `ELEVATION_DEM_SOURCE`). The
+  app uses both; its jest test moved to `test/core-map-style.test.mjs`. Core depends on
+  `@protomaps/basemaps` (and on `@maplibre/maplibre-gl-style-spec` for types only); the app's
+  lockfile entry for core lists them. The app's GeoJSON feature builders
+  (`apps/mobile/src/lib/live.ts`) stay in the app until phase 2 shows whether the web's
+  tracks fit them.
+- **Phase 1: next.** Design:
+  - Page head: maplibre-gl 5.24.1 from unpkg with SRI
+    (`sha384-nXMl9YiLoSG5KBPTFgvxVuIqQQcqIvo0bFrvoEaGJC6r7IibIzF1S36Zbf/sKBtL` for
+    `dist/maplibre-gl.js`, `sha384-uTttxo/aOKbdE5RlD/SPzSDoDmNvGlUYPjONi2MN/b7c9HPSvW07OIuyP7uL6jxK`
+    for `dist/maplibre-gl.css`), beside Leaflet until phase 6.
+  - Bind core's `mapStyle` and layer builders in `src/client/core-entry.ts`.
+  - The page needs the vector basemaps too: inline `window.APP_VECTOR_BASEMAPS` beside
+    `APP_BASEMAPS` (`clientBasemaps()` in `src/index.ts` already splits them), and have Settings
+    (`basemap-settings.ts`) update it with `_ftPresets`. Keep `_ftPresets` raster-only for the
+    Leaflet maps.
+  - A MapLibre map keeps `{ basemapId, overlay ids }` and restyles with `map.setStyle(mapStyle(…),
+    { transformStyle })`, carrying over every source and layer that isn't `background`,
+    `basemap-*` or `overlay-*` (the page's own). Images (plane, arrow) re-added on
+    `styleimagemissing`. Color correction goes into the style (`color`), so
+    `_ftApplyActiveLayerColor()` also restyles MapLibre maps.
+  - New `maplibreMapControlsScripts()` / `maplibreOverlayLegendMountScript()` beside the
+    Leaflet ones in `map-controls.ts`, sharing the attribution sanitizer (attribution from the
+    style's sources: basemap, overlays, then the page's, e.g. the DEM). `_ftCurrentBasemapId()`
+    and `_ftApplyActiveLayerColor()` select `[data-basemap]` on either kind of container.
+  - Drop "mobile app only" from the vector option in `basemap-settings.ts`.

@@ -1,15 +1,21 @@
 /**
- * The Live map's MapLibre style, from the bootstrap's basemaps and tile overlays: the basemap
- * (a raster source and layer, or a Protomaps vector basemap read from its PMTiles archive) and
- * one raster source and layer for each overlay that's on. MapLibre takes a list of tile
- * URLs rather than Leaflet's `{s}`, so a template's `{s}` becomes one URL per subdomain, and
- * `{r}` becomes `@2x` on a high-density screen. A keyed basemap's proxy path (`/api/tiles/…`)
- * is made absolute on the account's instance, whose requests carry the bearer (tile-auth.ts).
+ * The MapLibre style both clients' maps start from, built from the bootstrap's basemaps and
+ * tile overlays: the basemap (a raster source and layer, or a Protomaps vector basemap read from
+ * its PMTiles archive) and one raster source and layer for each overlay that's on. MapLibre
+ * takes a list of tile URLs rather than Leaflet's `{s}`, so a template's `{s}` becomes one URL
+ * per subdomain, and `{r}` becomes `@2x` on a high-density screen. A keyed basemap's proxy path
+ * (`/api/tiles/…`) is made absolute on the instance: the app's requests carry its bearer, the
+ * web's its session cookie (same origin).
+ *
+ * Each client adds its own sources and layers (tracks, markers, the elevation tint) on top;
+ * their specs are in map-layers.ts.
  */
-import type { StyleSpecification } from '@maplibre/maplibre-react-native';
+import type { LayerSpecification, StyleSpecification } from '@maplibre/maplibre-gl-style-spec';
 import { layers as protomapsLayers, namedFlavor } from '@protomaps/basemaps';
-import { overlayDefaultEnabled, TILE_SUBDOMAINS } from '@wingbeat/core/basemaps';
-import type { Basemap, BootstrapResponse, TileOverlay, VectorBasemap } from '@wingbeat/core/api/bootstrap';
+import type { Basemap, BootstrapResponse, TileOverlay, VectorBasemap } from './api/bootstrap';
+import { overlayDefaultEnabled, TILE_SUBDOMAINS } from './basemaps';
+
+export type { LayerSpecification, StyleSpecification };
 
 /** A basemap as the map uses it: the server's raster basemaps (bootstrap `basemaps`) or vector ones (`vector_basemaps`). */
 export type MapBasemap =
@@ -49,8 +55,8 @@ export function defaultOverlayIds(overlays: TileOverlay[], basemapId: string | n
 
 /**
  * A tile template's URLs for MapLibre. origin is the instance's (`https://<host>`), for a
- * path on it; pixelRatio the screen's. The placeholders' case is normalized first, as the
- * web does, since admins paste templates documented as `{Z}/{X}/{Y}`.
+ * path on it; pixelRatio the screen's. The placeholders' case is normalized first, since admins
+ * paste templates documented as `{Z}/{X}/{Y}`.
  */
 export function tileUrls(template: string, origin: string, pixelRatio: number): string[] {
   const url = template
@@ -58,6 +64,32 @@ export function tileUrls(template: string, origin: string, pixelRatio: number): 
     .replace(/\{r\}/g, pixelRatio > 1 ? '@2x' : '');
   const absolute = url.startsWith('/') ? origin + url : url;
   return absolute.includes('{s}') ? TILE_SUBDOMAINS.map((s) => absolute.replace(/\{s\}/g, s)) : [absolute];
+}
+
+/**
+ * A raster basemap's color correction (the web's per-device Settings → Map layers sliders), in
+ * percent: 100 is no change. MapLibre's raster paint has saturation and contrast in -1…1 and a
+ * brightness range instead of CSS's filter multipliers, so mapColorPaint() maps one to the other.
+ */
+export interface MapColor {
+  sat: number;
+  con: number;
+  bri: number;
+}
+
+/**
+ * The raster paint for a color correction. Saturation and contrast map linearly to MapLibre's
+ * -1…1 around 100%. Brightness scales the pixel range as CSS brightness() does: below 100% the
+ * top of the range comes down; above it, the bottom goes up (MapLibre can't brighten past white).
+ */
+export function mapColorPaint(c: MapColor): Record<string, number> {
+  const clamp = (v: number) => Math.max(-1, Math.min(1, v));
+  const paint: Record<string, number> = {};
+  if (c.sat !== 100) paint['raster-saturation'] = clamp((c.sat - 100) / 100);
+  if (c.con !== 100) paint['raster-contrast'] = clamp((c.con - 100) / 100);
+  if (c.bri < 100) paint['raster-brightness-max'] = Math.max(0, c.bri / 100);
+  else if (c.bri > 100) paint['raster-brightness-min'] = Math.min(1, (c.bri - 100) / 100);
+  return paint;
 }
 
 export interface MapStyleOptions {
@@ -68,12 +100,16 @@ export interface MapStyleOptions {
   pixelRatio: number;
   /** What shows where no tile has loaded (a token color). */
   background: string;
+  /** The basemap's color correction, for a raster one; none by default. */
+  color?: MapColor;
 }
 
-const basemapSourceId = (id: string) => 'basemap-' + id;
-const overlaySourceId = (id: number) => 'overlay-' + id;
+/** The style's source id for a basemap, and its (raster) layer's. */
+export const basemapSourceId = (id: string) => 'basemap-' + id;
+/** The style's source and layer id for an overlay. */
+export const overlaySourceId = (id: number) => 'overlay-' + id;
 
-export function liveMapStyle({ basemap, overlays, origin, pixelRatio, background }: MapStyleOptions): StyleSpecification {
+export function mapStyle({ basemap, overlays, origin, pixelRatio, background, color }: MapStyleOptions): StyleSpecification {
   const style: StyleSpecification = {
     version: 8,
     sources: {},
@@ -104,7 +140,7 @@ export function liveMapStyle({ basemap, overlays, origin, pixelRatio, background
       maxzoom: basemap.maxZoom,
       attribution: basemap.attribution,
     };
-    style.layers.push({ id, type: 'raster', source: id });
+    style.layers.push({ id, type: 'raster', source: id, ...(color ? { paint: mapColorPaint(color) } : {}) });
   }
   for (const o of overlays) {
     const id = overlaySourceId(o.id);

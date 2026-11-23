@@ -1,6 +1,6 @@
 /**
  * The map of the Live tab and the flight detail: the basemap and overlays the user picked
- * (map-style.ts), points in their colors (each tracker's position as a plane turned to its
+ * (core's map-style), points in their colors (each tracker's position as a plane turned to its
  * course when `plane` is set, a ground trail's pilot as a hollow dot when `pilot` is, a
  * tapped track point as the web's arrow turned to its heading when `arrow` is, or a
  * flight's start and end, numbered when `label` is: end-markers.tsx) and tracks (each flight
@@ -30,7 +30,8 @@ import { ElevationChrome, ElevationLayers, useElevationTool } from './elevation-
 import { EndMarkers, endMarkerGroups, groupsKey, type EndMarker } from './end-markers';
 import { followWait, type TrackPick } from './live';
 import { MapTools, type MapTool } from './map-tools';
-import { defaultBasemapId, defaultOverlayIds, liveMapStyle, type MapBasemap } from './map-style';
+import { defaultBasemapId, defaultOverlayIds, mapStyle as buildMapStyle, type MapBasemap } from '@wingbeat/core/map-style';
+import { arrowLayer, planeLayer, positionLayer, trackLayer, trailLayer } from '@wingbeat/core/map-layers';
 import { accountPrefKey, parseMapChoice } from './prefs';
 import { useStoredState } from './stored-state';
 import { px, useTokens } from './theme';
@@ -252,7 +253,7 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
   };
 
   const pixelRatio = PixelRatio.get();
-  const mapStyle = useMemo(() => liveMapStyle({
+  const mapStyle = useMemo(() => buildMapStyle({
     basemap,
     overlays: overlays.filter((o) => onIds.includes(o.id)),
     origin,
@@ -282,44 +283,14 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
         <Images images={IMAGES} />
         <ElevationLayers tool={elevation} />
         <GeoJSONSource id="tracks" data={tracks}>
-          <Layer id="tracks" type="line" filter={['!', ['has', 'trail']]} layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-            paint={{ 'line-color': ['get', 'color'], 'line-width': 3 }} />
-          {/* The web's dotted ground trail (dashes are in line widths). */}
-          <Layer id="trails" type="line" filter={['has', 'trail']} layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-            paint={{ 'line-color': ['get', 'color'], 'line-width': 3, 'line-opacity': 0.9, 'line-dasharray': [0.3, 2.3] }} />
+          <Layer {...trackLayer()} />
+          <Layer {...trailLayer()} />
         </GeoJSONSource>
         <GeoJSONSource id="positions" data={positions}>
-          <Layer id="positions" type="circle" filter={['all', ['!', ['has', 'label']], ['!', ['has', 'plane']], ['!', ['has', 'arrow']]]} paint={{
-            'circle-color': ['case', ['has', 'pilot'], t['surface-1'], ['get', 'color']],
-            'circle-radius': ['case', ['has', 'pilot'], 6, 7],
-            'circle-stroke-color': ['case', ['has', 'pilot'], ['get', 'color'], t['surface-1']],
-            'circle-stroke-width': ['case', ['has', 'pilot'], 3, 2.5],
-          }} />
-          <Layer id="planes" type="symbol" filter={['has', 'plane']} layout={{
-            'icon-image': 'plane',
-            'icon-size': 1 / 3,
-            'icon-rotate': ['get', 'course'],
-            'icon-rotation-alignment': 'map',
-            'icon-allow-overlap': true,
-            'icon-ignore-placement': true,
-          }} paint={{
-            'icon-color': ['get', 'color'],
-            'icon-halo-color': t['surface-1'],
-            'icon-halo-width': 1.5,
-          }} />
+          <Layer {...positionLayer(t['surface-1'])} />
+          <Layer {...planeLayer(t['surface-1'])} />
           {/* A tapped track point: the web's direction arrow, turned to its recorded heading. */}
-          <Layer id="arrows" type="symbol" filter={['has', 'arrow']} layout={{
-            'icon-image': 'arrow',
-            'icon-size': 1 / 3,
-            'icon-rotate': ['get', 'course'],
-            'icon-rotation-alignment': 'map',
-            'icon-allow-overlap': true,
-            'icon-ignore-placement': true,
-          }} paint={{
-            'icon-color': ['get', 'color'],
-            'icon-halo-color': t['surface-1'],
-            'icon-halo-width': 1.5,
-          }} />
+          <Layer {...arrowLayer(t['surface-1'])} />
         </GeoJSONSource>
         <EndMarkers ends={ends} groups={groups} />
       </Map>

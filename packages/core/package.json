@@ -61,6 +61,8 @@
     "./flight-store": "./src/flight-store.ts",
     "./live": "./src/live.ts",
     "./maintenance": "./src/maintenance.ts",
+    "./map-layers": "./src/map-layers.ts",
+    "./map-style": "./src/map-style.ts",
     "./record-limits": "./src/record-limits.ts",
     "./regions": "./src/regions.ts",
     "./settings": "./src/settings.ts",
@@ -68,6 +70,10 @@
     "./tokens": "./src/tokens.ts"
   },
   "dependencies": {
+    "@protomaps/basemaps": "^5.7.2",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@maplibre/maplibre-gl-style-spec": "^26.4.4"
   }
 }

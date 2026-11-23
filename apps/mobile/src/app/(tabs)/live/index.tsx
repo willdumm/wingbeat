@@ -10,7 +10,7 @@ import { groundTrailFeatures, initialView, latestTracks, liveBounds, liveTrackPi
 import { LiveMap, type LiveMapRef } from '@/lib/live-map';
 import { LocationSheet } from '@/lib/location-sheet';
 import { sheetDetentHeight } from '@/lib/map-sheet';
-import { availableBasemaps } from '@/lib/map-style';
+import { availableBasemaps } from '@wingbeat/core/map-style';
 import { Placeholder } from '@/lib/placeholder';
 import { accountPrefKey, parseLivePinned } from '@/lib/prefs';
 import { StatusCards } from '@/lib/status-cards';

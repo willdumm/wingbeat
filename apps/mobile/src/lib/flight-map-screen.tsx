@@ -22,7 +22,7 @@ import { dayMap, flightTrackPicks, mapDays, pickDetails, pickedFeature, position
 import { LiveMap, type LiveMapRef } from './live-map';
 import { LocationSections } from './location-sheet';
 import { MapSheet, sheetDetentHeight } from './map-sheet';
-import { availableBasemaps } from './map-style';
+import { availableBasemaps } from '@wingbeat/core/map-style';
 import { Placeholder } from './placeholder';
 import { useTokens } from './theme';
 import { useFlightsTab } from './use-flights-tab';
