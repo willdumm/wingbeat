@@ -931,7 +931,8 @@ There are two separate decisions here:
     doesn't have yet.
 
   The app then downloads a region or a whole extract file for offline use.
-- **Web:** don't migrate yet. Leaflet can already show raster PMTiles (pmtiles.js has a
+- **Web:** moving to MapLibre GL JS (decided 2026-11-23, `docs/web-maplibre-plan.md`). Before that:
+  don't migrate yet. Leaflet can already show raster PMTiles (pmtiles.js has a
   Leaflet raster layer), so new self-hosted basemaps can reach the web without moving it to
   MapLibre. Move the web to MapLibre GL JS later, only if vector styles, 3D terrain or
   shared style JSON make it worth it. The shared basemap catalog in core keeps the two
