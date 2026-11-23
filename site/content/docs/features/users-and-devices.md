@@ -50,7 +50,7 @@ self-hosted instances).
 - **Admin** — everything a Viewer can do, plus: edit
   Aircraft/Pilots/Trackers, edit flights (corrections, manual flights,
   assignments), manage users, and
-  everything under Global Settings (app name, timezone, map defaults,
+  everything under Global Settings (instance name, timezone, map defaults,
   notifications, regions, named points).
 
 ## Users who are pilots

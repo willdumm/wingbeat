@@ -214,7 +214,7 @@ export function settingsModalMarkup(): string {
             <div class="settings-section">
               <div class="settings-section-label">General</div>
               <div class="settings-form-row">
-                <div class="settings-form-label">App name</div>
+                <div class="settings-form-label">Instance name</div>
                 <input type="text" id="settings-tenant-name" autocomplete="off" />
               </div>
               <div class="settings-form-row">

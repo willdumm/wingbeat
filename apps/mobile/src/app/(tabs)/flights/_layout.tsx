@@ -1,10 +1,10 @@
 import { Stack } from 'expo-router';
-import { InstanceLockup } from '@/lib/brand';
+import { instanceHeaderOptions } from '@/lib/instance-header';
 
 export default function FlightsLayout() {
   return (
     <Stack>
-      <Stack.Screen name="index" options={{ title: 'Flights', headerLargeTitle: true, headerTitle: () => <InstanceLockup /> }} />
+      <Stack.Screen name="index" options={{ title: 'Flights', headerLargeTitle: true, ...instanceHeaderOptions }} />
       <Stack.Screen name="[id]" options={{ title: 'Flight' }} />
       <Stack.Screen name="day" options={{ title: 'Day' }} />
       <Stack.Screen name="filters" options={{ presentation: 'modal', title: 'Filter flights' }} />
