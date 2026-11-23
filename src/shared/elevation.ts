@@ -178,9 +178,10 @@ export function elevationToolScript(rootExpr = 'document'): string {
     }
 
     // Promise<number|null> (meters) — the single function backing both the cursor
-    // readout and the raw-map-click reference mode.
+    // readout and the raw-map-click reference mode. The DEM zoom is the tint's: MapLibre's
+    // zoom plus one (_FT_ELEV_DEM_SOURCE's tileSize).
     async function elevationAt(lat, lng, mapZoom) {
-      const z = demZoomFor(mapZoom);
+      const z = demZoomFor(mapZoom + 1);
       const { x, y, px, py } = latLngToTilePixel(lat, lng, z);
       const arr = await ensureDemTile(z, x, y);
       return arr ? arr[py * ${DEM_TILE_SIZE} + px] : null;
@@ -196,8 +197,13 @@ export function elevationToolScript(rootExpr = 'document'): string {
 
     const _FT_ELEV_DEM = 'ft-elevation-dem';
     // pmtiles.js's protocol reads the tile's z/x/y from the end of its URL (the app's
-    // MapLibre Native takes core's archive URL as it is).
-    const _FT_ELEV_DEM_SOURCE = Object.assign({}, ELEVATION_DEM_SOURCE, { tiles: [ELEVATION_DEM_SOURCE.tiles[0] + '/{z}/{x}/{y}'] });
+    // MapLibre Native takes core's archive URL as it is). Its 512 px tiles are declared as
+    // 256, so MapLibre reads a zoom level deeper: two DEM pixels to a CSS pixel, as
+    // Leaflet's tint drew them, rather than one, which blurs on a high-density screen.
+    const _FT_ELEV_DEM_SOURCE = Object.assign({}, ELEVATION_DEM_SOURCE, {
+      tiles: [ELEVATION_DEM_SOURCE.tiles[0] + '/{z}/{x}/{y}'],
+      tileSize: 256,
+    });
     const _FT_ELEV_TINT = 'ft-elevation';
     const _FT_ELEV_REF = 'ft-elevation-reference';
 

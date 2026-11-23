@@ -163,11 +163,18 @@ comment's Leaflet note; check the doc-shot manifest and re-run `npm run docs:sho
   (`ft-elevation`, `ft-elevation-dem`), its tile URL ending in `/{z}/{x}/{y}` (pmtiles.js's
   protocol reads the tile from there), with the reference dot (`ft-elevation-reference`),
   both under the first `ft-shape-` layer. As in the app, it shows once a reference is set;
-  the sliders set its paint. The readout and an off-track reference keep the `getZxy` decode,
-  at `map.getZoom()`. The DEM's credit comes from its source.
+  the sliders set its paint. The readout and an off-track reference keep the `getZxy` decode.
+  The DEM's credit comes from its source. The web declares the DEM's 512 px tiles as 256, so
+  MapLibre reads a zoom deeper, as Leaflet's tint did (two DEM pixels to a CSS pixel; at 512 it
+  was blurry on a high-density screen); the readout reads `map.getZoom() + 1` to match. The
+  app's source (core's `ELEVATION_DEM_SOURCE`) still says 512.
 - Checked in a browser (local Worker with the doc-shots seed plus two synthetic flights,
   headless Chromium on SwiftShader): default view, hover tip, a selected flight, a day view
   with its legend, the point picker, the elevation tint and readout, the credits, phone width,
   and the showcase's flights demo. Not checked: switching basemaps (the seed has one), vector
   basemaps, overlays, touch.
-- **Next:** the user's staging check, then phase 4.
+- **Staging check after phase 3: passed** (user, 2026-11-23). Raster basemaps and overlays look
+  softer than Leaflet's between whole zoom levels (MapLibre stops at fractional zooms and
+  stretches tiles up to 1.4x; Leaflet snapped to whole levels). The user chose to keep
+  MapLibre's fractional zoom: no snapping.
+- **Next:** phase 4.
