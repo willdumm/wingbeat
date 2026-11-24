@@ -176,7 +176,7 @@ comment's Leaflet note; check the doc-shot manifest and re-run `npm run docs:sho
   softer than Leaflet's between whole zoom levels (MapLibre stops at fractional zooms and
   stretches tiles up to 1.4x; Leaflet snapped to whole levels). The user chose to keep
   MapLibre's fractional zoom: no snapping.
-- **Phase 4: done**, the heat's look still to be tuned by the user on staging. Core's
+- **Phase 4: done**, the heat's look being tuned by the user on staging (endpoint heat strengthened once). Core's
   `map-layers.ts` has the endpoint and route heat, flight line and region layers; the analytics
   page and the showcase draw them with `addMapShape()`, which now takes `{ z, source }`
   (stacking, clustering) and returns its source's id. The endpoint heat's source clusters its

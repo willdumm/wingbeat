@@ -120,12 +120,12 @@ export function elevationReferenceLayer(ink: string, surface: string): MapLayer 
 
 // ── Analytics (the web's): heatmaps, flight lines, region boundaries ──
 //
-// The heatmaps match leaflet.heat's. It summed the points' weights in a screen grid of
+// The heatmaps are modeled on leaflet.heat's (the endpoint heat is stronger). It summed the points' weights in a screen grid of
 // cells (half its radius + blur across), capped each cell's alpha (sum × a per-zoom scale)
 // at 1, and drew each cell as a blurred disc colored by the gradient at that alpha. The
 // discs stacked by alpha compositing, so n faint ones reach 1 − e^(−their sum) and never
-// quite turn opaque. Here the source clusters its points per zoom (the cells, `weight`
-// summed), heatmap-weight caps a cluster, and MapLibre's density, which just adds up, is
+// quite turn opaque. Here the endpoint source clusters its points per zoom (the cells,
+// `weight` summed), heatmap-weight caps a cluster, and MapLibre's density, which just adds up, is
 // scaled down by HEAT_DENSITY_SPAN (density 1 is a sum of 3, 95% opaque) and heatColor()
 // bends it through that curve.
 
@@ -134,11 +134,6 @@ const HEAT_KERNEL_PEAK = 1 / Math.sqrt(2 * Math.PI);
 const HEAT_DENSITY_SPAN = 3;
 
 type Rgb = [number, number, number];
-
-/** A heat source's clustering: leaflet.heat's cells, `cellPx` across, their weights summed. */
-function heatSource(cellPx: number) {
-  return { cluster: true, clusterRadius: cellPx, clusterProperties: { weight: ['+', ['get', 'weight']] } };
-}
 
 /**
  * heatmap-weight: a cell's alpha, its summed weight × `scale` (a [zoom, scale] list,
@@ -180,22 +175,29 @@ function heatColor(stops: [number, Rgb][]): ExpressionSpecification {
 
 /** The endpoint heat's GeoJSON source options, beside its data. */
 export function endpointHeatSource() {
-  return heatSource(32);
+  return { cluster: true, clusterRadius: 40, clusterProperties: { weight: ['+', ['get', 'weight']] } };
 }
+
+/** [zoom, scale]: a cluster's heat is full at a sum of 1 / scale. */
+const ENDPOINT_HEAT_SCALE: [number, number][] = [[6, 1 / 40], [10, 1 / 14], [13, 1 / 8], [16, 1 / 3]];
+/** A full cluster's peak, as a sum on heatColor()'s curve: 1 − e^−2.3, 90% opaque. */
+const ENDPOINT_HEAT_PEAK = 2.3;
 
 /**
  * The heat at flight endpoints (endpointHeatPoints), each Point's `weight` its hours or
- * stops. leaflet.heat's radius 30 and blur 35, and its scale: a ceiling of 0.05 at Leaflet's
- * zoom 14, halving per level out and floored at 0.01, against points weighted 2^(z − 22) from
- * Leaflet zoom 10 in. That's 1/40.96 out to MapLibre zoom 9, rising to 1/12.8 at 10.68, then
- * level.
+ * stops. leaflet.heat's radius 30 and blur 35 and its colors, but stronger than its heat. A
+ * cluster's weight is the square root of its sum × the scale, so a lone stop shows beside a
+ * busy base, and a cluster that splits on the way in loses less. The scale keeps rising as it
+ * does.
  */
 export function endpointHeatLayer(): MapLayer {
   return {
     id: 'endpoint-heat', type: 'heatmap',
     paint: {
-      'heatmap-weight': heatWeight([[9, 1 / 40.96], [10.68, 1 / 12.8]]),
-      'heatmap-intensity': heatIntensity(30, 35),
+      'heatmap-weight': ['interpolate', ['linear'], ['zoom'],
+        ...ENDPOINT_HEAT_SCALE.flatMap(([z, k]) => [z, ['min', ['sqrt', ['*', ['get', 'weight'], k]], 1]]),
+      ] as ExpressionSpecification,
+      'heatmap-intensity': ENDPOINT_HEAT_PEAK / HEAT_KERNEL_PEAK / HEAT_DENSITY_SPAN,
       'heatmap-radius': 30 + 35,
       'heatmap-color': heatColor([[0.4, [107, 33, 168]], [0.65, [147, 51, 234]], [1, [233, 213, 255]]]),
     },
