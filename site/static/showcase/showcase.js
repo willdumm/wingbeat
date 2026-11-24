@@ -731,6 +731,9 @@ _ftPresets = [{"id":"usgstopo","label":"USGS Topo","url":"https://basemap.nation
           opt.textContent = p.name;
           pilotSel.appendChild(opt);
         }
+
+        // The chips name trackers and pilots too.
+        _renderChips();
       };
 
       // Restore date inputs from state
@@ -738,7 +741,6 @@ _ftPresets = [{"id":"usgstopo","label":"USGS Topo","url":"https://basemap.nation
       if (_filterState.dateTo)   dateToEl.value   = _filterState.dateTo;
 
       _filterRebuildDropdowns();
-      _renderChips();
 
       // ── Event wiring ────────────────────────────────────────────────────────
       initToggleSection(toggleBtn, filterControls, false);
@@ -1909,8 +1911,13 @@ _ftPresets = [{"id":"usgstopo","label":"USGS Topo","url":"https://basemap.nation
 
     let REGIONS = null;
 
+    // Keeps the regions it has if the load fails. Whether they changed.
     async function loadRegions() {
-      try { REGIONS = await fetchRegions(); } catch (_) {}
+      let next;
+      try { next = await fetchRegions(); } catch (_) { return false; }
+      const changed = JSON.stringify(next) !== JSON.stringify(REGIONS);
+      REGIONS = next;
+      return changed;
     }
 
     // Display names of the home base regions, sorted.
