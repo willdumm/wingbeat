@@ -1,4 +1,4 @@
-import { maplibreMapControlsScripts, sharedMapControlsMarkup } from './map-controls';
+import { sharedMapControlsScripts, sharedMapControlsMarkup } from './map-controls';
 import { icon } from './icons';
 
 /**
@@ -76,7 +76,7 @@ export function mapViewPickerScript(): string {
       _settingsNavigateTo('settings-view-map-view-picker', 'Default map view');
       if (!_mvpMap) {
         _mvpMap = createMap(document.getElementById('mvp-map'), view);
-        ${maplibreMapControlsScripts('_mvpMap', 'mvp-')}
+        ${sharedMapControlsScripts('_mvpMap', 'mvp-')}
         _mvpMap.on('move', _mvpUpdateReadout);
       }
       _mvpMap.resize();

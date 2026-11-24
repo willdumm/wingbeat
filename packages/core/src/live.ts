@@ -251,8 +251,8 @@ export function groupEndMarkers(points: { x: number; y: number }[]): EndMarkerGr
 }
 
 /**
- * A position's Web Mercator pixel coordinates at a zoom (tileSize 512 for MapLibre, 256
- * for Leaflet): what groupEndMarkers needs on a map that only reports its zoom.
+ * A position's Web Mercator pixel coordinates at a zoom (tileSize 512 for MapLibre):
+ * what groupEndMarkers needs on a map that only reports its zoom.
  */
 export function mercatorPixel(lat: number, lon: number, zoom: number, tileSize = 512): { x: number; y: number } {
   const world = tileSize * 2 ** zoom;

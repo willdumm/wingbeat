@@ -1,6 +1,6 @@
 import {
-  maplibreMapControlsScripts,
-  maplibreOverlayLegendMountScript,
+  sharedMapControlsScripts,
+  tileOverlayLegendMountScript,
   sharedMapControlsMarkup,
   tileOverlayLegendButtonMarkup,
   tileOverlayLegendPanelMarkup,
@@ -694,8 +694,8 @@ export function regionsEditorScript(): string {
         _rgMap = createMap(document.getElementById('rg-editor-map'), _ftDefaultView());
         // Suppress the browser context menu over the map so right-click works for vertex deletion.
         _rgMap.getContainer().addEventListener('contextmenu', e => e.preventDefault());
-        ${maplibreMapControlsScripts('_rgMap', 'rg-')}
-        ${maplibreOverlayLegendMountScript('_rgMap', 'rg-')}
+        ${sharedMapControlsScripts('_rgMap', 'rg-')}
+        ${tileOverlayLegendMountScript('_rgMap', 'rg-')}
         _rgPolygons = addMapShape(_rgMap, [], [regionFillLayer(), regionOutlineLayer()]);
         _rgHints = addMapShape(_rgMap, [], [editorDotLayer(), editorDraftLineLayer()], { z: 1 });
         _rgMap.on('click', e => {

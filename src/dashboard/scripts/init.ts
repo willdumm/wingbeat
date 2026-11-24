@@ -1,4 +1,4 @@
-import { maplibreMapControlsScripts, maplibreOverlayLegendMountScript } from '../../shared/map-controls';
+import { sharedMapControlsScripts, tileOverlayLegendMountScript } from '../../shared/map-controls';
 import { sharedSidebarToggleScripts } from '../../shared/sidebar';
 
 export function dashboardScriptsInit(): string {
@@ -85,11 +85,11 @@ export function dashboardScriptsInit(): string {
     })();
 
     // ── Sidebar toggle (mobile: open/close overlay; desktop: collapse/expand) ──
-    ${sharedSidebarToggleScripts('map')}
+    ${sharedSidebarToggleScripts()}
 
     // ── Zoom controls + basemap switcher ──────────────────────────────────────
-    ${maplibreMapControlsScripts('map')}
-    ${maplibreOverlayLegendMountScript('map')}
+    ${sharedMapControlsScripts('map')}
+    ${tileOverlayLegendMountScript('map')}
 
     // Track user-initiated pan/zoom so poll refreshes don't reset the viewport.
     map.on('movestart', (e) => {

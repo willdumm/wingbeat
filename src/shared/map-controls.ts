@@ -23,18 +23,16 @@ export function readEnvSecret(env: Env, key: string): string | undefined {
 
 /**
  * Runtime script for the page IIFE (called once per page, before any
- * `sharedTileLayerDefs`/`sharedMapControlsScripts` call) — defines the shared plumbing
+ * `createMap()`/`sharedMapControlsScripts()` call) — defines the shared plumbing
  * for the tenant's basemaps:
  *   _ftPresets                 — the tenant's shown raster basemaps in display order
  *                                 (window.APP_BASEMAPS, from the page; Settings replaces it
  *                                 after an admin changes them)
- *   _ftVectorBasemaps          — its shown vector basemaps (window.APP_VECTOR_BASEMAPS),
- *                                 which only the MapLibre maps draw (maplibre.ts)
+ *   _ftVectorBasemaps          — its shown vector basemaps (window.APP_VECTOR_BASEMAPS)
  *   _ftMaplibreMaps             — the page's MapLibre maps (createMap() in maplibre.ts)
  *   _ftActiveLayerDefs()        — the layer defs that should currently be on every map
  *                                  (core's FALLBACK_BASEMAP if there are none, so a map
  *                                  always has one)
- *   _ftMakeTileLayer(def)        — builds an L.tileLayer from a basemap def
  *   _ftMapRefreshers             — one callback per initialized map (pushed by
  *                                  sharedMapControlsScripts); _ftNotifyLayersChanged()
  *                                  runs all of them so Settings edits apply live, with no
@@ -51,73 +49,7 @@ export function mapLayersRuntimeScript(): string {
 
     function _ftActiveLayerDefs() { return _ftPresets.length > 0 ? _ftPresets.slice() : [${JSON.stringify(FALLBACK_BASEMAP)}]; }
 
-    // Leaflet only substitutes lowercase {s}/{z}/{x}/{y}/{r} — a template pasted from a
-    // tile provider's own docs in a different case (e.g. the OGC-style {Z}/{X}/{Y} some
-    // tileservers document) would otherwise pass straight through to the tile request as
-    // a literal, un-substituted "{Z}" and 404. Normalizing case here means any admin- or
-    // user-entered template works regardless of the case it was copied in.
-    function _ftNormalizeTileTemplate(url) {
-      return url.replace(/\{[sxyzr]\}/gi, function(m) { return m.toLowerCase(); });
-    }
-
-    // How far any map can zoom in. Every tile layer (basemap or overlay) gets this as its
-    // maxZoom: Leaflet takes the map's zoom limit from its layers' maxZoom, and stops
-    // drawing a layer past it (the gray background some phones showed when pinch-zooming
-    // past a basemap's limit). A layer's own tile limit goes in maxNativeZoom instead,
-    // past which Leaflet keeps upscaling the deepest tiles.
-    var _FT_MAP_MAX_ZOOM = 22;
-
-    // What a tile layer is built from, so a refresh rebuilds one only when its def changed
-    // (not when it only moved).
-    function _ftDefKey(def) { return JSON.stringify([def.url, def.label, def.attribution, def.maxZoom, !!def.detectRetina]); }
-
-    function _ftMakeTileLayer(def) {
-      var opts = { attribution: def.attribution || '', _ftLabel: def.label || def.id, _ftDefKey: _ftDefKey(def), maxZoom: _FT_MAP_MAX_ZOOM };
-      if (def.maxZoom) opts.maxNativeZoom = def.maxZoom;
-      if (def.detectRetina) {
-        opts.detectRetina = true;
-        // On a retina screen Leaflet fetches tiles one zoom level deeper than the map's
-        // (zoomOffset +1) and lowers maxZoom by one to match; undo the latter, and stop
-        // at the source's deepest real tiles one map zoom sooner.
-        if (L.Browser.retina) {
-          opts.maxZoom += 1;
-          if (opts.maxNativeZoom) opts.maxNativeZoom -= 1;
-        }
-      }
-      return L.tileLayer(_ftNormalizeTileTemplate(def.url), opts);
-    }
-
     function _ftNotifyLayersChanged() { _ftMapRefreshers.forEach(function(fn) { fn(); }); }
-  `;
-}
-
-/**
- * JS string defining the active tile layers (from `_ftActiveLayerDefs()`) and setting
- * the default on `mapVar` to the persisted basemap choice, falling back to the first
- * active layer if that choice is missing or no longer enabled. Requires
- * `mapLayersRuntimeScript()` to have already run once earlier on the page.
- * `tileLayersVar` and `currentLayerVar` name the JS variables to write.
- * When `declare` is false the variables are assigned without a declaration keyword —
- * useful when the variables are already declared at an outer scope.
- */
-export function sharedTileLayerDefs(
-  mapVar: string,
-  tileLayersVar = 'tileLayers',
-  currentLayerVar = 'currentTileLayer',
-  declare = true,
-): string {
-  const tld = declare ? `const ${tileLayersVar}` : tileLayersVar;
-  const cld = declare ? `let ${currentLayerVar}` : currentLayerVar;
-  const initStyleVar = `_${currentLayerVar}InitStyle`;
-  return `
-    ${tld} = {};
-    _ftActiveLayerDefs().forEach(function(def) { ${tileLayersVar}[def.id] = _ftMakeTileLayer(def); });
-    var _ftStoredBasemap = localStorage.getItem('${MAP_BASEMAP_KEY}');
-    var ${initStyleVar} = (_ftStoredBasemap && ${tileLayersVar}[_ftStoredBasemap]) ? _ftStoredBasemap : Object.keys(${tileLayersVar})[0];
-    ${cld} = ${tileLayersVar}[${initStyleVar}];
-    ${currentLayerVar}.addTo(${mapVar});
-    ${mapVar}.getContainer().setAttribute('data-basemap', ${initStyleVar});
-    _ftApplyActiveLayerColor();
   `;
 }
 
@@ -285,14 +217,6 @@ export function sharedMapControlsStyles(): string {
 
     .map-style-btn { letter-spacing: 0.04em; text-transform: uppercase; }
 
-    /* Per-layer saturation/contrast/brightness correction (adjustable per basemap in
-       Settings > Map layers), applied to whichever layer is currently active via
-       _ftApplyActiveLayerColor(). The var() fallbacks are 1 (no correction) — that's
-       also the reset-to-default value — so this is a no-op for any layer that hasn't
-       been customized. */
-    .leaflet-container .leaflet-tile-pane {
-      filter: saturate(var(--map-color-sat, 1)) contrast(var(--map-color-con, 1)) brightness(var(--map-color-bri, 1));
-    }
   `;
 }
 
@@ -305,16 +229,15 @@ const MAP_COLOR_MIN = 0;
 const MAP_COLOR_MAX = 200;
 const MAP_COLOR_DEFAULT = 100;
 const MAP_COLOR_CHANNELS = [
-  { id: 'sat', legacyKey: 'ft_map_color_sat', cssVar: '--map-color-sat', label: 'Saturation' },
-  { id: 'con', legacyKey: 'ft_map_color_con', cssVar: '--map-color-con', label: 'Contrast' },
-  { id: 'bri', legacyKey: 'ft_map_color_bri', cssVar: '--map-color-bri', label: 'Brightness' },
+  { id: 'sat', legacyKey: 'ft_map_color_sat', label: 'Saturation' },
+  { id: 'con', legacyKey: 'ft_map_color_con', label: 'Contrast' },
+  { id: 'bri', legacyKey: 'ft_map_color_bri', label: 'Brightness' },
 ] as const;
 
 /**
  * JS defining `_ftLayerColor(id)`, which reads a layer's stored correction (falling
  * back to the pre-per-layer `ft_map_color_*` keys for `id === 'map'`, since that's the
- * only layer the old global correction ever visually applied to). Shared between the
- * pre-paint init script and the runtime helpers so the read logic isn't duplicated.
+ * only layer the old global correction ever visually applied to).
  */
 function layerColorReadLogic(): string {
   return `
@@ -350,28 +273,13 @@ function layerColorReadLogic(): string {
   `;
 }
 
-/** Tiny blocking script for <head> — applies the active layer's saved correction before first paint. */
-export function mapLayerColorInitScript(): string {
-  return `(function() {
-    ${layerColorReadLogic()}
-    var id = localStorage.getItem('${MAP_BASEMAP_KEY}') || 'map';
-    var c = _ftLayerColor(id);
-    document.documentElement.style.setProperty('${MAP_COLOR_CHANNELS[0].cssVar}', (c.sat / 100).toFixed(3));
-    document.documentElement.style.setProperty('${MAP_COLOR_CHANNELS[1].cssVar}', (c.con / 100).toFixed(3));
-    document.documentElement.style.setProperty('${MAP_COLOR_CHANNELS[2].cssVar}', (c.bri / 100).toFixed(3));
-  })();`;
-}
-
 /**
  * Runtime script for the page IIFE (called once per page, like themeRuntimeScript) —
- * defines the per-layer color-correction helpers used by sharedTileLayerDefs,
- * sharedMapControlsScripts, and the Settings > Map layers row builder:
+ * defines the per-layer color-correction helpers used by createMap() (maplibre.ts) and the
+ * Settings > Map layers row builder:
  *   _ftLayerColor(id)             — read a layer's correction (see layerColorReadLogic)
  *   _ftSetLayerColor(id, ch, val) — persist + reapply if this layer is the active one
- *   _ftApplyActiveLayerColor()    — set the --map-color-* vars from whichever layer is
- *                                   currently active (read from any Leaflet map's
- *                                   data-basemap attribute, since it's shared across all
- *                                   instances), and restyle the MapLibre maps
+ *   _ftApplyActiveLayerColor()    — restyle the page's maps
  *   _ftBuildColorSliders(el, id)  — fill `el` with the 3 sliders + reset button for `id`
  */
 export function mapLayerColorRuntimeScript(): string {
@@ -390,13 +298,7 @@ export function mapLayerColorRuntimeScript(): string {
     }
 
     function _ftApplyActiveLayerColor() {
-      var el = document.querySelector('.leaflet-container[data-basemap]');
-      var id = el ? el.getAttribute('data-basemap') : (localStorage.getItem('${MAP_BASEMAP_KEY}') || 'map');
-      var c = _ftLayerColor(id);
-      document.documentElement.style.setProperty('${MAP_COLOR_CHANNELS[0].cssVar}', (c.sat / 100).toFixed(3));
-      document.documentElement.style.setProperty('${MAP_COLOR_CHANNELS[1].cssVar}', (c.con / 100).toFixed(3));
-      document.documentElement.style.setProperty('${MAP_COLOR_CHANNELS[2].cssVar}', (c.bri / 100).toFixed(3));
-      // A MapLibre map's correction is in its style (core's mapColorPaint), not a CSS filter.
+      // The correction is in each map's style (core's mapColorPaint).
       _ftMaplibreMaps.forEach(function(m) { m._ftRestyle(); });
     }
 
@@ -561,118 +463,7 @@ export function mapLayersSettingsScript(): string {
   `;
 }
 
-/**
- * JS for wiring the zoom buttons and basemap switcher. The basemap buttons themselves
- * are created here (not in sharedMapControlsMarkup) from whatever layers
- * sharedTileLayerDefs actually built into `tileLayersVar`, since that set is
- * tenant-configurable via Settings > Basemaps.
- * Also registers this map's refresh callback with `_ftMapRefreshers` (defined by
- * mapLayersRuntimeScript()), so adding/removing a layer in Settings adds/removes it from
- * `tileLayersVar` and rebuilds the style buttons immediately — no reload needed.
- * `idPrefix` must match the value used in sharedMapControlsMarkup.
- * `tileLayersVar` / `currentLayerVar` name the JS variables holding tile layer state;
- * defaults match the dashboard globals `tileLayers` / `currentTileLayer`.
- * `rootExpr` is where the controls' elements are looked up: `document`, or a shadow
- * root (the showcase demos).
- * Wrapped in an IIFE so multiple instances on the same page don't conflict.
- */
-export function sharedMapControlsScripts(
-  mapVar: string,
-  idPrefix = '',
-  tileLayersVar = 'tileLayers',
-  currentLayerVar = 'currentTileLayer',
-  rootExpr = 'document',
-): string {
-  return `
-    (function() {
-      ${zoomButtonsScript(mapVar, idPrefix, rootExpr)}
-
-      // Leaflet's own attribution control is off on every map (it would render in
-      // Leaflet's styling, in a corner), so the credits row stands in for it: the active
-      // basemap's credit first, then each tile overlay (and the elevation tint) currently on the
-      // map, deduped.
-      ${attributionRowScript(idPrefix, rootExpr)}
-
-      function _updateAttrib() {
-        if (!${mapVar}) return;
-        var parts = [];
-        function add(layer) {
-          var a = layer && layer.getAttribution && layer.getAttribution();
-          if (a && parts.indexOf(a) === -1) parts.push(a);
-        }
-        add(${currentLayerVar});
-        ${mapVar}.eachLayer(function(l) { if (l instanceof L.GridLayer) add(l); });
-        _showAttrib(parts);
-      }
-      _updateAttrib();
-      // Overlays are added/removed by the overlay legend, not here; tile-layer events
-      // catch those (markers and tracks also fire layeradd, hence the filter).
-      ${mapVar}.on('layeradd layerremove', function(e) { if (e.layer instanceof L.GridLayer) _updateAttrib(); });
-
-      var _styleGroup = ${rootExpr}.getElementById('${idPrefix}map-style-group');
-
-      function _ftSwitchStyle(style) {
-        if (!${tileLayersVar} || !${tileLayersVar}[style] || !${mapVar}) return;
-        if (${tileLayersVar}[style] !== ${currentLayerVar}) {
-          if (${currentLayerVar} && ${mapVar}.hasLayer(${currentLayerVar})) ${mapVar}.removeLayer(${currentLayerVar});
-          ${currentLayerVar} = ${tileLayersVar}[style];
-          ${currentLayerVar}.addTo(${mapVar});
-          ${currentLayerVar}.bringToBack();
-        }
-        ${mapVar}.getContainer().setAttribute('data-basemap', style);
-        localStorage.setItem('${MAP_BASEMAP_KEY}', style);
-        _ftApplyActiveLayerColor();
-        _updateAttrib();
-        _styleGroup.querySelectorAll('.map-style-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.style === style); b.setAttribute('aria-pressed', b.dataset.style === style ? 'true' : 'false'); });
-        // Reset to the newly active basemap's default overlay states — a viewer's
-        // manual overlay toggle applies to the basemap they made it on, not to
-        // whichever one they switch to next (see _ftClearOverlayOverrides in
-        // overlayLegendRuntimeScript) — only present on pages that include the
-        // overlay legend, hence the guard.
-        if (typeof _ftClearOverlayOverrides === 'function') _ftClearOverlayOverrides();
-        if (typeof _ftRenderOverlayLegend === 'function') _ftRenderOverlayLegend();
-      }
-
-      function _ftRebuildStyleButtons() {
-        var activeStyle = ${mapVar}.getContainer().getAttribute('data-basemap');
-        _styleGroup.innerHTML = '';
-        Object.keys(${tileLayersVar}).forEach(function(id) {
-          var btn = document.createElement('button');
-          btn.className = 'controls-btn map-style-btn';
-          btn.dataset.style = id;
-          btn.textContent = ${tileLayersVar}[id].options._ftLabel || id;
-          if (id === activeStyle) btn.classList.add('active');
-          btn.addEventListener('click', function() { _ftSwitchStyle(id); });
-          _styleGroup.appendChild(btn);
-        });
-      }
-      _ftRebuildStyleButtons();
-
-      // Re-derives tileLayersVar from the tenant's current basemaps (_ftPresets), in their
-      // order (the style buttons follow its key order): keeps a layer whose def is
-      // unchanged, rebuilds an edited one, drops a hidden/deleted one (switching the map off
-      // of it if it was the active style), then rebuilds the style buttons.
-      function _ftRefreshLayers() {
-        var old = {};
-        Object.keys(${tileLayersVar}).forEach(function(id) { old[id] = ${tileLayersVar}[id]; delete ${tileLayersVar}[id]; });
-        _ftActiveLayerDefs().forEach(function(def) {
-          var prev = old[def.id];
-          ${tileLayersVar}[def.id] = prev && prev.options._ftDefKey === _ftDefKey(def) ? prev : _ftMakeTileLayer(def);
-        });
-        Object.keys(old).forEach(function(id) {
-          if (old[id] !== ${tileLayersVar}[id] && old[id] !== ${currentLayerVar} && ${mapVar}.hasLayer(old[id])) ${mapVar}.removeLayer(old[id]);
-        });
-        var curId = ${mapVar}.getContainer().getAttribute('data-basemap');
-        if (!${tileLayersVar}[curId]) curId = Object.keys(${tileLayersVar})[0];
-        _ftSwitchStyle(curId);
-        _ftRebuildStyleButtons();
-      }
-      _ftMapRefreshers.push(_ftRefreshLayers);
-    })();
-  `;
-}
-
-/** Wires the controls bar's zoom buttons (sharedMapControlsMarkup()); the same calls on Leaflet and MapLibre. */
+/** Wires the controls bar's zoom buttons (sharedMapControlsMarkup()). */
 function zoomButtonsScript(mapVar: string, idPrefix: string, rootExpr: string): string {
   return `
       ${rootExpr}.getElementById('${idPrefix}zoom-in').addEventListener('click', function() { if (${mapVar}) ${mapVar}.zoomIn(); });
@@ -738,14 +529,17 @@ function attributionRowScript(idPrefix: string, rootExpr: string): string {
 }
 
 /**
- * sharedMapControlsScripts() for a MapLibre map (createMap() in maplibre.ts): the zoom
- * buttons, the credits (each source's `attribution` in the style: the basemap's, the
+ * Wires the controls bar (sharedMapControlsMarkup()) to a map from createMap()
+ * (maplibre.ts): the zoom buttons, the credits (each source's `attribution` in the style: the basemap's, the
  * overlays', then the page's own, e.g. the elevation DEM's) and the basemap switcher, whose
  * buttons are every basemap _ftMapBasemaps() offers, vector ones too. Switching restyles the
  * map (_ftRestyle()). Registers with `_ftMapRefreshers`, so a Settings change to the basemaps
- * applies at once. `idPrefix` and `rootExpr` as for sharedMapControlsScripts().
+ * applies at once. `idPrefix` must match the value used in sharedMapControlsMarkup().
+ * `rootExpr` is where the controls' elements are looked up: `document`, or a shadow root
+ * (the showcase demos). Wrapped in an IIFE so multiple instances on the same page don't
+ * conflict.
  */
-export function maplibreMapControlsScripts(mapVar: string, idPrefix = '', rootExpr = 'document'): string {
+export function sharedMapControlsScripts(mapVar: string, idPrefix = '', rootExpr = 'document'): string {
   return `
     (function() {
       ${zoomButtonsScript(mapVar, idPrefix, rootExpr)}
@@ -775,7 +569,10 @@ export function maplibreMapControlsScripts(mapVar: string, idPrefix = '', rootEx
         ${mapVar}.getContainer().setAttribute('data-basemap', id);
         localStorage.setItem('${MAP_BASEMAP_KEY}', id);
         _styleGroup.querySelectorAll('.map-style-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.style === id); b.setAttribute('aria-pressed', b.dataset.style === id ? 'true' : 'false'); });
-        // As on a Leaflet map: overlays go back to the new basemap's defaults.
+        // Reset to the new basemap's default overlays — a viewer's manual overlay toggle
+        // applies to the basemap they made it on, not to whichever one they switch to next
+        // (see _ftClearOverlayOverrides in overlayLegendRuntimeScript) — only present on
+        // pages that include the overlay legend, hence the guards.
         if (typeof _ftClearOverlayOverrides === 'function') _ftClearOverlayOverrides();
         if (typeof _ftRenderOverlayLegend === 'function') _ftRenderOverlayLegend();
         _ftRestyle(${mapVar});
@@ -817,7 +614,7 @@ export function maplibreMapControlsScripts(mapVar: string, idPrefix = '', rootEx
  * function) and independently toggleable, so more than one can be on at once.
  *
  * Shown wherever a map is displayed (tracker, flight stats, regions/points editors) —
- * one instance per Leaflet map, mounted via tileOverlayLegendMountScript(). See that
+ * one instance per map, mounted via tileOverlayLegendMountScript(). See that
  * function's doc comment for how the markup/runtime/mount pieces below fit together.
  *
  * `default_enabled` (set by an admin in Settings) is the tenant-wide starting
@@ -970,7 +767,7 @@ export function overlayLegendRuntimeScript(): string {
     // they made it on, not follow them to a different one.
     function _ftClearOverlayOverrides() { localStorage.removeItem('${MAP_OVERLAYS_KEY}'); }
     // The currently active basemap's id, read from whichever map's container carries
-    // it (set by sharedTileLayerDefs()/createMap()/_ftSwitchStyle() — shared across every
+    // it (set by createMap()/_ftSwitchStyle() — shared across every
     // map instance on the page).
     function _ftCurrentBasemapId() {
       var el = document.querySelector('[data-basemap]');
@@ -993,67 +790,25 @@ export function overlayLegendRuntimeScript(): string {
 }
 
 /**
- * Mounts the overlay legend for one Leaflet map instance — call once per map, right
- * after sharedMapControlsScripts() for that same instance (needs `overlayLegendRuntimeScript()`
- * to have already run once earlier on the page, and this instance's button/panel markup,
- * from tileOverlayLegendButtonMarkup()/tileOverlayLegendPanelMarkup() with the same
- * `idPrefix`, already in the DOM).
+ * Mounts the overlay legend for one map instance (createMap() in maplibre.ts) — call once
+ * per map, right after sharedMapControlsScripts() for that same instance (needs
+ * overlayLegendRuntimeScript() to have already run once earlier on the page, and this
+ * instance's button/panel markup, from tileOverlayLegendButtonMarkup()/
+ * tileOverlayLegendPanelMarkup() with the same `idPrefix`, already in the DOM).
  *
- * `mapVar` is the JS variable holding this instance's L.Map. `idPrefix` must match the
- * value used for that instance's markup. Wrapped in an IIFE so each instance's live
- * overlay tile layers (`_ftOverlayLayers`) stay private — needed because more than one
- * map instance can be mounted on the same page at once (e.g. the dashboard's main map
- * plus the regions/points editors, reachable from the same Settings modal).
- *
- * Registers this instance's render function with `_ftOverlayLegendRefreshers` so a
- * single `_ftRenderOverlayLegend()` call (overlayLegendRuntimeScript()) refreshes it
- * along with every other mounted instance, and does one render immediately so the
- * legend/layers reflect whatever `overlayList` already holds at mount time.
+ * Wrapped in an IIFE so each instance's state stays private: the dashboard's main map plus
+ * the regions/points editors, reachable from the same Settings modal, are mounted on the
+ * same page. The overlays that are on go into the map's style (`_ftOverlays`, restyled by
+ * _ftRestyle()), in overlayList's order; an edited overlay restyles too. Registers this
+ * instance's render function with `_ftOverlayLegendRefreshers`, so a single
+ * `_ftRenderOverlayLegend()` refreshes it along with every other mounted instance, and
+ * renders once immediately so the legend reflects whatever `overlayList` already holds.
  */
 export function tileOverlayLegendMountScript(mapVar: string, idPrefix = ''): string {
-  return overlayLegendMountScript(idPrefix, `
-      var _ftOverlayLayers = {}; // overlay id -> live L.tileLayer on ${mapVar}, present only while mounted
-
-      function _ftSyncOverlayLayer(ov) {
-        var want = _ftOverlayEnabled(ov);
-        var have = !!_ftOverlayLayers[ov.id];
-        if (want && !have) {
-          var opts = { attribution: ov.attribution || '', maxZoom: _FT_MAP_MAX_ZOOM };
-          // The tileset's own limit goes in maxNativeZoom, not maxZoom (see
-          // _FT_MAP_MAX_ZOOM): it caps which zoom level tiles are fetched at, scaling up
-          // the last-loaded tile (pixelated) as the map keeps zooming past the tileset's
-          // native coverage, so the overlay never drops out to reveal the basemap
-          // underneath.
-          if (ov.max_zoom) opts.maxNativeZoom = ov.max_zoom;
-          var layer = L.tileLayer(_ftNormalizeTileTemplate(ov.url), opts);
-          _ftOverlayLayers[ov.id] = layer;
-          layer.addTo(${mapVar});
-        } else if (!want && have) {
-          ${mapVar}.removeLayer(_ftOverlayLayers[ov.id]);
-          delete _ftOverlayLayers[ov.id];
-        }
-      }
-
-      // Drop layers for any overlay that's no longer in overlayList (deleted in Settings).
-      function _ftPruneOverlayLayers() {
-        Object.keys(_ftOverlayLayers).forEach(function(id) {
-          if (overlayList.some(function(ov) { return String(ov.id) === id; })) return;
-          ${mapVar}.removeLayer(_ftOverlayLayers[id]);
-          delete _ftOverlayLayers[id];
-        });
-      }
-  `);
-}
-
-/**
- * tileOverlayLegendMountScript() for a MapLibre map (createMap() in maplibre.ts): the
- * overlays that are on go into the map's style (`_ftOverlays`, restyled by _ftRestyle()),
- * in overlayList's order. An edited overlay restyles too.
- */
-export function maplibreOverlayLegendMountScript(mapVar: string, idPrefix = ''): string {
-  return overlayLegendMountScript(idPrefix, `
+  return `
+    (function() {
       var _ftOverlaysKey = '[]';
-      function _ftSyncOverlayLayer() {
+      function _ftSyncOverlays() {
         var on = (overlayList || []).filter(_ftOverlayEnabled);
         var key = JSON.stringify(on);
         if (key === _ftOverlaysKey) return;
@@ -1061,19 +816,6 @@ export function maplibreOverlayLegendMountScript(mapVar: string, idPrefix = ''):
         ${mapVar}._ftOverlays = on;
         _ftRestyle(${mapVar});
       }
-      var _ftPruneOverlayLayers = _ftSyncOverlayLayer;
-  `);
-}
-
-/**
- * The legend's rows, button and refresh for one map instance. `sync` defines how its map
- * follows them: `_ftSyncOverlayLayer(ov)` after an overlay's row is drawn or toggled, and
- * `_ftPruneOverlayLayers()` after every row is drawn (an overlay deleted in Settings).
- */
-function overlayLegendMountScript(idPrefix: string, sync: string): string {
-  return `
-    (function() {
-      ${sync}
 
       function _ftRenderThisOverlayLegend() {
         var btn = document.getElementById('${idPrefix}overlay-legend-btn');
@@ -1085,15 +827,13 @@ function overlayLegendMountScript(idPrefix: string, sync: string): string {
           btn.style.display = 'none';
           panel.classList.add('hidden');
           btn.classList.remove('active');
-          _ftPruneOverlayLayers();
+          _ftSyncOverlays();
           return;
         }
 
         btn.style.display = '';
         list.innerHTML = '';
         overlayList.forEach(function(ov) {
-          _ftSyncOverlayLayer(ov);
-
           var row = document.createElement('div');
           row.className = 'overlay-legend-row';
           var cb = document.createElement('input');
@@ -1102,7 +842,7 @@ function overlayLegendMountScript(idPrefix: string, sync: string): string {
           cb.checked = _ftOverlayEnabled(ov);
           cb.addEventListener('change', function() {
             _ftSetOverlayOverride(ov.id, cb.checked);
-            _ftSyncOverlayLayer(ov);
+            _ftSyncOverlays();
           });
           var label = document.createElement('label');
           label.setAttribute('for', cb.id);
@@ -1112,7 +852,7 @@ function overlayLegendMountScript(idPrefix: string, sync: string): string {
           list.appendChild(row);
         });
 
-        _ftPruneOverlayLayers();
+        _ftSyncOverlays();
       }
 
       _ftOverlayLegendRefreshers.push(_ftRenderThisOverlayLegend);

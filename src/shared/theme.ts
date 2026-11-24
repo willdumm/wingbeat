@@ -52,7 +52,7 @@ export function themeRuntimeScript(): string {
   return `
     // ── Theme runtime ─────────────────────────────────────────────────────────
 
-    // Reads a live theme token for Leaflet layers, which can't consume CSS custom
+    // Reads a live theme token for map layers, which can't consume CSS custom
     // properties directly. \`fallback\` covers a layer built before first paint
     // (or off-DOM), where getComputedStyle has nothing to read yet.
     function getCssVar(name, fallback) {

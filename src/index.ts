@@ -275,7 +275,7 @@ function tenantDb(env: Env, bindingName: string): D1Database | undefined {
 // nothing else needs to execute inline. 'strict-dynamic' lets those nonced scripts load the
 // SRI-pinned libraries and typst.ts (a dynamic import() in shared/pilot-duty.ts) without
 // allowlisting hosts; the host sources are only a fallback for browsers without it.
-//   - style-src 'unsafe-inline': Leaflet and the app set inline style attributes at runtime.
+//   - style-src 'unsafe-inline': MapLibre and the app set inline style attributes at runtime.
 //   - img-src https: data: blob:: map tiles/overlays come from arbitrary user-configured hosts.
 //   - connect-src https:: pmtiles range requests, typst wasm/font fetches, tile-metadata hosts.
 //   - 'wasm-unsafe-eval' + 'unsafe-eval': the typst.ts compiler is WebAssembly, and its wasm-bindgen
@@ -1838,8 +1838,7 @@ app.post('/api/trackers/:id/apply-assignment', requireAdmin, valid('json', Apply
 // shared/map-controls.ts for the client-side rendering/toggling). Read is open to
 // any authenticated user (same as /api/trackers); only admins can configure them.
 // Requires a tile URL template with lowercase {z}/{x}/{y} tokens (or their
-// uppercase equivalents, which the client normalizes to lowercase before handing
-// the template to Leaflet — see _ftNormalizeTileTemplate in map-controls.ts).
+// uppercase equivalents, which core's tileUrls() normalizes to lowercase).
 
 // Backs the "Look up details" button in the add-layer and overlay forms (see
 // src/tile-metadata.ts). Admin-only, like Test feed: it fetches a user-supplied URL

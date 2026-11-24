@@ -6,7 +6,7 @@
  * A map's basemap and overlays live on the map object (`_ftBasemapId`, `_ftOverlays`), and
  * _ftRestyle() rebuilds its style from them, keeping the page's own sources and layers
  * (tracks, markers, the elevation tint). The map chrome (basemap switcher, overlay legend,
- * credits) is maplibreMapControlsScripts() and maplibreOverlayLegendMountScript() in
+ * credits) is sharedMapControlsScripts() and tileOverlayLegendMountScript() in
  * map-controls.ts.
  *
  * 5.x, not 6.x: 6.x ships no UMD build, and the pages' scripts are classic inline scripts
@@ -23,7 +23,7 @@ const MAPLIBRE_CSS = {
   sri: 'sha384-uTttxo/aOKbdE5RlD/SPzSDoDmNvGlUYPjONi2MN/b7c9HPSvW07OIuyP7uL6jxK',
 };
 
-/** What a map shows where no tile has loaded (the Leaflet maps' container color). */
+/** What a map shows where no tile has loaded. */
 export const MAP_BACKGROUND = '#e8e4de';
 
 /** The stylesheet `<link>` alone, for a shadow root (the showcase's demos). */
@@ -139,7 +139,7 @@ export function maplibreRuntimeScript(): string {
       };
       var mapObj;
       try {
-        // North up, as the Leaflet maps were: no rotation or pitch.
+        // North up: no rotation or pitch.
         mapObj = new maplibregl.Map(Object.assign({
           container: container,
           style: _ftMapStyleFor(state),

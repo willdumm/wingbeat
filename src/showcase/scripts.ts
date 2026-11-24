@@ -7,7 +7,7 @@
  * the next `npm run docs:showcase`.
  */
 import { themeRuntimeScript } from '../shared/theme';
-import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, maplibreMapControlsScripts } from '../shared/map-controls';
+import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, sharedMapControlsScripts } from '../shared/map-controls';
 import { maplibreRuntimeScript } from '../shared/maplibre';
 import { filterScript } from '../shared/filters';
 import { sharedSidebarToggleScripts } from '../shared/sidebar';
@@ -307,7 +307,7 @@ function showcaseDriverScript(): string {
       const sidebar = root.querySelector('aside');
       const map = createMap(root.getElementById('map'), { ..._ftDefaultView(), scrollZoom: false });
 
-      ${maplibreMapControlsScripts('map', '', 'root')}
+      ${sharedMapControlsScripts('map', '', 'root')}
 
       // Track data read by the map-level hover handler (hover.ts).
       let activeLatlngs = [];
@@ -325,7 +325,7 @@ function showcaseDriverScript(): string {
       ${elevationToolScript('root')}
       wireLinkCopyButtons(root);
 
-      ${sharedSidebarToggleScripts('map', 'flight list', 'root')}
+      ${sharedSidebarToggleScripts('flight list', 'root')}
 
       let layers = [];
       let endMarkers = [];
@@ -539,7 +539,7 @@ function showcaseDriverScript(): string {
       root.querySelectorAll('.map-zoom-in, .map-zoom-out').forEach(b => b.addEventListener('click', () => { userMoved = true; }));
       analyticsMap.on('resize', debounce(frameData, 50));
 
-      ${maplibreMapControlsScripts('analyticsMap', '', 'root')}
+      ${sharedMapControlsScripts('analyticsMap', '', 'root')}
 
       const layerControls = root.getElementById('layer-controls');
       const sgContainer = root.getElementById('streamgraph-container');

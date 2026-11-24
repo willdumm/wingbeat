@@ -1,4 +1,4 @@
-import { maplibreMapControlsScripts, maplibreOverlayLegendMountScript } from '../../shared/map-controls';
+import { sharedMapControlsScripts, tileOverlayLegendMountScript } from '../../shared/map-controls';
 import { sharedSidebarToggleScripts } from '../../shared/sidebar';
 
 export function analyticsScriptsMap(): string {
@@ -120,8 +120,8 @@ export function analyticsScriptsMap(): string {
       wireSgControls();
 
       // ── Zoom controls + basemap switcher ────────────────────────────────────
-      ${maplibreMapControlsScripts('analyticsMap')}
-      ${maplibreOverlayLegendMountScript('analyticsMap')}
+      ${sharedMapControlsScripts('analyticsMap')}
+      ${tileOverlayLegendMountScript('analyticsMap')}
 
       // Legend: layer toggles, heatmap weight mode, collapse
       wireLayerControls(document.getElementById('layer-controls'), {
@@ -205,6 +205,6 @@ export function analyticsScriptsMap(): string {
     init();
 
     // ── Sidebar toggle ────────────────────────────────────────────────────────
-    ${sharedSidebarToggleScripts('analyticsMap', 'panel')}
+    ${sharedSidebarToggleScripts('panel')}
   `;
 }

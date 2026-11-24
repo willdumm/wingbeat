@@ -40,8 +40,7 @@ is a `blob:` URL, which the CSP's `worker-src 'self' blob:` already allows.
 vector style's layers, JavaScript only) becomes a dependency of core, as the app has it, and
 reaches the pages through the core bundle.
 
-Size: about 276 KB gzipped, against about 40 KB for Leaflet. Both load on a page while any of
-its maps is still Leaflet (phases 1–5).
+Size: about 276 KB gzipped, against about 40 KB for Leaflet.
 
 ## Phases
 
@@ -204,4 +203,10 @@ comment's Leaflet note; check the doc-shot manifest and re-run `npm run docs:sho
   region snapped to another, a merge, save and reopen, a basemap switch, the picker's save;
   emulated touch at phone width (vertex and midpoint drags, long press). Not checked: a vector
   basemap, a real phone.
-- **Next:** phase 6.
+- **Phase 6: done.** No page loads Leaflet. `sharedTileLayerDefs()`, the Leaflet
+  `sharedMapControlsScripts()` and `tileOverlayLegendMountScript()` are gone, and the MapLibre
+  ones have those names (dropping their `maplibre` prefix); so are the CSS-filter color
+  correction with its pre-paint script, the `.leaflet-*` CSS, the sidebar's
+  `invalidateSize()`, and core's canvas tint (`demSubTile()`, `paintElevationTint()`).
+- **Next:** the heat's tuning (the user's, on staging), the route heat's load time with real
+  data, and a phone check of the regions editor.

@@ -403,8 +403,6 @@ export function dashboardStyles(): string {
       background: #e8e4de;
     }
 
-    .leaflet-container { background: #e8e4de; }
-
     #loading-overlay {
       position: absolute;
       inset: 0;

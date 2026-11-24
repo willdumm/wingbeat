@@ -2,7 +2,7 @@
  * The data half of the analytics page: the stream graph's buckets (operator days, weeks
  * and months) and each bucket's region totals, and the map layers' points (the route
  * density's interpolated track points, the endpoint heat's weighted endpoints). The SVG
- * and the Leaflet layers stay on the page.
+ * and the map layers stay on the page.
  *
  * Takes the operator's timezone (`tz`) and the regions (see regions.ts) as parameters.
  */

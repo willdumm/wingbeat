@@ -10,7 +10,6 @@
  * sections and frames — the UI inside the frames brings its own stylesheet.
  */
 import { themeVars, themeFontImport, themeInitScript } from '../shared/theme';
-import { mapLayerColorInitScript } from '../shared/map-controls';
 import { brandStyles, logoLockupMarkup, logoFaviconHref, logoFaviconScript } from '../shared/brand';
 import { iconStyles, iconRuntimeScript, icon } from '../shared/icons';
 import { statusStyles } from '../shared/status';
@@ -547,7 +546,6 @@ export function showcasePageData(appName: string, scriptSrc: string, notificatio
     head: /* html */ `<link rel="icon" href="${logoFaviconHref()}" />
   <script>${themeInitScript()}</script>
   <script>${logoFaviconScript()}</script>
-  <script>${mapLayerColorInitScript()}</script>
   <style>${themeFontImport()}${themeVars()}${brandStyles()}${iconStyles()}${statusStyles()}${segmentedControlStyles()}${showcasePageStyles()}</style>`,
     scripts: /* html */ `${maplibreScriptTag()}
   <script src="${PMTILES_SCRIPT_URL}" integrity="${PMTILES_SCRIPT_SRI}" crossorigin="anonymous"></script>

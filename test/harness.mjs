@@ -80,7 +80,7 @@ const EXPORTS = [
   'haversineKm', 'homeBaseNamesIn', 'computeRegionHoursIn', 'computeMonthlyAccountingIn', 'tzLongMonthLabel',
   'sgGenerateBuckets', 'sgComputeDataIn', 'interpolateRoutePoints', 'endpointHeatPointsIn',
   // the core bundle (@wingbeat/core/elevation)
-  'latLngToTilePixel', 'decodeTerrarium', 'demSubTile', 'paintElevationTint',
+  'latLngToTilePixel', 'decodeTerrarium',
   // the core bundle (@wingbeat/core/settings, time's date formats)
   'trackerImportWindows', 'trackerImportDefaultFrom', 'timezoneChangeWarning', 'fmtTzDate', 'fmtTzDateTime',
 ];

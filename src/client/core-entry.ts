@@ -194,8 +194,6 @@ Object.assign(globalThis, {
   demZoomFor: elevation.demZoomFor,
   latLngToTilePixel: elevation.latLngToTilePixel,
   decodeTerrarium: elevation.decodeTerrarium,
-  demSubTile: elevation.demSubTile,
-  paintElevationTint: elevation.paintElevationTint,
   // ── map-style, map-layers: the MapLibre maps' style and the layers over it (maplibre.ts) ──
   availableBasemaps: mapStyle.availableBasemaps,
   mapStyle: mapStyle.mapStyle,

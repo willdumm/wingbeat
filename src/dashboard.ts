@@ -2,7 +2,6 @@ import { dashboardStyles } from './dashboard/styles';
 import { dashboardMarkup } from './dashboard/markup';
 import { dashboardScripts } from './dashboard/scripts/index';
 import { themeVars, themeFontImport, themeInitScript } from './shared/theme';
-import { mapLayerColorInitScript } from './shared/map-controls';
 import { viewportHeightInitScript } from './shared/viewport';
 import { brandStyles, logoFaviconHref, logoFaviconScript } from './shared/brand';
 import { iconStyles, iconRuntimeScript } from './shared/icons';
@@ -38,9 +37,6 @@ export function dashboardHTML(settings: AppSettings, env: Env, nonce: string,
   <script nonce="${nonce}">${themeInitScript()}</script>
   <script nonce="${nonce}">${viewportHeightInitScript()}</script>
   <script nonce="${nonce}">${logoFaviconScript()}</script>
-  <script nonce="${nonce}">${mapLayerColorInitScript()}</script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous" />
-  <script nonce="${nonce}" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
   ${maplibreHeadTags(nonce)}
   <script nonce="${nonce}" src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU" crossorigin="anonymous"></script>
   <script nonce="${nonce}" src="${PMTILES_SCRIPT_URL}" integrity="${PMTILES_SCRIPT_SRI}" crossorigin="anonymous"></script>

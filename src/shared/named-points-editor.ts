@@ -1,6 +1,6 @@
 import {
-  maplibreMapControlsScripts,
-  maplibreOverlayLegendMountScript,
+  sharedMapControlsScripts,
+  tileOverlayLegendMountScript,
   sharedMapControlsMarkup,
   tileOverlayLegendButtonMarkup,
   tileOverlayLegendPanelMarkup,
@@ -150,8 +150,8 @@ export function namedPointsEditorScript(): string {
       _settingsNavigateTo('settings-view-named-points-editor', 'Named Points');
       if (!_npMap) {
         _npMap = createMap(document.getElementById('np-editor-map'), _ftDefaultView());
-        ${maplibreMapControlsScripts('_npMap', 'np-')}
-        ${maplibreOverlayLegendMountScript('_npMap', 'np-')}
+        ${sharedMapControlsScripts('_npMap', 'np-')}
+        ${tileOverlayLegendMountScript('_npMap', 'np-')}
         _npShape = addMapShape(_npMap, [], [regionFillLayer(), regionOutlineLayer(), editorDotLayer()]);
         _npMap.on('click', (e) => {
           const id = _npPointAt(e.point);

@@ -240,8 +240,6 @@ export function analyticsStyles(): string {
       background: #e8e4de;
     }
 
-    .leaflet-container { background: #e8e4de; }
-
     #analytics-loading {
       position: absolute;
       inset: 0;

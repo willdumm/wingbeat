@@ -221,9 +221,8 @@ export interface TileOverlay {
   label: string;
   url: string;
   attribution: string | null;
-  /** The tile source's max *native* zoom, applied client-side as Leaflet's
-   * maxNativeZoom (not maxZoom) so the layer keeps showing upscaled tiles past this
-   * point instead of vanishing to reveal the basemap — see _ftSyncOverlayLayer. */
+  /** The tile source's max *native* zoom, its source's maxzoom
+   * in core's mapStyle(): the map keeps showing upscaled tiles past it. */
   max_zoom: number | null;
   default_enabled: boolean;
   default_enabled_by_basemap: Record<string, boolean> | null;

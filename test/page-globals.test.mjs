@@ -17,8 +17,8 @@ import { coreBundle } from './harness.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PAGES = ['/', '/analytics'];
-// Loaded by <script src> on the pages. (Leaflet, MapLibre and pmtiles on the dashboard, qrcode.)
-const VENDORED = new Set(['L', 'maplibregl', 'pmtiles', 'QRCode']);
+// Loaded by <script src> on the pages. (MapLibre and pmtiles on the dashboard, qrcode.)
+const VENDORED = new Set(['maplibregl', 'pmtiles', 'QRCode']);
 
 /** The names in core-entry.ts's Object.assign(globalThis, { … }) calls. */
 function assignedNames() {

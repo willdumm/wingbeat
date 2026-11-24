@@ -13,8 +13,7 @@ specs all come from there. Before writing new UI:
    `packages/core/src/tokens.ts`, and `themeVars()` in `src/shared/theme.ts` generates the
    properties from them. Never hand-write a hex color, `px` radius, or `system-ui` font
    stack that already has a token — grep `tokens.ts` and `theme.ts` first.
-   - A Leaflet layer can't consume `var(--x)` directly (canvas-rendered markers,
-     some style objects) — use `getAccentColor()` / `getSuccessColor()` /
+   - A MapLibre layer can't consume `var(--x)` directly (it draws on a WebGL canvas) — use `getAccentColor()` / `getSuccessColor()` /
      `getDangerColor()` / `getCssVar(name, fallback)` from `themeRuntimeScript()`
      (`shared/theme.ts`) instead of a hardcoded fallback hex.
 2. **Reach for an existing shared component before building a new one.** Check
