@@ -20,6 +20,21 @@ export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: numb
   return R * 2 * Math.asin(Math.sqrt(Math.min(1, a)));
 }
 
+/** The ring `km` around a point, closed, along great circles. */
+export function circleRing(lat: number, lon: number, km: number, steps = 64): Ring {
+  const rad = Math.PI / 180;
+  const d = km / 6371, sinLat = Math.sin(lat * rad), cosLat = Math.cos(lat * rad);
+  const ring: Ring = [];
+  for (let i = 0; i < steps; i++) {
+    const bearing = 2 * Math.PI * i / steps;
+    const sinLat2 = sinLat * Math.cos(d) + cosLat * Math.sin(d) * Math.cos(bearing);
+    const dLon = Math.atan2(Math.sin(bearing) * Math.sin(d) * cosLat, Math.cos(d) - sinLat * sinLat2);
+    ring.push([lon + dLon / rad, Math.asin(sinLat2) / rad]);
+  }
+  ring.push(ring[0]);
+  return ring;
+}
+
 export function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number): number {
   return haversineKm(lat1, lon1, lat2, lon2) * 0.621371;
 }

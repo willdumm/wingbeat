@@ -70,7 +70,7 @@ export function analyticsScriptsLayers(): string {
         tip = null; tipIdx = null;
       }
       function onPointer(e) {
-        const hit = mapObj.getLayer(fillId) ? mapObj.queryRenderedFeatures(e.point, { layers: [fillId] })[0] : null;
+        const hit = _ftFeatureAt(mapObj, fillId, e.point);
         if (!hit) { hideTip(); return; }
         const idx = hit.properties.idx;
         if (idx === tipIdx) return;

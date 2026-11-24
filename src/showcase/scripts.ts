@@ -305,12 +305,7 @@ function showcaseDriverScript(): string {
       await stylesheetsReady(root);
 
       const sidebar = root.querySelector('aside');
-      // MapLibre's zoom is Leaflet's less one (512 px tiles).
-      const map = createMap(root.getElementById('map'), {
-        center: [window.APP_SETTINGS.mapDefaultLng, window.APP_SETTINGS.mapDefaultLat],
-        zoom: window.APP_SETTINGS.mapDefaultZoom - 1,
-        scrollZoom: false,
-      });
+      const map = createMap(root.getElementById('map'), { ..._ftDefaultView(), scrollZoom: false });
 
       ${maplibreMapControlsScripts('map', '', 'root')}
 
@@ -532,12 +527,7 @@ function showcaseDriverScript(): string {
       const root = attachDemo(host, 'analytics', DEMO_MARKUP.analytics);
       await stylesheetsReady(root);
 
-      // MapLibre's zoom is Leaflet's less one (512 px tiles).
-      const analyticsMap = createMap(root.getElementById('analytics-map'), {
-        center: [window.APP_SETTINGS.mapDefaultLng, window.APP_SETTINGS.mapDefaultLat],
-        zoom: window.APP_SETTINGS.mapDefaultZoom - 1,
-        scrollZoom: false,
-      });
+      const analyticsMap = createMap(root.getElementById('analytics-map'), { ..._ftDefaultView(), scrollZoom: false });
       // Frame where the flights end. Re-framed on resize until the visitor pans or zooms (a
       // move with an originalEvent is theirs).
       const DATA_BOUNDS = _ftLatLngBounds(COMPLETED_FLIGHTS.filter(f => f.end_lat != null).map(f => [f.end_lat, f.end_lon]));

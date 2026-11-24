@@ -1,5 +1,5 @@
 /**
- * The layers the clients draw over the basemap (the analytics ones are the web's), as
+ * The layers the clients draw over the basemap (the analytics and editor ones are the web's), as
  * MapLibre layer specs without their `source` (the app nests each under its `GeoJSONSource`;
  * the web adds `source` when it adds the layer). Colors come from each feature's `color` property, and the surface color (the
  * halos and rings that keep a marker readable on any basemap) from the caller's theme tokens.
@@ -229,16 +229,40 @@ export function flightLinesLayer(): MapLayer {
   };
 }
 
-/** The analytics regions' fill: faint, and what a hover or tap finds. */
+/** A region's fill: faint (a feature's `opacity` overrides), and what a hover or tap finds. */
 export function regionFillLayer(): MapLayer {
-  return { id: 'region-fill', type: 'fill', paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.06 } };
+  return { id: 'region-fill', type: 'fill', paint: { 'fill-color': ['get', 'color'], 'fill-opacity': ['coalesce', ['get', 'opacity'], 0.06] } };
 }
 
-/** The analytics regions' outlines. */
+/** A region's outline, 1.5 px or the feature's `width`. */
 export function regionOutlineLayer(): MapLayer {
   return {
     id: 'region-outline', type: 'line',
     layout: { 'line-join': 'round' },
-    paint: { 'line-color': ['get', 'color'], 'line-width': 1.5 },
+    paint: { 'line-color': ['get', 'color'], 'line-width': ['coalesce', ['get', 'width'], 1.5] },
+  };
+}
+
+// ── The settings maps' editors (the web's): named points, regions ──
+
+/** A named point, or an editor's highlight of a vertex: each Point's `color`, `radius`, `opacity` (the fill's) and `width` (the ring's). */
+export function editorDotLayer(): MapLayer {
+  return {
+    id: 'editor-dots', type: 'circle', filter: ['==', ['geometry-type'], 'Point'],
+    paint: {
+      'circle-color': ['get', 'color'],
+      'circle-radius': ['get', 'radius'],
+      'circle-opacity': ['get', 'opacity'],
+      'circle-stroke-color': ['get', 'color'],
+      'circle-stroke-width': ['get', 'width'],
+    },
+  };
+}
+
+/** A region being drawn: its edges so far, dashed. */
+export function editorDraftLineLayer(): MapLayer {
+  return {
+    id: 'editor-draft', type: 'line', filter: ['==', ['geometry-type'], 'LineString'],
+    paint: { 'line-color': ['get', 'color'], 'line-width': 2, 'line-dasharray': [2.5, 2] },
   };
 }

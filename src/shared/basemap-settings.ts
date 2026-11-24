@@ -11,7 +11,7 @@
 
 export function basemapSettingsMarkup(): string {
   return `
-    <p class="settings-section-desc">The base layers in the map's style switcher, the same for everyone. Hidden basemaps stay configured. A vector basemap is a Protomaps basemap PMTiles archive, with Protomaps' basemaps-assets (fonts and sprites) copied to <code>basemaps-assets/</code> beside it. On the web, the settings maps don't draw vector basemaps yet.</p>
+    <p class="settings-section-desc">The base layers in the map's style switcher, the same for everyone. Hidden basemaps stay configured. A vector basemap is a Protomaps basemap PMTiles archive, with Protomaps' basemaps-assets (fonts and sprites) copied to <code>basemaps-assets/</code> beside it.</p>
     <div id="settings-basemap-list"></div>
     <details id="settings-add-basemap" class="settings-add-tracker">
       <summary>Add basemap</summary>

@@ -48,13 +48,18 @@ export function maplibreHeadTags(nonce?: string): string {
  * mapLayerColorRuntimeScript(), and with pmtiles.js loaded). Defines:
  *   createMap(container, options) — a MapLibre map on the stored basemap; options are
  *                                   maplibregl.Map's (center, zoom, …)
+ *   _ftDefaultView()              — the tenant's default center and zoom, for createMap() or
+ *                                   jumpTo()
  *   _ftRestyle(map)               — rebuild map's style from its basemap and overlays
  *   _ftMapBasemaps()              — the basemaps a MapLibre map offers, in the tenant's order
  *   _ftLatLngBounds(latlngs)      — the bounds of [lat, lon] pairs, as MapLibre takes them
  *   _ftWhenStyleReady(map, fn)    — fn() now, or once the map's style has loaded
  *   addMapShape(map, features, layers, { z, source })
  *                                 — GeoJSON features drawn with core's layer specs, stacked
- *                                   by z; returns a handle with its source id and remove()
+ *                                   by z; returns a handle with its source id,
+ *                                   setFeatures() and remove()
+ *   _ftFeatureAt(map, layerId, point, px)
+ *                                 — the top feature of a layer within px of a screen point
  *   _ftLineFeature(latlngs, props), _ftPointFeature(latlng, props)
  *                                 — GeoJSON features from [lat, lon] pairs
  *   addHtmlMarker(map, latlng, html, zIndex), setHtmlMarker(marker, latlng, html)
@@ -159,6 +164,13 @@ export function maplibreRuntimeScript(): string {
       return mapObj;
     }
 
+    // MapLibre's zoom is Leaflet's less one (512 px tiles), and mapDefaultZoom is stored on
+    // Leaflet's scale.
+    function _ftDefaultView() {
+      var s = window.APP_SETTINGS;
+      return { center: [s.mapDefaultLng, s.mapDefaultLat], zoom: s.mapDefaultZoom - 1 };
+    }
+
     // MapLibre's bounds ([[west, south], [east, north]]) around [lat, lon] pairs.
     function _ftLatLngBounds(latlngs) {
       var w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
@@ -190,7 +202,7 @@ export function maplibreRuntimeScript(): string {
     // a source of their own: ids ft-shape-N and ft-shape-N-<layer id>, above every shape
     // drawn before at the same options.z or lower, below those at a higher z (default 0).
     // options.source adds to the GeoJSON source's options (clustering). Returns
-    // { id, remove() }.
+    // { id, setFeatures(features), remove() }.
     var _ftShapeSeq = 0;
     function addMapShape(mapObj, features, layers, options) {
       var id = 'ft-shape-' + (++_ftShapeSeq);
@@ -212,12 +224,25 @@ export function maplibreRuntimeScript(): string {
       }
       return {
         id: id,
+        setFeatures: function(next) {
+          features = next;
+          _ftWhenStyleReady(mapObj, function() {
+            if (!removed && mapObj.getSource(id)) mapObj.getSource(id).setData({ type: 'FeatureCollection', features: features });
+          });
+        },
         remove: function() {
           removed = true;
           // A restyle in flight would carry it over (_ftRestyle()), so it goes once that's in.
           _ftWhenStyleReady(mapObj, drop);
         },
       };
+    }
+
+    // The topmost feature of a layer within px (default 0) of a screen point, or null.
+    function _ftFeatureAt(mapObj, layerId, point, px) {
+      if (mapObj._ftNoMap || !mapObj.getLayer(layerId)) return null;
+      var box = px ? [[point.x - px, point.y - px], [point.x + px, point.y + px]] : point;
+      return mapObj.queryRenderedFeatures(box, { layers: [layerId] })[0] || null;
     }
 
     // A DOM marker centered on latlng ([lat, lon]), its content html. Not interactive:

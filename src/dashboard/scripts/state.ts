@@ -12,12 +12,8 @@ export function dashboardScriptsState(): string {
     // The map starts on the default extent but stays hidden (map-pending) until its first
     // view: the fit to the current flights (showDefaultMapView in init.ts), so it never
     // paints the default extent first and then jumps. ensureMapView() shows the default
-    // extent when there is nothing to fit. MapLibre's zoom is Leaflet's less one (512 px
-    // tiles), and mapDefaultZoom is stored on Leaflet's scale.
-    const map = createMap(document.getElementById('map'), {
-      center: [window.APP_SETTINGS.mapDefaultLng, window.APP_SETTINGS.mapDefaultLat],
-      zoom: window.APP_SETTINGS.mapDefaultZoom - 1,
-    });
+    // extent when there is nothing to fit.
+    const map = createMap(document.getElementById('map'), _ftDefaultView());
     map.getContainer().classList.add('map-pending');
     let mapHasView = false;
 

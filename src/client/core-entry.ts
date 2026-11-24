@@ -174,6 +174,7 @@ Object.assign(globalThis, {
   // ── regions: distances and which region a point is in (the analytics page holds REGIONS
   // and wraps the …In functions under their old names) ──
   haversineKm: regions.haversineKm,
+  circleRing: regions.circleRing,
   isHomeBaseRegion: regions.isHomeBaseRegion,
   regionDisplayName: regions.regionDisplayName,
   OTHER_REGION: regions.OTHER_REGION,
@@ -209,6 +210,8 @@ Object.assign(globalThis, {
   flightLinesLayer: mapLayers.flightLinesLayer,
   regionFillLayer: mapLayers.regionFillLayer,
   regionOutlineLayer: mapLayers.regionOutlineLayer,
+  editorDotLayer: mapLayers.editorDotLayer,
+  editorDraftLineLayer: mapLayers.editorDraftLineLayer,
   ELEVATION_DEM_SOURCE: mapLayers.ELEVATION_DEM_SOURCE,
   // ── settings: the tracker history import's windows, the timezone-change warning ──
   trackerImportWindows: (from: string) => settings.importWindows(tz(), now(), from),

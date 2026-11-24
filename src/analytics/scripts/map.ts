@@ -24,12 +24,7 @@ export function analyticsScriptsMap(): string {
     }
 
     // ── Map initialization ────────────────────────────────────────────────────
-    // MapLibre's zoom is Leaflet's less one (512 px tiles), and mapDefaultZoom is stored on
-    // Leaflet's scale.
-    const analyticsMap = createMap(document.getElementById('analytics-map'), {
-      center: [window.APP_SETTINGS.mapDefaultLng, window.APP_SETTINGS.mapDefaultLat],
-      zoom: window.APP_SETTINGS.mapDefaultZoom - 1,
-    });
+    const analyticsMap = createMap(document.getElementById('analytics-map'), _ftDefaultView());
 
     // ── Layer state ───────────────────────────────────────────────────────────
     let heatmapWeightMode = 'time';

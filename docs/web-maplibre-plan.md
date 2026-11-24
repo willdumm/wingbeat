@@ -189,4 +189,19 @@ comment's Leaflet note; check the doc-shot manifest and re-run `npm run docs:sho
 - Phase 4 checked in a browser on the analytics page (local Worker, 60 flights, a region, two
   basemaps): load, reload from cache, each layer, the region tip, a basemap switch. Not checked:
   a vector basemap, an overlay that's on, touch, the real data's load time.
-- **Next:** phase 5.
+- **Phase 5: done.** The named points editor, the regions editor and the map-view picker use
+  `createMap()` with the shared controls and legend mounts, so they draw vector basemaps too.
+  `maplibre.ts` gains `_ftDefaultView()` (the one place the stored zoom loses its one),
+  `_ftFeatureAt()` and `setFeatures()` on `addMapShape()`'s handle; core gains
+  `editorDotLayer()`, `editorDraftLineLayer()` and `circleRing()`. Each editor redraws one
+  shape from its state. Region vertices and edge midpoints are draggable DOM markers
+  (`.rg-handle`, a bigger grab area on touch); dragging or clicking a midpoint turns its marker
+  into the new vertex's. The picker stores its zoom plus one, to a tenth, and Global Settings
+  takes a fractional zoom. The editors' orange and green are the dark theme's tokens in both
+  themes. A long press's menu stays open after the finger lifts.
+- Phase 5 checked in a browser on the dashboard and analytics pages (local Worker): add,
+  select, edit and delete a point; vertex and midpoint drags, midpoint click, vertex menu, a new
+  region snapped to another, a merge, save and reopen, a basemap switch, the picker's save;
+  emulated touch at phone width (vertex and midpoint drags, long press). Not checked: a vector
+  basemap, a real phone.
+- **Next:** phase 6.
