@@ -22,6 +22,7 @@ const MAP_LAYER_COLORS_KEY = 'ft_map_layer_colors';
  *                                 after an admin changes them)
  *   _ftVectorBasemaps          — its shown vector basemaps (window.APP_VECTOR_BASEMAPS)
  *   _ftMaplibreMaps             — the page's MapLibre maps (createMap() in maplibre.ts)
+ *   _ftRestyleAll()             — rebuild every one's style
  *   _ftActiveLayerDefs()        — the layer defs that should currently be on every map
  *                                  (core's FALLBACK_BASEMAP if there are none, so a map
  *                                  always has one)
@@ -36,6 +37,7 @@ export function mapLayersRuntimeScript(): string {
     var _ftPresets = window.APP_BASEMAPS || [];
     var _ftVectorBasemaps = window.APP_VECTOR_BASEMAPS || [];
     var _ftMaplibreMaps = []; // every map createMap() made (maplibre.ts), each with its _ftRestyle()
+    function _ftRestyleAll() { _ftMaplibreMaps.forEach(function(m) { m._ftRestyle(); }); }
     var _ftMapRefreshers = [];
     try { ${JSON.stringify(LEGACY_MAP_LAYER_KEYS)}.forEach(function(k) { localStorage.removeItem(k); }); } catch (_) {}
 
@@ -299,7 +301,7 @@ export function mapLayerColorRuntimeScript(): string {
 
     function _ftApplyActiveLayerColor() {
       // The correction is in each map's style (core's mapColorPaint).
-      _ftMaplibreMaps.forEach(function(m) { m._ftRestyle(); });
+      _ftRestyleAll();
     }
 
     var _ftColorChannels = [${MAP_COLOR_CHANNELS.map((ch) => `{ id: '${ch.id}', label: '${ch.label}' }`).join(', ')}];

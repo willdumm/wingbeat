@@ -107,9 +107,7 @@ export function maplibreRuntimeScript(): string {
     }
 
     // The background is a theme token's color.
-    new MutationObserver(function() {
-      _ftMaplibreMaps.forEach(function(m) { m._ftRestyle(); });
-    }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    new MutationObserver(_ftRestyleAll).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
     // Stands in for a map when MapLibre can't make one (no WebGL, or its script didn't
     // load): every method returns it again, so the page's other parts keep working.

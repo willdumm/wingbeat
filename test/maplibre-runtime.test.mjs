@@ -39,17 +39,18 @@ function page({ webgl = true } = {}) {
     document: { documentElement: {}, createElement: () => ({}) },
     location: { origin: 'https://a.example' },
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
-    MutationObserver: class { observe() {} },
+    MutationObserver: class { constructor(fn) { context.themeChanged = fn; } observe() {} },
     maplibregl: { Map: FakeMap },
     console: { ...console, error() {} },
     container,
   });
   vm.runInContext(coreBundle, context);
   vm.runInContext(`
-    var _ftMaplibreMaps = [], _ftVectorBasemaps = [];
+    var _ftMaplibreMaps = [], _ftVectorBasemaps = [], background = '#eee';
+    function _ftRestyleAll() { _ftMaplibreMaps.forEach((m) => m._ftRestyle()); }
     function _ftActiveLayerDefs() { return [${JSON.stringify(RASTER)}]; }
     function _ftLayerColor() {}
-    function getMapBackgroundColor() { return '#eee'; }
+    function getMapBackgroundColor() { return background; }
     ${maplibreRuntimeScript()}
     var map = createMap(container, {});
   `, context);
@@ -80,6 +81,14 @@ test("a restyle keeps the page's sources and layers above the basemap", () => {
   map._ftOverlays = [];
   map._ftRestyle();
   assert.deepEqual(ids(map), ['background', 'basemap-usgstopo', id + '-dots']);
+});
+
+test('a theme switch changes the background', () => {
+  const { context, map } = page();
+  map.load();
+  context.background = '#222';
+  context.themeChanged();
+  assert.equal(map.spec.layers[0].paint['background-color'], '#222');
 });
 
 test('a shape removed before the style loads is never drawn; one removed after leaves nothing', () => {

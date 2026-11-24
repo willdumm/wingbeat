@@ -293,7 +293,7 @@ const trackerList = SAMPLE.trackers;
 
     function _ftApplyActiveLayerColor() {
       // The correction is in each map's style (core's mapColorPaint).
-      _ftMaplibreMaps.forEach(function(m) { m._ftRestyle(); });
+      _ftRestyleAll();
     }
 
     var _ftColorChannels = [{ id: 'sat', label: 'Saturation' }, { id: 'con', label: 'Contrast' }, { id: 'bri', label: 'Brightness' }];
@@ -348,6 +348,7 @@ const trackerList = SAMPLE.trackers;
     var _ftPresets = window.APP_BASEMAPS || [];
     var _ftVectorBasemaps = window.APP_VECTOR_BASEMAPS || [];
     var _ftMaplibreMaps = []; // every map createMap() made (maplibre.ts), each with its _ftRestyle()
+    function _ftRestyleAll() { _ftMaplibreMaps.forEach(function(m) { m._ftRestyle(); }); }
     var _ftMapRefreshers = [];
     try { ["ft_map_layers_enabled","ft_map_layers_custom"].forEach(function(k) { localStorage.removeItem(k); }); } catch (_) {}
 
@@ -400,9 +401,7 @@ _ftPresets = [{"id":"usgstopo","label":"USGS Topo","url":"https://basemap.nation
     }
 
     // The background is a theme token's color.
-    new MutationObserver(function() {
-      _ftMaplibreMaps.forEach(function(m) { m._ftRestyle(); });
-    }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    new MutationObserver(_ftRestyleAll).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
     // Stands in for a map when MapLibre can't make one (no WebGL, or its script didn't
     // load): every method returns it again, so the page's other parts keep working.
