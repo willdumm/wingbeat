@@ -2,6 +2,7 @@
 import { namedFlavor } from '@protomaps/basemaps';
 import { mapStyle } from '@wingbeat/core/map-style';
 import { MAP_THEME, type MapTheme } from '@wingbeat/core/map-theme';
+import { lightTokens } from '@wingbeat/core/tokens';
 
 declare const ARCHIVE_URL: string;
 declare const maplibregl: any;
@@ -97,7 +98,7 @@ function set(key: string, color: string) {
 const $ = (id: string) => document.getElementById(id)!;
 const style = () => mapStyle({
   basemap: { kind: 'vector', id: 'map', label: 'Map', url: ARCHIVE_URL, attribution: '', maxZoom: 13 },
-  overlays: [], origin: location.origin, pixelRatio: devicePixelRatio, background: '#e8e4de', theme,
+  overlays: [], origin: location.origin, pixelRatio: devicePixelRatio, background: lightTokens['surface-2'], theme,
 });
 
 maplibregl.addProtocol('pmtiles', new pmtiles.Protocol().tile);

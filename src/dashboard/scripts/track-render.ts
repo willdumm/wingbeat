@@ -6,7 +6,7 @@
  * leaving the caller to own them (day-view.ts / flight-list.ts keep them in dashboard
  * state; the docs-site showcase in src/showcase/ draws sample data with them). Tracks and
  * dots are core's layers (trackLayer(), trailLayer(), positionLayer()), each feature in its
- * `color`. Needs makePlaneHtml (icons.ts) and getCssVar/getAccentColor/getSuccessColor/
+ * `color`. Needs makePlaneHtml (icons.ts) and getSurfaceColor/getAccentColor/getSuccessColor/
  * getDangerColor (shared/theme.ts themeRuntimeScript).
  */
 export function dashboardScriptsTrackRender(): string {
@@ -23,9 +23,6 @@ export function dashboardScriptsTrackRender(): string {
 
     // Stacking of the DOM markers: planes over the end markers over the hover arrow.
     const MARKER_Z = { arrow: 1, end: 2, plane: 3 };
-
-    // The halo and ring color that keeps a dot readable on any basemap.
-    function _mapSurfaceColor() { return getCssVar('--surface-1', '#FFFFFF'); }
 
     // Single-flight endpoint: plain numbered circle at the actual position.
     function makeNumberHtml(n, color) {
@@ -140,7 +137,7 @@ export function dashboardScriptsTrackRender(): string {
         }
       }
 
-      const layers = starts.length ? [addMapShape(mapObj, [...lines, ...starts], [trackLayer(), positionLayer(_mapSurfaceColor())])] : [];
+      const layers = starts.length ? [addMapShape(mapObj, [...lines, ...starts], [trackLayer(), positionLayer(getSurfaceColor())])] : [];
       return { layers, planes, endInfos, allPoints, trackerIds, latlngs: allPoints, pointData: pointDataOut, labels: labelsOut };
     }
 
@@ -151,7 +148,7 @@ export function dashboardScriptsTrackRender(): string {
     function drawGroundTrail(mapObj, trail, { color, trackerId }) {
       const latlngs = trail.points.map(p => [p.lat, p.lon]);
       const { line, pilot } = groundTrailFeatures(trail, color, trackerId);
-      const shape = addMapShape(mapObj, [line, pilot], [trailLayer(), positionLayer(_mapSurfaceColor())]);
+      const shape = addMapShape(mapObj, [line, pilot], [trailLayer(), positionLayer(getSurfaceColor())]);
       return {
         layers: [shape],
         latlngs,
@@ -172,7 +169,7 @@ export function dashboardScriptsTrackRender(): string {
       const { lines, dots } = flightTrackFeatures(pts, {
         track: getAccentColor(), start: getSuccessColor(), end: showEndMarker ? getDangerColor() : null,
       });
-      const shape = addMapShape(mapObj, [...lines, ...dots], [trackLayer(), positionLayer(_mapSurfaceColor())]);
+      const shape = addMapShape(mapObj, [...lines, ...dots], [trackLayer(), positionLayer(getSurfaceColor())]);
 
       const labels = latlngs.map((_, j) => {
         if (j === 0) return 'Flight start';

@@ -9,7 +9,7 @@ A self-hostable Cloudflare Worker that polls a Garmin InReach MapShare feed, sto
 
 ## Overview
 
-The tracker continuously polls a Garmin InReach MapShare KML feed (via a per-minute Cron Trigger, throttled per-tracker to Garmin's ~2-minute transmission rate), ingests points into a D1 database, segments them into flights, reverse-geocodes origin/destination labels via Overpass, and serves a Leaflet.js dashboard. All branding, map defaults, and timezone are configurable from the admin settings UI — no code changes needed. Admins can register webhook or Pushover notification targets to get notified of takeoffs, landings, and in-flight signal gaps — see [Notifications](#notifications) below.
+The tracker continuously polls a Garmin InReach MapShare KML feed (via a per-minute Cron Trigger, throttled per-tracker to Garmin's ~2-minute transmission rate), ingests points into a D1 database, segments them into flights, reverse-geocodes origin/destination labels via Overpass, and serves a MapLibre dashboard. All branding, map defaults, and timezone are configurable from the admin settings UI — no code changes needed. Admins can register webhook or Pushover notification targets to get notified of takeoffs, landings, and in-flight signal gaps — see [Notifications](#notifications) below.
 
 ---
 

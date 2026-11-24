@@ -190,6 +190,8 @@ function clientBasemaps(rows: BasemapRow[]): { basemaps: BasemapPreset[]; vector
       vector_basemaps.push({ id: r.key, label: r.label, url: r.url, attribution, ...(r.max_zoom ? { maxZoom: r.max_zoom } : {}), order: order++ });
       continue;
     }
+    // A path on this host: the removed tile proxy's, which nothing serves.
+    if (!validTileTemplate(r.url)) continue;
     basemaps.push({ id: r.key, label: r.label, url: r.url, attribution, maxZoom: r.max_zoom ?? 18, ...(r.detect_retina ? { detectRetina: true } : {}), order: order++ });
   }
   return { basemaps: basemaps.length > 0 ? basemaps : [FALLBACK_BASEMAP], vector_basemaps };

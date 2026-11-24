@@ -39,7 +39,7 @@ export function analyticsScriptsLayers(): string {
       return features.length ? addMapShape(mapObj, features, [flightLinesLayer()], { z: 2 }) : null;
     }
 
-    // A polygon's center, as Leaflet put a region's tooltip: its outer ring's centroid (the
+    // A polygon's center, where a region's tooltip goes: its outer ring's centroid (the
     // first polygon's, for a MultiPolygon), [lon, lat].
     function _regionCenter(geometry) {
       const ring = geometry.type === 'MultiPolygon' ? geometry.coordinates[0][0] : geometry.coordinates[0];

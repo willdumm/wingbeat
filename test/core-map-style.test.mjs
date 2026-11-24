@@ -27,8 +27,8 @@ test('{s} becomes one URL per subdomain and {r} @2x only on a high-density scree
   assert.deepEqual(tileUrls('https://x.example/{z}/{x}/{y}{r}.png', ORIGIN, 1), ['https://x.example/{z}/{x}/{y}.png']);
 });
 
-test('a proxy path is made absolute on the instance, and placeholders lowercased', () => {
-  assert.deepEqual(tileUrls('/api/tiles/map/{z}/{x}/{y}{r}.png', ORIGIN, 2), [ORIGIN + '/api/tiles/map/{z}/{x}/{y}@2x.png']);
+test('a path is made absolute on the instance, and placeholders lowercased', () => {
+  assert.deepEqual(tileUrls('/tiles/{z}/{x}/{y}{r}.png', ORIGIN, 2), [ORIGIN + '/tiles/{z}/{x}/{y}@2x.png']);
   assert.deepEqual(tileUrls('https://t.example/{Z}/{X}/{Y}', ORIGIN, 1), ['https://t.example/{z}/{x}/{y}']);
 });
 
@@ -125,4 +125,28 @@ test("the elevation tint's color is core's ramp around the reference, transparen
   const stops = color.slice(3).filter((_, i) => i % 2 === 0);
   assert.deepEqual([...stops].sort((a, b) => a - b), stops);
   assert.equal(layers.elevationReliefLayer(300, 500, 60).paint['color-relief-opacity'], 0.6);
+});
+
+test('a theme sets the sprite, and its colors reach the vector basemap\'s layers', () => {
+  const style = mapStyle({
+    basemap: { kind: 'vector', ...alaska }, overlays: [], origin: ORIGIN, pixelRatio: 1, background: '#fff',
+    theme: { base: 'dark', colors: { water: '#123456' } },
+  });
+  assert.ok(style.sprite.endsWith('/sprites/v4/dark'));
+  assert.equal(style.layers.find((l) => l.id === 'water').paint['fill-color'], '#123456');
+});
+
+test('the heatmaps: density stops ascend, from clear to short of opaque, and weights cap at 1', () => {
+  for (const { paint } of [layers.endpointHeatLayer(), layers.routeHeatLayer()]) {
+    const stops = paint['heatmap-color'].slice(3);
+    const densities = stops.filter((_, i) => i % 2 === 0);
+    const alphas = stops.filter((_, i) => i % 2 === 1).map((c) => Number(/,([\d.]+)\)$/.exec(c)[1]));
+    assert.deepEqual(densities, [...densities].sort((a, b) => a - b));
+    assert.equal(alphas[0], 0);
+    assert.ok(alphas.at(-1) > 0.9 && alphas.at(-1) < 1);
+    assert.ok(paint['heatmap-intensity'] > 0 && Number.isFinite(paint['heatmap-intensity']));
+    const weights = paint['heatmap-weight'].slice(3).filter((_, i) => i % 2 === 1);
+    assert.ok(weights.length && weights.every((e) => e[0] === 'min' && e[2] === 1));
+  }
+  assert.equal(layers.endpointHeatLayer().paint['heatmap-weight'][4][1][0], 'sqrt');
 });

@@ -225,6 +225,7 @@ export function analyticsScriptsMap(): string {
       // Phase 2: fetch incremental update, again if the trackers aren't the cached ones.
       if (String(paintedIds) !== String(activeTrackerIds)) {
         rerender();
+        await cachedRefresh;
         await refreshFlights();
       }
 

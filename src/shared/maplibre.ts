@@ -23,9 +23,6 @@ const MAPLIBRE_CSS = {
   sri: 'sha384-uTttxo/aOKbdE5RlD/SPzSDoDmNvGlUYPjONi2MN/b7c9HPSvW07OIuyP7uL6jxK',
 };
 
-/** What a map shows where no tile has loaded. */
-export const MAP_BACKGROUND = '#e8e4de';
-
 /** The stylesheet `<link>` alone, for a shadow root (the showcase's demos). */
 export function maplibreCssLink(): string {
   return `<link rel="stylesheet" href="${MAPLIBRE_CSS.url}" integrity="${MAPLIBRE_CSS.sri}" crossorigin="anonymous" />`;
@@ -89,7 +86,7 @@ export function maplibreRuntimeScript(): string {
         overlays: state._ftOverlays,
         origin: location.origin,
         pixelRatio: window.devicePixelRatio || 1,
-        background: '${MAP_BACKGROUND}',
+        background: getMapBackgroundColor(),
         color: basemap && basemap.kind === 'raster' ? _ftLayerColor(basemap.id) : undefined,
       });
     }
@@ -169,7 +166,8 @@ export function maplibreRuntimeScript(): string {
     }
 
     // A style that's still loading (the first, or a restyle MapLibre couldn't diff) takes
-    // no sources or layers yet.
+    // no sources or layers yet. Not isStyleLoaded(): that's false while tiles load too, when
+    // style.load has already fired. style._loaded is internal, so check it when MAPLIBRE_JS moves.
     function _ftWhenStyleReady(mapObj, fn) {
       if (mapObj._ftNoMap || (mapObj.style && mapObj.style._loaded)) fn();
       else mapObj.once('style.load', fn);

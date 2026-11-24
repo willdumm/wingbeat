@@ -237,7 +237,7 @@ export function analyticsStyles(): string {
     #analytics-map {
       position: absolute;
       inset: 0;
-      background: #e8e4de;
+      background: var(--surface-2);
     }
 
     #analytics-loading {

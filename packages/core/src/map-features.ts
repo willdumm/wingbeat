@@ -42,12 +42,14 @@ export function lngLatBounds(coords: readonly LngLat[]): Bounds | null {
   return [w, s, e, n];
 }
 
-/**
- * The instance's default view. map_default_zoom is stored on the 256 px tile scale: MapLibre's
- * zoom (512 px tiles) is one less.
- */
+/** map_default_zoom is on the 256 px tile scale: MapLibre's zoom (512 px tiles) plus one. */
+export const zoomFromStored = (stored: number): number => stored - 1;
+/** A map's zoom as map_default_zoom, to a tenth. */
+export const zoomToStored = (zoom: number): number => Math.round((zoom + 1) * 10) / 10;
+
+/** The instance's default view. */
 export function defaultMapView(view: { lat: number; lng: number; zoom: number }): { center: LngLat; zoom: number } {
-  return { center: [view.lng, view.lat], zoom: view.zoom - 1 };
+  return { center: [view.lng, view.lat], zoom: zoomFromStored(view.zoom) };
 }
 
 /** One flight's track: its line (none with under two points), and a dot at its start and (with an end color) its end. */

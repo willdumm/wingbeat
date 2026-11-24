@@ -2,7 +2,7 @@
  * The MapLibre style both clients' maps start from, built from the bootstrap's basemaps and
  * tile overlays: the basemap (a raster source and layer, or a Protomaps vector basemap read from
  * its PMTiles archive) and one raster source and layer for each overlay that's on. MapLibre
- * takes a list of tile URLs rather than Leaflet's `{s}`, so a template's `{s}` becomes one URL
+ * takes a list of tile URLs, not a `{s}`, so a template's `{s}` becomes one URL
  * per subdomain, and `{r}` becomes `@2x` on a high-density screen. A path on the
  * instance is made absolute.
  *
@@ -136,7 +136,7 @@ export function mapStyle({ basemap, overlays, origin, pixelRatio, background, co
   } else if (basemap) {
     const id = basemapSourceId(basemap.id);
     // A detectRetina basemap (no `{r}`) fetches a zoom level deeper on a high-density
-    // screen, as Leaflet's detectRetina does: half-size tiles.
+    // screen: half-size tiles.
     const tileSize = basemap.detectRetina && pixelRatio > 1 ? 128 : 256;
     style.sources[id] = {
       type: 'raster',

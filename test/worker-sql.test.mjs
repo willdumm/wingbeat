@@ -717,6 +717,29 @@ describe('response shapes: bootstrap, trackers, aircraft and pilots', async () =
     assert.deepEqual((await getPilots(client)).pilots, boot.pilots);
   });
 
+  test("a tenant's old proxied Map isn't offered, until scripts/basemaps-osm-map.sql makes it the vector map", async () => {
+    const script = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../scripts/basemaps-osm-map.sql'), 'utf8');
+    const w2 = await startWorker();
+    try {
+      await w2.db.prepare("UPDATE basemaps SET sort_order = 1 WHERE key = 'usgstopo'").run();
+      await w2.db.prepare(`INSERT INTO basemaps (key, label, kind, url, attribution, max_zoom, shown, sort_order, tile_proxy)
+        VALUES ('map', 'Map', 'raster', '/api/tiles/map/{z}/{x}/{y}{r}.png', '', 19, 1, 0, 'carto')`).run();
+      const before = (await w2.request('GET', '/api/bootstrap')).body;
+      assert.deepEqual([before.basemaps.map(b => b.id), before.vector_basemaps], [['usgstopo'], []]);
+      assert.equal((await w2.request('GET', '/api/tiles/map/1/0/0.png')).status, 404);
+      // Twice: the same row.
+      for (let i = 0; i < 2; i++) {
+        await w2.db.batch(splitSql(script).map(q => w2.db.prepare(q)));
+        const boot = (await w2.request('GET', '/api/bootstrap')).body;
+        assertShape(BootstrapResponse, boot);
+        assert.deepEqual(boot.vector_basemaps.map(b => [b.id, b.order, b.maxZoom]), [['map', 0, 13]]);
+        assert.deepEqual(boot.basemaps.map(b => b.id), ['usgstopo']);
+      }
+    } finally {
+      await w2.dispose();
+    }
+  });
+
   test('as a viewer: trackers without their feed URL', async () => {
     const boot = (await w.request('GET', '/api/bootstrap', undefined, { as: 'viewer' })).body;
     assert.equal(boot.me.role, 'viewer');

@@ -11,10 +11,9 @@ export interface BasemapPreset {
   url: string;
   attribution: string;
   maxZoom: number;
-  /** Only set true when `url` actually contains `{r}` — otherwise Leaflet's retina
-   * fallback silently fetches tiles a zoom level deeper (4x the requests on retina
-   * screens) instead of real @2x tiles, which is what overloaded OpenTopoMap's
-   * server and caused gray tiles on iPad/iPhone. */
+  /** For a `url` without `{r}`: on a high-density screen mapStyle() fetches tiles a zoom level
+   * deeper, 4x the requests, which is what overloaded OpenTopoMap's server and caused gray
+   * tiles on iPad/iPhone. */
   detectRetina?: boolean;
   /** Its place among the tenant's shown basemaps, both kinds (the app merges the two lists by it). */
   order?: number;
@@ -32,7 +31,7 @@ export const FALLBACK_BASEMAP: BasemapPreset = {
   maxZoom: 16,
 };
 
-/** The subdomains a `{s}` in a basemap's `url` takes (Leaflet's default `subdomains`). */
+/** The subdomains a `{s}` in a basemap's `url` takes (the usual ones). */
 export const TILE_SUBDOMAINS: readonly string[] = ['a', 'b', 'c'];
 
 /** Whether `url` is an absolute URL with `{z}`, `{x}` and `{y}` placeholders. */

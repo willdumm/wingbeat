@@ -772,7 +772,7 @@ export function overlayLegendRuntimeScript(): string {
     // it (set by createMap()/_ftSwitchStyle() — shared across every
     // map instance on the page).
     function _ftCurrentBasemapId() {
-      var el = document.querySelector('[data-basemap]');
+      var el = document.querySelector('.maplibregl-map[data-basemap]');
       return el ? el.getAttribute('data-basemap') : null;
     }
 

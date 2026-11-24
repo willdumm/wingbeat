@@ -201,6 +201,8 @@ Object.assign(globalThis, {
   chosenBasemap: mapStyle.chosenBasemap,
   isStyleSource: mapStyle.isStyleSource,
   mapStyle: mapStyle.mapStyle,
+  zoomFromStored: mapFeatures.zoomFromStored,
+  zoomToStored: mapFeatures.zoomToStored,
   defaultMapView: mapFeatures.defaultMapView,
   lngLatBounds: mapFeatures.lngLatBounds,
   lineFeature: mapFeatures.lineFeature,

@@ -194,8 +194,8 @@ export function elevationToolScript(rootExpr = 'document'): string {
     const _FT_ELEV_DEM = 'ft-elevation-dem';
     // pmtiles.js's protocol reads the tile's z/x/y from the end of its URL (the app's
     // MapLibre Native takes core's archive URL as it is). Its 512 px tiles are declared as
-    // 256, so MapLibre reads a zoom level deeper: two DEM pixels to a CSS pixel, as
-    // Leaflet's tint drew them, rather than one, which blurs on a high-density screen.
+    // 256, so MapLibre reads a zoom level deeper: two DEM pixels to a CSS pixel,
+    // rather than one, which blurs on a high-density screen.
     const _FT_ELEV_DEM_SOURCE = Object.assign({}, ELEVATION_DEM_SOURCE, {
       tiles: [ELEVATION_DEM_SOURCE.tiles[0] + '/{z}/{x}/{y}'],
       tileSize: 256,
@@ -232,7 +232,7 @@ export function elevationToolScript(rootExpr = 'document'): string {
           map.getSource(_FT_ELEV_REF).setData(refData);
         } else {
           map.addSource(_FT_ELEV_REF, { type: 'geojson', data: refData });
-          const ref = elevationReferenceLayer(getCssVar('--text-primary', '#0F1A24'), getCssVar('--surface-1', '#FFFFFF'));
+          const ref = elevationReferenceLayer(getInkColor(), getSurfaceColor());
           map.addLayer(Object.assign({}, ref, { id: _FT_ELEV_REF, source: _FT_ELEV_REF }), _ftElevBeforeId());
         }
       });

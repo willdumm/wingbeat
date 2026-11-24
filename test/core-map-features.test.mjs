@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { importCore } from './core.mjs';
 
-const { dayTrackFeatures, defaultMapView, flightTrackFeatures, groundTrailFeatures, lineFeature, lngLatBounds, pointFeature } = await importCore('map-features');
+const { dayTrackFeatures, defaultMapView, flightTrackFeatures, groundTrailFeatures, lineFeature, lngLatBounds, pointFeature, zoomFromStored, zoomToStored } = await importCore('map-features');
 const { elevationSetting, ELEVATION_OPACITY, ELEVATION_RANGE_M } = await importCore('elevation');
 
 const pt = (lon, lat) => ({ lon, lat, t: 0, v: null, e: null, c: null });
@@ -23,6 +23,8 @@ test('bounds: [west, south, east, north], null without coordinates', () => {
 
 test("the default view: the stored zoom is MapLibre's plus one", () => {
   assert.deepEqual(defaultMapView({ lat: 57.8, lng: -152.4, zoom: 9 }), { center: [-152.4, 57.8], zoom: 8 });
+  assert.equal(zoomToStored(8.04), 9);
+  assert.equal(zoomFromStored(zoomToStored(7)), 7);
 });
 
 test("a flight's track: no line for one point, an end dot only with an end color", () => {

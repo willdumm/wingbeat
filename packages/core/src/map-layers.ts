@@ -1,15 +1,16 @@
 /**
  * The layers the clients draw over the basemap (the analytics and editor ones are the web's), as
  * MapLibre layer specs without their `source` (the app nests each under its `GeoJSONSource`;
- * the web adds `source` when it adds the layer). Colors come from each feature's `color` property, and the surface color (the
- * halos and rings that keep a marker readable on any basemap) from the caller's theme tokens.
+ * the web adds `source` when it adds the layer). Colors come from each feature's `color`
+ * property, and the surface color (the halos and rings that keep a marker readable on any
+ * basemap) from the caller's theme tokens.
  *
  * The features: LineStrings in a `tracks` source (a ground trail has `trail`),
  * Points in a `positions` source (`pilot` for a tracker on foot, `plane` and `arrow` for
  * symbols turned to `course`, `label` for points another layer draws).
  */
-import type { ExpressionSpecification, LayerSpecification } from '@maplibre/maplibre-gl-style-spec';
-import { DEM_ATTRIBUTION, DEM_MAX_ZOOM, DEM_PMTILES_URL, elevationRampStops } from './elevation';
+import type { ExpressionSpecification, GeoJSONSourceSpecification, LayerSpecification } from '@maplibre/maplibre-gl-style-spec';
+import { DEM_ATTRIBUTION, DEM_MAX_ZOOM, DEM_PMTILES_URL, DEM_TILE_SIZE, elevationRampStops } from './elevation';
 
 type Distribute<T> = T extends unknown ? Omit<T, 'source'> : never;
 /** A layer spec without its source. */
@@ -91,7 +92,7 @@ export const ELEVATION_DEM_SOURCE = {
   type: 'raster-dem',
   tiles: ['pmtiles://' + DEM_PMTILES_URL],
   maxzoom: DEM_MAX_ZOOM,
-  tileSize: 512,
+  tileSize: DEM_TILE_SIZE,
   encoding: 'terrarium',
   attribution: DEM_ATTRIBUTION,
 } as const;
@@ -120,8 +121,8 @@ export function elevationReferenceLayer(ink: string, surface: string): MapLayer 
 
 // ── Analytics (the web's): heatmaps, flight lines, region boundaries ──
 //
-// The heatmaps are modeled on leaflet.heat's (the endpoint heat is stronger). It summed the points' weights in a screen grid of
-// cells (half its radius + blur across), capped each cell's alpha (sum × a per-zoom scale)
+// The heatmaps are modeled on leaflet.heat's (the endpoint heat is stronger). It summed the
+// points' weights in a screen grid of cells (half its radius + blur across), capped each cell's alpha (sum × a per-zoom scale)
 // at 1, and drew each cell as a blurred disc colored by the gradient at that alpha. The
 // discs stacked by alpha compositing, so n faint ones reach 1 − e^(−their sum) and never
 // quite turn opaque. Here the endpoint source clusters its points per zoom (the cells,
@@ -137,11 +138,13 @@ type Rgb = [number, number, number];
 
 /**
  * heatmap-weight: a cell's alpha, its summed weight × `scale` (a [zoom, scale] list,
- * exponential between), capped at 1.
+ * interpolated by `curve`), or that product's square root, capped at 1.
  */
-function heatWeight(scale: [number, number][]): ExpressionSpecification {
-  return ['interpolate', ['exponential', 2], ['zoom'],
-    ...scale.flatMap(([z, k]) => [z, ['min', ['*', ['get', 'weight'], k], 1]])] as ExpressionSpecification;
+function heatWeight(scale: [number, number][], curve: unknown[], { sqrt = false } = {}): ExpressionSpecification {
+  return ['interpolate', curve, ['zoom'], ...scale.flatMap(([z, k]) => {
+    const scaled = ['*', ['get', 'weight'], k];
+    return [z, ['min', sqrt ? ['sqrt', scaled] : scaled, 1]];
+  })] as unknown as ExpressionSpecification;
 }
 
 /**
@@ -174,7 +177,7 @@ function heatColor(stops: [number, Rgb][]): ExpressionSpecification {
 }
 
 /** The endpoint heat's GeoJSON source options, beside its data. */
-export function endpointHeatSource() {
+export function endpointHeatSource(): Omit<GeoJSONSourceSpecification, 'type' | 'data'> {
   return { cluster: true, clusterRadius: 40, clusterProperties: { weight: ['+', ['get', 'weight']] } };
 }
 
@@ -194,9 +197,7 @@ export function endpointHeatLayer(): MapLayer {
   return {
     id: 'endpoint-heat', type: 'heatmap',
     paint: {
-      'heatmap-weight': ['interpolate', ['linear'], ['zoom'],
-        ...ENDPOINT_HEAT_SCALE.flatMap(([z, k]) => [z, ['min', ['sqrt', ['*', ['get', 'weight'], k]], 1]]),
-      ] as ExpressionSpecification,
+      'heatmap-weight': heatWeight(ENDPOINT_HEAT_SCALE, ['linear'], { sqrt: true }),
       'heatmap-intensity': ENDPOINT_HEAT_PEAK / HEAT_KERNEL_PEAK / HEAT_DENSITY_SPAN,
       'heatmap-radius': 30 + 35,
       'heatmap-color': heatColor([[0.4, [107, 33, 168]], [0.65, [147, 51, 234]], [1, [233, 213, 255]]]),
@@ -214,7 +215,7 @@ export function routeHeatLayer(): MapLayer {
   return {
     id: 'route-heat', type: 'heatmap',
     paint: {
-      'heatmap-weight': heatWeight([[3, 2 ** -12], [15, 1]]),
+      'heatmap-weight': heatWeight([[3, 2 ** -12], [15, 1]], ['exponential', 2]),
       'heatmap-intensity': heatIntensity(8, 10),
       'heatmap-radius': 8 + 10,
       'heatmap-color': heatColor([[0.4, [22, 78, 99]], [0.65, [8, 145, 178]], [1, [165, 243, 252]]]),

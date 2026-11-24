@@ -55,8 +55,7 @@ export function mapViewPickerScript(): string {
 
     let _mvpMap = null;
 
-    // map_default_zoom's scale is MapLibre's plus one (_ftDefaultView()), to a tenth.
-    function _mvpZoom() { return Math.round((_mvpMap.getZoom() + 1) * 10) / 10; }
+    function _mvpZoom() { return zoomToStored(_mvpMap.getZoom()); }
 
     function _mvpUpdateReadout() {
       if (_mvpMap._ftNoMap) return;
@@ -71,7 +70,7 @@ export function mapViewPickerScript(): string {
       const zoom = parseFloat(document.getElementById('settings-tenant-zoom').value);
       const view = _ftDefaultView();
       if (!isNaN(lat) && !isNaN(lng)) view.center = [lng, lat];
-      if (!isNaN(zoom)) view.zoom = zoom - 1;
+      if (!isNaN(zoom)) view.zoom = zoomFromStored(zoom);
 
       _settingsNavigateTo('settings-view-map-view-picker', 'Default map view');
       if (!_mvpMap) {

@@ -19,28 +19,26 @@ const PORT = Number(process.env.PORT ?? 8797);
 const ARCHIVE = process.env.ARCHIVE ?? 'https://tiledata.dummthings.dev/pmtiles/alaska-basemap.pmtiles';
 const BASES = ['light', 'white', 'grayscale', 'dark', 'black'];
 
-/** Bundles an entry's source text (imports resolved from the repo root). */
-async function bundle(contents, options) {
-  const result = await build({
-    stdin: { contents, resolveDir: ROOT, loader: 'ts' }, bundle: true, write: false, target: 'es2022', logLevel: 'warning', ...options,
-  });
+/** Bundles an entry: a file (`entryPoints`) or source text (`stdin`). */
+async function bundle(options) {
+  const result = await build({ bundle: true, write: false, target: 'es2022', logLevel: 'warning', ...options });
   return result.outputFiles[0].text;
 }
 
 async function page() {
-  const script = await bundle(readFileSync(path.join(ROOT, 'scripts/map-theme-editor-page.ts'), 'utf8'), {
-    stdin: undefined, entryPoints: [path.join(ROOT, 'scripts/map-theme-editor-page.ts')],
+  const script = await bundle({
+    entryPoints: [path.join(ROOT, 'scripts/map-theme-editor-page.ts')],
     platform: 'browser', format: 'iife', define: { ARCHIVE_URL: JSON.stringify(ARCHIVE) },
   });
   // The pages' own tags and tokens, so the editor draws with the same MapLibre.
-  const head = await bundle(`
+  const head = await bundle({ platform: 'node', format: 'esm', stdin: { resolveDir: ROOT, loader: 'ts', contents: `
     import { maplibreHeadTags } from './src/shared/maplibre';
     import { themeVars } from './src/shared/theme';
     import { PMTILES_SCRIPT_URL, PMTILES_SCRIPT_SRI } from '@wingbeat/core/elevation';
     export default maplibreHeadTags()
       + '<script src="' + PMTILES_SCRIPT_URL + '" integrity="' + PMTILES_SCRIPT_SRI + '" crossorigin="anonymous"></' + 'script>'
       + '<style>' + themeVars() + '</style>';
-  `, { platform: 'node', format: 'esm' });
+  ` } });
   const { default: tags } = await import('data:text/javascript;base64,' + Buffer.from(head).toString('base64'));
   return `<!doctype html><html lang="en" data-theme="light"><meta charset="utf-8"><title>Map theme</title>${tags}
 <style>
