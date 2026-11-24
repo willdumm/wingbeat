@@ -250,10 +250,6 @@ export interface InviteToken {
 export interface Env {
   POLLER_SECRET: string;
   CUSTOMER_ROUTING: string; // JSON: { "hostname": "BINDING_NAME", ... }
-  // Keyed tile provider secrets — one per hoster deployment, shared by every tenant,
-  // never per-tenant D1 data. Optional: a preset naming an unset var here simply drops
-  // out of the basemap picker rather than erroring.
-  CARTO_API_KEY?: string;
   // The app publisher's Expo access token, for app push (see app-push.ts). Set only on
   // hosted instances; without it the Worker sends no app push.
   EXPO_ACCESS_TOKEN?: string;

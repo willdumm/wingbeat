@@ -52,14 +52,12 @@ Copy `.dev.vars.example` to `.dev.vars` for local dev. In production, set secret
 
 ```bash
 wrangler secret put POLLER_SECRET
-wrangler secret put CARTO_API_KEY  # optional, see below
 ```
 
 | Variable | Required | Description |
 |---|---|---|
 | `POLLER_SECRET` | yes | Bearer token required for `/api/admin/*` routes and poller endpoints |
 | `CUSTOMER_ROUTING` | yes | JSON map of `hostname → D1 binding name`, e.g. `'{"your-domain.com": "DB"}'`; hostname only, no port — must be set even for single-customer deployments |
-| `CARTO_API_KEY` | no | API key for a basemap proxied under it (CARTO Voyager tiles, `tile_proxy = 'carto'` on its `basemaps` row), served through `/api/tiles/<basemap key>/...` so the key never reaches the browser. Only a tenant given that basemap by `scripts/basemaps-legacy.sql` has one. Shared by every tenant on this deployment — it's a hoster fact, not per-tenant data. If unset, that basemap doesn't appear in the switcher; the others are unaffected. If the key has a referrer allowlist, include your deployment's domains: the proxy sends the requesting site as `Referer`. |
 | `EMAIL` | no | A [`send_email` binding](https://developers.cloudflare.com/email-service/) (Cloudflare Email Service) for sign-in by email, email invites and users' email addresses. Needs `EMAIL_FROM` too; without both, those features don't appear and access is by invite link only. The sending domain must be onboarded to Email Sending (`wrangler email sending enable <domain>`). |
 | `EMAIL_FROM` | with `EMAIL` | The sender address (a var, not a secret), on the onboarded domain and in the binding's `allowed_sender_addresses`. |
 | `EMAIL_FROM_NAME` | no | The sender's display name (default "Wingbeat"). Each email also names the instance (its app name and host). |
@@ -184,6 +182,7 @@ so events are detected even when no one has the dashboard open — see the Archi
 ```bash
 nix develop path:./nix --command npm test               # unit tests (test/, node:test)
 nix develop path:./nix --command npm run type-check     # tsc --noEmit
+nix develop path:./nix --command npm run map:theme      # the vector map's color editor, on localhost:8797
 ```
 
 `npm test` covers `@wingbeat/core` (the pilot duty log's §135.267 checks and totals, flight

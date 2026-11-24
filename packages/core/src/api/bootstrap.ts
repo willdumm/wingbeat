@@ -45,8 +45,7 @@ export const InstanceSettings = z.looseObject({
 /**
  * A raster basemap as the client sees it (the tenant's shown raster rows):
  * `url` is a tile template with `{z}`/`{x}`/`{y}`, and may have `{s}` (a subdomain,
- * TILE_SUBDOMAINS) and `{r}` (`@2x` on a high-density screen, or nothing). A keyed one's
- * `url` is a path on the instance (`/api/tiles/…`) that needs the session. attribution is HTML.
+ * TILE_SUBDOMAINS) and `{r}` (`@2x` on a high-density screen, or nothing). attribution is HTML.
  */
 export const Basemap = z.looseObject({
   id: z.string(),

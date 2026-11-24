@@ -8,7 +8,6 @@ import { deleteSession, getMe } from '@wingbeat/core/api/me';
 import { accountUserChanged, createAccountStore, secureKeyValue, type Account, type AccountsState, type AccountUser } from './accounts';
 import { accountClient, pairWith } from './api';
 import type { PairingTarget } from './pairing-link';
-import { setTileAuth } from './tile-auth';
 
 interface AccountsValue extends AccountsState {
   /** False until the store has been read. */
@@ -58,7 +57,6 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let current = true;
     setClientOf(null);
-    setTileAuth(null, null);
     if (!active || active.signedOut) return;
     const id = active.id;
     store.token(id).then((token) => {
@@ -67,7 +65,6 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
         store.markSignedOut(id).then(setState);
         return;
       }
-      setTileAuth(active.host, token);
       setClientOf({ id, client: accountClient(active.host, token, () => { store.markSignedOut(id).then(setState); }) });
     });
     return () => { current = false; };

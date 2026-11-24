@@ -111,7 +111,7 @@ function seedSql() {
   for (const f of geo('regions.geojson').features) {
     out.push(insert('regions', { name: f.properties.Name ?? f.properties.name, geojson: JSON.stringify(f.geometry) }));
   }
-  // The demo's basemaps: USGS Topo from migration 0010, and scripts/basemaps-demo.sql's Alaska map.
+  // The demo's basemaps: USGS Topo from migration 0010, and scripts/basemaps-demo.sql's vector map.
   out.push(readFileSync(path.join(ROOT, 'scripts/basemaps-demo.sql'), 'utf8'));
   return out.join('\n') + '\n';
 }

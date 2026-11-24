@@ -14,6 +14,7 @@
     "cf-typegen": "wrangler types",
     "type-check": "tsc --noEmit",
     "test": "node --test test/*.test.mjs",
+    "map:theme": "node scripts/map-theme-editor.mjs",
     "docs:shots": "node site/scripts/gen-doc-shots.mjs",
     "docs:showcase": "node site/scripts/build-showcase.mjs"
   },

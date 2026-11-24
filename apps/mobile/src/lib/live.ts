@@ -8,7 +8,8 @@
 import type { InstanceSettings } from '@wingbeat/core/api/bootstrap';
 import type { FlightPoint, TrackedFlight } from '@wingbeat/core/api/flights';
 import { toFeet, toKnots } from '@wingbeat/core/format';
-import { dayFlightNumbers, groundTrail, isGpsFresh, isInFlight, mercatorPixel, nearestPointIdx, pickedPointDetails, trackerColor, type LiveData, type LocationDetails } from '@wingbeat/core/live';
+import { groundTrail, isGpsFresh, isInFlight, mercatorPixel, nearestPointIdx, pickedPointDetails, trackerColor, type LiveData, type LocationDetails } from '@wingbeat/core/live';
+import { dayTrackFeatures, defaultMapView, groundTrailFeatures, lineFeature, lngLat, pointFeature } from '@wingbeat/core/map-features';
 import { SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
 import { relativeTime, tzLongDateLabel, unixToTzDateStr } from '@wingbeat/core/time';
 import { bboxOf, type Flight } from './flights';
@@ -102,12 +103,7 @@ export function positionFeatures(cards: StatusCard[], live: Record<number, LiveD
           geometry: { type: 'Point' as const, coordinates: c.position },
           properties: { color: c.color, inFlight: c.inFlight, plane: true, course: live[c.trackerId]?.course_deg ?? 0 },
         },
-        ...(trail ? [{
-          type: 'Feature' as const,
-          id: 'pilot-' + c.trackerId,
-          geometry: { type: 'Point' as const, coordinates: [trail.pilot.lon, trail.pilot.lat] },
-          properties: { color: c.color, inFlight: false, pilot: true },
-        }] : []),
+        ...(trail ? [groundTrailFeatures(trail, c.color, c.trackerId).pilot] : []),
       ];
     }),
   };
@@ -117,17 +113,12 @@ export function positionFeatures(cards: StatusCard[], live: Record<number, LiveD
  * Each tracker's ground trail (core's groundTrail: on the ground, once it has moved since
  * landing), as a dotted line (`trail`) from its plane marker to its pilot.
  */
-export function groundTrailFeatures(cards: StatusCard[], live: Record<number, LiveData>): GeoJSON.FeatureCollection<GeoJSON.LineString> {
+export function groundTrailLines(cards: StatusCard[], live: Record<number, LiveData>): GeoJSON.FeatureCollection<GeoJSON.LineString> {
   return {
     type: 'FeatureCollection',
     features: cards.flatMap((c) => {
       const trail = groundTrail(SPEED_THRESHOLD_KMH, live[c.trackerId]);
-      return trail ? [{
-        type: 'Feature' as const,
-        id: 'trail-' + c.trackerId,
-        geometry: { type: 'LineString' as const, coordinates: trail.line.map((p) => [p.lon, p.lat]) },
-        properties: { color: c.color, trail: true },
-      }] : [];
+      return trail ? [groundTrailFeatures(trail, c.color, c.trackerId).line] : [];
     }),
   };
 }
@@ -145,12 +136,7 @@ export function latestTracks(
     features: cards.flatMap((c) => {
       const latest = getRaw([c.trackerId]).at(-1);
       if (!latest || latest.points.length < 2) return [];
-      return [{
-        type: 'Feature' as const,
-        id: c.trackerId,
-        geometry: { type: 'LineString' as const, coordinates: latest.points.map((p) => [p.lon, p.lat]) },
-        properties: { color: c.color },
-      }];
+      return [lineFeature(latest.points, { color: c.color }, c.trackerId)];
     }),
   };
 }
@@ -163,7 +149,7 @@ export function trackStarts(tracks: GeoJSON.FeatureCollection<GeoJSON.LineString
       type: 'Feature' as const,
       id: 'start-' + f.id,
       geometry: { type: 'Point' as const, coordinates: f.geometry.coordinates[0] },
-      properties: { color: f.properties?.color, inFlight: false },
+      properties: { color: f.properties?.color },
     })),
   };
 }
@@ -265,7 +251,7 @@ export function initialView(
   instance: InstanceSettings | undefined,
   cards: StatusCard[],
 ): { center: [number, number]; zoom: number } {
-  if (instance) return { center: [instance.map_default_lng, instance.map_default_lat], zoom: instance.map_default_zoom };
+  if (instance) return defaultMapView({ lat: instance.map_default_lat, lng: instance.map_default_lng, zoom: instance.map_default_zoom });
   const first = cards.find((c) => c.position)?.position;
   return first ? { center: first, zoom: 8 } : { center: [0, 20], zoom: 1 };
 }
@@ -328,33 +314,17 @@ export function dayMap(
   },
 ): DayMap {
   const day = flights.filter((f) => unixToTzDateStr(tz, f.start_time) === dayKey);
-  const numbers = dayFlightNumbers(day);
-  const tracks: DayMap['tracks']['features'] = [];
-  const points: DayMap['points']['features'] = [];
-  const all: [number, number][] = [];
-  const drawn: DayMap['flights'] = [];
-  day.forEach((f, i) => {
-    const n = numbers[i];
-    if (n == null || !f.points?.length || hidden.includes(f.tracker_id)) return;
-    const coords = f.points.map((p) => [p.lon, p.lat] as [number, number]);
-    const color = colorFor(f.tracker_id);
-    drawn.push({ flight: f, n, color });
-    for (const c of coords) all.push(c);
-    tracks.push({ type: 'Feature', id: f.id, geometry: { type: 'LineString', coordinates: coords }, properties: { color } });
-    points.push({ type: 'Feature', id: 'start-' + f.id, geometry: { type: 'Point', coordinates: coords[0] }, properties: { color, inFlight: false } });
-    if (!inProgress(f)) {
-      points.push({ type: 'Feature', id: 'end-' + f.id, geometry: { type: 'Point', coordinates: coords.at(-1)! }, properties: { color, inFlight: false, label: String(n) } });
-    }
-  });
-  // The trackers with a track to draw: hiding all but one leaves something on the map.
-  const trackerIds = [...new Set(day.filter((f, i) => numbers[i] != null && f.points?.length).map((f) => f.tracker_id))];
+  const { lines, starts, drawn, trackerIds } = dayTrackFeatures(day, { colorFor, inProgress, hidden });
+  const ends = drawn.filter((d) => !d.inProgress)
+    .map(({ flight: f, n, color }) => pointFeature(f.points!.at(-1)!, { color, label: String(n) }, 'end-' + f.id));
   return {
-    tracks: { type: 'FeatureCollection', features: tracks },
-    points: { type: 'FeatureCollection', features: points },
+    tracks: { type: 'FeatureCollection', features: lines },
+    points: { type: 'FeatureCollection', features: [...starts, ...ends] },
     flights: drawn,
+    // Every tracker with a track: hiding all but one leaves something on the map.
     legend: trackerIds.length > 1
       ? trackerIds.map((id) => ({ trackerId: id, label: labelFor(id), color: colorFor(id), hidden: hidden.includes(id) }))
       : [],
-    bounds: bboxOf(all),
+    bounds: bboxOf(drawn.flatMap((d) => d.flight.points!.map(lngLat))),
   };
 }

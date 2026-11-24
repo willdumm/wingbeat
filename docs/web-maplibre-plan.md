@@ -208,5 +208,12 @@ comment's Leaflet note; check the doc-shot manifest and re-run `npm run docs:sho
   ones have those names (dropping their `maplibre` prefix); so are the CSS-filter color
   correction with its pre-paint script, the `.leaflet-*` CSS, the sidebar's
   `invalidateSize()`, and core's canvas tint (`demSubTile()`, `paintElevationTint()`).
-- **Next:** the heat's tuning (the user's, on staging), the route heat's load time with real
-  data, and a phone check of the regions editor.
+- **After phase 6: done.** The credits' button is at the map's bottom right (above the controls
+  on a phone), and a click on the map closes it. Core's `map-features.ts` has the GeoJSON both
+  clients draw (a flight's track and dots, a day's flights and numbers, ground trails), the bounds
+  and the default view; `chosenBasemap()` and the elevation tool's limits are core's too. The app's
+  default view now takes one off the stored zoom, as the web's does (it opened a level too close).
+  Still per platform: planes, arrows and numbered ends (DOM markers on the web, which stack planes
+  over ends; symbols and Marker views in the app), the DEM's tile URL and size, and the chrome.
+  The vector map's colors are `map-theme.ts`, edited with `npm run map:theme`. CARTO is gone
+  (`docs/tenant-basemaps-plan.md`).

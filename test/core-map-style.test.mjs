@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { importCore } from './core.mjs';
 
-const { availableBasemaps, defaultBasemapId, defaultOverlayIds, mapColorPaint, mapStyle, tileUrls, vectorAssetsBase } = await importCore('map-style');
+const { availableBasemaps, chosenBasemap, defaultOverlayIds, mapColorPaint, mapStyle, tileUrls, vectorAssetsBase } = await importCore('map-style');
 const layers = await importCore('map-layers');
 
 const ORIGIN = 'https://a.wingbeat.dummthings.dev';
@@ -35,12 +35,15 @@ test('a proxy path is made absolute on the instance, and placeholders lowercased
 test("the basemaps to offer are the server's raster ones, then its vector ones; the default is the first", () => {
   const offered = availableBasemaps({ basemaps: [raster('usgstopo'), raster('satellite')], vector_basemaps: [alaska] });
   assert.deepEqual(offered.map((b) => [b.id, b.kind]), [['usgstopo', 'raster'], ['satellite', 'raster'], ['alaska', 'vector']]);
-  assert.equal(defaultBasemapId(offered), 'usgstopo');
+  assert.equal(chosenBasemap(offered, null).id, 'usgstopo');
+  assert.equal(chosenBasemap(offered, 'satellite').id, 'satellite');
+  // One picked earlier and no longer offered.
+  assert.equal(chosenBasemap(offered, 'gone').id, 'usgstopo');
   // A server older than `vector_basemaps` (or than `basemaps`) sends fewer.
   assert.deepEqual(availableBasemaps({ basemaps: [raster('usgstopo')] }).map((b) => b.id), ['usgstopo']);
   assert.deepEqual(availableBasemaps({}), []);
   assert.deepEqual(availableBasemaps(null), []);
-  assert.equal(defaultBasemapId([]), null);
+  assert.equal(chosenBasemap([], 'gone'), null);
 });
 
 test("with each one's order, the basemaps follow the tenant's order across both kinds", () => {
@@ -49,7 +52,7 @@ test("with each one's order, the basemaps follow the tenant's order across both 
     vector_basemaps: [{ ...alaska, order: 0 }],
   });
   assert.deepEqual(offered.map((b) => b.id), ['alaska', 'usgstopo', 'satellite']);
-  assert.equal(defaultBasemapId(offered), 'alaska');
+  assert.equal(chosenBasemap(offered, null).id, 'alaska');
 });
 
 test('overlays default on per basemap, else by default_enabled', () => {

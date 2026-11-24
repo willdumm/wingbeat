@@ -717,46 +717,6 @@ describe('response shapes: bootstrap, trackers, aircraft and pilots', async () =
     assert.deepEqual((await getPilots(client)).pilots, boot.pilots);
   });
 
-  // scripts/basemaps-legacy.sql gives an existing tenant its old five basemaps.
-  const applyLegacyBasemaps = (worker) => worker.db.batch(
-    splitSql(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../scripts/basemaps-legacy.sql'), 'utf8')).map(q => worker.db.prepare(q)));
-
-  test('the legacy basemaps script, with CARTO_API_KEY set: Map first, as the proxy path, without the key', async () => {
-    const w2 = await startWorker({ bindings: { CARTO_API_KEY: 'test-carto-key' } });
-    try {
-      await applyLegacyBasemaps(w2);
-      const boot = (await w2.request('GET', '/api/bootstrap')).body;
-      assertShape(BootstrapResponse, boot);
-      // Map, Topo and Satellite are shown; the two USGS ones stay configured but hidden.
-      assert.deepEqual(boot.basemaps.map(b => b.id), ['map', 'topo', 'satellite']);
-      assert.deepEqual(boot.basemaps[0], { ...boot.basemaps[0], url: '/api/tiles/map/{z}/{x}/{y}{r}.png' });
-      assert.equal(boot.basemaps[2].detectRetina, true);
-      assert.ok(!JSON.stringify(boot).includes('test-carto-key'));
-      assert.deepEqual((await w2.all('SELECT key FROM basemaps ORDER BY sort_order')).map(r => r.key),
-        ['map', 'topo', 'usgstopo', 'usgsimagerytopo', 'satellite']);
-      // Run again: the same five rows.
-      await applyLegacyBasemaps(w2);
-      assert.equal((await w2.first('SELECT COUNT(*) AS n FROM basemaps')).n, 5);
-    } finally {
-      await w2.dispose();
-    }
-  });
-
-  test('the legacy basemaps script, without CARTO_API_KEY: no Map, and the tile proxy refuses', async () => {
-    const w2 = await startWorker();
-    try {
-      await applyLegacyBasemaps(w2);
-      const boot = (await w2.request('GET', '/api/bootstrap')).body;
-      assert.deepEqual(boot.basemaps.map(b => b.id), ['topo', 'satellite']);
-      assert.equal((await w2.request('GET', '/api/tiles/map/1/0/0.png')).status, 503);
-      // Only a row with tile_proxy goes through the proxy; an unknown key or a keyless row is a 404.
-      assert.equal((await w2.request('GET', '/api/tiles/topo/1/0/0.png')).status, 404);
-      assert.equal((await w2.request('GET', '/api/tiles/nope/1/0/0.png')).status, 404);
-    } finally {
-      await w2.dispose();
-    }
-  });
-
   test('as a viewer: trackers without their feed URL', async () => {
     const boot = (await w.request('GET', '/api/bootstrap', undefined, { as: 'viewer' })).body;
     assert.equal(boot.me.role, 'viewer');
@@ -1059,7 +1019,7 @@ describe('the settings modal’s requests, through the core client', async () =>
     const bm = await importCore('api/basemaps');
     const { getBootstrap } = await importCore('api/bootstrap');
     const seeded = (await bm.getBasemaps(client)).basemaps;
-    assert.deepEqual(seeded.map(b => [b.key, b.kind, b.shown, b.tile_proxy]), [['usgstopo', 'raster', 1, null]]);
+    assert.deepEqual(seeded.map(b => [b.key, b.kind, b.shown]), [['usgstopo', 'raster', 1]]);
 
     const imagery = await bm.createBasemap(client, { label: 'USGS Imagery Topo', url: 'https://example.com/{z}/{y}/{x}', max_zoom: 16, attribution: 'USGS' });
     assert.equal(imagery.key, 'usgsimagerytopo');
@@ -1090,9 +1050,8 @@ describe('the settings modal’s requests, through the core client', async () =>
     await assert.rejects(bm.createBasemap(client, { label: 'x', kind: 'vector', url: 'https://example.com/{z}/{x}/{y}.png' }), refused(400, 'url must be an https URL of a .pmtiles archive'));
     await assert.rejects(bm.createBasemap(client, { label: '', url: 'https://example.com/{z}/{x}/{y}' }), refused(400, 'label is required'));
     await assert.rejects(bm.updateBasemap(client, 9999, { label: 'x' }), refused(404, 'Basemap not found'));
-    const smuggled = await w.request('POST', '/api/basemaps', { label: 'Sneaky', url: 'https://example.com/{z}/{x}/{y}', key: 'map', tile_proxy: 'carto' });
+    const smuggled = await w.request('POST', '/api/basemaps', { label: 'Sneaky', url: 'https://example.com/{z}/{x}/{y}', key: 'map' });
     assert.equal(smuggled.body.key, 'sneaky');
-    assert.equal((await w.first('SELECT tile_proxy FROM basemaps WHERE key = ?', 'sneaky')).tile_proxy, null);
 
     // The last shown raster basemap can't be hidden, changed to vector or deleted.
     for (const row of (await bm.getBasemaps(client)).basemaps.filter(b => b.kind === 'raster' && b.key !== 'usgstopo')) {

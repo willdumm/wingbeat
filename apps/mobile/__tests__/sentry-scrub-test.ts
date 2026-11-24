@@ -8,7 +8,7 @@ describe('scrubBreadcrumb', () => {
   test('keeps a request’s origin and path but not its query', () => {
     expect(scrubBreadcrumb({ category: 'fetch', data: { method: 'GET', url: 'https://a.wingbeat.dummthings.dev/api/flights?tracker=3&since=1700000000', status_code: 200 } }))
       .toEqual({ category: 'fetch', data: { method: 'GET', url: 'https://a.wingbeat.dummthings.dev/api/flights', status_code: 200 } });
-    expect(scrubBreadcrumb({ category: 'xhr', data: { url: '/api/tiles/carto/3/4/5.png#x' } })?.data?.url).toBe('/api/tiles/carto/3/4/5.png');
+    expect(scrubBreadcrumb({ category: 'xhr', data: { url: '/tiles/3/4/5.png#x' } })?.data?.url).toBe('/tiles/3/4/5.png');
   });
 
   test('leaves other breadcrumbs alone', () => {

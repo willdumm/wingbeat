@@ -8,6 +8,7 @@
  */
 import { DutyLogResponse } from '@wingbeat/core/api/duty';
 import { DEFAULT_TIME_SENSITIVE, TRACKER_PUSH_EVENTS, type TrackerPushEvent } from '@wingbeat/core/api/push';
+import { ELEVATION_OPACITY, ELEVATION_RANGE_M, elevationSetting } from '@wingbeat/core/elevation';
 import { normalizeFilterState, type FilterState } from '@wingbeat/core/filters';
 import { DATE_PRESETS, type DatePresetId } from './flights';
 
@@ -83,9 +84,7 @@ export const ELEVATION_OPACITIES = [25, 40, 55, 70, 85];
 
 export function parseElevationPref(stored: unknown): ElevationPref {
   const o = (stored && typeof stored === 'object' ? stored : {}) as Partial<Record<keyof ElevationPref, unknown>>;
-  const within = (v: unknown, min: number, max: number, fallback: number) =>
-    (typeof v === 'number' && v >= min && v <= max ? v : fallback);
-  return { rangeM: within(o.rangeM, 50, 2000, 300), opacity: within(o.opacity, 0, 100, 55) };
+  return { rangeM: elevationSetting(o.rangeM, ELEVATION_RANGE_M), opacity: elevationSetting(o.opacity, ELEVATION_OPACITY) };
 }
 
 // ── Flight filter ──

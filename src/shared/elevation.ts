@@ -30,12 +30,10 @@
  * only one "special click mode" tool is ever active at once.
  */
 
-import { DEM_PMTILES_URL, DEM_TILE_SIZE } from '@wingbeat/core/elevation';
+import { DEM_PMTILES_URL, DEM_TILE_SIZE, ELEVATION_OPACITY, ELEVATION_RANGE_M } from '@wingbeat/core/elevation';
 
 const ELEV_RANGE_KEY = 'ft_elev_range_m';
 const ELEV_OPACITY_KEY = 'ft_elev_opacity';
-const ELEV_DEFAULT_RANGE_M = 300;
-const ELEV_DEFAULT_OPACITY = 55;
 
 export function elevationToolMarkup(): string {
   return `
@@ -51,12 +49,12 @@ export function elevationToolMarkup(): string {
       <div class="elevation-sliders">
         <label class="elevation-slider-row">
           <span>Range</span>
-          <input type="range" id="elevation-range-slider" min="50" max="2000" step="50" />
+          <input type="range" id="elevation-range-slider" min="${ELEVATION_RANGE_M.min}" max="${ELEVATION_RANGE_M.max}" step="50" />
           <span id="elevation-range-value" class="elevation-slider-value"></span>
         </label>
         <label class="elevation-slider-row">
           <span>Opacity</span>
-          <input type="range" id="elevation-opacity-slider" min="0" max="100" step="5" />
+          <input type="range" id="elevation-opacity-slider" min="${ELEVATION_OPACITY.min}" max="${ELEVATION_OPACITY.max}" step="5" />
           <span id="elevation-opacity-value" class="elevation-slider-value"></span>
         </label>
       </div>
@@ -190,10 +188,8 @@ export function elevationToolScript(rootExpr = 'document'): string {
     // ── Elevation tool: tint and reference layers ───────────────────────────────
     let elevationToolActive = false;
     let elevationReference = null; // { latlng: [lat, lon], m }; null until one is set
-    let elevationRangeM = parseInt(localStorage.getItem('${ELEV_RANGE_KEY}'), 10);
-    if (!elevationRangeM || isNaN(elevationRangeM)) elevationRangeM = ${ELEV_DEFAULT_RANGE_M};
-    let elevationOpacity = parseInt(localStorage.getItem('${ELEV_OPACITY_KEY}'), 10);
-    if (isNaN(elevationOpacity)) elevationOpacity = ${ELEV_DEFAULT_OPACITY};
+    let elevationRangeM = elevationSetting(parseInt(localStorage.getItem('${ELEV_RANGE_KEY}'), 10), ${JSON.stringify(ELEVATION_RANGE_M)});
+    let elevationOpacity = elevationSetting(parseInt(localStorage.getItem('${ELEV_OPACITY_KEY}'), 10), ${JSON.stringify(ELEVATION_OPACITY)});
 
     const _FT_ELEV_DEM = 'ft-elevation-dem';
     // pmtiles.js's protocol reads the tile's z/x/y from the end of its URL (the app's

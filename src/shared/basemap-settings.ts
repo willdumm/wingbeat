@@ -166,12 +166,10 @@ export function basemapSettingsScript(): string {
       labelInput.value = b.label;
       form.appendChild(_lbl('Label', labelInput));
 
-      // A basemap the server proxies under its own key keeps its url and type.
-      const proxied = !!b.tile_proxy;
       const urlInput = document.createElement('input');
       urlInput.type = 'text';
       urlInput.value = b.url;
-      if (!proxied) form.appendChild(_lbl(b.kind === 'vector' ? 'PMTiles URL' : 'Tile URL', urlInput));
+      form.appendChild(_lbl(b.kind === 'vector' ? 'PMTiles URL' : 'Tile URL', urlInput));
 
       const attrInput = document.createElement('input');
       attrInput.type = 'text';
@@ -200,7 +198,7 @@ export function basemapSettingsScript(): string {
       cancelBtn.className = 'settings-action-btn';
       cancelBtn.textContent = 'Cancel';
       actionsDiv.appendChild(saveBtn);
-      if (!proxied && b.kind === 'raster') {
+      if (b.kind === 'raster') {
         const lookupBtn = document.createElement('button');
         lookupBtn.className = 'settings-action-btn';
         lookupBtn.textContent = 'Look up details';
@@ -223,7 +221,7 @@ export function basemapSettingsScript(): string {
           attribution: attrInput.value.trim() || null,
           max_zoom: maxZoomInput.value.trim() ? parseInt(maxZoomInput.value, 10) : null,
         };
-        if (!proxied) body.url = url;
+        body.url = url;
         await _basemapWrite(() => updateBasemap(b.id, body), 'Failed to save basemap.');
       });
       cancelBtn.addEventListener('click', () => {

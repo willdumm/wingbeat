@@ -36,6 +36,7 @@ import * as analytics from '@wingbeat/core/analytics';
 import type { StreamInterval } from '@wingbeat/core/analytics';
 import * as elevation from '@wingbeat/core/elevation';
 import * as mapStyle from '@wingbeat/core/map-style';
+import * as mapFeatures from '@wingbeat/core/map-features';
 import * as mapLayers from '@wingbeat/core/map-layers';
 import * as settings from '@wingbeat/core/settings';
 import { apiErrorMessage, createApiClient } from '@wingbeat/core/api/client';
@@ -194,9 +195,19 @@ Object.assign(globalThis, {
   demZoomFor: elevation.demZoomFor,
   latLngToTilePixel: elevation.latLngToTilePixel,
   decodeTerrarium: elevation.decodeTerrarium,
-  // ── map-style, map-layers: the MapLibre maps' style and the layers over it (maplibre.ts) ──
+  elevationSetting: elevation.elevationSetting,
+  // ── map-style, map-layers, map-features: the MapLibre maps' style, the layers over it and what they draw (maplibre.ts) ──
   availableBasemaps: mapStyle.availableBasemaps,
+  chosenBasemap: mapStyle.chosenBasemap,
+  isStyleSource: mapStyle.isStyleSource,
   mapStyle: mapStyle.mapStyle,
+  defaultMapView: mapFeatures.defaultMapView,
+  lngLatBounds: mapFeatures.lngLatBounds,
+  lineFeature: mapFeatures.lineFeature,
+  pointFeature: mapFeatures.pointFeature,
+  flightTrackFeatures: mapFeatures.flightTrackFeatures,
+  dayTrackFeatures: mapFeatures.dayTrackFeatures,
+  groundTrailFeatures: mapFeatures.groundTrailFeatures,
   trackLayer: mapLayers.trackLayer,
   trailLayer: mapLayers.trailLayer,
   positionLayer: mapLayers.positionLayer,

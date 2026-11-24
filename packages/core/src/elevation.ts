@@ -33,6 +33,15 @@ export const DEM_TILE_SIZE = 512;
 // otherwise show as a meaningless solid band of "reference-relative" color.
 export const DEM_TINT_MASK_ELEVATION_M = 5 / 3.28084;
 
+/** The tint's range either side of the reference (meters) and its opacity (percent): the limits and defaults. */
+export const ELEVATION_RANGE_M = { min: 50, max: 2000, default: 300 } as const;
+export const ELEVATION_OPACITY = { min: 0, max: 100, default: 55 } as const;
+
+/** A stored value (nothing, or an older version's) as a valid one. */
+export function elevationSetting(stored: unknown, limits: { min: number; max: number; default: number }): number {
+  return typeof stored === 'number' && stored >= limits.min && stored <= limits.max ? stored : limits.default;
+}
+
 /** A DEM tile and the pixel row/column within it. */
 export interface TilePixel {
   x: number;

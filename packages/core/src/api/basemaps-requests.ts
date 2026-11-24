@@ -2,7 +2,7 @@
  * The basemaps route group's request schemas (api/basemaps.ts has the responses and the
  * client calls), which the Worker validates its writes with (src/index.ts). In its own module
  * so the browser bundle, which only needs the types, doesn't ship it. Unknown keys are
- * stripped, so `key` and `tile_proxy` can't be set through the API.
+ * stripped, so `key` can't be set through the API.
  */
 import * as z from 'zod/mini';
 

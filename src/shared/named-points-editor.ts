@@ -87,7 +87,7 @@ export function namedPointsEditorScript(): string {
     // Redraws every point: its dot, and its radius circle if it's selected or all show.
     function _npDraw() {
       if (!_npShape) return;
-      const dot = (p, color) => _ftPointFeature([p.lat, p.lng], { color, radius: 6, opacity: 0.85, width: 2, id: p.id });
+      const dot = (p, color) => pointFeature({ lat: p.lat, lon: p.lng }, { color, radius: 6, opacity: 0.85, width: 2, id: p.id });
       const features = [];
       for (const [id, p] of _npPoints) {
         const selected = id === _npSelectedId;

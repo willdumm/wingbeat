@@ -193,7 +193,7 @@ export function sameTrackedFlight(a: MaybeEdited, b: MaybeEdited): boolean {
  * with points count from 1; with one tracker, a flight's place in the day. null for a flight
  * without points, which has nothing to draw.
  */
-export function dayFlightNumbers(flights: { tracker_id: number | null; points?: unknown[] | null }[]): (number | null)[] {
+export function dayFlightNumbers(flights: readonly { tracker_id: number | null; points?: readonly unknown[] | null }[]): (number | null)[] {
   const drawn = (f: (typeof flights)[number]) => (f.points ?? []).length > 0;
   const multiTracker = new Set(flights.filter(drawn).map((f) => f.tracker_id)).size > 1;
   const perTracker = new Map<number | null, number>();

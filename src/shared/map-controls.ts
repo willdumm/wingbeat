@@ -1,4 +1,3 @@
-import { Env } from '../types';
 import { FALLBACK_BASEMAP, overlayDefaultEnabled } from '@wingbeat/core/basemaps';
 import { icon } from './icons';
 
@@ -13,13 +12,6 @@ export const MAP_BASEMAP_KEY = 'ft_map_basemap';
 /** Per-device keys of the removed per-device basemap list, cleared when a page loads. */
 const LEGACY_MAP_LAYER_KEYS = ['ft_map_layers_enabled', 'ft_map_layers_custom'];
 const MAP_LAYER_COLORS_KEY = 'ft_map_layer_colors';
-
-/** Reads a hoster/deployment-level tile provider secret out of the Worker's `env`.
- * Never per-tenant — same dynamic-key cast pattern as `tenantDb()` in src/index.ts,
- * since the set of possible env var names is open-ended (one per keyed provider). */
-export function readEnvSecret(env: Env, key: string): string | undefined {
-  return (env as unknown as Record<string, string | undefined>)[key] || undefined;
-}
 
 /**
  * Runtime script for the page IIFE (called once per page, before any
@@ -63,8 +55,9 @@ export function mapLayersRuntimeScript(): string {
  * sharedMapControlsScripts() from whatever layers are currently active, since the set
  * of layers is tenant data — this only emits the empty container for them.
  * Optionally appends an extra group of buttons (pass the inner button HTML, without wrapper divs).
- * The map's credits sit above the bar behind an (i) button, as MapLibre's compact attribution
- * does in the app: some (the elevation tint's) run to several lines.
+ * The map's credits sit at the map's bottom right (above the bar on a phone) behind an (i)
+ * button, as MapLibre's compact attribution does in the app: some (the elevation tint's) run to
+ * several lines. A click on the map closes them.
  */
 export function sharedMapControlsMarkup(extraButtons?: string, idPrefix = ''): string {
   const extra = extraButtons
@@ -93,8 +86,8 @@ export function sharedMapControlsStyles(): string {
     #map-controls, .map-controls-wrap {
       position: absolute;
       bottom: 0.5rem;
-      left: 50%;
-      transform: translateX(-50%);
+      left: 0.5rem;
+      right: 0.5rem;
       z-index: 500;
       display: flex;
       flex-direction: column;
@@ -107,15 +100,21 @@ export function sharedMapControlsStyles(): string {
     #map-controls { bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px)); }
 
     .map-controls-attribution-row {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      z-index: 1;  /* open, over the bar on a narrow map */
       display: flex;
-      align-items: center;
+      flex-direction: row-reverse;
+      align-items: flex-end;
       gap: 0.35rem;
-      max-width: min(320px, calc(100vw - 1rem));
+      max-width: min(320px, 100%);
       pointer-events: auto;
     }
     .map-controls-attribution-row[hidden] { display: none; }
     .map-controls-attribution-row[data-open="true"] {
-      padding: 0.2rem 0.6rem 0.2rem 0.2rem;
+      padding: 0.2rem 0.2rem 0.2rem 0.6rem;
+      margin: 0 calc(-0.2rem - 1px) calc(-0.2rem - 1px) 0;  /* the button stays put */
       background: var(--surface-float);
       border: 1px solid var(--glass-border);
       border-radius: var(--radius-md);
@@ -160,10 +159,12 @@ export function sharedMapControlsStyles(): string {
     #map-controls-bar, .map-controls-bar {
       display: flex;
       align-items: stretch;
+      max-width: calc(100% - 4rem);  /* clear of the credits' button */
       background: var(--surface-float);
       border: 1px solid var(--glass-border);
       border-radius: var(--radius-md);
-      overflow: hidden;
+      overflow-x: auto;
+      overflow-y: hidden;
       backdrop-filter: blur(14px) saturate(1.1);
       -webkit-backdrop-filter: blur(14px) saturate(1.1);
       pointer-events: auto;
@@ -172,13 +173,12 @@ export function sharedMapControlsStyles(): string {
 
     /* The basemap switcher's button count depends on the tenant's basemaps,
        so on narrow screens it can outgrow the original 3-button
-       width this bar was designed for. Let it scroll horizontally rather than spilling
-       off both edges of the centered, absolutely-positioned wrap. */
+       width this bar was designed for: it scrolls horizontally, in the map's full width,
+       and the credits' button goes above it, at the right. */
     @media (max-width: 640px) {
+      .map-controls-attribution-row { position: static; align-self: flex-end; }
       #map-controls-bar, .map-controls-bar {
-        max-width: calc(100vw - 1rem);
-        overflow-x: auto;
-        overflow-y: hidden;
+        max-width: 100%;
         -webkit-overflow-scrolling: touch;
       }
     }
@@ -472,13 +472,14 @@ function zoomButtonsScript(mapVar: string, idPrefix: string, rootExpr: string): 
 }
 
 /**
- * The credits row above the controls bar: its (i) toggle, and `_showAttrib(parts)`, which
- * fills it with each credit (HTML), joined by dots, and hides it when there are none.
+ * The credits row: its (i) toggle, and `_showAttrib(parts)`, which
+ * fills it with each credit (HTML), joined by dots, and hides it when there are none. A click
+ * on the map closes it.
  * Attribution is HTML (links, &copy;), but custom layers' come from this device's
  * localStorage and overlays' from the admin: keep text and plain http(s) links only, built
  * as DOM nodes (no innerHTML), so no tag or attribute of the source survives.
  */
-function attributionRowScript(idPrefix: string, rootExpr: string): string {
+function attributionRowScript(mapVar: string, idPrefix: string, rootExpr: string): string {
   return `
       function _appendAttribNodes(src, dest) {
         for (var n = src.firstChild; n; n = n.nextSibling) {
@@ -509,11 +510,12 @@ function attributionRowScript(idPrefix: string, rootExpr: string): string {
 
       var _attribRow = ${rootExpr}.getElementById('${idPrefix}map-attribution-row');
       var _attribToggle = ${rootExpr}.getElementById('${idPrefix}map-attribution-toggle');
-      _attribToggle.addEventListener('click', function() {
-        var open = _attribRow.getAttribute('data-open') !== 'true';
+      function _openAttrib(open) {
         _attribRow.setAttribute('data-open', open ? 'true' : 'false');
         _attribToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-      });
+      }
+      _attribToggle.addEventListener('click', function() { _openAttrib(_attribRow.getAttribute('data-open') !== 'true'); });
+      ${mapVar}.on('click', function() { _openAttrib(false); });
 
       function _showAttrib(parts) {
         var el = ${rootExpr}.getElementById('${idPrefix}map-attribution');
@@ -543,7 +545,7 @@ export function sharedMapControlsScripts(mapVar: string, idPrefix = '', rootExpr
   return `
     (function() {
       ${zoomButtonsScript(mapVar, idPrefix, rootExpr)}
-      ${attributionRowScript(idPrefix, rootExpr)}
+      ${attributionRowScript(mapVar, idPrefix, rootExpr)}
 
       var _attribKey = null;
       function _updateAttrib() {

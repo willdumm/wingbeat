@@ -3,9 +3,8 @@
  * tile overlays: the basemap (a raster source and layer, or a Protomaps vector basemap read from
  * its PMTiles archive) and one raster source and layer for each overlay that's on. MapLibre
  * takes a list of tile URLs rather than Leaflet's `{s}`, so a template's `{s}` becomes one URL
- * per subdomain, and `{r}` becomes `@2x` on a high-density screen. A keyed basemap's proxy path
- * (`/api/tiles/…`) is made absolute on the instance: the app's requests carry its bearer, the
- * web's its session cookie (same origin).
+ * per subdomain, and `{r}` becomes `@2x` on a high-density screen. A path on the
+ * instance is made absolute.
  *
  * Each client adds its own sources and layers (tracks, markers, the elevation tint) on top;
  * their specs are in map-layers.ts.
@@ -13,6 +12,7 @@
 import type { LayerSpecification, StyleSpecification } from '@maplibre/maplibre-gl-style-spec';
 import { layers as protomapsLayers, namedFlavor } from '@protomaps/basemaps';
 import type { Basemap, BootstrapResponse, TileOverlay, VectorBasemap } from './api/bootstrap';
+import { MAP_THEME, type MapTheme } from './map-theme';
 import { overlayDefaultEnabled, TILE_SUBDOMAINS } from './basemaps';
 
 export type { LayerSpecification, StyleSpecification };
@@ -34,9 +34,9 @@ export function availableBasemaps(bootstrap: Pick<BootstrapResponse, 'basemaps' 
   return all.every((b) => b.order !== undefined) ? all.sort((a, b) => a.order! - b.order!) : all;
 }
 
-/** The basemap shown until the user picks one: the first the server sends. */
-export function defaultBasemapId(basemaps: MapBasemap[]): string | null {
-  return basemaps[0]?.id ?? null;
+/** The basemap to show: the one picked, or the first when none is, or it's no longer offered. */
+export function chosenBasemap(basemaps: MapBasemap[], id: string | null | undefined): MapBasemap | null {
+  return basemaps.find((b) => b.id === id) ?? basemaps[0] ?? null;
 }
 
 /**
@@ -102,14 +102,19 @@ export interface MapStyleOptions {
   background: string;
   /** The basemap's color correction, for a raster one; none by default. */
   color?: MapColor;
+  /** A vector basemap's colors (the theme editor's draft); the app's by default. */
+  theme?: MapTheme;
 }
+
+/** Whether a source is the style's own (a basemap or an overlay), not one the client added. */
+export const isStyleSource = (id: string | undefined) => /^(basemap|overlay)-/.test(id ?? '');
 
 /** The style's source id for a basemap, and its (raster) layer's. */
 export const basemapSourceId = (id: string) => 'basemap-' + id;
 /** The style's source and layer id for an overlay. */
 export const overlaySourceId = (id: number) => 'overlay-' + id;
 
-export function mapStyle({ basemap, overlays, origin, pixelRatio, background, color }: MapStyleOptions): StyleSpecification {
+export function mapStyle({ basemap, overlays, origin, pixelRatio, background, color, theme = MAP_THEME }: MapStyleOptions): StyleSpecification {
   const style: StyleSpecification = {
     version: 8,
     sources: {},
@@ -120,14 +125,14 @@ export function mapStyle({ basemap, overlays, origin, pixelRatio, background, co
     const id = basemapSourceId(basemap.id);
     const assets = vectorAssetsBase(basemap.url);
     style.glyphs = assets + '/fonts/{fontstack}/{range}.pbf';
-    style.sprite = assets + '/sprites/v4/white';
+    style.sprite = assets + '/sprites/v4/' + theme.base;
     style.sources[id] = {
       type: 'vector',
       url: 'pmtiles://' + basemap.url,
       ...(basemap.maxZoom ? { maxzoom: basemap.maxZoom } : {}),
       attribution: basemap.attribution,
     };
-    style.layers = protomapsLayers(id, namedFlavor('white'), { lang: 'en' });
+    style.layers = protomapsLayers(id, { ...namedFlavor(theme.base), ...theme.colors }, { lang: 'en' });
   } else if (basemap) {
     const id = basemapSourceId(basemap.id);
     // A detectRetina basemap (no `{r}`) fetches a zoom level deeper on a high-density

@@ -113,47 +113,25 @@ export function dashboardScriptsTrackRender(): string {
     // trackerId → plane marker (kept out of layers so the caller can track them
     // separately), and the last three are the hover-handler arrays for every point drawn.
     function drawDayTracks(mapObj, flights, { colorFor, isInProgress, livePosition }) {
-      // Trackers represented in this day's flights (with points).
-      const trackerIds = [...new Set(
-        flights.filter(f => (f.points ?? []).length > 0).map(f => f.tracker_id)
-      )];
-      // Stop numbers (core's dayFlightNumbers).
-      const flightNums = dayFlightNumbers(flights);
-
-      const features = [];
+      const { lines, starts, drawn, trackerIds } = dayTrackFeatures(flights, { colorFor, inProgress: isInProgress });
       const planes = {};
       const allPoints = [];
       const endInfos = [];
-      const latlngsOut = [], pointDataOut = [], labelsOut = [];
+      const pointDataOut = [], labelsOut = [];
 
-      for (let i = 0; i < flights.length; i++) {
-        const flight = flights[i];
-        const pts = flight.points ?? [];
-        if (pts.length === 0) continue;
-
-        const color = colorFor(flight.tracker_id);
-        const flightNum = flightNums[i];
-
-        const latlngs = pts.map(p => [p.lat, p.lon]);
-        const pointData = _trackPointData(flight);
-        const inProgress = isInProgress(flight);
-
-        features.push(_ftLineFeature(latlngs, { color }));
+      for (const { flight, n, color, inProgress } of drawn) {
+        const latlngs = flight.points.map(p => [p.lat, p.lon]);
         allPoints.push(...latlngs);
-
-        latlngs.forEach((ll, j) => {
-          latlngsOut.push(ll);
-          pointDataOut.push(pointData[j]);
+        pointDataOut.push(..._trackPointData(flight));
+        latlngs.forEach((_, j) => {
           let ptLabel = null;
-          if (j === 0) ptLabel = 'Flight ' + flightNum + ' start';
-          else if (j === latlngs.length - 1) ptLabel = inProgress ? 'Current position' : 'Flight ' + flightNum + ' end';
+          if (j === 0) ptLabel = 'Flight ' + n + ' start';
+          else if (j === latlngs.length - 1) ptLabel = inProgress ? 'Current position' : 'Flight ' + n + ' end';
           labelsOut.push(ptLabel);
         });
 
-        features.push(_ftPointFeature(latlngs[0], { color }));
-
         if (!inProgress) {
-          endInfos.push({ latlng: latlngs[latlngs.length - 1], flightNum, color });
+          endInfos.push({ latlng: latlngs[latlngs.length - 1], flightNum: n, color });
         } else {
           const pos = livePosition(flight.tracker_id);
           if (pos?.lat != null) {
@@ -162,26 +140,22 @@ export function dashboardScriptsTrackRender(): string {
         }
       }
 
-      const layers = features.length ? [addMapShape(mapObj, features, [trackLayer(), positionLayer(_mapSurfaceColor())])] : [];
-      return { layers, planes, endInfos, allPoints, trackerIds, latlngs: latlngsOut, pointData: pointDataOut, labels: labelsOut };
+      const layers = starts.length ? [addMapShape(mapObj, [...lines, ...starts], [trackLayer(), positionLayer(_mapSurfaceColor())])] : [];
+      return { layers, planes, endInfos, allPoints, trackerIds, latlngs: allPoints, pointData: pointDataOut, labels: labelsOut };
     }
 
     // Draws a tracker's ground trail (core's groundTrail) as a dotted line in its color
     // from the landing spot to a hollow dot at the tracker's current position: the pilot,
     // where the plane marker stays with the aircraft. Returns { layers, latlngs, pointData,
     // labels } (layers: its shape; the last three for the hover handler).
-    function drawGroundTrail(mapObj, { line: trailLine, pilot, points }, { color, trackerId }) {
-      const latlngs = points.map(p => [p.lat, p.lon]);
-      const shape = addMapShape(mapObj, [
-        _ftLineFeature(trailLine.map(p => [p.lat, p.lon]), { color, trail: true }),
-        _ftPointFeature([pilot.lat, pilot.lon], { color, pilot: true }),
-      ], [trailLayer(), positionLayer(_mapSurfaceColor())]);
+    function drawGroundTrail(mapObj, trail, { color, trackerId }) {
+      const latlngs = trail.points.map(p => [p.lat, p.lon]);
+      const { line, pilot } = groundTrailFeatures(trail, color, trackerId);
+      const shape = addMapShape(mapObj, [line, pilot], [trailLayer(), positionLayer(_mapSurfaceColor())]);
       return {
         layers: [shape],
         latlngs,
-        pointData: points.map(p => ({
-          garmin_time: p.t, velocity_kmh: p.v, elevation_m: p.e, course_deg: p.c, tracker_id: trackerId,
-        })),
+        pointData: _trackPointData({ points: trail.points, tracker_id: trackerId }),
         labels: latlngs.map((_, j) => j === latlngs.length - 1 ? 'Current position' : 'On the ground'),
       };
     }
@@ -195,12 +169,10 @@ export function dashboardScriptsTrackRender(): string {
       if (pts.length === 0) return null;
 
       const latlngs = pts.map(p => [p.lat, p.lon]);
-      const features = [
-        _ftLineFeature(latlngs, { color: getAccentColor() }),
-        _ftPointFeature(latlngs[0], { color: getSuccessColor() }),
-      ];
-      if (showEndMarker) features.push(_ftPointFeature(latlngs[latlngs.length - 1], { color: getDangerColor() }));
-      const shape = addMapShape(mapObj, features, [trackLayer(), positionLayer(_mapSurfaceColor())]);
+      const { lines, dots } = flightTrackFeatures(pts, {
+        track: getAccentColor(), start: getSuccessColor(), end: showEndMarker ? getDangerColor() : null,
+      });
+      const shape = addMapShape(mapObj, [...lines, ...dots], [trackLayer(), positionLayer(_mapSurfaceColor())]);
 
       const labels = latlngs.map((_, j) => {
         if (j === 0) return 'Flight start';

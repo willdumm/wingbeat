@@ -30,7 +30,7 @@ import { ElevationChrome, ElevationLayers, useElevationTool } from './elevation-
 import { EndMarkers, endMarkerGroups, groupsKey, type EndMarker } from './end-markers';
 import { followWait, type TrackPick } from './live';
 import { MapTools, type MapTool } from './map-tools';
-import { defaultBasemapId, defaultOverlayIds, mapStyle as buildMapStyle, type MapBasemap } from '@wingbeat/core/map-style';
+import { chosenBasemap, defaultOverlayIds, mapStyle as buildMapStyle, type MapBasemap } from '@wingbeat/core/map-style';
 import { arrowLayer, planeLayer, positionLayer, trackLayer, trailLayer } from '@wingbeat/core/map-layers';
 import { accountPrefKey, parseMapChoice } from './prefs';
 import { useStoredState } from './stored-state';
@@ -131,7 +131,7 @@ export function LiveMap({ basemaps, overlays, origin, initialView, positions, tr
   const toolsShown = !sheetHeight || sheetHeight < height * 0.6;
   const { active } = useAccounts();
   const [choice, setChoice] = useStoredState(active ? accountPrefKey(active.host, active.user.id, 'map') : null, parseMapChoice);
-  const basemap = basemaps.find((b) => b.id === choice.basemap) ?? basemaps.find((b) => b.id === defaultBasemapId(basemaps)) ?? null;
+  const basemap = chosenBasemap(basemaps, choice.basemap);
   const onIds = choice.overlays ?? defaultOverlayIds(overlays, basemap?.id ?? null);
 
   // A sheet opens at half the screen (map-sheet.tsx), so fits go in the half above it.

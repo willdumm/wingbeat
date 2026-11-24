@@ -89,6 +89,12 @@ in the migration. Anything tenant-specific goes in scripts, never in migrations 
 
 ## Keyed tiles (CARTO)
 
+**Removed** (the web-maplibre branch): CARTO, the `/api/tiles` proxy, `KEYED_TILE_PROVIDERS`,
+`CARTO_API_KEY` and `scripts/basemaps-legacy.sql` are gone. `scripts/basemaps-osm-map.sql` turns
+a tenant's `map` row into the OpenStreetMap vector map, under the same key, and has to run before
+that version is deployed. The `tile_proxy` column stays, unused, until a later release drops it
+(a destructive migration takes two releases). What follows is how it was.
+
 Core keeps a small registry in place of `BASEMAP_PRESETS`:
 `KEYED_TILE_PROVIDERS = { carto: { url: '…voyager/{z}/{x}/{y}{r}.png?key={KEY}', secretEnvVar: 'CARTO_API_KEY' } }`.
 `/api/tiles/:key/...` looks up the tenant's row by `key`, requires `tile_proxy`, and takes

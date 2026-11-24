@@ -17,7 +17,7 @@ export function analyticsScriptsLayers(): string {
     function addEndpointHeat(mapObj, flights, mode) {
       const placed = endpointHeatPointsIn(REGIONS, flights, mode);
       if (placed.length === 0) return null;
-      return addMapShape(mapObj, placed.map(p => _ftPointFeature(p, { weight: p[2] })), [endpointHeatLayer()],
+      return addMapShape(mapObj, placed.map(p => pointFeature({ lat: p[0], lon: p[1] }, { weight: p[2] })), [endpointHeatLayer()],
         { z: 3, source: endpointHeatSource() });
     }
 
@@ -35,7 +35,7 @@ export function analyticsScriptsLayers(): string {
       const color = getAccentColor();
       const features = flights
         .filter(f => (f.points ?? []).length > 1)   // manual flights: no track
-        .map(f => _ftLineFeature(f.points.map(p => [p.lat, p.lon]), { color }));
+        .map(f => lineFeature(f.points, { color }));
       return features.length ? addMapShape(mapObj, features, [flightLinesLayer()], { z: 2 }) : null;
     }
 

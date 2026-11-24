@@ -60,8 +60,6 @@ export function maplibreHeadTags(nonce?: string): string {
  *                                   setFeatures() and remove()
  *   _ftFeatureAt(map, layerId, point, px)
  *                                 — the top feature of a layer within px of a screen point
- *   _ftLineFeature(latlngs, props), _ftPointFeature(latlng, props)
- *                                 — GeoJSON features from [lat, lon] pairs
  *   addHtmlMarker(map, latlng, html, zIndex), setHtmlMarker(marker, latlng, html)
  *                                 — a DOM marker (planes, end markers, the hover arrow)
  * createMap() adds each map to mapLayersRuntimeScript()'s `_ftMaplibreMaps`, with its
@@ -85,7 +83,7 @@ export function maplibreRuntimeScript(): string {
 
     function _ftMapStyleFor(state) {
       var basemaps = _ftMapBasemaps();
-      var basemap = basemaps.find(function(b) { return b.id === state._ftBasemapId; }) || basemaps[0] || null;
+      var basemap = chosenBasemap(basemaps, state._ftBasemapId);
       return mapStyle({
         basemap: basemap,
         overlays: state._ftOverlays,
@@ -96,9 +94,6 @@ export function maplibreRuntimeScript(): string {
       });
     }
 
-    // The basemap's and the overlays' sources (core's basemapSourceId/overlaySourceId).
-    function _ftIsBaseSource(id) { return /^(basemap|overlay)-/.test(id || ''); }
-
     // A new style for the map's basemap, overlays and color correction. The page's own
     // sources and layers carry over, above the new basemap and overlays; MapLibre diffs the
     // two styles, so only what changed reloads.
@@ -107,8 +102,8 @@ export function maplibreRuntimeScript(): string {
         transformStyle: function(prev, next) {
           if (!prev) return next;
           var sources = Object.assign({}, next.sources);
-          Object.keys(prev.sources).forEach(function(id) { if (!_ftIsBaseSource(id)) sources[id] = prev.sources[id]; });
-          var own = prev.layers.filter(function(l) { return l.type !== 'background' && !_ftIsBaseSource(l.source); });
+          Object.keys(prev.sources).forEach(function(id) { if (!isStyleSource(id)) sources[id] = prev.sources[id]; });
+          var own = prev.layers.filter(function(l) { return l.type !== 'background' && !isStyleSource(l.source); });
           return Object.assign({}, next, { sources: sources, layers: next.layers.concat(own) });
         },
       });
@@ -131,10 +126,9 @@ export function maplibreRuntimeScript(): string {
     }
 
     function createMap(container, options) {
-      var basemaps = _ftMapBasemaps();
-      var stored = localStorage.getItem('${MAP_BASEMAP_KEY}');
+      var basemap = chosenBasemap(_ftMapBasemaps(), localStorage.getItem('${MAP_BASEMAP_KEY}'));
       var state = {
-        _ftBasemapId: basemaps.some(function(b) { return b.id === stored; }) ? stored : (basemaps[0] ? basemaps[0].id : null),
+        _ftBasemapId: basemap && basemap.id,
         _ftOverlays: [],
       };
       var mapObj;
@@ -164,23 +158,14 @@ export function maplibreRuntimeScript(): string {
       return mapObj;
     }
 
-    // MapLibre's zoom is Leaflet's less one (512 px tiles), and mapDefaultZoom is stored on
-    // Leaflet's scale.
     function _ftDefaultView() {
       var s = window.APP_SETTINGS;
-      return { center: [s.mapDefaultLng, s.mapDefaultLat], zoom: s.mapDefaultZoom - 1 };
+      return defaultMapView({ lat: s.mapDefaultLat, lng: s.mapDefaultLng, zoom: s.mapDefaultZoom });
     }
 
-    // MapLibre's bounds ([[west, south], [east, north]]) around [lat, lon] pairs.
+    // The bounds of [lat, lon] pairs (the hover arrays').
     function _ftLatLngBounds(latlngs) {
-      var w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
-      latlngs.forEach(function(ll) {
-        if (ll[1] < w) w = ll[1];
-        if (ll[1] > e) e = ll[1];
-        if (ll[0] < s) s = ll[0];
-        if (ll[0] > n) n = ll[0];
-      });
-      return [[w, s], [e, n]];
+      return lngLatBounds(latlngs.map(function(ll) { return [ll[1], ll[0]]; }));
     }
 
     // A style that's still loading (the first, or a restyle MapLibre couldn't diff) takes
@@ -188,14 +173,6 @@ export function maplibreRuntimeScript(): string {
     function _ftWhenStyleReady(mapObj, fn) {
       if (mapObj._ftNoMap || (mapObj.style && mapObj.style._loaded)) fn();
       else mapObj.once('style.load', fn);
-    }
-
-    function _ftLineFeature(latlngs, props) {
-      return { type: 'Feature', properties: props, geometry: { type: 'LineString', coordinates: latlngs.map(function(ll) { return [ll[1], ll[0]]; }) } };
-    }
-
-    function _ftPointFeature(ll, props) {
-      return { type: 'Feature', properties: props, geometry: { type: 'Point', coordinates: [ll[1], ll[0]] } };
     }
 
     // Draws GeoJSON features with core's layer specs (trackLayer(), positionLayer(), …) on

@@ -241,15 +241,12 @@ export function regionsEditorScript(): string {
       const green = MAP_EDITOR_ADDING;
       function dot(pid, color, radius, opacity, width) {
         const pt = _rgPoints.get(pid);
-        if (pt) features.push(_ftPointFeature([pt.lat, pt.lon], { color, radius, opacity, width }));
+        if (pt) features.push(pointFeature(pt, { color, radius, opacity, width }));
       }
       if (_rgMode === 'add-region') {
         for (const pid of _rgPoints.keys()) dot(pid, green, 7, 0.25, 2);
         if (_rgNewRing.length > 1) {
-          features.push(_ftLineFeature(_rgNewRing.map(pid => {
-            const { lat, lon } = _rgPoints.get(pid);
-            return [lat, lon];
-          }), { color: green }));
+          features.push(lineFeature(_rgNewRing.map(pid => _rgPoints.get(pid)), { color: green }));
         }
         dot(_rgSnapHoverPid, green, 11, 0.4, 2.5);
       }
