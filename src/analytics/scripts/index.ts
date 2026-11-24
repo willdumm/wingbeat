@@ -1,5 +1,6 @@
 import { themeRuntimeScript } from '../../shared/theme';
 import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, overlayLegendRuntimeScript } from '../../shared/map-controls';
+import { maplibreRuntimeScript } from '../../shared/maplibre';
 import { toggleScript } from '../../shared/toggle';
 import { flightEditsScript } from '../../shared/flight-edits';
 import { filterScript } from '../../shared/filters';
@@ -24,6 +25,7 @@ export function analyticsScripts(): string {
     themeRuntimeScript(),
     mapLayerColorRuntimeScript(),
     mapLayersRuntimeScript(),
+    maplibreRuntimeScript(),
     overlayLegendRuntimeScript(),
     toggleScript(),
     htmlEscapeScript(),

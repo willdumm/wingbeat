@@ -13,8 +13,6 @@ import { pilotDutyMarkup, typstLoadOverlayMarkup } from '../shared/pilot-duty';
 import { sharedMapControlsMarkup } from '../shared/map-controls';
 import { maplibreCssLink } from '../shared/maplibre';
 
-const LEAFLET_CSS = '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous" />';
-
 /**
  * Shadow roots don't see <html data-theme>, so the handful of `[data-theme="…"] X`
  * rules in the page stylesheets are rewritten to match the host element instead;
@@ -129,7 +127,7 @@ export function demoMarkup(appName: string): Record<'status' | 'flights' | 'main
     ${typstLoadOverlayMarkup()}
   </div>`,
 
-    analytics: /* html */ `${LEAFLET_CSS}
+    analytics: /* html */ `${maplibreCssLink()}
   <div class="analytics-layout">
     <aside class="analytics-panel">
       <div class="analytics-panel-content">

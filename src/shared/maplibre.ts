@@ -52,9 +52,9 @@ export function maplibreHeadTags(nonce?: string): string {
  *   _ftMapBasemaps()              — the basemaps a MapLibre map offers, in the tenant's order
  *   _ftLatLngBounds(latlngs)      — the bounds of [lat, lon] pairs, as MapLibre takes them
  *   _ftWhenStyleReady(map, fn)    — fn() now, or once the map's style has loaded
- *   addMapShape(map, features, layers)
- *                                 — GeoJSON features drawn with core's layer specs; returns
- *                                   a handle with remove()
+ *   addMapShape(map, features, layers, { z, source })
+ *                                 — GeoJSON features drawn with core's layer specs, stacked
+ *                                   by z; returns a handle with its source id and remove()
  *   _ftLineFeature(latlngs, props), _ftPointFeature(latlng, props)
  *                                 — GeoJSON features from [lat, lon] pairs
  *   addHtmlMarker(map, latlng, html, zIndex), setHtmlMarker(marker, latlng, html)
@@ -187,22 +187,31 @@ export function maplibreRuntimeScript(): string {
     }
 
     // Draws GeoJSON features with core's layer specs (trackLayer(), positionLayer(), …) on
-    // a source of their own: ids ft-shape-N and ft-shape-N-<layer id>, above everything
-    // drawn before. Returns { remove() }.
+    // a source of their own: ids ft-shape-N and ft-shape-N-<layer id>, above every shape
+    // drawn before at the same options.z or lower, below those at a higher z (default 0).
+    // options.source adds to the GeoJSON source's options (clustering). Returns
+    // { id, remove() }.
     var _ftShapeSeq = 0;
-    function addMapShape(mapObj, features, layers) {
+    function addMapShape(mapObj, features, layers, options) {
       var id = 'ft-shape-' + (++_ftShapeSeq);
       var removed = false;
+      var z = (options && options.z) || 0;
       _ftWhenStyleReady(mapObj, function() {
         if (removed) return;
-        mapObj.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: features } });
-        layers.forEach(function(l) { mapObj.addLayer(Object.assign({}, l, { id: id + '-' + l.id, source: id })); });
+        mapObj.addSource(id, Object.assign({ type: 'geojson', data: { type: 'FeatureCollection', features: features } }, options && options.source));
+        var above = mapObj.getStyle().layers.find(function(l) {
+          return l.id.indexOf('ft-shape-') === 0 && ((l.metadata && l.metadata['ft:z']) || 0) > z;
+        });
+        layers.forEach(function(l) {
+          mapObj.addLayer(Object.assign({}, l, { id: id + '-' + l.id, source: id, metadata: { 'ft:z': z } }), above && above.id);
+        });
       });
       function drop() {
         layers.forEach(function(l) { if (mapObj.getLayer(id + '-' + l.id)) mapObj.removeLayer(id + '-' + l.id); });
         if (mapObj.getSource(id)) mapObj.removeSource(id);
       }
       return {
+        id: id,
         remove: function() {
           removed = true;
           // A restyle in flight would carry it over (_ftRestyle()), so it goes once that's in.

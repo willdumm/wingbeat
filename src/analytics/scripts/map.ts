@@ -1,4 +1,4 @@
-import { sharedTileLayerDefs, sharedMapControlsScripts, tileOverlayLegendMountScript } from '../../shared/map-controls';
+import { maplibreMapControlsScripts, maplibreOverlayLegendMountScript } from '../../shared/map-controls';
 import { sharedSidebarToggleScripts } from '../../shared/sidebar';
 
 export function analyticsScriptsMap(): string {
@@ -21,24 +21,22 @@ export function analyticsScriptsMap(): string {
       document.getElementById('map-controls').style.display = isMap ? '' : 'none';
       document.querySelectorAll('.view-tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
       if (!isMap) updateStreamGraph();
-      if (isMap) analyticsMap.invalidateSize();
     }
 
     // ── Map initialization ────────────────────────────────────────────────────
-    const analyticsMap = L.map('analytics-map', { zoomControl: false, attributionControl: false })
-      .setView(
-        [window.APP_SETTINGS.mapDefaultLat, window.APP_SETTINGS.mapDefaultLng],
-        window.APP_SETTINGS.mapDefaultZoom
-      );
-
-    ${sharedTileLayerDefs('analyticsMap')}
+    // MapLibre's zoom is Leaflet's less one (512 px tiles), and mapDefaultZoom is stored on
+    // Leaflet's scale.
+    const analyticsMap = createMap(document.getElementById('analytics-map'), {
+      center: [window.APP_SETTINGS.mapDefaultLng, window.APP_SETTINGS.mapDefaultLat],
+      zoom: window.APP_SETTINGS.mapDefaultZoom - 1,
+    });
 
     // ── Layer state ───────────────────────────────────────────────────────────
     let heatmapWeightMode = 'time';
-    let endpointHeatLayer = null;
-    let pathDensityLayer  = null;
-    let flightLinesGroup  = null;
-    let regionBoundLayer  = null;
+    let endpointHeatShape = null;
+    let pathDensityShape  = null;
+    let flightLinesShape  = null;
+    let regionBoundShape  = null;
 
     // ── Sidebar reference ─────────────────────────────────────────────────────
     const sidebar = document.querySelector('aside');
@@ -49,33 +47,23 @@ export function analyticsScriptsMap(): string {
     }
 
     function updateEndpointHeatmap() {
-      if (endpointHeatLayer) { analyticsMap.removeLayer(endpointHeatLayer); endpointHeatLayer = null; }
+      if (endpointHeatShape) { endpointHeatShape.remove(); endpointHeatShape = null; }
       if (!getToggles().endpointHeat || filteredFlights.length === 0) return;
-      endpointHeatLayer = buildEndpointHeatLayer(filteredFlights, heatmapWeightMode, analyticsMap.getZoom());
-      if (endpointHeatLayer) endpointHeatLayer.addTo(analyticsMap);
+      endpointHeatShape = addEndpointHeat(analyticsMap, filteredFlights, heatmapWeightMode);
     }
 
     function updatePointLayers() {
-      if (pathDensityLayer)  { analyticsMap.removeLayer(pathDensityLayer);  pathDensityLayer = null; }
-      if (flightLinesGroup)  { analyticsMap.removeLayer(flightLinesGroup);  flightLinesGroup = null; }
+      if (pathDensityShape) { pathDensityShape.remove(); pathDensityShape = null; }
+      if (flightLinesShape) { flightLinesShape.remove(); flightLinesShape = null; }
       const toggles = getToggles();
-      if (!toggles.pathDensity && !toggles.flightLines) return;
       if (!filteredFlights.length) return;
-      if (toggles.pathDensity) {
-        pathDensityLayer = buildRouteHeatLayer(filteredFlights);
-        pathDensityLayer.addTo(analyticsMap);
-      }
-      if (toggles.flightLines) {
-        flightLinesGroup = buildFlightLinesLayer(filteredFlights);
-        flightLinesGroup.addTo(analyticsMap);
-      }
+      if (toggles.pathDensity) pathDensityShape = addRouteHeat(analyticsMap, filteredFlights);
+      if (toggles.flightLines) flightLinesShape = addFlightLines(analyticsMap, filteredFlights);
     }
 
     function updateRegionBoundaries() {
-      if (regionBoundLayer) { analyticsMap.removeLayer(regionBoundLayer); regionBoundLayer = null; }
-      if (!getToggles().regionBounds) return;
-      regionBoundLayer = buildRegionBoundsLayer(REGIONS);
-      regionBoundLayer.addTo(analyticsMap);
+      if (regionBoundShape) { regionBoundShape.remove(); regionBoundShape = null; }
+      if (getToggles().regionBounds) regionBoundShape = addRegionBounds(analyticsMap, REGIONS);
     }
 
     function refreshMapLayers() {
@@ -125,7 +113,42 @@ export function analyticsScriptsMap(): string {
     let _analyticsActiveFilters = filterStore.load();
 
     // ── Initialization ────────────────────────────────────────────────────────
+    // The map chrome and page controls, wired before any data loads so they work whatever
+    // the data does.
+    function wirePage() {
+      // View toggle (Map / Stream Graph)
+      document.querySelectorAll('.view-tab').forEach(tab => {
+        tab.addEventListener('click', () => setView(tab.dataset.view));
+      });
+
+      // Stream graph toolbar controls
+      wireSgControls();
+
+      // ── Zoom controls + basemap switcher ────────────────────────────────────
+      ${maplibreMapControlsScripts('analyticsMap')}
+      ${maplibreOverlayLegendMountScript('analyticsMap')}
+
+      // Legend: layer toggles, heatmap weight mode, collapse
+      wireLayerControls(document.getElementById('layer-controls'), {
+        onLayerToggle: (layerId) => {
+          if (layerId === 'endpoint-heat') updateEndpointHeatmap();
+          else if (layerId === 'path-density' || layerId === 'flight-lines') updatePointLayers();
+          else refreshMapLayers();
+        },
+        onWeightMode: (mode) => {
+          heatmapWeightMode = mode;
+          updateEndpointHeatmap();
+        },
+      });
+
+      // Touch scroll guard (prevents iOS Safari page-behind-status-bar scroll)
+      document.addEventListener('touchmove', e => {
+        if (!e.target.closest('.analytics-panel, .settings-modal, .form-modal, .map-controls-bar, .overlay-legend-panel')) e.preventDefault();
+      }, { passive: false });
+    }
+
     async function init() {
+      wirePage();
       await loadRegions();
       // Each list on its own: one that fails to load keeps its old value.
       const [trackers, aircraft, pilots, overlays] = await Promise.allSettled([fetchTrackers(), fetchAircraft(), fetchPilots(),
@@ -134,6 +157,7 @@ export function analyticsScriptsMap(): string {
       if (aircraft.status === 'fulfilled') aircraftList = aircraft.value.aircraft;
       if (pilots.status === 'fulfilled') { pilotList = pilots.value.pilots; flightStore.setPilots(pilotList); }
       if (overlays.status === 'fulfilled') overlayList = overlays.value.overlays;
+      _ftRenderOverlayLegend();
 
       const activeTrackers = trackerList.filter(t => t.active && !t.deleted);
       if (!activeTrackers.length) {
@@ -181,39 +205,6 @@ export function analyticsScriptsMap(): string {
 
       // Re-render when another tab updates the store.
       flightStore.onChange(rerender);
-
-      // View toggle (Map / Stream Graph)
-      document.querySelectorAll('.view-tab').forEach(tab => {
-        tab.addEventListener('click', () => setView(tab.dataset.view));
-      });
-
-      // Stream graph toolbar controls
-      wireSgControls();
-
-      // Re-render endpoint heatmap on zoom so maxZoom stays in sync
-      analyticsMap.on('zoomend', updateEndpointHeatmap);
-
-      // ── Zoom controls + basemap switcher ────────────────────────────────────
-      ${sharedMapControlsScripts('analyticsMap')}
-      ${tileOverlayLegendMountScript('analyticsMap')}
-
-      // Legend: layer toggles, heatmap weight mode, collapse
-      wireLayerControls(document.getElementById('layer-controls'), {
-        onLayerToggle: (layerId) => {
-          if (layerId === 'endpoint-heat') updateEndpointHeatmap();
-          else if (layerId === 'path-density' || layerId === 'flight-lines') updatePointLayers();
-          else refreshMapLayers();
-        },
-        onWeightMode: (mode) => {
-          heatmapWeightMode = mode;
-          updateEndpointHeatmap();
-        },
-      });
-
-      // Touch scroll guard (prevents iOS Safari page-behind-status-bar scroll)
-      document.addEventListener('touchmove', e => {
-        if (!e.target.closest('.analytics-panel, .settings-modal, .form-modal, .map-controls-bar, .overlay-legend-panel')) e.preventDefault();
-      }, { passive: false });
     }
 
     init();

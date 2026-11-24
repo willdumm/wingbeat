@@ -532,7 +532,7 @@ export interface ShowcasePageData {
   appName: string;
   /** Everything in `<head>` after the title and description. */
   head: string;
-  /** The end of `<body>`: MapLibre, Leaflet and friends, the icon runtime, then showcase.js. */
+  /** The end of `<body>`: MapLibre and friends, the icon runtime, then showcase.js. */
   scripts: string;
   logo: { header: string; footer: string };
   /** The header's menu toggle, shown on narrow screens. */
@@ -550,8 +550,6 @@ export function showcasePageData(appName: string, scriptSrc: string, notificatio
   <script>${mapLayerColorInitScript()}</script>
   <style>${themeFontImport()}${themeVars()}${brandStyles()}${iconStyles()}${statusStyles()}${segmentedControlStyles()}${showcasePageStyles()}</style>`,
     scripts: /* html */ `${maplibreScriptTag()}
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js" integrity="sha384-mFKkGiGvT5vo1fEyGCD3hshDdKmW3wzXW/x+fWriYJArD0R3gawT6lMvLboM22c0" crossorigin="anonymous"></script>
   <script src="${PMTILES_SCRIPT_URL}" integrity="${PMTILES_SCRIPT_SRI}" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/lucide@0.454.0/dist/umd/lucide.js" integrity="sha384-xlHvwOp6tVxLcI04ruwDHJIpPVNUP8eGUUmGzM8wPdz1spvksYyV3MFdMEC6dejr" crossorigin="anonymous"></script>
   <script>${iconRuntimeScript()}</script>

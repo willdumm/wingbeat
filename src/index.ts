@@ -178,7 +178,7 @@ async function queryBasemaps(db: D1Database): Promise<BasemapRow[]> {
  * The basemaps as clients draw them: the shown rows, raster ones as `basemaps` (a keyed one
  * through the same-origin proxy, and left out when this Worker doesn't hold its secret) and
  * vector ones as `vector_basemaps` (drawn by the app and the web's MapLibre maps). The web's pages
- * inline `basemaps`, and the dashboard `vector_basemaps` too. Each
+ * inline `basemaps`, and the dashboard and analytics `vector_basemaps` too. Each
  * carries its `order` among both, so the app can list them in the tenant's order.
  */
 function clientBasemaps(rows: BasemapRow[], env: Env): { basemaps: BasemapPreset[]; vector_basemaps: VectorBasemap[] } {
@@ -921,7 +921,7 @@ app.get('/', async (c) => {
 
 app.get('/analytics', async (c) => {
   const settings = await loadSettings(c.var.tenant);
-  return c.html(analyticsHTML(settings, c.env, c.get('cspNonce'), clientBasemaps(await queryBasemaps(c.var.db), c.env).basemaps));
+  return c.html(analyticsHTML(settings, c.env, c.get('cspNonce'), clientBasemaps(await queryBasemaps(c.var.db), c.env)));
 });
 
 app.get('/location', async (c) => {

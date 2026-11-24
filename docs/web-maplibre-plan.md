@@ -177,4 +177,16 @@ comment's Leaflet note; check the doc-shot manifest and re-run `npm run docs:sho
   softer than Leaflet's between whole zoom levels (MapLibre stops at fractional zooms and
   stretches tiles up to 1.4x; Leaflet snapped to whole levels). The user chose to keep
   MapLibre's fractional zoom: no snapping.
-- **Next:** phase 4.
+- **Phase 4: done**, the heat's look still to be tuned by the user on staging. Core's
+  `map-layers.ts` has the endpoint and route heat, flight line and region layers; the analytics
+  page and the showcase draw them with `addMapShape()`, which now takes `{ z, source }`
+  (stacking, clustering) and returns its source's id. The endpoint heat's source clusters its
+  points, as leaflet.heat's grid did, so a cell's weight can be capped. The route heat is one
+  MultiPoint (a Feature per point took MapLibre 24–35 s to load 405,000 points in headless
+  Chromium; a MultiPoint about 5 s, still slower than leaflet.heat). The page wires its map
+  chrome (`wirePage()`) before loading data. A page variable named like a core global shadows
+  it: the page's handles are `…Shape`, core's layers `…Layer`.
+- Phase 4 checked in a browser on the analytics page (local Worker, 60 flights, a region, two
+  basemaps): load, reload from cache, each layer, the region tip, a basemap switch. Not checked:
+  a vector basemap, an overlay that's on, touch, the real data's load time.
+- **Next:** phase 5.

@@ -203,6 +203,12 @@ Object.assign(globalThis, {
   positionLayer: mapLayers.positionLayer,
   elevationReliefLayer: mapLayers.elevationReliefLayer,
   elevationReferenceLayer: mapLayers.elevationReferenceLayer,
+  endpointHeatSource: mapLayers.endpointHeatSource,
+  endpointHeatLayer: mapLayers.endpointHeatLayer,
+  routeHeatLayer: mapLayers.routeHeatLayer,
+  flightLinesLayer: mapLayers.flightLinesLayer,
+  regionFillLayer: mapLayers.regionFillLayer,
+  regionOutlineLayer: mapLayers.regionOutlineLayer,
   ELEVATION_DEM_SOURCE: mapLayers.ELEVATION_DEM_SOURCE,
   // ── settings: the tracker history import's windows, the timezone-change warning ──
   trackerImportWindows: (from: string) => settings.importWindows(tz(), now(), from),
