@@ -106,6 +106,11 @@ export function maplibreRuntimeScript(): string {
       });
     }
 
+    // The background is a theme token's color.
+    new MutationObserver(function() {
+      _ftMaplibreMaps.forEach(function(m) { m._ftRestyle(); });
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
     // Stands in for a map when MapLibre can't make one (no WebGL, or its script didn't
     // load): every method returns it again, so the page's other parts keep working.
     function _ftNoMap(container) {
@@ -145,7 +150,9 @@ export function maplibreRuntimeScript(): string {
         console.error('No map:', err);
         var msg = document.createElement('div');
         msg.className = 'map-unavailable';
-        msg.textContent = 'The map needs WebGL, which this browser doesn\\'t have turned on.';
+        msg.textContent = typeof maplibregl === 'undefined'
+          ? 'The map couldn\\'t load. Check your connection and reload the page.'
+          : 'The map needs WebGL, which this browser doesn\\'t have turned on.';
         container.appendChild(msg);
         return _ftNoMap(container);
       }

@@ -74,7 +74,8 @@ export function mapViewPickerScript(): string {
 
       _settingsNavigateTo('settings-view-map-view-picker', 'Default map view');
       if (!_mvpMap) {
-        _mvpMap = createMap(document.getElementById('mvp-map'), view);
+        // Within the zoom field's range.
+        _mvpMap = createMap(document.getElementById('mvp-map'), Object.assign({ maxZoom: zoomFromStored(20), minZoom: zoomFromStored(1) }, view));
         ${sharedMapControlsScripts('_mvpMap', 'mvp-')}
         _mvpMap.on('move', _mvpUpdateReadout);
       }

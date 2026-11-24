@@ -1852,9 +1852,10 @@ app.delete('/api/overlays/:id', requireAdmin, async (c) => {
 // label and never changes: overlays' per-basemap defaults, devices' choices and color
 // corrections refer to it.
 
+/** The shown raster basemaps clientBasemaps() offers: not one whose URL is a path (the removed tile proxy's). */
 async function shownRasterBasemaps(db: D1Database, excludingId?: number): Promise<number> {
   const row = await db.prepare(
-    "SELECT COUNT(*) AS n FROM basemaps WHERE kind = 'raster' AND shown = 1 AND id != ?"
+    "SELECT COUNT(*) AS n FROM basemaps WHERE kind = 'raster' AND shown = 1 AND url NOT LIKE '/%' AND id != ?"
   ).bind(excludingId ?? -1).first<{ n: number }>();
   return row?.n ?? 0;
 }
