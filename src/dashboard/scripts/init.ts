@@ -52,7 +52,8 @@ export function dashboardScriptsInit(): string {
         if (flightStore.generation() === dashboardRenderedGen) return;
         const oldFlights = allFlights;
         renderStoreFlights();
-        refreshMapIfNeeded(oldFlights).catch(() => {});
+        // Until a linked flight has been opened, phase 2 draws the map.
+        if (!linkedFlightKey) refreshMapIfNeeded(oldFlights).catch(() => {});
       }, 0));
       liveDataByTracker = buildLiveDataByTracker(null);
       applyFilter();

@@ -11,6 +11,7 @@ import { FlightMapScreen } from '@/lib/flight-map-screen';
 import { useFlights } from '@/lib/flights-context';
 import { isHostedInstance } from '@/lib/pairing-link';
 import { Placeholder } from '@/lib/placeholder';
+import { stringParam } from '@/lib/route-params';
 import { useFlightsTab } from '@/lib/use-flights-tab';
 
 /**
@@ -19,10 +20,12 @@ import { useFlightsTab } from '@/lib/use-flights-tab';
  * progress gets a new id as it's re-segmented.
  */
 export default function FlightLinkScreen() {
-  const { host = '', flight: key = '' } = useLocalSearchParams<{ host?: string; flight?: string }>();
+  const params = useLocalSearchParams();
+  const host = stringParam(params.host) ?? '';
+  const key = stringParam(params.flight) ?? '';
   const { loaded, accounts, active, setActive } = useAccounts();
   const { handshake } = useBootstrap();
-  const { refresh } = useFlights();
+  const { lastRefresh, refresh } = useFlights();
   const tab = useFlightsTab();
   const valid = isHostedInstance(host) && isFlightKey(key);
   const account = valid ? linkAccount(accounts, active, host) : null;
@@ -39,15 +42,16 @@ export default function FlightLinkScreen() {
   }, [loaded, account?.id, link]);
 
   const flight = tab.ready ? findFlightByKey(tab.allFlights(), key) : null;
-  // Not in the cached copy: it may come with a refresh, so it's missing only after one.
+  // Not in the cached copy: it may come with a refresh, so it's missing only after one. It waits for
+  // the first: until then refresh() may have nothing to run.
   const [checked, setChecked] = useState<string | null>(null);
   const missing = tab.ready && active?.id === account?.id && !flight;
   useEffect(() => {
-    if (!missing || handshake !== 'ok' || checked === link) return;
+    if (!missing || !lastRefresh || handshake !== 'ok' || checked === link) return;
     let current = true;
     refresh().finally(() => { if (current) setChecked(link); });
     return () => { current = false; };
-  }, [missing, handshake, checked, link]);
+  }, [missing, lastRefresh != null, handshake, checked, link]);
 
   if (!valid) return <Placeholder text="This link doesn’t name a flight." />;
   if (!loaded) return <Placeholder />;

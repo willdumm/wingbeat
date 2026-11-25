@@ -27,9 +27,9 @@ export function dashboardScriptsAircraft(): string {
       flightStore.clearCache(allTrackerIds);
       expandedDays = null;
       activeFlightId = null;
-      syncFlightUrl(null);
       const result = await flightStore.refresh(allTrackerIds);
       applyStoreResult(result);
+      showDefaultMapView();
     };
   `;
 }

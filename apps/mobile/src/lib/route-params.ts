@@ -6,6 +6,9 @@ import { useLocalSearchParams } from 'expo-router';
 
 type Param = string | string[] | undefined;
 
+/** A string param; null when it's missing or repeated. */
+export const stringParam = (v: Param): string | null => (typeof v === 'string' ? v : null);
+
 /** An integer param; null when it's missing or isn't one. */
 export const intParam = (v: Param): number | null => (typeof v === 'string' && /^-?\d+$/.test(v) ? Number(v) : null);
 

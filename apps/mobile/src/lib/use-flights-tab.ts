@@ -41,13 +41,14 @@ export function useFlightsTab(): Ready | { ready: false } {
   if (!loaded || !active || active.signedOut || handshake === 'server-too-old' || !bootstrap?.instance || !store) {
     return { ready: false };
   }
+  const allFlights = () => store.getAll() as Flight[];
   return {
     ready: true,
     tz: bootstrap.instance.timezone,
     bootstrap,
     flights,
-    findFlight: (id) => flights.find((f) => f.id === id) ?? (store.getAll() as Flight[]).find((f) => f.id === id) ?? null,
-    allFlights: () => store.getAll() as Flight[],
+    findFlight: (id) => flights.find((f) => f.id === id) ?? allFlights().find((f) => f.id === id) ?? null,
+    allFlights,
     roster: { hasAircraft: bootstrap.aircraft.length > 0, hasPilots: bootstrap.pilots.length > 0 },
     isAdmin: bootstrap.me.role === 'admin',
   };
