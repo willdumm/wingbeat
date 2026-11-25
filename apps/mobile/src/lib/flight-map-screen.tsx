@@ -5,7 +5,7 @@
  * sheet, with a back button to the day; no new screen slides in.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useWindowDimensions, View } from 'react-native';
+import { Share, useWindowDimensions, View } from 'react-native';
 import { Stack, useIsFocused, useRouter, useSegments } from 'expo-router';
 import { Button, Form, Host, HStack, LabeledContent, Section, ShareLink, Text, VStack } from '@expo/ui/swift-ui';
 import { buttonStyle, disabled as disabledIf, font, foregroundStyle, labelStyle } from '@expo/ui/swift-ui/modifiers';
@@ -149,7 +149,9 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
         )}
       </>
     );
-    return { detail, edit, sections };
+    // An inactive tracker's flight isn't on the web's list, so it has no link to share.
+    const url = tab.flights.some((f) => f.id === flight.id) ? origin(active.host) + flightPath(flight) : null;
+    return { detail, edit, sections, url };
   })();
 
   // A flight without a map (from the list only: a day lists flights with a track).
@@ -157,11 +159,10 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
     return (
       <View style={{ flex: 1, backgroundColor: t['bg-base'] }}>
         <Stack.Screen options={{ title: one.detail.title }} />
-        {tab.isAdmin && (
-          <Stack.Toolbar placement="right">
-            <Stack.Toolbar.Button onPress={one.edit}>Edit</Stack.Toolbar.Button>
-          </Stack.Toolbar>
-        )}
+        {(one.url || tab.isAdmin) && <Stack.Toolbar placement="right">
+          {one.url && <Stack.Toolbar.Button icon="square.and.arrow.up" accessibilityLabel="Share" onPress={() => { Share.share({ url: one.url! }).catch(() => {}); }} />}
+          {tab.isAdmin && <Stack.Toolbar.Button onPress={one.edit}>Edit</Stack.Toolbar.Button>}
+        </Stack.Toolbar>}
         <Host style={{ flex: 1 }}><Form>{one.sections}</Form></Host>
       </View>
     );
@@ -183,7 +184,7 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
     leading: chosen != null ? iconButton('Back to the day', 'chevron.left', () => show(null)) : undefined,
     actions: (
       <HStack spacing={8}>
-        <ShareLink item={origin(active.host) + flightPath(flight!)} modifiers={[buttonStyle('glass'), labelStyle('iconOnly')]} />
+        {one.url && <ShareLink item={one.url} modifiers={[buttonStyle('glass'), labelStyle('iconOnly')]} />}
         {tab.isAdmin && <Button label="Edit" onPress={() => setEditing(true)} modifiers={[buttonStyle('glass')]} />}
       </HStack>
     ),

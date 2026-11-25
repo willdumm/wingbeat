@@ -99,6 +99,8 @@ app.onError((err, c) => {
   return c.text('Internal Server Error', 500);
 });
 
+type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
+
 type SessionLookup = { id: number; user_id: number; name: string; role: string; pilot_id: number | null; device_name: string | null; last_seen_at: number; token_hashed: number; app_version: string | null };
 
 // Finds the live session for a cookie value. New rows store sha256(cookie) with
@@ -106,7 +108,7 @@ type SessionLookup = { id: number; user_id: number; name: string; role: string; 
 // condition keeps a hash read from the DB from working as a cookie. Idle-expired sessions
 // are deleted and reported as absent; legacy rows are upgraded in place. The app's
 // X-Wingbeat-App header is recorded in app_version, written only when it changes.
-async function lookupSession(c: Context<{ Bindings: Env; Variables: Variables }>, raw: string): Promise<SessionLookup | null> {
+async function lookupSession(c: AppContext, raw: string): Promise<SessionLookup | null> {
   const hash = await sha256Hex(raw);
   const db = c.var.db;
   const row = await db.prepare(
@@ -491,7 +493,7 @@ function loginCode(): string {
 const loginCodeHash = (token: string, code: string) => sha256Hex(`${token}:${code}`);
 
 /** Whether this client IP is over the login rate limit (Env.LOGIN_RATE_LIMIT; none when unset). */
-async function loginRateLimited(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<boolean> {
+async function loginRateLimited(c: AppContext): Promise<boolean> {
   const limiter = c.env.LOGIN_RATE_LIMIT;
   if (!limiter) return false;
   const ip = c.req.header('CF-Connecting-IP') ?? 'unknown';
@@ -499,7 +501,7 @@ async function loginRateLimited(c: Context<{ Bindings: Env; Variables: Variables
   return !success;
 }
 
-const emailContext = (c: Context<{ Bindings: Env; Variables: Variables }>, appName: string): EmailContext =>
+const emailContext = (c: AppContext, appName: string): EmailContext =>
   ({ env: c.env, appName, host: new URL(c.req.url).host });
 
 app.post('/login', async (c) => {
@@ -522,7 +524,7 @@ app.post('/login', async (c) => {
  * (MAX_LIVE_LOGIN_LINKS, MAX_DAILY_LOGIN_LINKS); otherwise does nothing. Never throws: the
  * page can't differ either way, so a failure is said only in the log.
  */
-async function emailSignInLink(c: Context<{ Bindings: Env; Variables: Variables }>, appName: string, email: string): Promise<void> {
+async function emailSignInLink(c: AppContext, appName: string, email: string): Promise<void> {
   try {
     const db = c.var.db;
     const now = Math.floor(Date.now() / 1000);
@@ -658,7 +660,7 @@ app.post('/logout', async (c) => {
 // (signedInAs, below, which also handles the emailed links).
 
 /** This browser's session, from its cookie alone, or null. */
-async function cookieSession(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<SessionLookup | null> {
+async function cookieSession(c: AppContext): Promise<SessionLookup | null> {
   const token = getCookie(c, SESSION_COOKIE);
   return token ? lookupSession(c, token) : null;
 }
@@ -804,7 +806,7 @@ app.get('/join/:token', async (c) => {
  * it only confirms the address), or null: not signed
  * in, or an emailed link of another user's, which signs this browser in to that account.
  */
-async function signedInAs(c: Context<{ Bindings: Env; Variables: Variables }>, row: InviteToken): Promise<'same' | 'other' | null> {
+async function signedInAs(c: AppContext, row: InviteToken): Promise<'same' | 'other' | null> {
   const session = await cookieSession(c);
   if (!session) return null;
   if (!row.email) return 'other';
@@ -912,7 +914,7 @@ app.post(APP_CONNECT_PATH, async (c) => {
 
 // ── Page routes ───────────────────────────────────────────────────────────────
 
-const dashboardPage = async (c: Context<{ Bindings: Env; Variables: Variables }>) => {
+const dashboardPage = async (c: AppContext) => {
   const settings = await loadSettings(c.var.tenant);
   c.executionCtx.waitUntil(pollAllActive(c.var.tenant));
   return c.html(dashboardHTML(settings, c.env, c.get('cspNonce'), clientBasemaps(await queryBasemaps(c.var.db))));
@@ -1086,7 +1088,7 @@ async function sendOrDropToken(db: D1Database, token: string, send: () => Promis
  * it). Sending it again sends another link (the earlier one still works), up to
  * MAX_PENDING_EMAIL_LINKS unopened in all, so the form can't email an address without end.
  */
-async function addUserEmail(c: Context<{ Bindings: Env; Variables: Variables }>, user: { id: number; name: string }, raw: string) {
+async function addUserEmail(c: AppContext, user: { id: number; name: string }, raw: string) {
   if (!emailEnabled(c.env)) return c.json({ error: 'This instance doesn’t send email' }, 400);
   const email = normalizeEmail(raw);
   if (!email) return c.json({ error: 'Enter an email address' }, 400);
@@ -1127,7 +1129,7 @@ async function addUserEmail(c: Context<{ Bindings: Env; Variables: Variables }>,
  * Removes one of a user's addresses (by its id); it no longer signs in. Its unopened links go
  * too: a /login code sent to it, or a confirmation link that would add it back.
  */
-async function removeUserEmail(c: Context<{ Bindings: Env; Variables: Variables }>, userId: number) {
+async function removeUserEmail(c: AppContext, userId: number) {
   const id = parseInt(c.req.param('emailId') ?? '', 10);
   if (isNaN(id)) return c.json({ error: 'Invalid email id' }, 400);
   const db = c.var.db;
@@ -1994,7 +1996,7 @@ app.delete('/api/basemaps/:id', requireAdmin, async (c) => {
 // is refused with a 409 when any of them changed after base.id (see "Edit conflicts"
 // below). The check is a statement in the same batch, so no write can slip in between it
 // and the save.
-async function recordedBatch(c: Context<{ Bindings: Env; Variables: Variables }>, stmts: D1PreparedStatement[],
+async function recordedBatch(c: AppContext, stmts: D1PreparedStatement[],
   base?: SaveBase): Promise<D1Result[]> {
   const db = c.var.db;
   // Inserting a second edit_actor row fails on its primary key, which aborts the batch

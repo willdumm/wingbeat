@@ -17,7 +17,7 @@ test('any other link is left as it is', () => {
   ]) expect(systemLinkRoute(link)).toBe(link);
 });
 
-test('linkAccount: the active account when it’s on the host, else a signed-in one, else any', () => {
+test('linkAccount: the active account when it’s on the host, else another signed-in one', () => {
   const a = { id: 'a', host: HOST, signedOut: true };
   const b = { id: 'b', host: HOST, signedOut: false };
   const c = { id: 'c', host: HOST, signedOut: false };
@@ -25,6 +25,7 @@ test('linkAccount: the active account when it’s on the host, else a signed-in 
   expect(linkAccount([a, b, c], c, HOST)).toBe(c);
   expect(linkAccount([a, b, other], other, HOST)).toBe(b);
   expect(linkAccount([a, b], a, HOST)).toBe(b);
-  expect(linkAccount([a, other], other, HOST)).toBe(a);
+  expect(linkAccount([a, other], other, HOST)).toBeNull();
+  expect(linkAccount([a], a, HOST)).toBeNull();
   expect(linkAccount([other], other, HOST)).toBeNull();
 });

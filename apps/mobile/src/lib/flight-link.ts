@@ -28,9 +28,8 @@ export function systemLinkRoute(link: string): string {
     : link;
 }
 
-/** The account a link to `host` opens in: the active one when it's there, else one that's signed in, else any. */
+/** The account a link to `host` opens in: the active one when it's there, else another that's signed in. */
 export function linkAccount<A extends { id: string; host: string; signedOut: boolean }>(accounts: A[], active: A | null, host: string): A | null {
   if (active?.host === host && !active.signedOut) return active;
-  const there = accounts.filter((a) => a.host === host);
-  return there.find((a) => !a.signedOut) ?? there[0] ?? null;
+  return accounts.find((a) => a.host === host && !a.signedOut) ?? null;
 }
