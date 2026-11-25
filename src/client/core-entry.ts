@@ -22,6 +22,7 @@ import * as editHistory from '@wingbeat/core/edit-history';
 import type { EditHistoryRow } from '@wingbeat/core/api/edit-history';
 import * as filters from '@wingbeat/core/filters';
 import type { FilterState } from '@wingbeat/core/filters';
+import * as flightLink from '@wingbeat/core/flight-link';
 import * as live from '@wingbeat/core/live';
 import * as maintenance from '@wingbeat/core/maintenance';
 import type { MaintenanceItem } from '@wingbeat/core/maintenance';
@@ -164,6 +165,10 @@ Object.assign(globalThis, {
   nextLivePoll: (liveByTracker: Parameters<typeof live.nextLivePoll>[2], lastKnownGarminTime: number | null) =>
     live.nextLivePoll(SPEED_THRESHOLD_KMH, now(), liveByTracker, lastKnownGarminTime),
   sameTrackedFlight: live.sameTrackedFlight,
+  // ── flight-link: a flight's URL ──
+  flightPath: flightLink.flightPath,
+  parseFlightPath: flightLink.parseFlightPath,
+  findFlightByKey: flightLink.findFlightByKey,
   // ── maintenance: estimated meters and each schedule item's status ──
   _flightHours: maintenance.flightHours,
   _estimatedMeter: maintenance.estimatedMeter,

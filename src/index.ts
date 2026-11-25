@@ -32,6 +32,7 @@ import { MAX_DEVICE_NAME_LENGTH, SessionRenameRequest, deviceNameLength } from '
 import { PushDeviceRequest, PushSubscriptionsRequest } from '@wingbeat/core/api/push-requests';
 import { PairRequest } from '@wingbeat/core/api/app-requests';
 import { APP_CONNECT_PATH, appConnectCallbackUrl, base64url, isCodeChallenge, isCodeVerifier, isConnectState } from '@wingbeat/core/app-connect';
+import { APPLE_APP_SITE_ASSOCIATION, parseFlightPath } from '@wingbeat/core/flight-link';
 import { API_VERSION, APP_VERSION_HEADER, MAX_APP_VERSION_LENGTH, MIN_CLIENT_LEVEL } from '@wingbeat/core/api/version';
 import { EmailAddRequest, InviteRequest, UserUpdateRequest } from '@wingbeat/core/api/users-requests';
 import { ApplyAssignmentRequest, TestFeedRequest, TrackerCreateRequest, TrackerUpdateRequest } from '@wingbeat/core/api/trackers-requests';
@@ -319,6 +320,9 @@ app.use('*', async (c, next) => {
 // Ahead of tenant routing and auth, so crawlers get the rules on any host while signed out.
 app.get('/robots.txt', (c) => c.text('User-agent: *\nDisallow: /\n'));
 
+// Also for any host, and without a redirect to /login, which iOS wouldn't follow.
+app.get('/.well-known/apple-app-site-association', (c) => c.json(APPLE_APP_SITE_ASSOCIATION));
+
 // Also ahead of them: it's the same public code for every tenant, and a page's script tag
 // has no use for a login redirect. The path changes with the content, hence `immutable`.
 app.get(coreBundlePath, (c) => c.body(coreBundle, 200, {
@@ -416,7 +420,8 @@ app.use('*', async (c, next) => {
   if (path === '/api' || path.startsWith('/api/')) {
     return c.json({ error: 'Your session has expired. Reload the page to sign in again.' }, 401);
   }
-  return c.redirect('/login');
+  // A flight's link is still there after signing in.
+  return c.redirect(parseFlightPath(path) ? '/login?return=' + encodeURIComponent(path) : '/login');
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -590,9 +595,9 @@ app.post(LOGIN_CODE_PATH, async (c) => {
 // demo code in settings (demo_code) signs anyone in as the demo user (demo_user_id): typed on
 // the signed-out pages here, or sent by the app's "Try the Demo" to POST /api/app/pair.
 
-/** The return paths a sign-in (the demo code, or by email) goes back to: home, or the app's connect page. */
+/** The return paths a sign-in (the demo code, or by email) goes back to: home, the app's connect page, or a flight. */
 function signInReturnPath(raw: unknown): string {
-  return typeof raw === 'string' && raw.startsWith(APP_CONNECT_PATH + '?') ? raw : '/';
+  return typeof raw === 'string' && (raw.startsWith(APP_CONNECT_PATH + '?') || parseFlightPath(raw)) ? raw : '/';
 }
 
 /** A new session for the demo user, named deviceName, when `code` is this demo tenant's code; else null. */
@@ -907,11 +912,15 @@ app.post(APP_CONNECT_PATH, async (c) => {
 
 // ── Page routes ───────────────────────────────────────────────────────────────
 
-app.get('/', async (c) => {
+const dashboardPage = async (c: Context<{ Bindings: Env; Variables: Variables }>) => {
   const settings = await loadSettings(c.var.tenant);
   c.executionCtx.waitUntil(pollAllActive(c.var.tenant));
   return c.html(dashboardHTML(settings, c.env, c.get('cspNonce'), clientBasemaps(await queryBasemaps(c.var.db))));
-});
+};
+app.get('/', dashboardPage);
+
+// A flight's link: the dashboard, which reads the flight from the URL (init.ts).
+app.get('/flights/*', (c) => (parseFlightPath(c.req.path) ? dashboardPage(c) : c.notFound()));
 
 app.get('/analytics', async (c) => {
   const settings = await loadSettings(c.var.tenant);

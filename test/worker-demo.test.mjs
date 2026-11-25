@@ -70,7 +70,7 @@ describe('the cron', () => {
 });
 
 describe('the demo code', () => {
-  test('signs a browser in as the demo user, and back to the app connect page', async () => {
+  test('signs a browser in as the demo user, and back to the app connect page or a flight', async () => {
     const r = await signIn(demo, DEMO_CODE.toUpperCase() + ' ');
     assert.equal(r.status, 303);
     assert.equal(r.headers.get('location'), '/');
@@ -80,8 +80,9 @@ describe('the demo code', () => {
 
     const connect = '/app/connect?challenge=x&state=y';
     assert.equal((await signIn(demo, DEMO_CODE, connect)).headers.get('location'), connect);
-    // Only home or the app's connect page: anywhere else goes home.
-    for (const ret of ['https://evil.example/', '//evil.example/', '/app/connectx']) {
+    assert.equal((await signIn(demo, DEMO_CODE, '/flights/3/1764000000')).headers.get('location'), '/flights/3/1764000000');
+    // Only home, the app's connect page or a flight: anywhere else goes home.
+    for (const ret of ['https://evil.example/', '//evil.example/', '/app/connectx', '/flights/x', '//evil.example/flights/3/4']) {
       assert.equal((await signIn(demo, DEMO_CODE, ret)).headers.get('location'), '/', ret);
     }
   });

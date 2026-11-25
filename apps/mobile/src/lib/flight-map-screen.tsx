@@ -7,8 +7,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWindowDimensions, View } from 'react-native';
 import { Stack, useIsFocused, useRouter, useSegments } from 'expo-router';
-import { Button, Form, Host, HStack, LabeledContent, Section, Text, VStack } from '@expo/ui/swift-ui';
+import { Button, Form, Host, HStack, LabeledContent, Section, ShareLink, Text, VStack } from '@expo/ui/swift-ui';
 import { buttonStyle, disabled as disabledIf, font, foregroundStyle, labelStyle } from '@expo/ui/swift-ui/modifiers';
+import { flightPath } from '@wingbeat/core/flight-link';
 import { matchesFlight } from '@wingbeat/core/filters';
 import { activeTrackers, isFlightInProgress, trackerColor, trackerLiveData } from '@wingbeat/core/live';
 import { SPEED_THRESHOLD_KMH } from '@wingbeat/core/regions';
@@ -180,7 +181,12 @@ export function FlightMapScreen({ dayKey, flightId, onDay }: { dayKey?: string; 
     summary: one.detail.summary,
     // Back to the day it was picked from.
     leading: chosen != null ? iconButton('Back to the day', 'chevron.left', () => show(null)) : undefined,
-    actions: tab.isAdmin ? <Button label="Edit" onPress={() => setEditing(true)} modifiers={[buttonStyle('glass')]} /> : undefined,
+    actions: (
+      <HStack spacing={8}>
+        <ShareLink item={origin(active.host) + flightPath(flight!)} modifiers={[buttonStyle('glass'), labelStyle('iconOnly')]} />
+        {tab.isAdmin && <Button label="Edit" onPress={() => setEditing(true)} modifiers={[buttonStyle('glass')]} />}
+      </HStack>
+    ),
     content: one.sections,
   } : (() => {
     const older = days.find((d) => d.dayKey < dayKey!)?.dayKey ?? null;

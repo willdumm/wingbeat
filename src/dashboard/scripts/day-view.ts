@@ -71,6 +71,7 @@ export function dashboardScriptsDayView(): string {
       if (hoverDot) { hoverDot.remove(); hoverDot = null; }
       pinnedTip = false;
       activeFlightId = null;
+      syncFlightUrl(null);
       document.querySelectorAll('.flight-item').forEach(e => e.classList.remove('active'));
 
       const drawn = drawDayTracks(map, flights, {
@@ -125,6 +126,7 @@ export function dashboardScriptsDayView(): string {
         // Still the default view, so a refresh redraws it as one (refreshMapIfNeeded) and
         // every other aircraft keeps its plane marker, as in the day-view case above.
         activeDayDate = '__overview__';
+        syncFlightUrl(null);
         updateLivePlaneMarkers();
         return;
       }

@@ -56,7 +56,11 @@ export function dashboardScriptsInit(): string {
       }, 0));
       liveDataByTracker = buildLiveDataByTracker(null);
       applyFilter();
-      if (allFlights.length > 0) showDefaultMapView();
+      // A linked flight that isn't cached waits for phase 2, rather than the default view first.
+      let linkedId = null;
+      if (linkedFlightKey) {
+        if (allFlights.length > 0 && await openLinkedFlight(linkedFlightKey)) linkedId = activeFlightId;
+      } else if (allFlights.length > 0) showDefaultMapView();
       initAlerts();
 
       // Phase 2: fetch incremental update, re-render with live envelope data.
@@ -64,12 +68,23 @@ export function dashboardScriptsInit(): string {
         const oldFlights = [...allFlights];
         const result = await flightStore.refresh(allTrackerIds);
         applyStoreResult(result);
-        if (lastUserInteractionTime === 0) {
+        // Unless something else was picked meanwhile, the linked flight again from the fresh
+        // data: refreshMapIfNeeded would move on to a flight that's new since the cached copy.
+        if (linkedFlightKey && activeDayDate === null && activeFlightId === linkedId) {
+          activeFlightId = null;
+          if (!await openLinkedFlight(linkedFlightKey, { fit: linkedId === null || mapInputSettled() })) {
+            showDefaultMapView();
+            alert('This flight isn’t in the list any more.');
+          }
+        } else if (lastUserInteractionTime === 0) {
           showDefaultMapView({ fit: mapInputSettled() });
         } else {
           await refreshMapIfNeeded(oldFlights);
         }
-      } catch (_) {}
+      } catch (_) {
+        if (linkedFlightKey && activeFlightId === null && activeDayDate === null) showDefaultMapView();
+      }
+      linkedFlightKey = null;
       ensureMapView();
       scheduleNextLivePoll();
     })();

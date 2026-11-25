@@ -212,6 +212,28 @@ export function dashboardScriptsFlightList(): string {
       }
     }
 
+    // Keeps the page's URL on the selected flight (or '/'), so it can be copied or reloaded.
+    function syncFlightUrl(flight) {
+      const path = flight ? flightPath(flight) : '/';
+      if (location.pathname !== path) history.replaceState(null, '', path);
+    }
+
+    // Opens the flight the page's URL names as a click on its row does, its day expanded and
+    // its row scrolled to. False when it isn't in the list (yet).
+    async function openLinkedFlight(key, { fit = true } = {}) {
+      const flight = findFlightByKey(allFlights, key);
+      if (!flight) return false;
+      lastUserInteractionTime = Date.now();
+      if (!expandedDays.has(dayKey(flight.start_time))) {
+        expandedDays.add(dayKey(flight.start_time));
+        applyFilter();
+      }
+      const el = document.querySelector('.flight-item[data-id="' + flight.id + '"]');
+      await selectFlight(flight, el, fit);
+      if (el) el.scrollIntoView({ block: 'center' });
+      return true;
+    }
+
     // Select a flight and draw its track using embedded points from the store.
     // Pass fitView=false to update the route without resetting the viewport.
     async function selectFlight(flight, el, fitView = true) {
@@ -219,6 +241,7 @@ export function dashboardScriptsFlightList(): string {
       activeDayDate = null;
       const alreadySelected = activeFlightId === flight.id;
       activeFlightId = flight.id;
+      syncFlightUrl(flight);
       if (alreadySelected) return;
 
       document.querySelectorAll('.flight-item').forEach(e => e.classList.remove('active'));

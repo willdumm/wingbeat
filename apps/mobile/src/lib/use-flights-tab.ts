@@ -20,6 +20,8 @@ type Ready = {
   flights: Flight[];
   /** The flight with this id: among flights, else among every tracker's; null if removed. */
   findFlight: (id: number) => Flight | null;
+  /** Every tracker's flights, inactive ones' too. */
+  allFlights: () => Flight[];
   roster: Roster;
   isAdmin: boolean;
 };
@@ -45,6 +47,7 @@ export function useFlightsTab(): Ready | { ready: false } {
     bootstrap,
     flights,
     findFlight: (id) => flights.find((f) => f.id === id) ?? (store.getAll() as Flight[]).find((f) => f.id === id) ?? null,
+    allFlights: () => store.getAll() as Flight[],
     roster: { hasAircraft: bootstrap.aircraft.length > 0, hasPilots: bootstrap.pilots.length > 0 },
     isAdmin: bootstrap.me.role === 'admin',
   };

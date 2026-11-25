@@ -48,6 +48,15 @@ time or place is marked †, manual flights are tagged "Manual" (the tracker
 filter's **Manual entries** option shows just them), and a flight with remarks
 (Part 91, a remark) shows them under it. Removed flights aren't listed.
 
+## Links to a flight
+
+Selecting a flight puts its link in the address bar:
+`https://<your host>/flights/<tracker id>/<start>`, where `<start>` is the time of the
+tracker's first point of the flight in Unix seconds (a corrected departure doesn't change
+it), or `/flights/manual/<id>` for a manual flight. Opening the link selects the flight, as
+clicking it in the list does, after signing in if needed. The app's share button on a
+flight gives the same link.
+
 ## Day view
 
 With nothing selected (and after **Map Current Flights**), the map shows every
