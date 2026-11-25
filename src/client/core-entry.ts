@@ -35,6 +35,9 @@ import type { AccountingFlight } from '@wingbeat/core/accounting';
 import * as analytics from '@wingbeat/core/analytics';
 import type { StreamInterval } from '@wingbeat/core/analytics';
 import * as elevation from '@wingbeat/core/elevation';
+import * as mapStyle from '@wingbeat/core/map-style';
+import * as mapFeatures from '@wingbeat/core/map-features';
+import * as mapLayers from '@wingbeat/core/map-layers';
 import * as settings from '@wingbeat/core/settings';
 import { apiErrorMessage, createApiClient } from '@wingbeat/core/api/client';
 import * as dutyApi from '@wingbeat/core/api/duty';
@@ -172,6 +175,7 @@ Object.assign(globalThis, {
   // ── regions: distances and which region a point is in (the analytics page holds REGIONS
   // and wraps the …In functions under their old names) ──
   haversineKm: regions.haversineKm,
+  circleRing: regions.circleRing,
   isHomeBaseRegion: regions.isHomeBaseRegion,
   regionDisplayName: regions.regionDisplayName,
   OTHER_REGION: regions.OTHER_REGION,
@@ -191,8 +195,35 @@ Object.assign(globalThis, {
   demZoomFor: elevation.demZoomFor,
   latLngToTilePixel: elevation.latLngToTilePixel,
   decodeTerrarium: elevation.decodeTerrarium,
-  demSubTile: elevation.demSubTile,
-  paintElevationTint: elevation.paintElevationTint,
+  elevationSetting: elevation.elevationSetting,
+  // ── map-style, map-layers, map-features: the MapLibre maps' style, the layers over it and what they draw (maplibre.ts) ──
+  availableBasemaps: mapStyle.availableBasemaps,
+  chosenBasemap: mapStyle.chosenBasemap,
+  isStyleSource: mapStyle.isStyleSource,
+  mapStyle: mapStyle.mapStyle,
+  zoomFromStored: mapFeatures.zoomFromStored,
+  zoomToStored: mapFeatures.zoomToStored,
+  defaultMapView: mapFeatures.defaultMapView,
+  lngLatBounds: mapFeatures.lngLatBounds,
+  lineFeature: mapFeatures.lineFeature,
+  pointFeature: mapFeatures.pointFeature,
+  flightTrackFeatures: mapFeatures.flightTrackFeatures,
+  dayTrackFeatures: mapFeatures.dayTrackFeatures,
+  groundTrailFeatures: mapFeatures.groundTrailFeatures,
+  trackLayer: mapLayers.trackLayer,
+  trailLayer: mapLayers.trailLayer,
+  positionLayer: mapLayers.positionLayer,
+  elevationReliefLayer: mapLayers.elevationReliefLayer,
+  elevationReferenceLayer: mapLayers.elevationReferenceLayer,
+  endpointHeatSource: mapLayers.endpointHeatSource,
+  endpointHeatLayer: mapLayers.endpointHeatLayer,
+  routeHeatLayer: mapLayers.routeHeatLayer,
+  flightLinesLayer: mapLayers.flightLinesLayer,
+  regionFillLayer: mapLayers.regionFillLayer,
+  regionOutlineLayer: mapLayers.regionOutlineLayer,
+  editorDotLayer: mapLayers.editorDotLayer,
+  editorDraftLineLayer: mapLayers.editorDraftLineLayer,
+  ELEVATION_DEM_SOURCE: mapLayers.ELEVATION_DEM_SOURCE,
   // ── settings: the tracker history import's windows, the timezone-change warning ──
   trackerImportWindows: (from: string) => settings.importWindows(tz(), now(), from),
   trackerImportDefaultFrom: () => settings.importDefaultFrom(tz(), now()),

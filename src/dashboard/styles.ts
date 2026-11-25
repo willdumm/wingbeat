@@ -400,10 +400,8 @@ export function dashboardStyles(): string {
     #map {
       position: absolute;
       inset: 0;
-      background: #e8e4de;
+      background: var(--surface-2);
     }
-
-    .leaflet-container { background: #e8e4de; }
 
     #loading-overlay {
       position: absolute;

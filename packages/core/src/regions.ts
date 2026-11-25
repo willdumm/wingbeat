@@ -10,14 +10,30 @@
 /** Speed threshold (km/h) that distinguishes flight from ground movement. ≈ 20 knots. */
 export const SPEED_THRESHOLD_KMH = 37;
 
+const EARTH_RADIUS_KM = 6371;
+
 export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.asin(Math.sqrt(Math.min(1, a)));
+  return EARTH_RADIUS_KM * 2 * Math.asin(Math.sqrt(Math.min(1, a)));
+}
+
+/** The ring `km` around a point, closed, along great circles. */
+export function circleRing(lat: number, lon: number, km: number, steps = 64): Ring {
+  const rad = Math.PI / 180;
+  const d = km / EARTH_RADIUS_KM, sinLat = Math.sin(lat * rad), cosLat = Math.cos(lat * rad);
+  const ring: Ring = [];
+  for (let i = 0; i < steps; i++) {
+    const bearing = 2 * Math.PI * i / steps;
+    const sinLat2 = sinLat * Math.cos(d) + cosLat * Math.sin(d) * Math.cos(bearing);
+    const dLon = Math.atan2(Math.sin(bearing) * Math.sin(d) * cosLat, Math.cos(d) - sinLat * sinLat2);
+    ring.push([lon + dLon / rad, Math.asin(sinLat2) / rad]);
+  }
+  ring.push(ring[0]);
+  return ring;
 }
 
 export function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number): number {

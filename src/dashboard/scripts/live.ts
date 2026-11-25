@@ -185,20 +185,15 @@ export function dashboardScriptsLive(): string {
 
       for (const tracker of activeTrackers) {
         const d = liveDataByTracker[tracker.id];
-                const visible = d && d.lat != null && (filteredTrackerIds.has(tracker.id) || filteredFlights.length === 0);
+        const visible = d && d.lat != null && (filteredTrackerIds.has(tracker.id) || filteredFlights.length === 0);
         const color = _trackerColor(tracker.id);
 
         if (visible) {
-          const icon = makePlaneIcon(d.course_deg ?? 0, color);
+          const html = makePlaneHtml(d.course_deg ?? 0, color);
           if (planeMarkers[tracker.id]) {
-            planeMarkers[tracker.id].setLatLng([d.lat, d.lon]);
-            planeMarkers[tracker.id].setIcon(icon);
+            setHtmlMarker(planeMarkers[tracker.id], [d.lat, d.lon], html);
           } else {
-            planeMarkers[tracker.id] = L.marker([d.lat, d.lon], {
-              icon,
-              zIndexOffset: 1000,
-              interactive: false,
-            }).addTo(map);
+            planeMarkers[tracker.id] = addHtmlMarker(map, [d.lat, d.lon], html, MARKER_Z.plane);
           }
         } else {
           if (planeMarkers[tracker.id]) {

@@ -221,9 +221,8 @@ export interface TileOverlay {
   label: string;
   url: string;
   attribution: string | null;
-  /** The tile source's max *native* zoom, applied client-side as Leaflet's
-   * maxNativeZoom (not maxZoom) so the layer keeps showing upscaled tiles past this
-   * point instead of vanishing to reveal the basemap — see _ftSyncOverlayLayer. */
+  /** The tile source's max *native* zoom, its source's maxzoom
+   * in core's mapStyle(): the map keeps showing upscaled tiles past it. */
   max_zoom: number | null;
   default_enabled: boolean;
   default_enabled_by_basemap: Record<string, boolean> | null;
@@ -251,10 +250,6 @@ export interface InviteToken {
 export interface Env {
   POLLER_SECRET: string;
   CUSTOMER_ROUTING: string; // JSON: { "hostname": "BINDING_NAME", ... }
-  // Keyed tile provider secrets — one per hoster deployment, shared by every tenant,
-  // never per-tenant D1 data. Optional: a preset naming an unset var here simply drops
-  // out of the basemap picker rather than erroring.
-  CARTO_API_KEY?: string;
   // The app publisher's Expo access token, for app push (see app-push.ts). Set only on
   // hosted instances; without it the Worker sends no app push.
   EXPO_ACCESS_TOKEN?: string;

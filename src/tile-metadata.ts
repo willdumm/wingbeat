@@ -17,7 +17,7 @@ export interface TileMetadata {
   /** Sanitized HTML — safe to assign to innerHTML (see sanitizeAttribution). */
   attribution?: string;
   maxZoom?: number;
-  /** A Leaflet tile template, set only when the input wasn't one already (a pasted
+  /** A tile template, set only when the input wasn't one already (a pasted
    * TileJSON or MapServer URL) and the metadata says where the tiles are. */
   url?: string;
 }
@@ -101,7 +101,7 @@ async function lookupArcgis(serviceUrl: string, query: string, isTemplate: boole
   const attribution = sanitizeAttribution(nonEmpty(d.copyrightText) ?? '');
   if (attribution) out.attribution = attribution;
   if (levels.length) out.maxZoom = Math.max(...levels);
-  // Only a cached (tiled) service has a /tile/ endpoint Leaflet can use.
+  // Only a cached (tiled) service has a /tile/ endpoint a map can use.
   if (!isTemplate && d.tileInfo) out.url = withQuery(`${serviceUrl}/tile/{z}/{y}/{x}`, query, {});
   return out.label || out.attribution || out.maxZoom !== undefined || out.url ? out : null;
 }
@@ -121,7 +121,7 @@ function parseTileJson(data: unknown, isTemplate: boolean): TileMetadata | null 
   if (attribution) out.attribution = attribution;
   const maxZoom = zoomOrUndefined(d.maxzoom);
   if (maxZoom !== undefined) out.maxZoom = maxZoom;
-  // Leaflet's L.tileLayer only draws raster tiles.
+  // A basemap's or overlay's template is a raster source's.
   if (!isTemplate && tiles[0] && !VECTOR_TILE_EXT.test(tiles[0])) out.url = tiles[0];
   return out;
 }
@@ -178,7 +178,7 @@ function describesTemplate(data: unknown, template: string, strict: boolean): bo
 }
 
 /**
- * Looks up metadata for a tile source. `input` is either a Leaflet template (contains
+ * Looks up metadata for a tile source. `input` is either a tile template (contains
  * `{z}`) or a direct link to a TileJSON document / ArcGIS MapServer. Returns null when
  * nothing usable was found. Throws only for an input that isn't a fetchable URL.
  */

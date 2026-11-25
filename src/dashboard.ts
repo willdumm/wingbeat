@@ -2,7 +2,6 @@ import { dashboardStyles } from './dashboard/styles';
 import { dashboardMarkup } from './dashboard/markup';
 import { dashboardScripts } from './dashboard/scripts/index';
 import { themeVars, themeFontImport, themeInitScript } from './shared/theme';
-import { mapLayerColorInitScript } from './shared/map-controls';
 import { viewportHeightInitScript } from './shared/viewport';
 import { brandStyles, logoFaviconHref, logoFaviconScript } from './shared/brand';
 import { iconStyles, iconRuntimeScript } from './shared/icons';
@@ -17,14 +16,17 @@ import { escapeHtml, jsonForScript } from './shared/html';
 import { coreBundleScript } from './shared/core-bundle';
 import { Env } from './types';
 import type { BasemapPreset } from '@wingbeat/core/basemaps';
+import type { VectorBasemap } from '@wingbeat/core/api/bootstrap';
+import { maplibreHeadTags, maplibreStyles } from './shared/maplibre';
 
 /** The dashboard's stylesheet after the font import and theme tokens. The docs-site
  * showcase (src/showcase/) adopts it as-is for its dashboard demos. */
 export function dashboardPageStyles(): string {
-  return brandStyles() + iconStyles() + statusStyles() + segmentedControlStyles() + formModalStyles() + flightEditsStyles() + flightEditorStyles() + dashboardStyles();
+  return brandStyles() + iconStyles() + statusStyles() + segmentedControlStyles() + formModalStyles() + flightEditsStyles() + flightEditorStyles() + maplibreStyles() + dashboardStyles();
 }
 
-export function dashboardHTML(settings: AppSettings, env: Env, nonce: string, basemaps: BasemapPreset[]): string {
+export function dashboardHTML(settings: AppSettings, env: Env, nonce: string,
+  { basemaps, vector_basemaps }: { basemaps: BasemapPreset[]; vector_basemaps: VectorBasemap[] }): string {
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -35,9 +37,7 @@ export function dashboardHTML(settings: AppSettings, env: Env, nonce: string, ba
   <script nonce="${nonce}">${themeInitScript()}</script>
   <script nonce="${nonce}">${viewportHeightInitScript()}</script>
   <script nonce="${nonce}">${logoFaviconScript()}</script>
-  <script nonce="${nonce}">${mapLayerColorInitScript()}</script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous" />
-  <script nonce="${nonce}" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+  ${maplibreHeadTags(nonce)}
   <script nonce="${nonce}" src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU" crossorigin="anonymous"></script>
   <script nonce="${nonce}" src="${PMTILES_SCRIPT_URL}" integrity="${PMTILES_SCRIPT_SRI}" crossorigin="anonymous"></script>
   <script nonce="${nonce}" src="https://unpkg.com/lucide@0.454.0/dist/umd/lucide.js" integrity="sha384-xlHvwOp6tVxLcI04ruwDHJIpPVNUP8eGUUmGzM8wPdz1spvksYyV3MFdMEC6dejr" crossorigin="anonymous"></script>
@@ -45,7 +45,7 @@ export function dashboardHTML(settings: AppSettings, env: Env, nonce: string, ba
 </head>
 <body>
 <script nonce="${nonce}">window.APP_SETTINGS=${settingsAsClientObject(settings, env)};</script>
-<script nonce="${nonce}">window.APP_BASEMAPS=${jsonForScript(basemaps)};</script>
+<script nonce="${nonce}">window.APP_BASEMAPS=${jsonForScript(basemaps)};window.APP_VECTOR_BASEMAPS=${jsonForScript(vector_basemaps)};</script>
 ${dashboardMarkup(settings.app_name)}
   ${coreBundleScript(nonce)}
   <script nonce="${nonce}">${iconRuntimeScript()}${dashboardScripts()}</script>

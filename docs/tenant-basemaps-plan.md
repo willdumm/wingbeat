@@ -10,7 +10,7 @@ clearly allow commercial use. Existing production tenants keep what they have.
 A licensing check before the App Store submission (2026-11-20) found that two built-in
 basemaps aren't safe for a paid hosted service as built:
 
-- **CARTO Voyager** (`map`): our Worker proxies and caches its tiles under one shared key for
+- **CARTO Voyager** (`map`, since removed): our Worker proxied and cached its tiles under one shared key for
   every tenant (`/api/tiles/:providerId`). CARTO's basemap terms forbid proxying, caching and
   serving tiles to others, and from 2026-12-01 older keys lose the free commercial tier.
 - **Esri World Imagery** (`satellite`): fetched straight from `server.arcgisonline.com` with no
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS basemaps (
   max_zoom      INTEGER,
   detect_retina INTEGER NOT NULL DEFAULT 0,
   shown         INTEGER NOT NULL DEFAULT 1,  -- in the map's picker
-  tile_proxy    TEXT,                     -- a keyed provider in core's registry ('carto'); never set by the API
+  tile_proxy    TEXT,                     -- unused since the tile proxy was removed ("Keyed tiles")
   sort_order    INTEGER NOT NULL DEFAULT 0
 );
 INSERT INTO basemaps (key, label, url, attribution, max_zoom, sort_order) VALUES
@@ -88,6 +88,12 @@ in the migration. Anything tenant-specific goes in scripts, never in migrations 
   Topo and the Protomaps Alaska basemap, and removes nothing else (it has no legacy rows).
 
 ## Keyed tiles (CARTO)
+
+**Removed** (the web-maplibre branch): CARTO, the `/api/tiles` proxy, `KEYED_TILE_PROVIDERS`,
+`CARTO_API_KEY` and `scripts/basemaps-legacy.sql` are gone. `scripts/basemaps-osm-map.sql` turns
+a tenant's `map` row into the OpenStreetMap vector map, under the same key, and has to run before
+that version is deployed. The `tile_proxy` column stays, unused, until a later release drops it
+(a destructive migration takes two releases). What follows is how it was.
 
 Core keeps a small registry in place of `BASEMAP_PRESETS`:
 `KEYED_TILE_PROVIDERS = { carto: { url: '…voyager/{z}/{x}/{y}{r}.png?key={KEY}', secretEnvVar: 'CARTO_API_KEY' } }`.

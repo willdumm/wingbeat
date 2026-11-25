@@ -34,10 +34,4 @@ describe('basemap URLs and keys', () => {
     assert.equal(basemaps.basemapKeyFromLabel('!!!'), 'basemap');
     assert.equal(basemaps.basemapKeyFromLabel('x'.repeat(50)).length, 24);
   });
-
-  test('a keyed provider’s upstream URL is substituted from the registry, with the key encoded', () => {
-    const url = basemaps.substituteTileUrl(basemaps.KEYED_TILE_PROVIDERS.carto.url, { s: 'a', z: '3', x: '1', y: '2', r: '@2x', key: 'k/ey' });
-    assert.equal(url, 'https://a.basemaps.cartocdn.com/rastertiles/voyager/3/1/2@2x.png?key=k%2Fey');
-    assert.equal(basemaps.basemapProxyUrl('map'), '/api/tiles/map/{z}/{x}/{y}{r}.png');
-  });
 });

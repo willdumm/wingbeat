@@ -1,10 +1,9 @@
 import {
-  sharedTileLayerDefs,
-  sharedMapControlsMarkup,
   sharedMapControlsScripts,
+  tileOverlayLegendMountScript,
+  sharedMapControlsMarkup,
   tileOverlayLegendButtonMarkup,
   tileOverlayLegendPanelMarkup,
-  tileOverlayLegendMountScript,
 } from './map-controls';
 
 export function namedPointsEditorMarkup(): string {
@@ -62,13 +61,11 @@ export function namedPointsEditorScript(): string {
     // ── Named points map editor ───────────────────────────────────────────────
 
     let _npMap = null;
-    let _npTileLayers = null;
-    let _npCurrentTileLayer = null;
-    let _npPointLayers = new Map(); // id → { marker, circle }
+    let _npShape = null;            // the points and their radius circles (addMapShape)
+    let _npPoints = new Map();      // id → { name, maxKm, lat, lng }
     let _npEditorMode = 'edit';
     let _npSelectedId = null;
     let _npAddLatLng = null;
-    let _npAddMarker = null;
     let _npShowAllRadii = false; // radius circles: selected point only by default
 
     function _npShowPanel(name, maxKm, showDelete) {
@@ -78,73 +75,63 @@ export function namedPointsEditorScript(): string {
       document.getElementById('np-editor-delete').disabled = false;
       document.getElementById('np-editor-msg').style.display = 'none';
       document.getElementById('np-editor-panel').classList.add('visible');
-      if (_npMap) setTimeout(() => _npMap.invalidateSize(), 0);
     }
 
     function _npHidePanel() {
-      if (_npSelectedId !== null) {
-        const layers = _npPointLayers.get(_npSelectedId);
-        if (layers) {
-          const color = getAccentColor();
-          layers.marker.setStyle({ color, fillColor: color });
-          if (layers.circle) {
-            layers.circle.setStyle({ color, fillColor: color, fillOpacity: 0.1 });
-            if (!_npShowAllRadii) layers.circle.remove();
-          }
-        }
-      }
       document.getElementById('np-editor-panel').classList.remove('visible');
       _npSelectedId = null;
       _npAddLatLng = null;
-      if (_npAddMarker) { _npAddMarker.remove(); _npAddMarker = null; }
-      if (_npMap) setTimeout(() => _npMap.invalidateSize(), 0);
+      _npDraw();
     }
 
-    function _npRenderPoint(feature) {
-      const { id, name, maxKm } = feature.properties;
-      const [lng, lat] = feature.geometry.coordinates;
-      const existing = _npPointLayers.get(id);
-      if (existing) { existing.marker.remove(); if (existing.circle) existing.circle.remove(); }
-      const color = getAccentColor();
-      // bubblingMouseEvents: false — otherwise a marker click also fires the map's click
-      // handler, which in add mode would drop a temp marker on top of this point and
-      // open the blank add panel over the selection.
-      const marker = L.circleMarker([lat, lng], {
-        radius: 6, color, fillColor: color, fillOpacity: 0.85, weight: 2, bubblingMouseEvents: false,
-      }).addTo(_npMap);
-      let circle = null;
-      if (maxKm && maxKm > 0) {
-        circle = L.circle([lat, lng], {
-          radius: maxKm * 1000, color, fillColor: color, fillOpacity: 0.1, weight: 1, interactive: false,
-        });
-        if (_npShowAllRadii) circle.addTo(_npMap);
-      }
-      _npPointLayers.set(id, { marker, circle });
-      marker.on('click', () => {
-        // Selecting an existing point always works — in add mode, drop back to edit mode
-        // instead of ignoring the click.
-        if (_npEditorMode !== 'edit') _npSetMode('edit');
-        _npHidePanel();
-        _npSelectedId = id;
-        marker.setStyle({ color: '#f59e0b', fillColor: '#f59e0b' });
-        if (circle) {
-          circle.addTo(_npMap);
-          circle.setStyle({ color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.2 });
+    // Redraws every point: its dot, and its radius circle if it's selected or all show.
+    function _npDraw() {
+      if (!_npShape) return;
+      const dot = (p, color) => pointFeature({ lat: p.lat, lon: p.lng }, { color, radius: 6, opacity: 0.85, width: 2, id: p.id });
+      const features = [];
+      for (const [id, p] of _npPoints) {
+        const selected = id === _npSelectedId;
+        const color = selected ? MAP_EDITOR_SELECTED : getAccentColor();
+        if (p.maxKm > 0 && (selected || _npShowAllRadii)) {
+          features.push({
+            type: 'Feature',
+            properties: { color, opacity: selected ? 0.2 : 0.1, width: 1 },
+            geometry: { type: 'Polygon', coordinates: [circleRing(p.lat, p.lng, p.maxKm)] },
+          });
         }
-        _npShowPanel(name, maxKm, true);
-      });
+        features.push(dot({ ...p, id }, color));
+      }
+      if (_npAddLatLng) features.push(dot(_npAddLatLng, MAP_EDITOR_ADDING));
+      _npShape.setFeatures(features);
+    }
+
+    // The named point at a screen point, or undefined. A few px around it, for touch.
+    function _npPointAt(point) {
+      return _ftFeatureAt(_npMap, _npShape.id + '-editor-dots', point, 5)?.properties.id;
+    }
+
+    function _npSelect(id) {
+      // Selecting an existing point always works — in add mode, drop back to edit mode
+      // instead of ignoring the click.
+      if (_npEditorMode !== 'edit') _npSetMode('edit');
+      _npHidePanel();
+      _npSelectedId = id;
+      _npDraw();
+      const { name, maxKm } = _npPoints.get(id);
+      _npShowPanel(name, maxKm, true);
     }
 
     async function _npLoadPoints() {
       _setEditorStatus('np-editor-status', 'Loading…', false);
-      for (const { marker, circle } of _npPointLayers.values()) {
-        marker.remove();
-        if (circle) circle.remove();
-      }
-      _npPointLayers.clear();
+      _npPoints.clear();
+      _npDraw();
       try {
         const geojson = await fetchNamedPoints();
-        for (const f of geojson.features) _npRenderPoint(f);
+        for (const f of geojson.features) {
+          const [lng, lat] = f.geometry.coordinates;
+          _npPoints.set(f.properties.id, { name: f.properties.name, maxKm: f.properties.maxKm, lat, lng });
+        }
+        _npDraw();
         _setEditorStatus('np-editor-status', '', false);
       } catch (_) {
         _setEditorStatus('np-editor-status', 'Failed to load points.', true);
@@ -162,26 +149,24 @@ export function namedPointsEditorScript(): string {
     function _openNamedPointsEditor() {
       _settingsNavigateTo('settings-view-named-points-editor', 'Named Points');
       if (!_npMap) {
-        const npMap = L.map('np-editor-map', { zoomControl: false, attributionControl: false })
-          .setView(
-            [window.APP_SETTINGS.mapDefaultLat, window.APP_SETTINGS.mapDefaultLng],
-            window.APP_SETTINGS.mapDefaultZoom
-          );
-        ${sharedTileLayerDefs('npMap', '_npTileLayers', '_npCurrentTileLayer', false)}
-        _npMap = npMap;
-        ${sharedMapControlsScripts('_npMap', 'np-', '_npTileLayers', '_npCurrentTileLayer')}
+        _npMap = createMap(document.getElementById('np-editor-map'), _ftDefaultView());
+        ${sharedMapControlsScripts('_npMap', 'np-')}
         ${tileOverlayLegendMountScript('_npMap', 'np-')}
+        _npShape = addMapShape(_npMap, [], [regionFillLayer(), regionOutlineLayer(), editorDotLayer()]);
         _npMap.on('click', (e) => {
+          const id = _npPointAt(e.point);
+          if (id !== undefined) { _npSelect(id); return; }
           if (_npEditorMode !== 'add') return;
           _npHidePanel();
-          _npAddLatLng = e.latlng;
-          _npAddMarker = L.circleMarker(e.latlng, {
-            radius: 6, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.85, weight: 2,
-          }).addTo(_npMap);
+          _npAddLatLng = e.lngLat;
+          _npDraw();
           _npShowPanel('', null, false);
         });
+        _npMap.on('mousemove', (e) => {
+          _npMap.getCanvas().style.cursor = _npPointAt(e.point) !== undefined ? 'pointer' : '';
+        });
       }
-      _npMap.invalidateSize();
+      _npMap.resize();
       _npHidePanel();
       _npSetMode('edit');
       _npLoadPoints();
@@ -196,11 +181,7 @@ export function namedPointsEditorScript(): string {
     document.getElementById('np-toggle-radii').addEventListener('click', () => {
       _npShowAllRadii = !_npShowAllRadii;
       document.getElementById('np-toggle-radii').classList.toggle('active', _npShowAllRadii);
-      for (const [pid, layers] of _npPointLayers) {
-        if (!layers.circle) continue;
-        if (_npShowAllRadii || pid === _npSelectedId) layers.circle.addTo(_npMap);
-        else layers.circle.remove();
-      }
+      _npDraw();
     });
 
     document.getElementById('np-editor-save').addEventListener('click', async () => {
@@ -220,18 +201,10 @@ export function namedPointsEditorScript(): string {
           });
           if (saved) {
             const savedId = _npSelectedId;
-            const layers = _npPointLayers.get(savedId);
-            const latlng = layers ? layers.marker.getLatLng() : null;
+            const point = _npPoints.get(savedId);
+            if (point) Object.assign(point, { name, maxKm });
             _npHidePanel();
-            if (latlng) {
-              _npRenderPoint({
-                type: 'Feature',
-                properties: { id: savedId, name, maxKm },
-                geometry: { type: 'Point', coordinates: [latlng.lng, latlng.lat] },
-              });
-            } else {
-              await _npLoadPoints();
-            }
+            if (!point) await _npLoadPoints();
             _setEditorStatus('np-editor-status', 'Saved.', false);
             setTimeout(() => _setEditorStatus('np-editor-status', '', false), 2000);
           }
@@ -242,13 +215,7 @@ export function namedPointsEditorScript(): string {
             return null;
           });
           if (data) {
-            if (_npAddMarker) { _npAddMarker.remove(); _npAddMarker = null; }
-            _npRenderPoint({
-              type: 'Feature',
-              properties: { id: data.id, name, maxKm },
-              geometry: { type: 'Point', coordinates: [_npAddLatLng.lng, _npAddLatLng.lat] },
-            });
-            _npAddLatLng = null;
+            _npPoints.set(data.id, { name, maxKm, lat: _npAddLatLng.lat, lng: _npAddLatLng.lng });
             _npHidePanel();
             _setEditorStatus('np-editor-status', 'Added.', false);
             setTimeout(() => _setEditorStatus('np-editor-status', _npEditorMode === 'add' ? 'Click map to place point.' : '', false), 2000);
@@ -275,8 +242,7 @@ export function namedPointsEditorScript(): string {
           return false;
         });
         if (deleted) {
-          const layers = _npPointLayers.get(_npSelectedId);
-          if (layers) { layers.marker.remove(); if (layers.circle) layers.circle.remove(); _npPointLayers.delete(_npSelectedId); }
+          _npPoints.delete(_npSelectedId);
           _npHidePanel();
           _setEditorStatus('np-editor-status', 'Deleted.', false);
           setTimeout(() => _setEditorStatus('np-editor-status', '', false), 2000);

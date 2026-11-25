@@ -35,7 +35,7 @@ export function viewportHeightInitScript(): string {
     if (last && h < last && editing()) return;
     last = h;
     root.style.setProperty('--app-height', h + 'px');
-    // Leaflet (and other layout code) only listens for window resize; a visual-viewport-
+    // Layout code only listens for window resize; a visual-viewport-
     // only change (in-app browser toolbar showing/hiding) wouldn't otherwise reach it.
     if (!fromWindowResize) window.dispatchEvent(new Event('resize'));
   }

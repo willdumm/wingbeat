@@ -1,10 +1,9 @@
 import {
-  sharedTileLayerDefs,
-  sharedMapControlsMarkup,
   sharedMapControlsScripts,
+  tileOverlayLegendMountScript,
+  sharedMapControlsMarkup,
   tileOverlayLegendButtonMarkup,
   tileOverlayLegendPanelMarkup,
-  tileOverlayLegendMountScript,
 } from './map-controls';
 
 export function regionsEditorMarkup(): string {
@@ -48,8 +47,8 @@ export function regionsEditorScript(): string {
     // ── Regions map editor ────────────────────────────────────────────────────
 
     let _rgMap = null;
-    let _rgTileLayers = null;
-    let _rgCurrentTileLayer = null;
+    let _rgPolygons = null;             // the regions (addMapShape)
+    let _rgHints = null;                // the vertex highlights and the new ring's edges (addMapShape)
     let _rgMode = 'select';
 
     // Topology state
@@ -57,25 +56,21 @@ export function regionsEditorScript(): string {
     let _rgRegions = [];            // { dbId, name, ring, lid, multiPoly? }[]
     let _rgPointUsers = new Map();  // pointId → Set<regionLid>
 
-    let _rgPolygonLayers = new Map();   // regionLid → L.Polygon
-    let _rgVertexMarkers = new Map();   // pointId → L.CircleMarker
-    let _rgVertexHandles = new Map();   // pointId → L.Marker (drag handle)
-    let _rgMidMarkers = [];             // L.CircleMarker[]
-    let _rgAddModeMarkers = [];         // L.CircleMarker[] shown as snap targets in add mode
+    // The selected region's draggable markers.
+    let _rgVertexHandles = new Map();   // pointId → maplibregl.Marker
+    let _rgMidMarkers = [];             // maplibregl.Marker[], one per edge of the ring
 
     let _rgSelectedIdx = null;
     let _rgDirtyLids = new Set();       // Set<regionLid>
 
     let _rgNewRing = [];
-    let _rgNewRingLayer = null;
     let _rgPtCounter = 0;
     let _rgRidCounter = 0;
 
     // Snap/hover state
     let _rgSnapHoverPid = null;
-    let _rgSnapHoverMarker = null;
     let _rgMergeTargetPid = null;
-    let _rgMergeHoverMarker = null;
+    let _rgFlashPid = null;
 
     // Context menu element (created once, reused)
     let _rgCtxMenu = null;
@@ -136,7 +131,7 @@ export function regionsEditorScript(): string {
       users.delete(region.lid);
       if (users.size === 0) { _rgPoints.delete(pid); _rgPointUsers.delete(pid); }
       _rgDirtyLids.add(region.lid);
-      _rgRenderPolygon(_rgSelectedIdx);
+      _rgRenderPolygons();
       _rgRenderVertices(_rgSelectedIdx);
       _rgRenderMidpoints(_rgSelectedIdx);
       _rgUpdateDirtyIndicator();
@@ -155,9 +150,8 @@ export function regionsEditorScript(): string {
         region.ring.splice(idx, 1);
         users.delete(lid);
         _rgDirtyLids.add(lid);
-        const ri = _rgRegions.indexOf(region);
-        _rgRenderPolygon(ri);
       }
+      _rgRenderPolygons();
       if (users.size === 0) { _rgPoints.delete(pid); _rgPointUsers.delete(pid); }
       if (_rgSelectedIdx !== null) {
         _rgRenderVertices(_rgSelectedIdx);
@@ -188,36 +182,30 @@ export function regionsEditorScript(): string {
       return result;
     }
 
-    function _rgFindMergeTarget(draggedPid, latlng) {
+    // The vertex nearest a map position within px on screen (other than exceptPid), or null.
+    function _rgNearestPoint(lngLat, px, exceptPid) {
       let best = null;
-      let bestDist = Infinity;
-      const containerPt = _rgMap.latLngToContainerPoint(latlng);
+      let bestDist = px;
+      const at = _rgMap.project(lngLat);
       for (const [pid, pt] of _rgPoints.entries()) {
-        if (pid === draggedPid) continue;
-        const ptContainer = _rgMap.latLngToContainerPoint([pt.lat, pt.lon]);
-        const dx = containerPt.x - ptContainer.x;
-        const dy = containerPt.y - ptContainer.y;
-        const d = Math.sqrt(dx * dx + dy * dy);
-        if (d < 14 && d < bestDist) { best = pid; bestDist = d; }
+        if (pid === exceptPid) continue;
+        const p = _rgMap.project([pt.lon, pt.lat]);
+        const d = Math.hypot(at.x - p.x, at.y - p.y);
+        if (d < bestDist) { best = pid; bestDist = d; }
       }
       return best;
     }
 
-    function _rgUpdateMergeHover(draggedPid, latlng) {
-      const target = _rgFindMergeTarget(draggedPid, latlng);
+    function _rgFindMergeTarget(draggedPid, lngLat) { return _rgNearestPoint(lngLat, 14, draggedPid); }
+
+    function _rgUpdateMergeHover(draggedPid, lngLat) {
+      const target = _rgFindMergeTarget(draggedPid, lngLat);
       if (target === _rgMergeTargetPid) return;
       _rgMergeTargetPid = target;
-      if (_rgMergeHoverMarker) { _rgMergeHoverMarker.remove(); _rgMergeHoverMarker = null; }
-      if (target) {
-        const pt = _rgPoints.get(target);
-        _rgMergeHoverMarker = L.circleMarker([pt.lat, pt.lon], {
-          radius: 11, color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.4, weight: 2.5, interactive: false,
-        }).addTo(_rgMap);
-      }
+      _rgDrawHints();
     }
 
     function _rgMergePoints(draggedPid, targetPid) {
-      const affectedLids = new Set();
       for (const region of _rgRegions) {
         if (!region.ring || !region.ring.includes(draggedPid)) continue;
         const testRing = region.ring.map(p => p === draggedPid ? targetPid : p);
@@ -226,65 +214,61 @@ export function regionsEditorScript(): string {
         region.ring = deduped;
         if (!_rgPointUsers.has(targetPid)) _rgPointUsers.set(targetPid, new Set());
         _rgPointUsers.get(targetPid).add(region.lid);
-        affectedLids.add(region.lid);
         _rgDirtyLids.add(region.lid);
       }
       _rgPoints.delete(draggedPid);
       _rgPointUsers.delete(draggedPid);
-      for (const lid of affectedLids) {
-        const ri = _rgRegions.findIndex(r => r.lid === lid);
-        if (ri !== -1) _rgRenderPolygon(ri);
-      }
+      _rgRenderPolygons();
       if (_rgSelectedIdx !== null) { _rgRenderVertices(_rgSelectedIdx); _rgRenderMidpoints(_rgSelectedIdx); }
       _rgUpdateDirtyIndicator();
     }
 
-    function _rgOnVertexDragEnd(pid, latlng) {
-      if (_rgMergeHoverMarker) { _rgMergeHoverMarker.remove(); _rgMergeHoverMarker = null; }
-      const target = _rgFindMergeTarget(pid, latlng);
+    function _rgOnVertexDragEnd(pid, lngLat) {
+      const target = _rgFindMergeTarget(pid, lngLat);
       _rgMergeTargetPid = null;
+      _rgDrawHints();
       if (target) _rgMergePoints(pid, target);
     }
 
-    // ── Add-mode snap indicator ───────────────────────────────────────────────
+    // ── Highlights ────────────────────────────────────────────────────────────
 
-    function _rgRenderAddModeMarkers() {
-      for (const m of _rgAddModeMarkers) m.remove();
-      _rgAddModeMarkers = [];
-      if (!_rgMap) return;
-      for (const [, pt] of _rgPoints.entries()) {
-        const m = L.circleMarker([pt.lat, pt.lon], {
-          radius: 7, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.25, weight: 2, interactive: false,
-        }).addTo(_rgMap);
-        _rgAddModeMarkers.push(m);
+    // Redraws what's drawn over the regions: in add mode every vertex (a snap target), the
+    // new ring's edges so far and the vertex a click would snap to; the one just snapped
+    // to; and the one a dragged vertex would merge into.
+    function _rgDrawHints() {
+      if (!_rgHints) return;
+      const features = [];
+      const green = MAP_EDITOR_ADDING;
+      function dot(pid, color, radius, opacity, width) {
+        const pt = _rgPoints.get(pid);
+        if (pt) features.push(pointFeature(pt, { color, radius, opacity, width }));
       }
-    }
-
-    function _rgClearAddModeMarkers() {
-      for (const m of _rgAddModeMarkers) m.remove();
-      _rgAddModeMarkers = [];
+      if (_rgMode === 'add-region') {
+        for (const pid of _rgPoints.keys()) dot(pid, green, 7, 0.25, 2);
+        if (_rgNewRing.length > 1) {
+          features.push(lineFeature(_rgNewRing.map(pid => _rgPoints.get(pid)), { color: green }));
+        }
+        dot(_rgSnapHoverPid, green, 11, 0.4, 2.5);
+      }
+      dot(_rgFlashPid, green, 13, 0.55, 3);
+      dot(_rgMergeTargetPid, MAP_EDITOR_SELECTED, 11, 0.4, 2.5);
+      _rgHints.setFeatures(features);
     }
 
     function _rgOnMouseMoveAddMode(e) {
-      const pid = _rgFindSnapPoint(e.latlng);
+      const pid = _rgFindSnapPoint(e.lngLat);
       if (pid === _rgSnapHoverPid) return;
       _rgSnapHoverPid = pid;
-      if (_rgSnapHoverMarker) { _rgSnapHoverMarker.remove(); _rgSnapHoverMarker = null; }
-      if (pid) {
-        const pt = _rgPoints.get(pid);
-        _rgSnapHoverMarker = L.circleMarker([pt.lat, pt.lon], {
-          radius: 11, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.4, weight: 2.5, interactive: false,
-        }).addTo(_rgMap);
-      }
+      _rgDrawHints();
     }
 
     function _rgFlashVertex(pid) {
-      const pt = _rgPoints.get(pid);
-      if (!pt) return;
-      const flash = L.circleMarker([pt.lat, pt.lon], {
-        radius: 13, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.55, weight: 3, interactive: false,
-      }).addTo(_rgMap);
-      setTimeout(() => flash.remove(), 500);
+      _rgFlashPid = pid;
+      setTimeout(() => {
+        if (_rgFlashPid !== pid) return;
+        _rgFlashPid = null;
+        _rgDrawHints();
+      }, 500);
     }
 
     // ── Topology ──────────────────────────────────────────────────────────────
@@ -352,35 +336,30 @@ export function regionsEditorScript(): string {
 
     // ── Render ────────────────────────────────────────────────────────────────
 
-    function _rgRenderPolygon(ri) {
-      const region = _rgRegions[ri];
-      if (!region || region.multiPoly) return;
-      const lid = region.lid;
-      const latlngs = region.ring.map(pid => {
-        const { lat, lon } = _rgPoints.get(pid);
-        return [lat, lon];
-      });
-      if (_rgPolygonLayers.has(lid)) {
-        _rgPolygonLayers.get(lid).setLatLngs(latlngs);
-      } else {
-        const isSelected = _rgSelectedIdx === ri;
-        const poly = L.polygon(latlngs, {
-          color: isSelected ? '#f90' : getAccentColor(),
-          weight: isSelected ? 2.5 : 1.5,
-          fillOpacity: 0.06,
-        }).addTo(_rgMap);
-        poly.on('click', () => {
-          const currentRi = _rgRegions.findIndex(r => r.lid === lid);
-          if (currentRi !== -1) _rgSelectRegion(currentRi);
+    function _rgRenderPolygons() {
+      if (!_rgPolygons) return;
+      const features = [];
+      _rgRegions.forEach((region, ri) => {
+        if (region.multiPoly) return;
+        const selected = _rgSelectedIdx === ri;
+        features.push({
+          type: 'Feature',
+          properties: { lid: region.lid, color: selected ? MAP_EDITOR_SELECTED : getAccentColor(), width: selected ? 2.5 : 1.5 },
+          geometry: _rgRegionToGeojson(ri),
         });
-        _rgPolygonLayers.set(lid, poly);
-      }
+      });
+      features.sort((a, b) => a.properties.width - b.properties.width); // the selected one on top
+      _rgPolygons.setFeatures(features);
+    }
+
+    // The index of the region at a screen point, or -1.
+    function _rgRegionAt(point) {
+      const hit = _ftFeatureAt(_rgMap, _rgPolygons.id + '-region-fill', point);
+      return hit ? _rgRegions.findIndex(r => r.lid === hit.properties.lid) : -1;
     }
 
     function _rgClearVertexMarkers() {
-      for (const m of _rgVertexMarkers.values()) m.remove();
       for (const h of _rgVertexHandles.values()) h.remove();
-      _rgVertexMarkers.clear();
       _rgVertexHandles.clear();
     }
 
@@ -389,144 +368,111 @@ export function regionsEditorScript(): string {
       _rgMidMarkers = [];
     }
 
+    // A draggable marker; its class is set through classList (MapLibre's own classes are on
+    // the same element).
+    function _rgAddHandle(lat, lon, className) {
+      const el = document.createElement('div');
+      el.className = 'rg-handle ' + className;
+      return new maplibregl.Marker({ element: el, draggable: true }).setLngLat([lon, lat]).addTo(_rgMap);
+    }
+
     function _rgRenderVertices(ri) {
       _rgClearVertexMarkers();
-      const seen = new Set();
-      for (const pid of _rgRegions[ri].ring) {
-        if (seen.has(pid)) continue;
-        seen.add(pid);
+      for (const pid of new Set(_rgRegions[ri].ring)) {
         const { lat, lon } = _rgPoints.get(pid);
-        const shared = _rgPointUsers.get(pid).size > 1;
-        const color = shared ? '#f90' : getAccentColor();
-        const marker = L.circleMarker([lat, lon], {
-          radius: 6, color, fillColor: color, fillOpacity: 0.9, weight: 1.5,
-        }).addTo(_rgMap);
-        _rgVertexMarkers.set(pid, marker);
-
-        // Right-click to delete vertex
-        marker.on('contextmenu', e => {
-          L.DomEvent.stopPropagation(e);
-          e.originalEvent.preventDefault();
-          _rgShowCtxMenu(e.originalEvent.clientX, e.originalEvent.clientY, pid);
-        });
-
-        const dragIcon = L.divIcon({ className: 'rg-drag-handle', iconSize: [16, 16] });
-        const handle = L.marker([lat, lon], { icon: dragIcon, draggable: true }).addTo(_rgMap);
-        handle.on('contextmenu', e => {
-          L.DomEvent.stopPropagation(e);
-          e.originalEvent.preventDefault();
-          _rgShowCtxMenu(e.originalEvent.clientX, e.originalEvent.clientY, pid);
-        });
-
-        let _longPressTimer = null;
-        handle.on('touchstart', e => {
-          const touch = e.originalEvent.touches[0];
-          const startX = touch.clientX, startY = touch.clientY;
-          _longPressTimer = setTimeout(() => {
-            _longPressTimer = null;
-            _rgShowCtxMenu(startX, startY, pid);
-          }, 500);
-        });
-        handle.on('touchmove', () => {
-          if (_longPressTimer) { clearTimeout(_longPressTimer); _longPressTimer = null; }
-        });
-        handle.on('touchend', () => {
-          if (_longPressTimer) { clearTimeout(_longPressTimer); _longPressTimer = null; }
-        });
-
-        handle.on('drag', e => {
-          _rgOnVertexDrag(pid, e.latlng);
-          _rgUpdateMergeHover(pid, e.latlng);
-        });
-        handle.on('dragend', e => _rgOnVertexDragEnd(pid, e.target.getLatLng()));
-        _rgVertexHandles.set(pid, handle);
+        _rgWireVertex(pid, _rgAddHandle(lat, lon, _rgPointUsers.get(pid).size > 1 ? 'rg-shared' : 'rg-own'));
       }
+    }
+
+    // Makes a handle the vertex pid's: drag to move, right-click or long-press for its menu.
+    function _rgWireVertex(pid, handle) {
+      const el = handle.getElement();
+      el.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        _rgShowCtxMenu(e.clientX, e.clientY, pid);
+      });
+
+      let _longPressTimer = null;
+      let _longPressed = false;
+      function cancelLongPress() {
+        if (_longPressTimer) { clearTimeout(_longPressTimer); _longPressTimer = null; }
+      }
+      el.addEventListener('touchstart', e => {
+        const { clientX, clientY } = e.touches[0];
+        cancelLongPress();
+        _longPressed = false;
+        _longPressTimer = setTimeout(() => {
+          _longPressTimer = null;
+          _longPressed = true;
+          _rgShowCtxMenu(clientX, clientY, pid);
+        }, 500);
+      }, { passive: true });
+      el.addEventListener('touchend', e => {
+        cancelLongPress();
+        // No click after a long press: it would close the menu.
+        if (_longPressed) e.preventDefault();
+      });
+      el.addEventListener('touchcancel', cancelLongPress);
+
+      handle.on('drag', () => {
+        cancelLongPress();
+        const lngLat = handle.getLngLat();
+        _rgOnVertexDrag(pid, lngLat);
+        _rgUpdateMergeHover(pid, lngLat);
+      });
+      handle.on('dragend', () => _rgOnVertexDragEnd(pid, handle.getLngLat()));
+      _rgVertexHandles.set(pid, handle);
+    }
+
+    function _rgMidpoint(ring, i) {
+      const p0 = _rgPoints.get(ring[i]);
+      const p1 = _rgPoints.get(ring[(i + 1) % ring.length]);
+      return { lat: (p0.lat + p1.lat) / 2, lon: (p0.lon + p1.lon) / 2 };
     }
 
     function _rgRenderMidpoints(ri) {
       _rgClearMidMarkers();
       const ring = _rgRegions[ri].ring;
       for (let i = 0; i < ring.length; i++) {
-        const p0 = _rgPoints.get(ring[i]);
-        const p1 = _rgPoints.get(ring[(i + 1) % ring.length]);
-        const midLat = (p0.lat + p1.lat) / 2;
-        const midLon = (p0.lon + p1.lon) / 2;
-        const edgeIdx = i;
-        const m = L.circleMarker([midLat, midLon], {
-          radius: 4, color: '#888', fillColor: '#ccc', fillOpacity: 0.8, weight: 1,
-        }).addTo(_rgMap);
-
-        // Insert vertex on mousedown and immediately allow dragging.
-        // We use document-level listeners because _rgInsertVertex → _rgRenderMidpoints
-        // removes 'm' from the DOM before mousemove/mouseup fire.
-        m.on('mousedown', e => {
-          L.DomEvent.stopPropagation(e);
-          _rgMap.dragging.disable();
-          const insertedPid = _rgInsertVertex(ri, edgeIdx, midLat, midLon);
-          function onMove(mv) {
-            const latlng = _rgMap.containerPointToLatLng(_rgMap.mouseEventToContainerPoint(mv));
-            _rgOnVertexDrag(insertedPid, latlng);
-            _rgUpdateMergeHover(insertedPid, latlng);
-            _rgVertexHandles.get(insertedPid)?.setLatLng(latlng);
-          }
-          function onUp(uv) {
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onUp);
-            _rgMap.dragging.enable();
-            const latlng = _rgMap.containerPointToLatLng(_rgMap.mouseEventToContainerPoint(uv));
-            _rgOnVertexDragEnd(insertedPid, latlng);
-            _rgVertexHandles.get(insertedPid)?.setLatLng(latlng);
-          }
-          document.addEventListener('mousemove', onMove);
-          document.addEventListener('mouseup', onUp);
-        });
-
-        m.on('touchstart', e => {
-          L.DomEvent.stopPropagation(e);
-          L.DomEvent.preventDefault(e);
-          _rgMap.dragging.disable();
-          const insertedPid = _rgInsertVertex(ri, edgeIdx, midLat, midLon);
-          function onMove(mv) {
-            mv.preventDefault();
-            const t = mv.touches[0];
-            const latlng = _rgMap.containerPointToLatLng(_rgMap.mouseEventToContainerPoint(t));
-            _rgOnVertexDrag(insertedPid, latlng);
-            _rgUpdateMergeHover(insertedPid, latlng);
-            _rgVertexHandles.get(insertedPid)?.setLatLng(latlng);
-          }
-          function onEnd(ev) {
-            document.removeEventListener('touchmove', onMove);
-            document.removeEventListener('touchend', onEnd);
-            _rgMap.dragging.enable();
-            const t = ev.changedTouches[0];
-            const latlng = _rgMap.containerPointToLatLng(_rgMap.mouseEventToContainerPoint(t));
-            _rgOnVertexDragEnd(insertedPid, latlng);
-            _rgVertexHandles.get(insertedPid)?.setLatLng(latlng);
-          }
-          document.addEventListener('touchmove', onMove, { passive: false });
-          document.addEventListener('touchend', onEnd);
-        });
-
+        const mid = _rgMidpoint(ring, i);
+        const m = _rgAddHandle(mid.lat, mid.lon, 'rg-mid');
+        // Dragging (or clicking) a midpoint inserts a vertex there, and the midpoint's own
+        // marker becomes the vertex's, so a drag carries on with it.
+        let inserted = false;
+        function insert() {
+          if (inserted) return;
+          inserted = true;
+          _rgMidMarkers.splice(_rgMidMarkers.indexOf(m), 1);
+          const { pid, shared } = _rgInsertVertex(ri, i, mid.lat, mid.lon);
+          m.getElement().classList.remove('rg-mid');
+          m.getElement().classList.add(shared ? 'rg-shared' : 'rg-own');
+          _rgWireVertex(pid, m);
+          _rgRenderMidpoints(ri);
+        }
+        m.on('dragstart', insert);
+        m.getElement().addEventListener('click', insert);
         _rgMidMarkers.push(m);
       }
     }
 
-    function _rgOnVertexDrag(pid, latlng) {
+    function _rgOnVertexDrag(pid, lngLat) {
       const pt = _rgPoints.get(pid);
-      pt.lat = latlng.lat;
-      pt.lon = latlng.lng;
-      _rgVertexMarkers.get(pid)?.setLatLng(latlng);
-      for (const lid of _rgPointUsers.get(pid)) {
-        const ri = _rgRegions.findIndex(r => r.lid === lid);
-        if (ri !== -1) {
-          _rgRenderPolygon(ri);
-          _rgDirtyLids.add(lid);
-        }
+      pt.lat = lngLat.lat;
+      pt.lon = lngLat.lng;
+      for (const lid of _rgPointUsers.get(pid)) _rgDirtyLids.add(lid);
+      _rgRenderPolygons();
+      if (_rgSelectedIdx !== null) {
+        const ring = _rgRegions[_rgSelectedIdx].ring;
+        _rgMidMarkers.forEach((m, i) => {
+          if (ring[i] !== pid && ring[(i + 1) % ring.length] !== pid) return;
+          const mid = _rgMidpoint(ring, i);
+          m.setLngLat([mid.lon, mid.lat]);
+        });
       }
-      if (_rgSelectedIdx !== null) _rgRenderMidpoints(_rgSelectedIdx);
       _rgUpdateDirtyIndicator();
     }
 
+    // Inserts a vertex on an edge of a region, and of any region sharing the edge.
     function _rgInsertVertex(ri, edgeIdx, lat, lon) {
       const newId = 'p' + (_rgPtCounter++);
       _rgPoints.set(newId, { id: newId, lat, lon });
@@ -560,37 +506,13 @@ export function regionsEditorScript(): string {
         }
       }
 
-      _rgRenderPolygon(ri);
-      _rgRenderVertices(ri);
-      _rgRenderMidpoints(ri);
+      _rgRenderPolygons();
       _rgDirtyLids.add(newLid);
       _rgUpdateDirtyIndicator();
-      return newId;
+      return { pid: newId, shared: _rgPointUsers.get(newId).size > 1 };
     }
 
-    function _rgFindSnapPoint(latlng) {
-      let best = null;
-      let bestDist = Infinity;
-      const containerPt = _rgMap.latLngToContainerPoint(latlng);
-      for (const [pid, pt] of _rgPoints.entries()) {
-        const ptContainer = _rgMap.latLngToContainerPoint([pt.lat, pt.lon]);
-        const dx = containerPt.x - ptContainer.x;
-        const dy = containerPt.y - ptContainer.y;
-        const d = Math.sqrt(dx * dx + dy * dy);
-        if (d < 10 && d < bestDist) { best = pid; bestDist = d; }
-      }
-      return best;
-    }
-
-    function _rgRedrawNewRingPreview() {
-      if (_rgNewRingLayer) { _rgNewRingLayer.remove(); _rgNewRingLayer = null; }
-      if (_rgNewRing.length < 1) return;
-      const latlngs = _rgNewRing.map(pid => {
-        const { lat, lon } = _rgPoints.get(pid);
-        return [lat, lon];
-      });
-      _rgNewRingLayer = L.polyline(latlngs, { color: '#22c55e', weight: 2, dashArray: '5,4' }).addTo(_rgMap);
-    }
+    function _rgFindSnapPoint(lngLat) { return _rgNearestPoint(lngLat, 10); }
 
     function _rgCancelNewRing() {
       // Remove any temporary points created only for the new ring (no region users yet)
@@ -599,7 +521,7 @@ export function regionsEditorScript(): string {
         if (users && users.size === 0) { _rgPoints.delete(pid); _rgPointUsers.delete(pid); }
       }
       _rgNewRing = [];
-      if (_rgNewRingLayer) { _rgNewRingLayer.remove(); _rgNewRingLayer = null; }
+      _rgDrawHints();
     }
 
     function _rgCommitNewRegion() {
@@ -612,35 +534,28 @@ export function regionsEditorScript(): string {
       }
       _rgDirtyLids.add(lid);
       _rgCancelNewRing();
-      _rgRenderPolygon(ri);
       _rgSetMode('select');
       _rgSelectRegion(ri);
       _rgUpdateDirtyIndicator();
     }
 
-    function _rgOnMapClickAddMode(latlng) {
-      const snapPid = _rgFindSnapPoint(latlng);
+    function _rgOnMapClickAddMode(lngLat) {
+      const snapPid = _rgFindSnapPoint(lngLat);
       let pid;
       if (snapPid) {
         pid = snapPid;
         _rgFlashVertex(pid);
       } else {
         pid = 'p' + (_rgPtCounter++);
-        _rgPoints.set(pid, { id: pid, lat: latlng.lat, lon: latlng.lng });
+        _rgPoints.set(pid, { id: pid, lat: lngLat.lat, lon: lngLat.lng });
         _rgPointUsers.set(pid, new Set());
-        // Add a snap-target marker for the new point too
-        const m = L.circleMarker([latlng.lat, latlng.lng], {
-          radius: 7, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.25, weight: 2, interactive: false,
-        }).addTo(_rgMap);
-        _rgAddModeMarkers.push(m);
       }
       if (_rgNewRing.length >= 3 && pid === _rgNewRing[0]) {
-        _rgRedrawNewRingPreview();
         _rgCommitNewRegion();
         return;
       }
       _rgNewRing.push(pid);
-      _rgRedrawNewRingPreview();
+      _rgDrawHints();
     }
 
     // ── Panel ─────────────────────────────────────────────────────────────────
@@ -655,7 +570,6 @@ export function regionsEditorScript(): string {
       document.getElementById('rg-panel-delete').disabled = false;
       document.getElementById('rg-panel').classList.add('visible');
       if (!region.name) document.getElementById('rg-panel-name').focus();
-      if (_rgMap) setTimeout(() => _rgMap.invalidateSize(), 0);
     }
 
     function _rgHidePanel() {
@@ -671,17 +585,10 @@ export function regionsEditorScript(): string {
       document.getElementById('rg-panel').classList.remove('visible');
       _rgClearVertexMarkers();
       _rgClearMidMarkers();
-      if (_rgMergeHoverMarker) { _rgMergeHoverMarker.remove(); _rgMergeHoverMarker = null; }
       _rgMergeTargetPid = null;
-      if (_rgSelectedIdx !== null) {
-        const region = _rgRegions[_rgSelectedIdx];
-        if (region) {
-          const poly = _rgPolygonLayers.get(region.lid);
-          if (poly) poly.setStyle({ color: getAccentColor(), weight: 1.5 });
-        }
-        _rgSelectedIdx = null;
-      }
-      if (_rgMap) setTimeout(() => _rgMap.invalidateSize(), 0);
+      _rgSelectedIdx = null;
+      _rgDrawHints();
+      _rgRenderPolygons();
       _rgUpdateDirtyIndicator();
     }
 
@@ -695,8 +602,7 @@ export function regionsEditorScript(): string {
       }
       _rgHidePanel();
       _rgSelectedIdx = ri;
-      const poly = _rgPolygonLayers.get(region.lid);
-      if (poly) poly.setStyle({ color: '#f90', weight: 2.5 });
+      _rgRenderPolygons();
       _rgRenderVertices(ri);
       _rgRenderMidpoints(ri);
       _rgShowPanel(ri);
@@ -707,19 +613,14 @@ export function regionsEditorScript(): string {
       document.getElementById('rg-mode-select').classList.toggle('active', mode === 'select');
       document.getElementById('rg-mode-add-region').classList.toggle('active', mode === 'add-region');
       if (mode === 'select') {
-        _rgMap.getContainer().style.cursor = '';
-        _rgCancelNewRing();
-        _rgClearAddModeMarkers();
-        _rgMap.off('mousemove', _rgOnMouseMoveAddMode);
-        if (_rgSnapHoverMarker) { _rgSnapHoverMarker.remove(); _rgSnapHoverMarker = null; }
+        _rgMap.getCanvas().style.cursor = '';
         _rgSnapHoverPid = null;
+        _rgCancelNewRing();
         _setEditorStatus('rg-editor-status', '', false);
         _rgUpdateDirtyIndicator();
       } else {
-        _rgMap.getContainer().style.cursor = 'crosshair';
+        _rgMap.getCanvas().style.cursor = 'crosshair';
         _rgHidePanel();
-        _rgRenderAddModeMarkers();
-        _rgMap.on('mousemove', _rgOnMouseMoveAddMode);
         _setEditorStatus('rg-editor-status', 'Click near an existing vertex to snap. Close ring by clicking first vertex.', false);
       }
     }
@@ -729,12 +630,10 @@ export function regionsEditorScript(): string {
     async function _rgLoadRegions() {
       _setEditorStatus('rg-editor-status', 'Loading…', false);
       _rgHidePanel();
-      for (const poly of _rgPolygonLayers.values()) poly.remove();
-      _rgPolygonLayers.clear();
       try {
         const geojson = await fetchRegions();
         _rgBuildTopology(geojson.features);
-        for (let ri = 0; ri < _rgRegions.length; ri++) _rgRenderPolygon(ri);
+        _rgRenderPolygons();
         _setEditorStatus('rg-editor-status', '', false);
         _rgUpdateDirtyIndicator();
       } catch (_) {
@@ -751,8 +650,6 @@ export function regionsEditorScript(): string {
         if (users.size === 0) { _rgPoints.delete(pid); _rgPointUsers.delete(pid); }
       }
       _rgRegions.splice(ri, 1);
-      const poly = _rgPolygonLayers.get(lid);
-      if (poly) { poly.remove(); _rgPolygonLayers.delete(lid); }
       _rgDirtyLids.delete(lid);
       _rgSelectedIdx = null;
       _rgHidePanel();
@@ -791,22 +688,26 @@ export function regionsEditorScript(): string {
       };
 
       if (!_rgMap) {
-        const rgMap = L.map('rg-editor-map', { zoomControl: false, attributionControl: false })
-          .setView(
-            [window.APP_SETTINGS.mapDefaultLat, window.APP_SETTINGS.mapDefaultLng],
-            window.APP_SETTINGS.mapDefaultZoom
-          );
-        ${sharedTileLayerDefs('rgMap', '_rgTileLayers', '_rgCurrentTileLayer', false)}
-        _rgMap = rgMap;
+        _rgMap = createMap(document.getElementById('rg-editor-map'), _ftDefaultView());
         // Suppress the browser context menu over the map so right-click works for vertex deletion.
         _rgMap.getContainer().addEventListener('contextmenu', e => e.preventDefault());
-        _rgMap.on('click', e => {
-          if (_rgMode === 'add-region') _rgOnMapClickAddMode(e.latlng);
-        });
-        ${sharedMapControlsScripts('_rgMap', 'rg-', '_rgTileLayers', '_rgCurrentTileLayer')}
+        ${sharedMapControlsScripts('_rgMap', 'rg-')}
         ${tileOverlayLegendMountScript('_rgMap', 'rg-')}
+        _rgPolygons = addMapShape(_rgMap, [], [regionFillLayer(), regionOutlineLayer()]);
+        _rgHints = addMapShape(_rgMap, [], [editorDotLayer(), editorDraftLineLayer()], { z: 1 });
+        _rgMap.on('click', e => {
+          // A click on a marker is the map's too.
+          if (e.originalEvent.target.closest('.rg-handle')) return;
+          if (_rgMode === 'add-region') { _rgOnMapClickAddMode(e.lngLat); return; }
+          const ri = _rgRegionAt(e.point);
+          if (ri !== -1) _rgSelectRegion(ri);
+        });
+        _rgMap.on('mousemove', e => {
+          if (_rgMode === 'add-region') _rgOnMouseMoveAddMode(e);
+          else _rgMap.getCanvas().style.cursor = _rgRegionAt(e.point) !== -1 ? 'pointer' : '';
+        });
       }
-      _rgMap.invalidateSize();
+      _rgMap.resize();
       _rgDirtyLids.clear();
       _rgSetMode('select');
       _rgLoadRegions();

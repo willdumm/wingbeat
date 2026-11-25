@@ -2,7 +2,7 @@ import type { FlightPoint, TrackedFlight } from '@wingbeat/core/api/flights';
 import { TRACKER_COLORS, type LiveData } from '@wingbeat/core/live';
 import type { Flight } from '@/lib/flights';
 import {
-  cardStack, dayMap, flightTrackPicks, followWait, groundTrailFeatures, initialView, latestTracks, liveBounds, liveTrackPicks, mapDays,
+  cardStack, dayMap, flightTrackPicks, followWait, groundTrailLines, initialView, latestTracks, liveBounds, liveTrackPicks, mapDays,
   pickDetails, positionFeatures, spotDetails, statusCards, trackStarts, type StatusCard,
 } from '@/lib/live';
 
@@ -73,8 +73,8 @@ test('positions for trackers with one; each tracker\'s latest track, in flight o
   const tracks = latestTracks(cards, ([id]: number[]) => raw[id] ?? []);
   expect(tracks.features.map((f) => f.geometry.coordinates)).toEqual([[[-152, 57], [-152.4, 57.8]], [[2, 1], [4, 3]]]);
   expect(trackStarts(tracks).features.map((f) => [f.id, f.geometry.coordinates, f.properties])).toEqual([
-    ['start-1', [-152, 57], { color: TRACKER_COLORS[0], inFlight: false }],
-    ['start-2', [2, 1], { color: TRACKER_COLORS[1], inFlight: false }],
+    ['start-1', [-152, 57], { color: TRACKER_COLORS[0] }],
+    ['start-2', [2, 1], { color: TRACKER_COLORS[1] }],
   ]);
   const [w, s, e, n] = liveBounds(tracks, positionFeatures(cards, live))!;
   expect([w, s, e, n]).toEqual([-152.4, 1, 4, 57.8]);
@@ -89,9 +89,9 @@ test('planes turned to their course; ground trails and their pilots only on the 
   expect(points.map((f) => [f.id, f.properties])).toEqual([
     [1, { color: TRACKER_COLORS[0], inFlight: true, plane: true, course: 90 }],
     [2, { color: TRACKER_COLORS[1], inFlight: false, plane: true, course: 90 }],
-    ['pilot-2', { color: TRACKER_COLORS[1], inFlight: false, pilot: true }],
+    ['pilot-2', { color: TRACKER_COLORS[1], pilot: true }],
   ]);
-  const trails = groundTrailFeatures(cards, moved).features;
+  const trails = groundTrailLines(cards, moved).features;
   expect(trails.map((f) => f.id)).toEqual(['trail-2']);
   expect(trails[0].geometry.coordinates).toEqual([[-152.4, 57.8], [-152.39, 57.81]]);
 });
@@ -99,7 +99,7 @@ test('planes turned to their course; ground trails and their pilots only on the 
 test("the map opens on the instance's view, else the first position", () => {
   const cards = statusCards(trackers, live, NOW, 'faint');
   expect(initialView({ app_name: 'x', timezone: 'UTC', map_default_lat: 60, map_default_lng: -150, map_default_zoom: 6 }, cards))
-    .toEqual({ center: [-150, 60], zoom: 6 });
+    .toEqual({ center: [-150, 60], zoom: 5 });
   expect(initialView(undefined, cards)).toEqual({ center: [-152.4, 57.8], zoom: 8 });
   expect(initialView(undefined, [])).toEqual({ center: [0, 20], zoom: 1 });
 });
@@ -129,7 +129,7 @@ describe('a day’s flights', () => {
     });
     expect(d.tracks.features.map((f) => f.properties)).toEqual([{ color: 'c1' }, { color: 'c2' }]);
     // Flight 2 is in progress: a start, no numbered end.
-    expect(d.points.features.map((f) => [f.id, f.properties?.label])).toEqual([['start-1', undefined], ['end-1', '1'], ['start-2', undefined]]);
+    expect(d.points.features.map((f) => [f.id, f.properties?.label])).toEqual([['start-1', undefined], ['start-2', undefined], ['end-1', '1']]);
     expect(d.legend).toEqual([
       { trackerId: 1, label: 'T1', color: 'c1', hidden: false },
       { trackerId: 2, label: 'T2', color: 'c2', hidden: false },

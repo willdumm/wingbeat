@@ -6,11 +6,11 @@ import { useAccounts } from '@/lib/accounts-context';
 import { origin } from '@/lib/api';
 import { useBootstrap } from '@/lib/bootstrap-context';
 import { useFlights } from '@/lib/flights-context';
-import { groundTrailFeatures, initialView, latestTracks, liveBounds, liveTrackPicks, pickDetails, pickedFeature, positionFeatures, spotDetails, statusCards, trackStarts, type PickedSpot } from '@/lib/live';
+import { groundTrailLines, initialView, latestTracks, liveBounds, liveTrackPicks, pickDetails, pickedFeature, positionFeatures, spotDetails, statusCards, trackStarts, type PickedSpot } from '@/lib/live';
 import { LiveMap, type LiveMapRef } from '@/lib/live-map';
 import { LocationSheet } from '@/lib/location-sheet';
 import { sheetDetentHeight } from '@/lib/map-sheet';
-import { availableBasemaps } from '@/lib/map-style';
+import { availableBasemaps } from '@wingbeat/core/map-style';
 import { Placeholder } from '@/lib/placeholder';
 import { accountPrefKey, parseLivePinned } from '@/lib/prefs';
 import { StatusCards } from '@/lib/status-cards';
@@ -62,7 +62,7 @@ export default function LiveScreen() {
   }), [latest, cards, live]);
   const tracks = useMemo(() => ({
     type: 'FeatureCollection' as const,
-    features: [...latest.features, ...groundTrailFeatures(cards, live).features],
+    features: [...latest.features, ...groundTrailLines(cards, live).features],
   }), [latest, cards, live]);
   const bounds = useMemo(() => liveBounds(tracks, positions), [tracks, positions]);
   // Changes with each tracker's newest fix: the map refits to take it in.

@@ -4,8 +4,13 @@ export function analyticsScriptsRegion(): string {
   return `
     let REGIONS = null;
 
+    // Keeps the regions it has if the load fails. Whether they changed.
     async function loadRegions() {
-      try { REGIONS = await fetchRegions(); } catch (_) {}
+      let next;
+      try { next = await fetchRegions(); } catch (_) { return false; }
+      const changed = JSON.stringify(next) !== JSON.stringify(REGIONS);
+      REGIONS = next;
+      return changed;
     }
 
     // Display names of the home base regions, sorted.

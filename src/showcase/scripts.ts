@@ -7,7 +7,8 @@
  * the next `npm run docs:showcase`.
  */
 import { themeRuntimeScript } from '../shared/theme';
-import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, sharedTileLayerDefs, sharedMapControlsScripts } from '../shared/map-controls';
+import { mapLayerColorRuntimeScript, mapLayersRuntimeScript, sharedMapControlsScripts } from '../shared/map-controls';
+import { maplibreRuntimeScript } from '../shared/maplibre';
 import { filterScript } from '../shared/filters';
 import { sharedSidebarToggleScripts } from '../shared/sidebar';
 import { aircraftInfoRenderScript } from '../shared/aircraft-info';
@@ -67,6 +68,7 @@ export function showcaseScript(sample: SampleData): string {
     mapLayersRuntimeScript(),
     // No app Worker behind the docs site: the demo maps' basemaps are public-domain USGS tiles.
     `_ftPresets = ${JSON.stringify(SHOWCASE_BASEMAPS)};`,
+    maplibreRuntimeScript(),
     filterScript(),
     dashboardScriptsHelpers(),
     dashboardScriptsIcons(),
@@ -245,28 +247,14 @@ function showcaseDriverScript(): string {
       return root;
     }
 
-    // Resolves once the shadow root's Leaflet stylesheet has loaded, so maps measure
-    // their container with the right CSS in place.
-    function leafletCssReady(root) {
-      const link = root.querySelector('link[rel="stylesheet"]');
-      if (!link || link.sheet) return Promise.resolve();
-      return new Promise(resolve => {
+    // Resolves once the shadow root's map stylesheet (MapLibre's) has loaded,
+    // so maps measure their container with the right CSS in place.
+    function stylesheetsReady(root) {
+      return Promise.all([...root.querySelectorAll('link[rel="stylesheet"]')].map(link => link.sheet ? null : new Promise(resolve => {
         link.addEventListener('load', resolve, { once: true });
         link.addEventListener('error', resolve, { once: true });
         setTimeout(resolve, 4000);
-      });
-    }
-
-    // Leaflet only re-measures on window resize; a frame can change size on its own
-    // (layout breakpoints, the sidebar drawer), so re-measure whenever the container does.
-    function watchMapSize(mapObj, onResize) {
-      const el = mapObj.getContainer();
-      // Skip while hidden (the stream graph view): a zero-size map breaks the heat layers.
-      new ResizeObserver(debounce(() => {
-        if (!el.offsetWidth || !el.offsetHeight) return;
-        mapObj.invalidateSize();
-        if (onResize) onResize();
-      }, 50)).observe(el);
+      })));
     }
 
     function debounce(fn, ms) {
@@ -314,15 +302,12 @@ function showcaseDriverScript(): string {
 
     async function mountFlights(host) {
       const root = attachDemo(host, 'dashboard', DEMO_MARKUP.flights);
-      await leafletCssReady(root);
+      await stylesheetsReady(root);
 
       const sidebar = root.querySelector('aside');
-      const map = L.map(root.getElementById('map'), { zoomControl: false, attributionControl: false, scrollWheelZoom: false })
-        .setView([window.APP_SETTINGS.mapDefaultLat, window.APP_SETTINGS.mapDefaultLng], window.APP_SETTINGS.mapDefaultZoom);
-      watchMapSize(map);
+      const map = createMap(root.getElementById('map'), { ..._ftDefaultView(), scrollZoom: false });
 
-      ${sharedTileLayerDefs('map')}
-      ${sharedMapControlsScripts('map', '', 'tileLayers', 'currentTileLayer', 'root')}
+      ${sharedMapControlsScripts('map', '', 'root')}
 
       // Track data read by the map-level hover handler (hover.ts).
       let activeLatlngs = [];
@@ -340,7 +325,7 @@ function showcaseDriverScript(): string {
       ${elevationToolScript('root')}
       wireLinkCopyButtons(root);
 
-      ${sharedSidebarToggleScripts('map', 'flight list', 'root')}
+      ${sharedSidebarToggleScripts('flight list', 'root')}
 
       let layers = [];
       let endMarkers = [];
@@ -375,11 +360,11 @@ function showcaseDriverScript(): string {
           plane: isLatest && live ? { lat: live.lat, lon: live.lon, course_deg: live.course_deg, color: colorFor(flight.tracker_id) } : null,
         });
         if (!drawn) return;
-        layers.push(drawn.track, drawn.startMarker, drawn.endMarker, drawn.planeMarker);
+        layers.push(drawn.shape, drawn.planeMarker);
         activeLatlngs = drawn.latlngs;
         activePointData = drawn.pointData;
         activePointLabels = drawn.labels;
-        map.fitBounds(drawn.track.getBounds(), { padding: [40, 40] });
+        map.fitBounds(_ftLatLngBounds(drawn.latlngs), { padding: 40 });
       }
 
       function showDay(flights) {
@@ -399,7 +384,7 @@ function showcaseDriverScript(): string {
           legend = buildDayViewLegend(drawn.trackerIds.map(tid => ({ label: tailFor(tid), color: colorFor(tid) })));
           root.getElementById('map').appendChild(legend);
         }
-        if (drawn.allPoints.length) map.fitBounds(L.latLngBounds(drawn.allPoints), { padding: [40, 40] });
+        if (drawn.allPoints.length) map.fitBounds(_ftLatLngBounds(drawn.allPoints), { padding: 40 });
       }
 
       map.on('zoomend', () => {
@@ -540,25 +525,21 @@ function showcaseDriverScript(): string {
 
     async function mountAnalytics(host) {
       const root = attachDemo(host, 'analytics', DEMO_MARKUP.analytics);
-      await leafletCssReady(root);
+      await stylesheetsReady(root);
 
-      // zoomSnap 0: fit the data tightly, between whole zoom levels; +/- still step by 1.
-      const analyticsMap = L.map(root.getElementById('analytics-map'), { zoomControl: false, attributionControl: false, scrollWheelZoom: false, zoomSnap: 0 })
-        .setView([window.APP_SETTINGS.mapDefaultLat, window.APP_SETTINGS.mapDefaultLng], window.APP_SETTINGS.mapDefaultZoom);
-      // Frame where the flights end. Re-framed on resize until the visitor pans or zooms.
-      const DATA_BOUNDS = L.latLngBounds(COMPLETED_FLIGHTS.filter(f => f.end_lat != null).map(f => [f.end_lat, f.end_lon]));
-      let framing = false, userMoved = false;
+      const analyticsMap = createMap(root.getElementById('analytics-map'), { ..._ftDefaultView(), scrollZoom: false });
+      // Frame where the flights end. Re-framed on resize until the visitor pans or zooms (a
+      // move with an originalEvent is theirs).
+      const DATA_BOUNDS = _ftLatLngBounds(COMPLETED_FLIGHTS.filter(f => f.end_lat != null).map(f => [f.end_lat, f.end_lon]));
+      let userMoved = false;
       function frameData() {
-        if (userMoved) return;
-        framing = true;
-        analyticsMap.fitBounds(DATA_BOUNDS, { padding: [12, 12], animate: false });
-        framing = false;
+        if (!userMoved) analyticsMap.fitBounds(DATA_BOUNDS, { padding: 12, duration: 0 });
       }
-      analyticsMap.on('dragstart zoomstart', () => { if (!framing) userMoved = true; });
-      watchMapSize(analyticsMap, frameData);
+      analyticsMap.on('movestart', e => { if (e.originalEvent) userMoved = true; });
+      root.querySelectorAll('.map-zoom-in, .map-zoom-out').forEach(b => b.addEventListener('click', () => { userMoved = true; }));
+      analyticsMap.on('resize', debounce(frameData, 50));
 
-      ${sharedTileLayerDefs('analyticsMap')}
-      ${sharedMapControlsScripts('analyticsMap', '', 'tileLayers', 'currentTileLayer', 'root')}
+      ${sharedMapControlsScripts('analyticsMap', '', 'root')}
 
       const layerControls = root.getElementById('layer-controls');
       const sgContainer = root.getElementById('streamgraph-container');
@@ -569,27 +550,26 @@ function showcaseDriverScript(): string {
       let filteredFlights = COMPLETED_FLIGHTS;
       let selectedMonthKey = null;
       let heatmapWeightMode = 'time';
-      let endpointHeatLayer = null, pathDensityLayer = null, flightLinesGroup = null, regionBoundLayer = null;
+      let endpointHeatShape = null, pathDensityShape = null, flightLinesShape = null, regionBoundShape = null;
 
       function updateEndpointHeatmap() {
-        if (endpointHeatLayer) { analyticsMap.removeLayer(endpointHeatLayer); endpointHeatLayer = null; }
+        if (endpointHeatShape) { endpointHeatShape.remove(); endpointHeatShape = null; }
         if (!getLayerToggles(layerControls).endpointHeat || !filteredFlights.length) return;
-        endpointHeatLayer = buildEndpointHeatLayer(filteredFlights, heatmapWeightMode, analyticsMap.getZoom());
-        if (endpointHeatLayer) endpointHeatLayer.addTo(analyticsMap);
+        endpointHeatShape = addEndpointHeat(analyticsMap, filteredFlights, heatmapWeightMode);
       }
 
       function updatePointLayers() {
-        if (pathDensityLayer) { analyticsMap.removeLayer(pathDensityLayer); pathDensityLayer = null; }
-        if (flightLinesGroup) { analyticsMap.removeLayer(flightLinesGroup); flightLinesGroup = null; }
+        if (pathDensityShape) { pathDensityShape.remove(); pathDensityShape = null; }
+        if (flightLinesShape) { flightLinesShape.remove(); flightLinesShape = null; }
         const toggles = getLayerToggles(layerControls);
         if (!filteredFlights.length) return;
-        if (toggles.pathDensity) pathDensityLayer = buildRouteHeatLayer(filteredFlights).addTo(analyticsMap);
-        if (toggles.flightLines) flightLinesGroup = buildFlightLinesLayer(filteredFlights).addTo(analyticsMap);
+        if (toggles.pathDensity) pathDensityShape = addRouteHeat(analyticsMap, filteredFlights);
+        if (toggles.flightLines) flightLinesShape = addFlightLines(analyticsMap, filteredFlights);
       }
 
       function updateRegionBoundaries() {
-        if (regionBoundLayer) { analyticsMap.removeLayer(regionBoundLayer); regionBoundLayer = null; }
-        if (getLayerToggles(layerControls).regionBounds) regionBoundLayer = buildRegionBoundsLayer(REGIONS).addTo(analyticsMap);
+        if (regionBoundShape) { regionBoundShape.remove(); regionBoundShape = null; }
+        if (getLayerToggles(layerControls).regionBounds) regionBoundShape = addRegionBounds(analyticsMap, REGIONS);
       }
 
       function updateStreamGraph() {
@@ -636,8 +616,7 @@ function showcaseDriverScript(): string {
         // Like the analytics page: the stream graph covers the map, not its controls bar.
         root.getElementById('map-controls').style.display = isMap ? '' : 'none';
         root.querySelectorAll('.view-tab').forEach(t => { t.classList.toggle('active', t.dataset.view === view); t.setAttribute('aria-pressed', t.dataset.view === view ? 'true' : 'false'); });
-        if (isMap) analyticsMap.invalidateSize();
-        else updateStreamGraph();
+        if (!isMap) updateStreamGraph();
       }
       root.querySelectorAll('.view-tab').forEach(tab => tab.addEventListener('click', () => setView(tab.dataset.view)));
 
@@ -655,9 +634,6 @@ function showcaseDriverScript(): string {
         },
         onWeightMode: (mode) => { heatmapWeightMode = mode; updateEndpointHeatmap(); },
       });
-      analyticsMap.on('zoomend', updateEndpointHeatmap);
-
-      // Frame before the first draw, so fitting doesn't redraw the heat.
       frameData();
       rerender();
     }

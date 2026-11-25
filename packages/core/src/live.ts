@@ -193,7 +193,7 @@ export function sameTrackedFlight(a: MaybeEdited, b: MaybeEdited): boolean {
  * with points count from 1; with one tracker, a flight's place in the day. null for a flight
  * without points, which has nothing to draw.
  */
-export function dayFlightNumbers(flights: { tracker_id: number | null; points?: unknown[] | null }[]): (number | null)[] {
+export function dayFlightNumbers(flights: readonly { tracker_id: number | null; points?: readonly unknown[] | null }[]): (number | null)[] {
   const drawn = (f: (typeof flights)[number]) => (f.points ?? []).length > 0;
   const multiTracker = new Set(flights.filter(drawn).map((f) => f.tracker_id)).size > 1;
   const perTracker = new Map<number | null, number>();
@@ -251,8 +251,8 @@ export function groupEndMarkers(points: { x: number; y: number }[]): EndMarkerGr
 }
 
 /**
- * A position's Web Mercator pixel coordinates at a zoom (tileSize 512 for MapLibre, 256
- * for Leaflet): what groupEndMarkers needs on a map that only reports its zoom.
+ * A position's Web Mercator pixel coordinates at a zoom (tileSize 512 for MapLibre):
+ * what groupEndMarkers needs on a map that only reports its zoom.
  */
 export function mercatorPixel(lat: number, lon: number, zoom: number, tileSize = 512): { x: number; y: number } {
   const world = tileSize * 2 ** zoom;

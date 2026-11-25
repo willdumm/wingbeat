@@ -19,6 +19,12 @@ describe('distances', () => {
     assert.ok(Math.abs(regions.haversineKm(0, 0, 0, 180) - Math.PI * 6371) < 1e-6, 'antipodes: no NaN');
   });
 
+  test('circleRing is closed and its distance from the center all the way around', () => {
+    const ring = regions.circleRing(57.8, -152.4, 25);
+    assert.deepEqual(ring[0], ring[ring.length - 1]);
+    for (const [lon, lat] of ring) assert.ok(Math.abs(regions.haversineKm(57.8, -152.4, lat, lon) - 25) < 1e-6);
+  });
+
   test('the flight threshold is the server’s', () => {
     assert.equal(regions.SPEED_THRESHOLD_KMH, 37);
   });

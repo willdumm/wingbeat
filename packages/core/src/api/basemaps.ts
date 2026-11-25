@@ -15,8 +15,6 @@ const nullableStr = z.nullable(z.string());
 
 /**
  * A basemap row. shown and detect_retina are SQLite's 0/1; attribution is sanitized HTML.
- * tile_proxy is set when the Worker proxies the tiles under a keyed provider (the url is then
- * a path on the instance).
  */
 export const BasemapRow = z.looseObject({
   id: z.number(),
@@ -28,7 +26,6 @@ export const BasemapRow = z.looseObject({
   max_zoom: z.nullable(z.number()),
   detect_retina: z.number(),
   shown: z.number(),
-  tile_proxy: nullableStr,
   sort_order: z.number(),
 });
 

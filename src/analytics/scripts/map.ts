@@ -1,4 +1,4 @@
-import { sharedTileLayerDefs, sharedMapControlsScripts, tileOverlayLegendMountScript } from '../../shared/map-controls';
+import { sharedMapControlsScripts, tileOverlayLegendMountScript } from '../../shared/map-controls';
 import { sharedSidebarToggleScripts } from '../../shared/sidebar';
 
 export function analyticsScriptsMap(): string {
@@ -8,6 +8,8 @@ export function analyticsScriptsMap(): string {
     let aircraftList = [];     // populated during init(); used by filter dropdowns
     let pilotList = [];        // populated during init(); used by filter dropdowns
     let overlayList = [];      // populated during init(); tile overlays shown in the map legend
+    let activeTrackerIds = null;   // trackerList's active ones (the cached ones until it loads)
+    let pagePainted = false;
     let allFlights = [];       // all completed flights across all active trackers
     let filteredFlights = [];  // after applying active filters
     let selectedMonthKey = null;
@@ -21,24 +23,17 @@ export function analyticsScriptsMap(): string {
       document.getElementById('map-controls').style.display = isMap ? '' : 'none';
       document.querySelectorAll('.view-tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
       if (!isMap) updateStreamGraph();
-      if (isMap) analyticsMap.invalidateSize();
     }
 
     // ── Map initialization ────────────────────────────────────────────────────
-    const analyticsMap = L.map('analytics-map', { zoomControl: false, attributionControl: false })
-      .setView(
-        [window.APP_SETTINGS.mapDefaultLat, window.APP_SETTINGS.mapDefaultLng],
-        window.APP_SETTINGS.mapDefaultZoom
-      );
-
-    ${sharedTileLayerDefs('analyticsMap')}
+    const analyticsMap = createMap(document.getElementById('analytics-map'), _ftDefaultView());
 
     // ── Layer state ───────────────────────────────────────────────────────────
     let heatmapWeightMode = 'time';
-    let endpointHeatLayer = null;
-    let pathDensityLayer  = null;
-    let flightLinesGroup  = null;
-    let regionBoundLayer  = null;
+    let endpointHeatShape = null;
+    let pathDensityShape  = null;
+    let flightLinesShape  = null;
+    let regionBoundShape  = null;
 
     // ── Sidebar reference ─────────────────────────────────────────────────────
     const sidebar = document.querySelector('aside');
@@ -49,33 +44,23 @@ export function analyticsScriptsMap(): string {
     }
 
     function updateEndpointHeatmap() {
-      if (endpointHeatLayer) { analyticsMap.removeLayer(endpointHeatLayer); endpointHeatLayer = null; }
+      if (endpointHeatShape) { endpointHeatShape.remove(); endpointHeatShape = null; }
       if (!getToggles().endpointHeat || filteredFlights.length === 0) return;
-      endpointHeatLayer = buildEndpointHeatLayer(filteredFlights, heatmapWeightMode, analyticsMap.getZoom());
-      if (endpointHeatLayer) endpointHeatLayer.addTo(analyticsMap);
+      endpointHeatShape = addEndpointHeat(analyticsMap, filteredFlights, heatmapWeightMode);
     }
 
     function updatePointLayers() {
-      if (pathDensityLayer)  { analyticsMap.removeLayer(pathDensityLayer);  pathDensityLayer = null; }
-      if (flightLinesGroup)  { analyticsMap.removeLayer(flightLinesGroup);  flightLinesGroup = null; }
+      if (pathDensityShape) { pathDensityShape.remove(); pathDensityShape = null; }
+      if (flightLinesShape) { flightLinesShape.remove(); flightLinesShape = null; }
       const toggles = getToggles();
-      if (!toggles.pathDensity && !toggles.flightLines) return;
       if (!filteredFlights.length) return;
-      if (toggles.pathDensity) {
-        pathDensityLayer = buildRouteHeatLayer(filteredFlights);
-        pathDensityLayer.addTo(analyticsMap);
-      }
-      if (toggles.flightLines) {
-        flightLinesGroup = buildFlightLinesLayer(filteredFlights);
-        flightLinesGroup.addTo(analyticsMap);
-      }
+      if (toggles.pathDensity) pathDensityShape = addRouteHeat(analyticsMap, filteredFlights);
+      if (toggles.flightLines) flightLinesShape = addFlightLines(analyticsMap, filteredFlights);
     }
 
     function updateRegionBoundaries() {
-      if (regionBoundLayer) { analyticsMap.removeLayer(regionBoundLayer); regionBoundLayer = null; }
-      if (!getToggles().regionBounds) return;
-      regionBoundLayer = buildRegionBoundsLayer(REGIONS);
-      regionBoundLayer.addTo(analyticsMap);
+      if (regionBoundShape) { regionBoundShape.remove(); regionBoundShape = null; }
+      if (getToggles().regionBounds) regionBoundShape = addRegionBounds(analyticsMap, REGIONS);
     }
 
     function refreshMapLayers() {
@@ -92,9 +77,13 @@ export function analyticsScriptsMap(): string {
       });
     }
 
+    function activeIdsOf(trackers) {
+      return trackers.filter(t => t.active && !t.deleted).map(t => t.id);
+    }
+
     // ── Full re-render ────────────────────────────────────────────────────────
     function rerender() {
-      const activeTrackerIds = trackerList.filter(t => t.active && !t.deleted).map(t => t.id);
+      pagePainted = true;
       allFlights = flightStore.getCompleted(activeTrackerIds);
       filteredFlights = allFlights.filter(f => filterStore.matchesFlight(f, _analyticsActiveFilters));
       renderOverallTotals(document.getElementById('overall-totals-container'), filteredFlights);
@@ -107,7 +96,7 @@ export function analyticsScriptsMap(): string {
     settingsAfterTrackerChange = async () => {
       // Each list on its own: one that fails to load keeps its old value.
       const [trackers, aircraft, pilots] = await Promise.allSettled([fetchTrackers(), fetchAircraft(), fetchPilots()]);
-      if (trackers.status === 'fulfilled') trackerList = trackers.value.trackers;
+      if (trackers.status === 'fulfilled') { trackerList = trackers.value.trackers; activeTrackerIds = activeIdsOf(trackerList); }
       if (aircraft.status === 'fulfilled') aircraftList = aircraft.value.aircraft;
       if (pilots.status === 'fulfilled') { pilotList = pilots.value.pilots; flightStore.setPilots(pilotList); }
       refreshFilterDropdowns();
@@ -115,9 +104,8 @@ export function analyticsScriptsMap(): string {
     };
 
     settingsOnClearCache = async () => {
-      const activeTrackerIds = trackerList.filter(t => t.active && !t.deleted).map(t => t.id);
       flightStore.clearCache();
-      await flightStore.refresh(activeTrackerIds).catch(() => {});
+      await flightStore.refresh(activeTrackerIds || []).catch(() => {});
       rerender();
     };
 
@@ -125,63 +113,9 @@ export function analyticsScriptsMap(): string {
     let _analyticsActiveFilters = filterStore.load();
 
     // ── Initialization ────────────────────────────────────────────────────────
-    async function init() {
-      await loadRegions();
-      // Each list on its own: one that fails to load keeps its old value.
-      const [trackers, aircraft, pilots, overlays] = await Promise.allSettled([fetchTrackers(), fetchAircraft(), fetchPilots(),
-        fetchOverlays()]);
-      if (trackers.status === 'fulfilled') trackerList = trackers.value.trackers;
-      if (aircraft.status === 'fulfilled') aircraftList = aircraft.value.aircraft;
-      if (pilots.status === 'fulfilled') { pilotList = pilots.value.pilots; flightStore.setPilots(pilotList); }
-      if (overlays.status === 'fulfilled') overlayList = overlays.value.overlays;
-
-      const activeTrackers = trackerList.filter(t => t.active && !t.deleted);
-      if (!activeTrackers.length) {
-        document.getElementById('accounting-table-container').innerHTML =
-          '<div class="empty-msg">No trackers configured.</div>';
-        return;
-      }
-
-      const activeTrackerIds = activeTrackers.map(t => t.id);
-
-      // Initialise filter UI.
-      initFilters((newFilters) => {
-        _analyticsActiveFilters = newFilters;
-        filteredFlights = allFlights.filter(f => filterStore.matchesFlight(f, _analyticsActiveFilters));
-        renderOverallTotals(document.getElementById('overall-totals-container'), filteredFlights);
-        renderAccounting();
-        refreshMapLayers();
-        updateStreamGraph();
-      });
-
-      // Phase 1: paint from cache synchronously.
-      flightStore.init();
-      allFlights = flightStore.getCompleted(activeTrackerIds);
-      filteredFlights = allFlights.filter(f => filterStore.matchesFlight(f, _analyticsActiveFilters));
-      renderOverallTotals(document.getElementById('overall-totals-container'), filteredFlights);
-      renderAccounting();
-      refreshMapLayers();
-
-      // Phase 2: fetch incremental update.
-      try {
-        await flightStore.refresh(activeTrackerIds);
-        allFlights = flightStore.getCompleted(activeTrackerIds);
-        filteredFlights = allFlights.filter(f => filterStore.matchesFlight(f, _analyticsActiveFilters));
-        renderOverallTotals(document.getElementById('overall-totals-container'), filteredFlights);
-        renderAccounting();
-        refreshMapLayers();
-        updateStreamGraph();
-      } catch (_err) {
-        if (allFlights.length === 0) {
-          document.getElementById('accounting-table-container').innerHTML =
-            '<div class="empty-msg">Failed to load flight data.</div>';
-          return;
-        }
-      }
-
-      // Re-render when another tab updates the store.
-      flightStore.onChange(rerender);
-
+    // The map chrome and page controls, wired before any data loads so they work whatever
+    // the data does.
+    function wirePage() {
       // View toggle (Map / Stream Graph)
       document.querySelectorAll('.view-tab').forEach(tab => {
         tab.addEventListener('click', () => setView(tab.dataset.view));
@@ -189,9 +123,6 @@ export function analyticsScriptsMap(): string {
 
       // Stream graph toolbar controls
       wireSgControls();
-
-      // Re-render endpoint heatmap on zoom so maxZoom stays in sync
-      analyticsMap.on('zoomend', updateEndpointHeatmap);
 
       // ── Zoom controls + basemap switcher ────────────────────────────────────
       ${sharedMapControlsScripts('analyticsMap')}
@@ -216,9 +147,96 @@ export function analyticsScriptsMap(): string {
       }, { passive: false });
     }
 
+    // The last load's regions and active tracker ids, so cached flights paint before (or
+    // without) an answer for either. In Cache storage: region shapes in localStorage would
+    // crowd out the flights there.
+    const _PAGE_CACHE_NAME = 'ft-analytics-v1', _PAGE_CACHE_KEY = '/analytics-page-cache';
+
+    async function loadPageCache() {
+      try {
+        const hit = await (await caches.open(_PAGE_CACHE_NAME)).match(_PAGE_CACHE_KEY);
+        const cached = hit ? await hit.json() : null;
+        return cached && cached.regions && Array.isArray(cached.trackerIds) ? cached : null;
+      } catch (_) { return null; }
+    }
+
+    async function savePageCache() {
+      if (!REGIONS || !activeTrackerIds) return;
+      try {
+        const body = JSON.stringify({ regions: REGIONS, trackerIds: activeTrackerIds });
+        await (await caches.open(_PAGE_CACHE_NAME)).put(_PAGE_CACHE_KEY, new Response(body));
+      } catch (_) {}
+    }
+
+    // Each on its own, filling in when it arrives: one that fails or hangs keeps its old value.
+    function loadLists() {
+      fetchAircraft().then(r => { aircraftList = r.aircraft; refreshFilterDropdowns(); }, () => {});
+      fetchPilots().then(r => { pilotList = r.pilots; flightStore.setPilots(pilotList); refreshFilterDropdowns(); }, () => {});
+      fetchOverlays().then(r => { overlayList = r.overlays; _ftRenderOverlayLegend(); }, () => {});
+    }
+
+    async function refreshFlights() {
+      try {
+        await flightStore.refresh(activeTrackerIds);
+      } catch (_err) {
+        if (allFlights.length === 0) showAccountingMessage('Failed to load flight data.');
+        return;
+      }
+      rerender();
+    }
+
+    function showAccountingMessage(text) {
+      document.getElementById('accounting-table-container').innerHTML = '<div class="empty-msg">' + text + '</div>';
+    }
+
+    async function init() {
+      wirePage();
+      initFilters((newFilters) => {
+        _analyticsActiveFilters = newFilters;
+        if (pagePainted) rerender();
+      });
+      flightStore.init();
+
+      loadLists();
+      const regionsLoaded = loadRegions();
+      const trackersLoaded = fetchTrackers().then(r => {
+        trackerList = r.trackers;
+        activeTrackerIds = activeIdsOf(trackerList);
+        refreshFilterDropdowns();
+      }, () => {});
+      const bothLoaded = Promise.all([regionsLoaded, trackersLoaded]).then(savePageCache);
+
+      // Phase 1: paint from cache; without the regions and tracker ids cached, wait for them.
+      const cached = await loadPageCache();
+      let paintedIds = null, cachedRefresh = null;
+      if (cached) {
+        REGIONS = REGIONS || cached.regions;
+        paintedIds = activeTrackerIds = activeTrackerIds || cached.trackerIds;
+        rerender();
+        regionsLoaded.then(changed => { if (changed) rerender(); });
+        if (paintedIds.length) cachedRefresh = refreshFlights();
+        await trackersLoaded;
+      } else {
+        await bothLoaded;
+      }
+      if (!activeTrackerIds) { showAccountingMessage('Failed to load flight data.'); return; }
+      if (!activeTrackerIds.length) { showAccountingMessage('No trackers configured.'); return; }
+
+      // Phase 2: fetch incremental update, again if the trackers aren't the cached ones.
+      if (String(paintedIds) !== String(activeTrackerIds)) {
+        rerender();
+        await cachedRefresh;
+        await refreshFlights();
+      }
+
+      // Re-render when another tab updates the store.
+      await cachedRefresh;
+      flightStore.onChange(rerender);
+    }
+
     init();
 
     // ── Sidebar toggle ────────────────────────────────────────────────────────
-    ${sharedSidebarToggleScripts('analyticsMap', 'panel')}
+    ${sharedSidebarToggleScripts('panel')}
   `;
 }

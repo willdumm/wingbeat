@@ -3,5 +3,3 @@
 POLLER_SECRET=your-poller-secret
 # Hostname only (no port) — matches wrangler dev's localhost:8787.
 CUSTOMER_ROUTING={"localhost": "DB"}
-# Optional — omit to leave the "Map" basemap unavailable (other basemaps still work).
-# CARTO_API_KEY=your-carto-api-key

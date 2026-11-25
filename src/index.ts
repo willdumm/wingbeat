@@ -18,8 +18,7 @@ import { analyticsHTML } from './analytics';
 import { generateToken, sha256Hex, deviceNameFromUA, pairedDeviceName, noAccessHTML, joinHTML, joinErrorHTML, appPairLink, appConnectHTML, appConnectSignedOutHTML, demoSignInHTML, loginHTML, loginCodeHTML } from './auth';
 import { emailEnabled, normalizeEmail, sendConfirmEmail, sendInviteEmail, sendSignInEmail, type EmailContext } from './email';
 import { loadSettings, invalidateSettingsCache, settingsAsInstance } from './settings';
-import { readEnvSecret } from './shared/map-controls';
-import { basemapKeyFromLabel, basemapProxyUrl, FALLBACK_BASEMAP, KEYED_TILE_PROVIDERS, substituteTileUrl, TILE_SUBDOMAINS, validPmtilesUrl, validTileTemplate } from '@wingbeat/core/basemaps';
+import { basemapKeyFromLabel, FALLBACK_BASEMAP, validPmtilesUrl, validTileTemplate } from '@wingbeat/core/basemaps';
 import type { BasemapPreset } from '@wingbeat/core/basemaps';
 import { BasemapOrderRequest, BasemapRequest } from '@wingbeat/core/api/basemaps-requests';
 import type { BasemapRow } from '@wingbeat/core/api/basemaps';
@@ -164,7 +163,7 @@ async function queryTileOverlays(db: D1Database) {
   }));
 }
 
-const BASEMAP_COLUMNS = 'id, key, label, kind, url, attribution, max_zoom, detect_retina, shown, tile_proxy, sort_order';
+const BASEMAP_COLUMNS = 'id, key, label, kind, url, attribution, max_zoom, detect_retina, shown, sort_order';
 
 /** Every basemap row, hidden ones included, in display order (attribution sanitized, as for overlays). */
 async function queryBasemaps(db: D1Database): Promise<BasemapRow[]> {
@@ -175,12 +174,12 @@ async function queryBasemaps(db: D1Database): Promise<BasemapRow[]> {
 }
 
 /**
- * The basemaps as clients draw them: the shown rows, raster ones as `basemaps` (a keyed one
- * through the same-origin proxy, and left out when this Worker doesn't hold its secret) and
- * vector ones (the app only) as `vector_basemaps`. The web's pages inline `basemaps`. Each
+ * The basemaps as clients draw them: the shown rows, raster ones as `basemaps` and vector ones
+ * as `vector_basemaps` (drawn by the app and the web's MapLibre maps). The web's pages
+ * inline `basemaps`, and the dashboard and analytics `vector_basemaps` too. Each
  * carries its `order` among both, so the app can list them in the tenant's order.
  */
-function clientBasemaps(rows: BasemapRow[], env: Env): { basemaps: BasemapPreset[]; vector_basemaps: VectorBasemap[] } {
+function clientBasemaps(rows: BasemapRow[]): { basemaps: BasemapPreset[]; vector_basemaps: VectorBasemap[] } {
   const basemaps: BasemapPreset[] = [];
   const vector_basemaps: VectorBasemap[] = [];
   let order = 0;
@@ -191,13 +190,9 @@ function clientBasemaps(rows: BasemapRow[], env: Env): { basemaps: BasemapPreset
       vector_basemaps.push({ id: r.key, label: r.label, url: r.url, attribution, ...(r.max_zoom ? { maxZoom: r.max_zoom } : {}), order: order++ });
       continue;
     }
-    let url = r.url;
-    if (r.tile_proxy) {
-      const provider = KEYED_TILE_PROVIDERS[r.tile_proxy];
-      if (!provider || !readEnvSecret(env, provider.secretEnvVar)) continue;
-      url = basemapProxyUrl(r.key);
-    }
-    basemaps.push({ id: r.key, label: r.label, url, attribution, maxZoom: r.max_zoom ?? 18, ...(r.detect_retina ? { detectRetina: true } : {}), order: order++ });
+    // A path on this host: the removed tile proxy's, which nothing serves.
+    if (!validTileTemplate(r.url)) continue;
+    basemaps.push({ id: r.key, label: r.label, url: r.url, attribution, maxZoom: r.max_zoom ?? 18, ...(r.detect_retina ? { detectRetina: true } : {}), order: order++ });
   }
   return { basemaps: basemaps.length > 0 ? basemaps : [FALLBACK_BASEMAP], vector_basemaps };
 }
@@ -274,7 +269,7 @@ function tenantDb(env: Env, bindingName: string): D1Database | undefined {
 // nothing else needs to execute inline. 'strict-dynamic' lets those nonced scripts load the
 // SRI-pinned libraries and typst.ts (a dynamic import() in shared/pilot-duty.ts) without
 // allowlisting hosts; the host sources are only a fallback for browsers without it.
-//   - style-src 'unsafe-inline': Leaflet and the app set inline style attributes at runtime.
+//   - style-src 'unsafe-inline': MapLibre and the app set inline style attributes at runtime.
 //   - img-src https: data: blob:: map tiles/overlays come from arbitrary user-configured hosts.
 //   - connect-src https:: pmtiles range requests, typst wasm/font fetches, tile-metadata hosts.
 //   - 'wasm-unsafe-eval' + 'unsafe-eval': the typst.ts compiler is WebAssembly, and its wasm-bindgen
@@ -915,12 +910,12 @@ app.post(APP_CONNECT_PATH, async (c) => {
 app.get('/', async (c) => {
   const settings = await loadSettings(c.var.tenant);
   c.executionCtx.waitUntil(pollAllActive(c.var.tenant));
-  return c.html(dashboardHTML(settings, c.env, c.get('cspNonce'), clientBasemaps(await queryBasemaps(c.var.db), c.env).basemaps));
+  return c.html(dashboardHTML(settings, c.env, c.get('cspNonce'), clientBasemaps(await queryBasemaps(c.var.db))));
 });
 
 app.get('/analytics', async (c) => {
   const settings = await loadSettings(c.var.tenant);
-  return c.html(analyticsHTML(settings, c.env, c.get('cspNonce'), clientBasemaps(await queryBasemaps(c.var.db), c.env).basemaps));
+  return c.html(analyticsHTML(settings, c.env, c.get('cspNonce'), clientBasemaps(await queryBasemaps(c.var.db))));
 });
 
 app.get('/location', async (c) => {
@@ -930,71 +925,6 @@ app.get('/location', async (c) => {
   if (!row) return c.text('No data', 404);
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<response>\n  <lat>${row.lat}</lat>\n  <lon>${row.lon}</lon>\n</response>`;
   return c.body(xml, 200, { 'Content-Type': 'application/xml' });
-});
-
-// ── Tile proxy route (keyed basemap providers) ───────────────────────────────
-//
-// Only basemaps whose row has `tile_proxy` set (a provider in KEYED_TILE_PROVIDERS in
-// @wingbeat/core/basemaps) route through here — the others are fetched by the browser
-// directly from the upstream CDN, unchanged. This is the only route allowed to build an upstream tile
-// URL or read a tile-provider secret.
-
-const TILE_Y_FILE = /^(\d+)(@2x)?\.png$/;
-
-app.get('/api/tiles/:basemapKey/:z/:x/:yFile', async (c) => {
-  const basemapKey = c.req.param('basemapKey');
-  const row = await c.var.db.prepare('SELECT tile_proxy FROM basemaps WHERE key = ? AND tile_proxy IS NOT NULL')
-    .bind(basemapKey).first<{ tile_proxy: string }>();
-  const provider = row && KEYED_TILE_PROVIDERS[row.tile_proxy];
-  if (!provider) return c.text('Not Found', 404);
-
-  const key = readEnvSecret(c.env, provider.secretEnvVar);
-  if (!key) return c.text('Tile provider not configured', 503);
-
-  const z = parseInt(c.req.param('z'), 10);
-  const x = parseInt(c.req.param('x'), 10);
-  const yMatch = TILE_Y_FILE.exec(c.req.param('yFile'));
-  if (!yMatch || !Number.isInteger(z) || z < 0 || z > 24) return c.text('Bad Request', 400);
-  const maxCoord = 2 ** z;
-  const y = parseInt(yMatch[1], 10);
-  if (!Number.isInteger(x) || x < 0 || x >= maxCoord || y < 0 || y >= maxCoord) {
-    return c.text('Bad Request', 400);
-  }
-
-  const subdomain = TILE_SUBDOMAINS[(x + y) % TILE_SUBDOMAINS.length];
-  const upstreamUrl = substituteTileUrl(provider.url, {
-    s: subdomain, z: String(z), x: String(x), y: String(y), r: yMatch[2] ?? '', key,
-  });
-
-  // cacheEverything + cacheTtl: repeat requests for the same tile across every user
-  // hit Cloudflare's edge cache rather than re-spending Worker CPU or Carto quota.
-  // Referer: a key restricted to the deployment's domains (Carto's referrer allowlist)
-  // rejects a request with none, and a server-side fetch sends none by default.
-  const upstream = await fetch(upstreamUrl, {
-    headers: { Referer: `${new URL(c.req.url).origin}/` },
-    cf: { cacheTtl: 604800, cacheEverything: true },
-  });
-  if (!upstream.ok) {
-    console.error(`[tiles] ${basemapKey} upstream HTTP ${upstream.status}`);
-    return c.text('Bad Gateway', 502);
-  }
-
-  // Only the upstream's image bytes and content-type cross back to the client — never
-  // the key, and never any Carto-specific response header.
-  // Never relay a non-image type (with nosniff, a mislabelled body is a dead tile anyway).
-  const contentType = upstream.headers.get('Content-Type') || 'image/png';
-  if (!/^image\/(png|jpe?g|webp|gif)\b/i.test(contentType)) {
-    console.error(`[tiles] ${basemapKey} upstream content-type ${contentType}`);
-    return c.text('Bad Gateway', 502);
-  }
-  return new Response(upstream.body, {
-    status: 200,
-    headers: {
-      'Content-Type': contentType,
-      'X-Content-Type-Options': 'nosniff',
-      'Cache-Control': 'public, max-age=604800, immutable',
-    },
-  });
 });
 
 // ── Me routes (any authenticated user) ───────────────────────────────────────
@@ -1012,7 +942,7 @@ app.get('/api/bootstrap', async (c) => {
     queryBasemaps(c.var.db),
     loadSettings(c.var.tenant),
   ]);
-  const { basemaps, vector_basemaps } = clientBasemaps(basemapRows, c.env);
+  const { basemaps, vector_basemaps } = clientBasemaps(basemapRows);
   return c.json({
     me: meJson(c.get('user')), trackers, aircraft, pilots, overlays, basemaps, vector_basemaps,
     instance: settingsAsInstance(settings, c.env),
@@ -1837,8 +1767,7 @@ app.post('/api/trackers/:id/apply-assignment', requireAdmin, valid('json', Apply
 // shared/map-controls.ts for the client-side rendering/toggling). Read is open to
 // any authenticated user (same as /api/trackers); only admins can configure them.
 // Requires a tile URL template with lowercase {z}/{x}/{y} tokens (or their
-// uppercase equivalents, which the client normalizes to lowercase before handing
-// the template to Leaflet — see _ftNormalizeTileTemplate in map-controls.ts).
+// uppercase equivalents, which core's tileUrls() normalizes to lowercase).
 
 // Backs the "Look up details" button in the add-layer and overlay forms (see
 // src/tile-metadata.ts). Admin-only, like Test feed: it fetches a user-supplied URL
@@ -1921,14 +1850,14 @@ app.delete('/api/overlays/:id', requireAdmin, async (c) => {
 //
 // The map's base layers, tenant-wide (docs/tenant-basemaps-plan.md). `key` is made from the
 // label and never changes: overlays' per-basemap defaults, devices' choices and color
-// corrections refer to it. tile_proxy is never set here (BasemapRequest strips it), so an
-// admin can't point the Worker's provider secret at another URL.
+// corrections refer to it.
 
+/** How many raster basemaps clientBasemaps() offers. */
 async function shownRasterBasemaps(db: D1Database, excludingId?: number): Promise<number> {
-  const row = await db.prepare(
-    "SELECT COUNT(*) AS n FROM basemaps WHERE kind = 'raster' AND shown = 1 AND id != ?"
-  ).bind(excludingId ?? -1).first<{ n: number }>();
-  return row?.n ?? 0;
+  const { results } = await db.prepare(
+    "SELECT url FROM basemaps WHERE kind = 'raster' AND shown = 1 AND id != ?"
+  ).bind(excludingId ?? -1).all<{ url: string }>();
+  return results.filter(r => validTileTemplate(r.url)).length;
 }
 
 const LAST_BASEMAP_REFUSAL = 'The map needs at least one shown raster basemap';
@@ -1985,8 +1914,8 @@ app.put('/api/basemaps/:id', requireAdmin, valid('json', BasemapRequest), async 
   const id = parseInt(c.req.param('id'), 10);
   if (isNaN(id)) return c.json({ error: 'Invalid basemap id' }, 400);
 
-  const existing = await c.var.db.prepare('SELECT kind, shown, tile_proxy FROM basemaps WHERE id = ?')
-    .bind(id).first<{ kind: 'raster' | 'vector'; shown: number; tile_proxy: string | null }>();
+  const existing = await c.var.db.prepare('SELECT kind, shown FROM basemaps WHERE id = ?')
+    .bind(id).first<{ kind: 'raster' | 'vector'; shown: number }>();
   if (!existing) return c.json({ error: 'Basemap not found' }, 404);
 
   const body = c.req.valid('json');
@@ -1997,9 +1926,6 @@ app.put('/api/basemaps/:id', requireAdmin, valid('json', BasemapRequest), async 
   if (body.label !== undefined) {
     if (!body.label) return c.json({ error: 'label cannot be empty' }, 400);
     sets.push('label = ?'); vals.push(body.label);
-  }
-  if (existing.tile_proxy && (body.url !== undefined || body.kind !== undefined)) {
-    return c.json({ error: 'The tiles of this basemap come through the server: its url and kind can\'t be changed' }, 400);
   }
   if (body.url !== undefined || body.kind !== undefined) {
     if (body.url !== undefined) {

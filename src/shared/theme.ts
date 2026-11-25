@@ -52,7 +52,7 @@ export function themeRuntimeScript(): string {
   return `
     // ── Theme runtime ─────────────────────────────────────────────────────────
 
-    // Reads a live theme token for Leaflet layers, which can't consume CSS custom
+    // Reads a live theme token for map layers, which can't consume CSS custom
     // properties directly. \`fallback\` covers a layer built before first paint
     // (or off-DOM), where getComputedStyle has nothing to read yet.
     function getCssVar(name, fallback) {
@@ -62,6 +62,11 @@ export function themeRuntimeScript(): string {
     function getAccentColor() { return getCssVar('--accent', '${lightTokens.accent}'); }
     function getSuccessColor() { return getCssVar('--success-fg', '${lightTokens['success-fg']}'); }
     function getDangerColor() { return getCssVar('--danger', '${lightTokens.danger}'); }
+    function getInkColor() { return getCssVar('--text-primary', '${lightTokens['text-primary']}'); }
+    // The halo and ring color that keeps a dot readable on any basemap.
+    function getSurfaceColor() { return getCssVar('--surface-1', '${lightTokens['surface-1']}'); }
+    // What a map shows where no tile has loaded.
+    function getMapBackgroundColor() { return getCssVar('--surface-2', '${lightTokens['surface-2']}'); }
 
     function _getThemePref() {
       return localStorage.getItem('ft_theme') || 'system';

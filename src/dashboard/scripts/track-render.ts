@@ -1,11 +1,13 @@
 /**
- * Draws flight tracks onto a Leaflet map: a single selected flight, or every flight in a
+ * Draws flight tracks onto a MapLibre map: a single selected flight, or every flight in a
  * day with numbered end markers that merge into pills when they overlap at the current
- * zoom. Each function takes the map and flights as arguments and returns the layers it
- * added, leaving the caller to own them (day-view.ts / flight-list.ts keep them in
- * dashboard state; the docs-site showcase in src/showcase/ draws sample data with them).
- * Needs makePlaneIcon (icons.ts) and getAccentColor/getSuccessColor/getDangerColor
- * (shared/theme.ts themeRuntimeScript).
+ * zoom. Each function takes the map and flights as arguments and returns what it added (a
+ * shape from addMapShape(), DOM markers from addHtmlMarker(), both in shared/maplibre.ts),
+ * leaving the caller to own them (day-view.ts / flight-list.ts keep them in dashboard
+ * state; the docs-site showcase in src/showcase/ draws sample data with them). Tracks and
+ * dots are core's layers (trackLayer(), trailLayer(), positionLayer()), each feature in its
+ * `color`. Needs makePlaneHtml (icons.ts) and getSurfaceColor/getAccentColor/getSuccessColor/
+ * getDangerColor (shared/theme.ts themeRuntimeScript).
  */
 export function dashboardScriptsTrackRender(): string {
   return `
@@ -19,20 +21,18 @@ export function dashboardScriptsTrackRender(): string {
       }));
     }
 
+    // Stacking of the DOM markers: planes over the end markers over the hover arrow.
+    const MARKER_Z = { arrow: 1, end: 2, plane: 3 };
+
     // Single-flight endpoint: plain numbered circle at the actual position.
-    function makeNumberIcon(n, color) {
+    function makeNumberHtml(n, color) {
       const sz = n >= 10 ? '9' : '11';
-      return L.divIcon({
-        className: '',
-        html: '<div style="width:20px;height:20px;border-radius:50%;background:' + color + ';border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:' + sz + 'px;font-weight:700;color:#fff;font-family:var(--font-mono);">' + n + '</div>',
-        iconSize: [20, 20],
-        iconAnchor: [10, 10],
-      });
+      return '<div style="width:20px;height:20px;border-radius:50%;background:' + color + ';border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:' + sz + 'px;font-weight:700;color:#fff;font-family:var(--font-mono);">' + n + '</div>';
     }
 
     // Multiple flights that land at the same place: horizontal pill of numbered
     // circles on a white background, centered at the group centroid.
-    function makeGroupIcon(group) {
+    function makeGroupHtml(group) {
       // Core's END_MARKER geometry (groupEndMarkers sizes the pills from it); the pad is enough
       // to contain the 2px circle stroke inside the pill border.
       const D = 20, gap = 2, padX = 4, padY = 4;
@@ -47,16 +47,11 @@ export function dashboardScriptsTrackRender(): string {
           '<text x="' + cx + '" y="' + cy + '" dominant-baseline="central" text-anchor="middle" ' +
           'fill="#fff" font-size="' + fs + '" font-weight="700" font-family="var(--font-mono)">' + flightNum + '</text>';
       }).join('');
-      return L.divIcon({
-        className: '',
-        html: '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" ' +
-          'style="display:block;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.3))">' +
-          '<rect x="1" y="1" width="' + (w - 2) + '" height="' + (h - 2) + '" rx="' + (h / 2 - 1) + '" ' +
-          'fill="white" stroke="#cbd5e1" stroke-width="1"/>' +
-          circles + '</svg>',
-        iconSize: [w, h],
-        iconAnchor: [w / 2, h / 2],
-      });
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" ' +
+        'style="display:block;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.3))">' +
+        '<rect x="1" y="1" width="' + (w - 2) + '" height="' + (h - 2) + '" rx="' + (h / 2 - 1) + '" ' +
+        'fill="white" stroke="#cbd5e1" stroke-width="1"/>' +
+        circles + '</svg>';
     }
 
     // Tracker color legend overlaid on the map. entries: [{ label, color }].
@@ -84,22 +79,22 @@ export function dashboardScriptsTrackRender(): string {
     // current zoom (core's groupEndMarkers) and adds one marker per group. Returns the
     // markers it added.
     function placeEndMarkers(mapObj, endInfos) {
-      const groups = groupEndMarkers(endInfos.map(info => mapObj.latLngToContainerPoint(info.latlng)))
+      const groups = groupEndMarkers(endInfos.map(info => mapObj.project([info.latlng[1], info.latlng[0]])))
         .map(g => g.members.map(i => endInfos[i]));
 
       const markers = [];
       for (const infos of groups) {
-        let markerLatLng, icon;
+        let markerLatLng, html;
         if (infos.length === 1) {
           markerLatLng = infos[0].latlng;
-          icon = makeNumberIcon(infos[0].flightNum, infos[0].color);
+          html = makeNumberHtml(infos[0].flightNum, infos[0].color);
         } else {
           const avgLat = infos.reduce((s, m) => s + m.latlng[0], 0) / infos.length;
           const avgLon = infos.reduce((s, m) => s + m.latlng[1], 0) / infos.length;
           markerLatLng = [avgLat, avgLon];
-          icon = makeGroupIcon(infos);
+          html = makeGroupHtml(infos);
         }
-        markers.push(L.marker(markerLatLng, { icon, zIndexOffset: 1000 }).addTo(mapObj));
+        markers.push(addHtmlMarker(mapObj, markerLatLng, html, MARKER_Z.end));
       }
       return markers;
     }
@@ -111,111 +106,70 @@ export function dashboardScriptsTrackRender(): string {
     // tracker's live position instead of an end marker.
     // opts: { colorFor(trackerId), isInProgress(flight), livePosition(trackerId) → { lat, lon, course_deg } | null }.
     // Returns { layers, planes, endInfos, allPoints, trackerIds, latlngs, pointData, labels }:
-    // planes maps trackerId → plane marker (kept out of layers so the caller can track them
+    // layers holds the one shape every track and start dot is drawn on, planes maps
+    // trackerId → plane marker (kept out of layers so the caller can track them
     // separately), and the last three are the hover-handler arrays for every point drawn.
     function drawDayTracks(mapObj, flights, { colorFor, isInProgress, livePosition }) {
-      // Trackers represented in this day's flights (with points).
-      const trackerIds = [...new Set(
-        flights.filter(f => (f.points ?? []).length > 0).map(f => f.tracker_id)
-      )];
-      // Stop numbers (core's dayFlightNumbers).
-      const flightNums = dayFlightNumbers(flights);
-
-      const layers = [];
+      const { lines, starts, drawn, trackerIds } = dayTrackFeatures(flights, { colorFor, inProgress: isInProgress });
       const planes = {};
       const allPoints = [];
       const endInfos = [];
-      const latlngsOut = [], pointDataOut = [], labelsOut = [];
+      const pointDataOut = [], labelsOut = [];
 
-      for (let i = 0; i < flights.length; i++) {
-        const flight = flights[i];
-        const pts = flight.points ?? [];
-        if (pts.length === 0) continue;
-
-        const color = colorFor(flight.tracker_id);
-        const flightNum = flightNums[i];
-
-        const latlngs = pts.map(p => [p.lat, p.lon]);
-        const pointData = _trackPointData(flight);
-        const inProgress = isInProgress(flight);
-
-        const polyline = L.polyline(latlngs, {
-          color, weight: 4, opacity: 0.9, lineCap: 'round', lineJoin: 'round',
-        }).addTo(mapObj);
-        layers.push(polyline);
+      for (const { flight, n, color, inProgress } of drawn) {
+        const latlngs = flight.points.map(p => [p.lat, p.lon]);
         allPoints.push(...latlngs);
-
-        latlngs.forEach((ll, j) => {
-          latlngsOut.push(ll);
-          pointDataOut.push(pointData[j]);
+        pointDataOut.push(..._trackPointData(flight));
+        latlngs.forEach((_, j) => {
           let ptLabel = null;
-          if (j === 0) ptLabel = 'Flight ' + flightNum + ' start';
-          else if (j === latlngs.length - 1) ptLabel = inProgress ? 'Current position' : 'Flight ' + flightNum + ' end';
+          if (j === 0) ptLabel = 'Flight ' + n + ' start';
+          else if (j === latlngs.length - 1) ptLabel = inProgress ? 'Current position' : 'Flight ' + n + ' end';
           labelsOut.push(ptLabel);
         });
 
-        const startMarker = L.circleMarker(latlngs[0], {
-          radius: 6, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1,
-        }).addTo(mapObj);
-        layers.push(startMarker);
-
         if (!inProgress) {
-          endInfos.push({ latlng: latlngs[latlngs.length - 1], flightNum, color });
+          endInfos.push({ latlng: latlngs[latlngs.length - 1], flightNum: n, color });
         } else {
           const pos = livePosition(flight.tracker_id);
           if (pos?.lat != null) {
-            planes[flight.tracker_id] = L.marker([pos.lat, pos.lon], {
-              icon: makePlaneIcon(pos.course_deg ?? 0, color),
-              zIndexOffset: 1000,
-              interactive: false,
-              keyboard: false,
-            }).addTo(mapObj);
+            planes[flight.tracker_id] = addHtmlMarker(mapObj, [pos.lat, pos.lon], makePlaneHtml(pos.course_deg ?? 0, color), MARKER_Z.plane);
           }
         }
       }
 
-      return { layers, planes, endInfos, allPoints, trackerIds, latlngs: latlngsOut, pointData: pointDataOut, labels: labelsOut };
+      const layers = starts.length ? [addMapShape(mapObj, [...lines, ...starts], [trackLayer(), positionLayer(getSurfaceColor())])] : [];
+      return { layers, planes, endInfos, allPoints, trackerIds, latlngs: allPoints, pointData: pointDataOut, labels: labelsOut };
     }
 
     // Draws a tracker's ground trail (core's groundTrail) as a dotted line in its color
     // from the landing spot to a hollow dot at the tracker's current position: the pilot,
     // where the plane marker stays with the aircraft. Returns { layers, latlngs, pointData,
-    // labels } (the last three for the hover handler).
-    function drawGroundTrail(mapObj, { line: trailLine, pilot, points }, { color, trackerId }) {
-      const latlngs = points.map(p => [p.lat, p.lon]);
-      const line = L.polyline(trailLine.map(p => [p.lat, p.lon]), {
-        color, weight: 3, opacity: 0.9, dashArray: '1 7', lineCap: 'round', lineJoin: 'round',
-        interactive: false,
-      }).addTo(mapObj);
-      const pilotDot = L.circleMarker([pilot.lat, pilot.lon], {
-        radius: 6, color, weight: 3, fillColor: '#fff', fillOpacity: 1, interactive: false,
-      }).addTo(mapObj);
+    // labels } (layers: its shape; the last three for the hover handler).
+    function drawGroundTrail(mapObj, trail, { color, trackerId }) {
+      const latlngs = trail.points.map(p => [p.lat, p.lon]);
+      const { line, pilot } = groundTrailFeatures(trail, color, trackerId);
+      const shape = addMapShape(mapObj, [line, pilot], [trailLayer(), positionLayer(getSurfaceColor())]);
       return {
-        layers: [line, pilotDot],
+        layers: [shape],
         latlngs,
-        pointData: points.map(p => ({
-          garmin_time: p.t, velocity_kmh: p.v, elevation_m: p.e, course_deg: p.c, tracker_id: trackerId,
-        })),
+        pointData: _trackPointData({ points: trail.points, tracker_id: trackerId }),
         labels: latlngs.map((_, j) => j === latlngs.length - 1 ? 'Current position' : 'On the ground'),
       };
     }
 
     // Draws one flight in the accent color with a green start dot, and optionally a red
     // end dot and a plane marker ({ lat, lon, course_deg, color }) at its live position.
-    // Returns { track, startMarker, endMarker, planeMarker, latlngs, pointData, labels }
-    // (unused markers are null), or null when the flight has no points.
+    // Returns { shape, planeMarker, latlngs, pointData, labels } (shape: the track and its
+    // dots; planeMarker null without a plane), or null when the flight has no points.
     function drawFlightTrack(mapObj, flight, { inProgress, showEndMarker, plane }) {
       const pts = flight.points ?? [];
       if (pts.length === 0) return null;
 
       const latlngs = pts.map(p => [p.lat, p.lon]);
-      const track = L.polyline(latlngs, {
-        color: getAccentColor(),
-        weight: 4,
-        opacity: 0.9,
-        lineCap: 'round',
-        lineJoin: 'round',
-      }).addTo(mapObj);
+      const { lines, dots } = flightTrackFeatures(pts, {
+        track: getAccentColor(), start: getSuccessColor(), end: showEndMarker ? getDangerColor() : null,
+      });
+      const shape = addMapShape(mapObj, [...lines, ...dots], [trackLayer(), positionLayer(getSurfaceColor())]);
 
       const labels = latlngs.map((_, j) => {
         if (j === 0) return 'Flight start';
@@ -223,26 +177,11 @@ export function dashboardScriptsTrackRender(): string {
         return null;
       });
 
-      const startMarker = L.circleMarker(latlngs[0], {
-        radius: 7, color: '#fff', weight: 2, fillColor: getSuccessColor(), fillOpacity: 1,
-      }).addTo(mapObj);
-
-      const endMarker = showEndMarker
-        ? L.circleMarker(latlngs[latlngs.length - 1], {
-            radius: 7, color: '#fff', weight: 2, fillColor: getDangerColor(), fillOpacity: 1,
-          }).addTo(mapObj)
-        : null;
-
       const planeMarker = plane
-        ? L.marker([plane.lat, plane.lon], {
-            icon: makePlaneIcon(plane.course_deg ?? 0, plane.color),
-            zIndexOffset: 1000,
-            interactive: false,
-            keyboard: false,
-          }).addTo(mapObj)
+        ? addHtmlMarker(mapObj, [plane.lat, plane.lon], makePlaneHtml(plane.course_deg ?? 0, plane.color), MARKER_Z.plane)
         : null;
 
-      return { track, startMarker, endMarker, planeMarker, latlngs, pointData: _trackPointData(flight), labels };
+      return { shape, planeMarker, latlngs, pointData: _trackPointData(flight), labels };
     }
   `;
 }

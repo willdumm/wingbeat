@@ -3,6 +3,7 @@ import { regionsEditorMarkup, regionsEditorScript } from './regions-editor';
 import { mapLayersSettingsRowsMarkup, mapLayersSettingsScript } from './map-controls';
 import { basemapSettingsMarkup, basemapSettingsScript } from './basemap-settings';
 import { icon } from './icons';
+import { darkTokens } from '@wingbeat/core/tokens';
 import { docsLinkMarkup } from './help';
 import { pilotDutyMarkup, typstLoadOverlayMarkup } from './pilot-duty';
 import { flightEditorMarkup } from './flight-editor';
@@ -231,7 +232,7 @@ export function settingsModalMarkup(): string {
               </div>
               <div class="settings-form-row">
                 <div class="settings-form-label">Map default zoom</div>
-                <input type="number" id="settings-tenant-zoom" min="1" max="20" step="1" autocomplete="off" />
+                <input type="number" id="settings-tenant-zoom" min="1" max="20" step="any" autocomplete="off" />
               </div>
               <div class="settings-add-actions">
                 <button id="settings-tenant-map-pick" class="btn-secondary">Set from map</button>
@@ -986,9 +987,36 @@ export function settingsModalStyles(): string {
       flex-direction: column;
     }
 
-    .rg-drag-handle {
-      background: transparent;
+    /* A region's vertex, or the midpoint of an edge: a draggable marker whose element is
+       the area to grab, with its dot in the middle. */
+    .rg-handle {
+      --rg-hit: 20px;
+      width: var(--rg-hit);
+      height: var(--rg-hit);
+      display: flex;
+      align-items: center;
+      justify-content: center;
       cursor: grab;
+      z-index: 2;
+    }
+    @media (pointer: coarse) { .rg-handle { --rg-hit: 32px; } }
+    .rg-handle::after {
+      content: '';
+      width: 13px;
+      height: 13px;
+      border-radius: var(--radius-pill);
+      background: var(--accent);
+      opacity: 0.9;
+    }
+    .rg-handle.rg-shared::after { background: ${darkTokens['warning-fg']}; }
+    .rg-handle.rg-mid { z-index: 1; }
+    .rg-handle.rg-mid::after {
+      width: 9px;
+      height: 9px;
+      background: var(--surface-1);
+      border: 1px solid var(--text-muted);
+      box-sizing: border-box;
+      opacity: 0.8;
     }
 
     .map-editor-status-overlay {
@@ -3067,7 +3095,7 @@ export function settingsModalScript(): string {
         timezone: document.getElementById('settings-tenant-timezone').value,
         map_default_lat: parseFloat(document.getElementById('settings-tenant-lat').value),
         map_default_lng: parseFloat(document.getElementById('settings-tenant-lng').value),
-        map_default_zoom: parseInt(document.getElementById('settings-tenant-zoom').value, 10),
+        map_default_zoom: parseFloat(document.getElementById('settings-tenant-zoom').value),
         gap_alert_minutes: parseInt(document.getElementById('settings-tenant-gap-minutes').value, 10),
         gap_alert_stop_minutes: parseInt(document.getElementById('settings-tenant-gap-stop-minutes').value, 10),
       };
@@ -3336,6 +3364,11 @@ export function settingsModalScript(): string {
     });
 
     // ── Shared map-editor helpers (used by both editor scripts below) ─────────
+
+    // What's selected (or shared) and what's being added, on the map: the dark theme's, in
+    // both themes, since the light theme's are too dark to see over imagery.
+    const MAP_EDITOR_SELECTED = '${darkTokens['warning-fg']}';
+    const MAP_EDITOR_ADDING = '${darkTokens['success-fg']}';
 
     function _setEditorStatus(elId, msg, isError) {
       const el = document.getElementById(elId);

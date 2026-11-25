@@ -225,8 +225,6 @@ export function dashboardScriptsFlightList(): string {
       if (el) el.classList.add('active');
 
       if (activeTrack) { activeTrack.remove(); activeTrack = null; }
-      if (activeStartMarker) { activeStartMarker.remove(); activeStartMarker = null; }
-      if (activeEndMarker) { activeEndMarker.remove(); activeEndMarker = null; }
       activeFlightInProgress = false;
       activeLatlngs = [];
       activePointData = [];
@@ -262,9 +260,7 @@ export function dashboardScriptsFlightList(): string {
           : null,
       });
 
-      activeTrack = drawn.track;
-      activeStartMarker = drawn.startMarker;
-      activeEndMarker = drawn.endMarker;
+      activeTrack = drawn.shape;
       if (drawn.planeMarker) planeMarkers[flight.tracker_id] = drawn.planeMarker;
       activeLatlngs = drawn.latlngs;
       activePointData = drawn.pointData;
@@ -273,7 +269,7 @@ export function dashboardScriptsFlightList(): string {
       // The latest flight's plane marker gets its tracker's ground trail; any other drops it.
       renderGroundTrails();
 
-      if (fitView) map.fitBounds(L.latLngBounds([...drawn.latlngs, ...trailLatlngs]), mapFitOptions());
+      if (fitView) fitMapTo([...drawn.latlngs, ...trailLatlngs]);
       ensureMapView();
     }
 

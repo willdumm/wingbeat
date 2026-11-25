@@ -366,6 +366,9 @@ export function filterScript(): string {
           opt.textContent = p.name;
           pilotSel.appendChild(opt);
         }
+
+        // The chips name trackers and pilots too.
+        _renderChips();
       };
 
       // Restore date inputs from state
@@ -373,7 +376,6 @@ export function filterScript(): string {
       if (_filterState.dateTo)   dateToEl.value   = _filterState.dateTo;
 
       _filterRebuildDropdowns();
-      _renderChips();
 
       // ── Event wiring ────────────────────────────────────────────────────────
       initToggleSection(toggleBtn, filterControls, false);

@@ -15,6 +15,7 @@ import {
   FLIGHT_EDIT_FIELD_NAMES, flightFieldEdited, flightOriginalText, flightRemarks,
   type EffectiveFlight, type FlightEditField,
 } from '@wingbeat/core/flight-edits';
+import { flightTrackFeatures, lngLat, lngLatBounds, pointFeature } from '@wingbeat/core/map-features';
 import type { FilterState } from '@wingbeat/core/filters';
 import { fmtTzTime, tzAddDays, tzLongDateLabel, unixToTzDateStr } from '@wingbeat/core/time';
 
@@ -222,15 +223,11 @@ const MIN_BOUNDS_DEG = 0.05;
 
 /**
  * The bounds of coords, widened to at least MIN_BOUNDS_DEG each way; null when there are none.
- * A loop, not Math.min(...coords): a long track's spread passes Hermes' argument limit.
  */
 export function bboxOf(coords: [number, number][]): [number, number, number, number] | null {
-  if (!coords.length) return null;
-  let [w, s, e, n] = [Infinity, Infinity, -Infinity, -Infinity];
-  for (const [lon, lat] of coords) {
-    w = Math.min(w, lon); e = Math.max(e, lon);
-    s = Math.min(s, lat); n = Math.max(n, lat);
-  }
+  const bounds = lngLatBounds(coords);
+  if (!bounds) return null;
+  const [w, s, e, n] = bounds;
   const pad = (lo: number, hi: number) => Math.max(0, (MIN_BOUNDS_DEG - (hi - lo)) / 2);
   return [w - pad(w, e), s - pad(s, n), e + pad(w, e), n + pad(s, n)];
 }
@@ -246,20 +243,19 @@ export function flightTrack(f: Flight, colors: { track: string; start: string; e
   ends: GeoJSON.FeatureCollection<GeoJSON.Point>;
   bounds: [number, number, number, number] | null;
 } {
-  const coords: [number, number][] = (f.points ?? []).map((p) => [p.lon, p.lat]);
-  const start = coords[0] ?? (f.start_lon != null && f.start_lat != null ? [f.start_lon, f.start_lat] : null);
-  const end = coords.at(-1) ?? (f.end_lon != null && f.end_lat != null ? [f.end_lon, f.end_lat] : null);
-  const ends = ([[start, colors.start], [f.end_time ? end : null, colors.end]] as const).flatMap(([c, color], i) =>
-    c ? [{ type: 'Feature' as const, id: i, geometry: { type: 'Point' as const, coordinates: c }, properties: { color, inFlight: false } }] : []);
+  const points = f.points ?? [];
+  const named = (lat: number | null | undefined, lon: number | null | undefined) => (lat != null && lon != null ? [{ lat, lon }] : []);
+  // Without a track, a manual flight's named points: where it left and landed.
+  const { lines, dots } = points.length
+    ? flightTrackFeatures(points, { ...colors, end: f.end_time ? colors.end : null }, f.id)
+    : { lines: [], dots: [
+        ...named(f.start_lat, f.start_lon).map((p) => pointFeature(p, { color: colors.start }, 'start')),
+        ...(f.end_time ? named(f.end_lat, f.end_lon) : []).map((p) => pointFeature(p, { color: colors.end }, 'end')),
+      ] };
   return {
-    line: {
-      type: 'FeatureCollection',
-      features: coords.length >= 2
-        ? [{ type: 'Feature', id: f.id, geometry: { type: 'LineString', coordinates: coords }, properties: { color: colors.track } }]
-        : [],
-    },
-    ends: { type: 'FeatureCollection', features: ends },
-    bounds: bboxOf(coords.length ? coords : ends.map((e) => e.geometry.coordinates as [number, number])),
+    line: { type: 'FeatureCollection', features: lines },
+    ends: { type: 'FeatureCollection', features: dots },
+    bounds: bboxOf(points.length ? points.map(lngLat) : dots.map((d) => d.geometry.coordinates)),
   };
 }
 

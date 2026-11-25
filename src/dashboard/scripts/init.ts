@@ -85,7 +85,7 @@ export function dashboardScriptsInit(): string {
     })();
 
     // ── Sidebar toggle (mobile: open/close overlay; desktop: collapse/expand) ──
-    ${sharedSidebarToggleScripts('map')}
+    ${sharedSidebarToggleScripts()}
 
     // ── Zoom controls + basemap switcher ──────────────────────────────────────
     ${sharedMapControlsScripts('map')}
@@ -97,8 +97,8 @@ export function dashboardScriptsInit(): string {
     });
 
     // Any touch, drag, wheel or control press on the map holds off poll-driven re-fits
-    // (see mapInputSettled). Leaflet's own drag/pinch events carry no originalEvent, so
-    // this listens on the DOM instead.
+    // (see mapInputSettled). A tap or a press on a control moves nothing, so this listens
+    // on the DOM rather than for the map's move events.
     (function() {
       const mapWrapper = document.querySelector('.map-wrapper');
       if (!mapWrapper) return;

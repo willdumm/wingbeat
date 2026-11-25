@@ -11,8 +11,7 @@ import { elevationToolMarkup } from '../shared/elevation';
 import { analyticsTotalsMarkup, analyticsViewTabsMarkup, analyticsLayerControlsMarkup, streamgraphMarkup } from '../analytics/markup';
 import { pilotDutyMarkup, typstLoadOverlayMarkup } from '../shared/pilot-duty';
 import { sharedMapControlsMarkup } from '../shared/map-controls';
-
-const LEAFLET_CSS = '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous" />';
+import { maplibreCssLink } from '../shared/maplibre';
 
 /**
  * Shadow roots don't see <html data-theme>, so the handful of `[data-theme="…"] X`
@@ -52,7 +51,7 @@ function demoStyles(): string {
     /* The point-picker popup covers the frame, not the whole landing page. */
     .info-popup { position: absolute; }
     @media (max-width: 640px) {
-      /* The open drawer covers the map; Leaflet's own controls would sit on top of it. */
+      /* The open drawer covers the map; the map's controls would sit on top of it. */
       aside.open ~ .map-wrapper .map-controls-wrap { display: none; }
     }
 
@@ -102,7 +101,7 @@ export function demoMarkup(appName: string): Record<'status' | 'flights' | 'main
   return {
     status: dashboardHeaderMarkup(appName, { logo: false, refresh: false }),
 
-    flights: /* html */ `${LEAFLET_CSS}
+    flights: /* html */ `${maplibreCssLink()}
   <div class="main">
     <aside>
       <button class="sidebar-mobile-toggle" id="mobile-map-btn">View map &#8594;</button>
@@ -128,7 +127,7 @@ export function demoMarkup(appName: string): Record<'status' | 'flights' | 'main
     ${typstLoadOverlayMarkup()}
   </div>`,
 
-    analytics: /* html */ `${LEAFLET_CSS}
+    analytics: /* html */ `${maplibreCssLink()}
   <div class="analytics-layout">
     <aside class="analytics-panel">
       <div class="analytics-panel-content">

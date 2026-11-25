@@ -6,23 +6,21 @@
  * `sidebar` is declared here (not in init.ts) because flight-list.ts and
  * day-view.ts close over it to dismiss the mobile drawer on item selection.
  */
-import { sharedTileLayerDefs } from '../../shared/map-controls';
-
 export function dashboardScriptsState(): string {
   return `
     // ── Map setup ─────────────────────────────────────────────────────────────
-    // No view yet: the first one is the fit to the current flights (showDefaultMapView in
-    // init.ts), so the map never paints the default extent first and then jumps. Leaflet
-    // holds layers added before then until it has a view. ensureMapView() falls back to
-    // the default extent when there is nothing to fit.
-    const map = L.map('map', { zoomControl: false, attributionControl: false });
+    // The map starts on the default extent but stays hidden (map-pending) until its first
+    // view: the fit to the current flights (showDefaultMapView in init.ts), so it never
+    // paints the default extent first and then jumps. ensureMapView() shows the default
+    // extent when there is nothing to fit.
+    const map = createMap(document.getElementById('map'), _ftDefaultView());
+    map.getContainer().classList.add('map-pending');
+    let mapHasView = false;
 
     function ensureMapView() {
-      if (map._loaded) return;
-      map.setView(
-        [window.APP_SETTINGS.mapDefaultLat, window.APP_SETTINGS.mapDefaultLng],
-        window.APP_SETTINGS.mapDefaultZoom
-      );
+      if (mapHasView) return;
+      mapHasView = true;
+      map.getContainer().classList.remove('map-pending');
     }
 
     // fitBounds options for tracks. On phones the status cards float over the top of
@@ -30,10 +28,16 @@ export function dashboardScriptsState(): string {
     function mapFitOptions() {
       const header = document.querySelector('header');
       const top = window.innerWidth <= 640 && header ? header.getBoundingClientRect().height : 0;
-      return { paddingTopLeft: [40, 40 + top], paddingBottomRight: [40, 40] };
+      return { padding: { top: 40 + top, left: 40, right: 40, bottom: 40 }, maxZoom: 16 };
     }
 
-    ${sharedTileLayerDefs('map')}
+    // Fits the map to [lat, lon] pairs: at once the first time (the map's first view),
+    // animated after that.
+    function fitMapTo(latlngs) {
+      if (!latlngs.length) return;
+      map.fitBounds(_ftLatLngBounds(latlngs), Object.assign(mapFitOptions(), mapHasView ? {} : { duration: 0 }));
+      ensureMapView();
+    }
 
     // ── Tracker/aircraft/pilot/overlay lists ──────────────────────────────────
     let trackerList = [];        // all tracker rows from /api/trackers
@@ -46,13 +50,11 @@ export function dashboardScriptsState(): string {
     let activeFilters = { dateFrom: null, dateTo: null, trackerIds: [], pilotIds: [], aircraftTails: [] };
 
     // ── Shared mutable state ──────────────────────────────────────────────────
-    let activeTrack = null;
-    let activeStartMarker = null;
-    let activeEndMarker = null;
+    let activeTrack = null;      // the selected flight's shape (addMapShape)
     let activeFlightId = null;
     let activeFlightInProgress = false;
     let liveDataByTracker = {};  // trackerId → live data object
-    let planeMarkers = {};       // trackerId → L.Marker
+    let planeMarkers = {};       // trackerId → plane marker (addHtmlMarker)
     let allFlights = [];
     let filteredFlights = [];    // result of applyFilter(); used by map view and status cards
     let dailyLayers = [];

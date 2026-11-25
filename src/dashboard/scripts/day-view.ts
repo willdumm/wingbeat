@@ -58,8 +58,6 @@ export function dashboardScriptsDayView(): string {
     // Pass fit: false to redraw without moving the viewport.
     function selectDayView(flights, { fit = true } = {}) {
       if (activeTrack) { activeTrack.remove(); activeTrack = null; }
-      if (activeStartMarker) { activeStartMarker.remove(); activeStartMarker = null; }
-      if (activeEndMarker) { activeEndMarker.remove(); activeEndMarker = null; }
       // Remove all plane markers — drawDayTracks places them for in-progress flights.
       for (const [tid, marker] of Object.entries(planeMarkers)) {
         marker.remove();
@@ -88,9 +86,7 @@ export function dashboardScriptsDayView(): string {
 
       // Fit before placing the end markers: their grouping depends on the zoom, and on
       // first load the map has no view until this fit.
-      if (fit && drawn.allPoints.length > 0) {
-        map.fitBounds(L.latLngBounds(drawn.allPoints), mapFitOptions());
-      }
+      if (fit) fitMapTo(drawn.allPoints);
       ensureMapView();
 
       currentDayEndInfos = drawn.endInfos;

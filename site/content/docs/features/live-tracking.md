@@ -6,7 +6,7 @@ weight: 1
 
 # Live Tracking
 
-The dashboard shows every active tracker's current position on a Leaflet map,
+The dashboard shows every active tracker's current position on a map,
 with a plane marker per tracker and a status card per aircraft along the top
 of the page.
 
