@@ -7,7 +7,7 @@ import { AlertsContext, useComputedAlerts } from '@/lib/use-alerts';
 // The flight and day maps (and the Edit modal) hide the tab bar: their sheet covers the bottom
 // of the screen, and at its smallest the tab bar would show around it. A flight opens from
 // the duty log too, in the Duty tab or in Settings.
-const NO_TAB_BAR = ['[id]', 'day', 'assign', 'flight'];
+const NO_TAB_BAR = ['[id]', 'day', 'assign', 'flight', 'link'];
 
 // The filter is above the tabs since the flight map reads it from the Duty tab too. The Flights
 // tab's badge counts the alerts (its header's bell opens them). The Duty tab shows as picked in

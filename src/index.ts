@@ -32,6 +32,7 @@ import { MAX_DEVICE_NAME_LENGTH, SessionRenameRequest, deviceNameLength } from '
 import { PushDeviceRequest, PushSubscriptionsRequest } from '@wingbeat/core/api/push-requests';
 import { PairRequest } from '@wingbeat/core/api/app-requests';
 import { APP_CONNECT_PATH, appConnectCallbackUrl, base64url, isCodeChallenge, isCodeVerifier, isConnectState } from '@wingbeat/core/app-connect';
+import { APPLE_APP_SITE_ASSOCIATION, parseFlightPath } from '@wingbeat/core/flight-link';
 import { API_VERSION, APP_VERSION_HEADER, MAX_APP_VERSION_LENGTH, MIN_CLIENT_LEVEL } from '@wingbeat/core/api/version';
 import { EmailAddRequest, InviteRequest, UserUpdateRequest } from '@wingbeat/core/api/users-requests';
 import { ApplyAssignmentRequest, TestFeedRequest, TrackerCreateRequest, TrackerUpdateRequest } from '@wingbeat/core/api/trackers-requests';
@@ -98,6 +99,8 @@ app.onError((err, c) => {
   return c.text('Internal Server Error', 500);
 });
 
+type AppContext = Context<{ Bindings: Env; Variables: Variables }>;
+
 type SessionLookup = { id: number; user_id: number; name: string; role: string; pilot_id: number | null; device_name: string | null; last_seen_at: number; token_hashed: number; app_version: string | null };
 
 // Finds the live session for a cookie value. New rows store sha256(cookie) with
@@ -105,7 +108,7 @@ type SessionLookup = { id: number; user_id: number; name: string; role: string; 
 // condition keeps a hash read from the DB from working as a cookie. Idle-expired sessions
 // are deleted and reported as absent; legacy rows are upgraded in place. The app's
 // X-Wingbeat-App header is recorded in app_version, written only when it changes.
-async function lookupSession(c: Context<{ Bindings: Env; Variables: Variables }>, raw: string): Promise<SessionLookup | null> {
+async function lookupSession(c: AppContext, raw: string): Promise<SessionLookup | null> {
   const hash = await sha256Hex(raw);
   const db = c.var.db;
   const row = await db.prepare(
@@ -319,6 +322,9 @@ app.use('*', async (c, next) => {
 // Ahead of tenant routing and auth, so crawlers get the rules on any host while signed out.
 app.get('/robots.txt', (c) => c.text('User-agent: *\nDisallow: /\n'));
 
+// Also for any host, and without a redirect to /login, which iOS wouldn't follow.
+app.get('/.well-known/apple-app-site-association', (c) => c.json(APPLE_APP_SITE_ASSOCIATION));
+
 // Also ahead of them: it's the same public code for every tenant, and a page's script tag
 // has no use for a login redirect. The path changes with the content, hence `immutable`.
 app.get(coreBundlePath, (c) => c.body(coreBundle, 200, {
@@ -416,7 +422,8 @@ app.use('*', async (c, next) => {
   if (path === '/api' || path.startsWith('/api/')) {
     return c.json({ error: 'Your session has expired. Reload the page to sign in again.' }, 401);
   }
-  return c.redirect('/login');
+  // A flight's link is still there after signing in.
+  return c.redirect(parseFlightPath(path) ? '/login?return=' + encodeURIComponent(path) : '/login');
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -486,7 +493,7 @@ function loginCode(): string {
 const loginCodeHash = (token: string, code: string) => sha256Hex(`${token}:${code}`);
 
 /** Whether this client IP is over the login rate limit (Env.LOGIN_RATE_LIMIT; none when unset). */
-async function loginRateLimited(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<boolean> {
+async function loginRateLimited(c: AppContext): Promise<boolean> {
   const limiter = c.env.LOGIN_RATE_LIMIT;
   if (!limiter) return false;
   const ip = c.req.header('CF-Connecting-IP') ?? 'unknown';
@@ -494,7 +501,7 @@ async function loginRateLimited(c: Context<{ Bindings: Env; Variables: Variables
   return !success;
 }
 
-const emailContext = (c: Context<{ Bindings: Env; Variables: Variables }>, appName: string): EmailContext =>
+const emailContext = (c: AppContext, appName: string): EmailContext =>
   ({ env: c.env, appName, host: new URL(c.req.url).host });
 
 app.post('/login', async (c) => {
@@ -517,7 +524,7 @@ app.post('/login', async (c) => {
  * (MAX_LIVE_LOGIN_LINKS, MAX_DAILY_LOGIN_LINKS); otherwise does nothing. Never throws: the
  * page can't differ either way, so a failure is said only in the log.
  */
-async function emailSignInLink(c: Context<{ Bindings: Env; Variables: Variables }>, appName: string, email: string): Promise<void> {
+async function emailSignInLink(c: AppContext, appName: string, email: string): Promise<void> {
   try {
     const db = c.var.db;
     const now = Math.floor(Date.now() / 1000);
@@ -590,9 +597,9 @@ app.post(LOGIN_CODE_PATH, async (c) => {
 // demo code in settings (demo_code) signs anyone in as the demo user (demo_user_id): typed on
 // the signed-out pages here, or sent by the app's "Try the Demo" to POST /api/app/pair.
 
-/** The return paths a sign-in (the demo code, or by email) goes back to: home, or the app's connect page. */
+/** The return paths a sign-in (the demo code, or by email) goes back to: home, the app's connect page, or a flight. */
 function signInReturnPath(raw: unknown): string {
-  return typeof raw === 'string' && raw.startsWith(APP_CONNECT_PATH + '?') ? raw : '/';
+  return typeof raw === 'string' && (raw.startsWith(APP_CONNECT_PATH + '?') || parseFlightPath(raw)) ? raw : '/';
 }
 
 /** A new session for the demo user, named deviceName, when `code` is this demo tenant's code; else null. */
@@ -653,7 +660,7 @@ app.post('/logout', async (c) => {
 // (signedInAs, below, which also handles the emailed links).
 
 /** This browser's session, from its cookie alone, or null. */
-async function cookieSession(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<SessionLookup | null> {
+async function cookieSession(c: AppContext): Promise<SessionLookup | null> {
   const token = getCookie(c, SESSION_COOKIE);
   return token ? lookupSession(c, token) : null;
 }
@@ -799,7 +806,7 @@ app.get('/join/:token', async (c) => {
  * it only confirms the address), or null: not signed
  * in, or an emailed link of another user's, which signs this browser in to that account.
  */
-async function signedInAs(c: Context<{ Bindings: Env; Variables: Variables }>, row: InviteToken): Promise<'same' | 'other' | null> {
+async function signedInAs(c: AppContext, row: InviteToken): Promise<'same' | 'other' | null> {
   const session = await cookieSession(c);
   if (!session) return null;
   if (!row.email) return 'other';
@@ -907,11 +914,15 @@ app.post(APP_CONNECT_PATH, async (c) => {
 
 // ── Page routes ───────────────────────────────────────────────────────────────
 
-app.get('/', async (c) => {
+const dashboardPage = async (c: AppContext) => {
   const settings = await loadSettings(c.var.tenant);
   c.executionCtx.waitUntil(pollAllActive(c.var.tenant));
   return c.html(dashboardHTML(settings, c.env, c.get('cspNonce'), clientBasemaps(await queryBasemaps(c.var.db))));
-});
+};
+app.get('/', dashboardPage);
+
+// A flight's link: the dashboard, which reads the flight from the URL (init.ts).
+app.get('/flights/*', (c) => (parseFlightPath(c.req.path) ? dashboardPage(c) : c.notFound()));
 
 app.get('/analytics', async (c) => {
   const settings = await loadSettings(c.var.tenant);
@@ -1077,7 +1088,7 @@ async function sendOrDropToken(db: D1Database, token: string, send: () => Promis
  * it). Sending it again sends another link (the earlier one still works), up to
  * MAX_PENDING_EMAIL_LINKS unopened in all, so the form can't email an address without end.
  */
-async function addUserEmail(c: Context<{ Bindings: Env; Variables: Variables }>, user: { id: number; name: string }, raw: string) {
+async function addUserEmail(c: AppContext, user: { id: number; name: string }, raw: string) {
   if (!emailEnabled(c.env)) return c.json({ error: 'This instance doesn’t send email' }, 400);
   const email = normalizeEmail(raw);
   if (!email) return c.json({ error: 'Enter an email address' }, 400);
@@ -1118,7 +1129,7 @@ async function addUserEmail(c: Context<{ Bindings: Env; Variables: Variables }>,
  * Removes one of a user's addresses (by its id); it no longer signs in. Its unopened links go
  * too: a /login code sent to it, or a confirmation link that would add it back.
  */
-async function removeUserEmail(c: Context<{ Bindings: Env; Variables: Variables }>, userId: number) {
+async function removeUserEmail(c: AppContext, userId: number) {
   const id = parseInt(c.req.param('emailId') ?? '', 10);
   if (isNaN(id)) return c.json({ error: 'Invalid email id' }, 400);
   const db = c.var.db;
@@ -1985,7 +1996,7 @@ app.delete('/api/basemaps/:id', requireAdmin, async (c) => {
 // is refused with a 409 when any of them changed after base.id (see "Edit conflicts"
 // below). The check is a statement in the same batch, so no write can slip in between it
 // and the save.
-async function recordedBatch(c: Context<{ Bindings: Env; Variables: Variables }>, stmts: D1PreparedStatement[],
+async function recordedBatch(c: AppContext, stmts: D1PreparedStatement[],
   base?: SaveBase): Promise<D1Result[]> {
   const db = c.var.db;
   // Inserting a second edit_actor row fails on its primary key, which aborts the batch

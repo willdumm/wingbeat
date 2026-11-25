@@ -303,3 +303,27 @@ describe('session bearer (the app)', () => {
     assert.equal((await w.request('GET', '/join/unknown', undefined, bearer('nope'))).status, 404);
   });
 });
+
+describe('a flight’s link', () => {
+  const PATH = '/flights/3/1764000000';
+
+  test('signed in, it’s the dashboard; another /flights path is not found', async () => {
+    const r = await w.request('GET', PATH);
+    assert.equal(r.status, 200);
+    assert.match(r.body, /id="flight-list"/);
+    assert.equal((await w.request('GET', '/flights/nope')).status, 404);
+  });
+
+  test('signed out, the login page keeps it to return to', async () => {
+    const r = await w.request('GET', PATH, undefined, { as: null });
+    assert.equal(r.status, 302);
+    assert.equal(r.headers.get('location'), '/login?return=' + encodeURIComponent(PATH));
+  });
+
+  test('the association file is served signed out', async () => {
+    const r = await w.request('GET', '/.well-known/apple-app-site-association', undefined, { as: null });
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-type'), /^application\/json/);
+    assert.deepEqual(r.body.applinks.details[0].components, [{ '/': '/flights/*' }]);
+  });
+});

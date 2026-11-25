@@ -73,6 +73,7 @@ export function dashboardScriptsState(): string {
     // dayKey of the displayed day view, or '__overview__' for the default view (whether
     // that is drawn as a day view or as the latest flight); null for a selected flight.
     let activeDayDate = null;
+    let linkedFlightKey = parseFlightPath(location.pathname); // the page URL's flight, until init.ts has opened it
     let renderedMapSig = null; // mapDataSig() as of the last full map draw (refresh.ts)
 
     // ── Adaptive live-poll scheduling ─────────────────────────────────────────

@@ -29,6 +29,7 @@ export function dashboardScriptsAircraft(): string {
       activeFlightId = null;
       const result = await flightStore.refresh(allTrackerIds);
       applyStoreResult(result);
+      showDefaultMapView();
     };
   `;
 }

@@ -172,7 +172,7 @@ export function nextLivePoll(
   return { delayMs: LIVE_POLL_MIN_MS, lastKnownGarminTime };
 }
 
-type MaybeEdited = { tracker_id: number | null; start_time: number; edit?: { original: Record<string, unknown> } | null };
+export type MaybeEdited = { tracker_id: number | null; start_time: number; edit?: { original: Record<string, unknown> } | null };
 
 /**
  * A flight's identity across re-segmentation: its tracker's own start time (a corrected

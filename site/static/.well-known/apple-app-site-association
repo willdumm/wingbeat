@@ -1,0 +1,10 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["W4MAPA8GZ7.dev.dummthings.wingbeat"],
+        "components": [{ "/": "/flights/*" }]
+      }
+    ]
+  }
+}

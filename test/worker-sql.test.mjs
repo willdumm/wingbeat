@@ -1640,7 +1640,7 @@ describe('email: sign-in, invites and addresses', async () => {
     assert.equal((await e.first('SELECT used FROM invite_tokens WHERE token = ?', linkIn(mail))).used, 0);
   });
 
-  test('/login: a return to the app’s connect page comes back there', async () => {
+  test('/login: a return to the app’s connect page or a flight comes back there', async () => {
     await userWith('Ada App', 'ada-app@example.com');
     await sent();
     const back = '/app/connect?challenge=' + 'a'.repeat(43) + '&state=' + 'b'.repeat(22);
@@ -1650,6 +1650,11 @@ describe('email: sign-in, invites and addresses', async () => {
     const [mail] = await sent(1);
     const res = await form('/login/code', { email: 'ada-app@example.com', code: codeIn(mail), return: back });
     assert.equal(res.headers.get('location'), back);
+    const flight = '/flights/3/1764000000';
+    await form('/login', { email: 'ada-app@example.com', return: flight });
+    const [flightMail] = await sent(1);
+    assert.equal((await form('/login/code', { email: 'ada-app@example.com', code: codeIn(flightMail), return: flight }))
+      .headers.get('location'), flight);
     // Anywhere else goes home.
     await form('/login', { email: 'ada-app@example.com', return: 'https://evil.example/' });
     const [again] = await sent(1);
