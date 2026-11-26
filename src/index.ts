@@ -1176,6 +1176,8 @@ app.post('/api/me/push-devices', valid('json', PushDeviceRequest), async (c) => 
     db.prepare('DELETE FROM push_devices WHERE session_id = ? AND endpoint != ?').bind(u.sessionId, token),
     // The same phone under an older session of this user (paired again without signing out):
     // its subscriptions come along, and its device row goes, or it would get every push twice.
+    // A session with none can't be told from one that turned everything off, but the older
+    // device row is gone after the first takeover, so this only fills a new session once.
     db.prepare(`INSERT INTO push_session_subscriptions (session_id, tracker_id, event)
                 SELECT DISTINCT ?1, ps.tracker_id, ps.event FROM push_session_subscriptions ps
                 JOIN push_devices d ON d.session_id = ps.session_id

@@ -85,7 +85,8 @@ in the migration. Anything tenant-specific goes in scripts, never in migrations 
   can't carry them over. Tell operators before the deploy; an admin re-adds any they need as
   tenant basemaps.
 - **Demo tenant:** a script (or a `demo-seed.mjs` step) leaves USGS Topo, adds USGS Imagery
-  Topo and the Protomaps Alaska basemap, and removes nothing else (it has no legacy rows).
+  Topo and the Protomaps vector basemap (Alaska at first, North America since 2026-11-25), and
+  removes nothing else (it has no legacy rows).
 
 ## Keyed tiles (CARTO)
 
@@ -172,7 +173,7 @@ pmtiles extract https://build.protomaps.com/<YYYYMMDD>.pmtiles north-america.pmt
 
 The region crosses the antimeridian (the western Aleutians), so it needs a GeoJSON
 MultiPolygon with one part on each side, not a single `--bbox`: `scripts/north-america.geojson`
-is a rough one (rectangles: Panama to the Arctic, with Hawaii, the Caribbean, Greenland and
+is a rough one (rectangles: 7°N, so Panama and South America's north coast, to the Arctic, with Hawaii, the Caribbean, Greenland and
 the Aleutians; about 18 GB at zoom 14, measured 2026-11-25). `pmtiles extract` can't resume a
 dropped download, and `wrangler r2 object put` stops at 300 MiB, so the upload is a multipart
 one through R2's S3 API. Upload it, with the
@@ -205,8 +206,8 @@ Migration `0010`, `/api/basemaps`, Settings > Basemaps (`src/shared/basemap-sett
 `scripts/basemaps-legacy.sql`, `scripts/basemaps-demo.sql` (also in `demo-seed.mjs sql`), the
 showcase on USGS tiles, the Mapterhorn credit on web and app, and the app's vector basemap
 (`@protomaps/basemaps`; the Expo fingerprint is unchanged). The Protomaps archive and its
-assets are hosted, and `scripts/basemaps-demo.sql` gives the demo its vector row
-(the Alaska one then).
+assets are hosted, and `scripts/basemaps-demo.sql` gave the demo its Alaska vector row (the
+North America one since 2026-11-25; its key is still `alaska`, so saved choices keep matching).
 
 ## Rollout
 

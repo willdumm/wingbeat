@@ -1,6 +1,6 @@
 {
   "type": "Feature",
-  "properties": { "name": "North America (rough): Panama to the Arctic, Hawaii, the Caribbean and Greenland, and the Aleutians across the antimeridian" },
+  "properties": { "name": "North America (rough): 7°N (Panama and South America's north coast) to the Arctic, Hawaii, the Caribbean and Greenland, and the Aleutians across the antimeridian" },
   "geometry": {
     "type": "MultiPolygon",
     "coordinates": [

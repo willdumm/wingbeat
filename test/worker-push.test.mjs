@@ -131,39 +131,47 @@ describe('app push through Expo', () => {
     assert.deepEqual(messages.map((m) => m.to), ['ExponentPushToken[admin]']);
   });
 
-  test("a phone paired again under a new session keeps one registration per user, so one push", async () => {
-    const register = (cookie) => w.request('POST', '/api/me/push-devices', { kind: 'expo', token: 'ExponentPushToken[admin]' },
-      { as: null, headers: { cookie } });
+  // The next three run in order on the admin's phone token; sessions 3-5 are the admin's.
+  const registerAdminPhone = (cookie) => w.request('POST', '/api/me/push-devices', { kind: 'expo', token: 'ExponentPushToken[admin]' },
+    { as: null, headers: { cookie } });
+  const subs = (session) => w.all('SELECT tracker_id, event FROM push_session_subscriptions WHERE session_id = ? ORDER BY tracker_id', session);
+  const tokenSessions = async () => (await w.all("SELECT session_id FROM push_devices WHERE endpoint = 'ExponentPushToken[admin]' ORDER BY session_id"))
+    .map((r) => r.session_id);
+
+  test('a phone paired again under a new session takes the token over, one registration per user', async () => {
     // The admin's second session (3) takes the token over from session 1; the viewer on the
     // same phone (another user) keeps theirs.
     await w.run("INSERT INTO push_devices (session_id, kind, endpoint) VALUES (2, 'expo', 'ExponentPushToken[admin]')");
-    assert.equal((await register('session=admin-phone-2')).status, 200);
-    assert.deepEqual(await w.all("SELECT session_id FROM push_devices WHERE endpoint = 'ExponentPushToken[admin]' ORDER BY session_id"),
-      [{ session_id: 2 }, { session_id: 3 }]);
+    assert.equal((await registerAdminPhone('session=admin-phone-2')).status, 200);
+    assert.deepEqual(await tokenSessions(), [2, 3]);
     // Session 3 has its own subscriptions, so it doesn't take session 1's.
-    const subs = (session) => w.all('SELECT tracker_id, event FROM push_session_subscriptions WHERE session_id = ? ORDER BY tracker_id', session);
     assert.deepEqual(await subs(3), [{ tracker_id: 1, event: 'gap' }, { tracker_id: 3, event: 'gap' }]);
-    // A new one has none, and takes session 3's (not the viewer's).
+  });
+
+  test("a new session with no subscriptions takes the older session's, not the other user's", async () => {
     await w.run("INSERT INTO sessions (id, user_id, token) VALUES (4, 1, 'admin-phone-3')");
-    assert.equal((await register('session=admin-phone-3')).status, 200);
+    assert.equal((await registerAdminPhone('session=admin-phone-3')).status, 200);
     assert.deepEqual(await subs(4), await subs(3));
-    assert.deepEqual(await w.all("SELECT session_id FROM push_devices WHERE endpoint = 'ExponentPushToken[admin]' ORDER BY session_id"),
-      [{ session_id: 2 }, { session_id: 4 }]);
+    assert.deepEqual(await tokenSessions(), [2, 4]);
     // Session 3 keeps its own, unused without its device row.
     assert.equal((await subs(3)).length, 2);
-    // Two older sessions with the token: the new one gets both's, each once.
+  });
+
+  test('two older sessions with the token: the new one gets both sets, each once; nothing turned off comes back', async () => {
     await w.run("INSERT INTO push_devices (session_id, kind, endpoint) VALUES (1, 'expo', 'ExponentPushToken[admin]')");
     await w.run("INSERT INTO sessions (id, user_id, token) VALUES (5, 1, 'admin-phone-4')");
-    assert.equal((await register('session=admin-phone-4')).status, 200);
-    const all = await w.all("SELECT DISTINCT tracker_id, event FROM push_session_subscriptions WHERE session_id IN (1, 4) ORDER BY tracker_id");
-    assert.ok(all.length > 2);
-    assert.deepEqual(await subs(5), all);
-    await w.run("DELETE FROM push_devices WHERE session_id = 5");
-    assert.equal((await register('session=admin-phone-3')).status, 200);
-    // Registering again doesn't bring back what was turned off since.
+    assert.equal((await registerAdminPhone('session=admin-phone-4')).status, 200);
+    // Session 1's (all trackers, 1 and 2) and session 4's (1 and 3), the shared one once.
+    assert.deepEqual(await subs(5), [
+      { tracker_id: null, event: 'gap' }, { tracker_id: 1, event: 'gap' }, { tracker_id: 2, event: 'gap' }, { tracker_id: 3, event: 'gap' },
+    ]);
+    // Back on session 4: registering again doesn't bring back what was turned off since.
+    await w.run('DELETE FROM push_devices WHERE session_id = 5');
+    assert.equal((await registerAdminPhone('session=admin-phone-3')).status, 200);
     await w.run('DELETE FROM push_session_subscriptions WHERE session_id = 4');
-    assert.equal((await register('session=admin-phone-3')).status, 200);
+    assert.equal((await registerAdminPhone('session=admin-phone-3')).status, 200);
     assert.deepEqual(await subs(4), []);
+    await w.run('DELETE FROM sessions WHERE id IN (4, 5)');
   });
 });
 
