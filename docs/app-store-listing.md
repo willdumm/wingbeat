@@ -1,6 +1,6 @@
 # App Store listing
 
-The App Store Connect text for the iOS app, version 1.0.0 (build 8). Paste each field as is.
+The App Store Connect text for the iOS app, version 1.0.0 (build 9). Paste each field as is.
 Update this file whenever the listing changes, so it stays the source.
 
 ## Rules for the copy
