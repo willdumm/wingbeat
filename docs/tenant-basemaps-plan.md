@@ -34,7 +34,7 @@ agreement with the provider, the way CalTopo lets users add layers.
 - Existing production tenants don't change. The demo tenant drops the others and keeps its two
   dummthings.dev-hosted overlays (tenant rows, untouched).
 - The app gets a **Protomaps** OpenStreetMap vector basemap, **mobile only** for now. It's an
-  extract covering **Alaska only**, hosted in our own R2 (Protomaps' hosted API is free only
+  extract covering **Alaska only** at first (North America since 2026-11-25), hosted in our own R2 (Protomaps' hosted API is free only
   for non-commercial use; the tiles are an ODbL Produced Work and need OpenStreetMap credit).
 - Mapterhorn gets credited wherever the elevation tool is on, on web and mobile.
 - As much as possible is server-side. What the app needs ships as an OTA update to build 8
@@ -188,11 +188,12 @@ an extract, make a new one as above and upload it over the same key.
 
 **North America (2026-11-25):** the whole-continent extract (2026-11-24 OSM data, basemap
 v4.15.2, zoom 0–14) goes under `pmtiles/north-america-basemap.pmtiles`, and
-`scripts/basemaps-north-america.sql` moves a tenant's vector row to it. Keep the Alaska archive:
+`scripts/basemaps-north-america.sql` moves a tenant's vector row to it; upload and check the
+archive before running that or either of the other basemap scripts. Keep the Alaska archive:
 devices hold its URL until they next load their settings, and it's the way back.
 
 The app finds a vector basemap's glyphs and sprites at `basemaps-assets/` beside its archive
-(`vectorAssetsBase()` in `apps/mobile/src/lib/map-style.ts`): `<dir>/alaska.pmtiles`,
+(`vectorAssetsBase()` in `apps/mobile/src/lib/map-style.ts`): `<dir>/north-america-basemap.pmtiles`,
 `<dir>/basemaps-assets/fonts/{fontstack}/{range}.pbf` and
 `<dir>/basemaps-assets/sprites/v4/white.{json,png}` (and `white@2x`). Once it's hosted, an
 admin adds the vector row in Settings > Basemaps (or the demo script does) with the credit
@@ -204,8 +205,8 @@ Migration `0010`, `/api/basemaps`, Settings > Basemaps (`src/shared/basemap-sett
 `scripts/basemaps-legacy.sql`, `scripts/basemaps-demo.sql` (also in `demo-seed.mjs sql`), the
 showcase on USGS tiles, the Mapterhorn credit on web and app, and the app's vector basemap
 (`@protomaps/basemaps`; the Expo fingerprint is unchanged). The Protomaps archive and its
-assets are hosted, and `scripts/basemaps-demo.sql` gives the demo the Alaska vector row. Not
-done: the Alaska basemap hasn't been drawn on a device.
+assets are hosted, and `scripts/basemaps-demo.sql` gives the demo its vector row
+(the Alaska one then).
 
 ## Rollout
 

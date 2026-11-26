@@ -964,7 +964,8 @@ be notified of different things:
   `tracker_id` (NULL = all), `event` (`takeoff`, `landing`, `gap`, `alerts`). Unlike
   `webhooks`, any user, viewers included, subscribes themselves in Settings. Admins don't
   manage them. A new device starts with none; a phone paired again without signing out takes
-  over its older session's when it registers its token.
+  over its older session's when it registers its token, if that session is still registered with
+  the same token (a reinstall's new token, or a token Expo reported gone, starts with none).
 - `push_devices`: `id`, `session_id` (FK → sessions, `ON DELETE CASCADE`, so signing out a
   device in Settings also stops its pushes), `kind` (`web` or `expo`), `endpoint` (the Web
   Push endpoint URL, or the Expo push token), `p256dh` and `auth` (Web Push only),
@@ -982,8 +983,10 @@ be notified of different things:
   `migrations/0011_push_session_subscriptions.sql`, which gives each app session its user's.
   The routes and responses are unchanged, so it needs no new compat level. The old table is
   kept for the previous Worker; drop it in a later release. Run the migration before deploying
-  the Worker: the new one fails to send pushes without the table.
-- `dispatchNotifications()` gains a delivery path for `push_subscriptions` next to the
+  the Worker, and deploy straight after it: without the table, the new Worker's registration,
+  subscription and alert-send calls fail, and what the old one saves after the migration isn't
+  carried over.
+- `dispatchNotifications()` gains a delivery path for `push_session_subscriptions` next to the
   `webhooks` targets. It reuses `eventTitle`/`eventMessage`, and `subscriptionKey()` already
   maps `gap_resolved`/`gap_timeout` onto `gap`. Today the function returns early when there
   are no active webhooks, so the push path has to come before that return, not after it.

@@ -1,6 +1,7 @@
--- The demo tenant's basemaps (docs/tenant-basemaps-plan.md): a Protomaps vector map of
--- North America (its key is from when it was Alaska's), first and so the default, then USGS Topo (migration 0010's row), public domain. The
--- vector map is an OpenStreetMap extract to zoom 14, hosted with its fonts and sprites on
+-- The demo tenant's basemaps (docs/tenant-basemaps-plan.md): a Protomaps vector map of North
+-- America, first and so the default, then USGS Topo (migration 0010's row), public domain. The
+-- vector map's key is still `alaska`, so devices' saved choices and overlays' per-basemap
+-- defaults match. It is an OpenStreetMap extract to zoom 14, hosted with its fonts and sprites on
 -- tiledata.dummthings.dev ("Protomaps hosting" in the plan). No imagery: USGS retired its
 -- Imagery Topo service, its imagery-only one has no tiles at Kodiak's zooms 9-11, and Esri's
 -- terms need a key for commercial use. Not a migration: it's tenant data. scripts/demo-seed.mjs

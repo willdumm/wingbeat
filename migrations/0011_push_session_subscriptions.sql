@@ -11,8 +11,8 @@ CREATE TABLE IF NOT EXISTS push_session_subscriptions (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS push_session_subscriptions_unique ON push_session_subscriptions(session_id, COALESCE(tracker_id, 0), event);
 
--- Each app session starts with its user's. app_version counts one whose push_devices row is
--- gone for now (DeviceNotRegistered) and is registered again at its next launch.
+-- Each app session starts with its user's: one with a push_devices row, or with an app_version,
+-- as its row may be gone (DeviceNotRegistered) until its next launch registers it again.
 INSERT INTO push_session_subscriptions (session_id, tracker_id, event)
 SELECT s.id, ps.tracker_id, ps.event
 FROM push_subscriptions ps

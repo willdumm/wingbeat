@@ -732,7 +732,7 @@ describe('response shapes: bootstrap, trackers, aircraft and pilots', async () =
         await w2.db.batch(splitSql(script).map(q => w2.db.prepare(q)));
         const boot = (await w2.request('GET', '/api/bootstrap')).body;
         assertShape(BootstrapResponse, boot);
-        assert.deepEqual(boot.vector_basemaps.map(b => [b.id, b.order, b.maxZoom]), [['map', 0, 13]]);
+        assert.deepEqual(boot.vector_basemaps.map(b => [b.id, b.order, b.maxZoom]), [['map', 0, 14]]);
         assert.deepEqual(boot.basemaps.map(b => b.id), ['usgstopo']);
       }
     } finally {
