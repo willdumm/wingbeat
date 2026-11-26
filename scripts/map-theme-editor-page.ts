@@ -5,6 +5,7 @@ import { MAP_THEME, type MapTheme } from '@wingbeat/core/map-theme';
 import { lightTokens } from '@wingbeat/core/tokens';
 
 declare const ARCHIVE_URL: string;
+declare const ARCHIVE_MAX_ZOOM: number;
 declare const maplibregl: any;
 declare const pmtiles: any;
 
@@ -97,7 +98,7 @@ function set(key: string, color: string) {
 
 const $ = (id: string) => document.getElementById(id)!;
 const style = () => mapStyle({
-  basemap: { kind: 'vector', id: 'map', label: 'Map', url: ARCHIVE_URL, attribution: '', maxZoom: 13 },
+  basemap: { kind: 'vector', id: 'map', label: 'Map', url: ARCHIVE_URL, attribution: '', maxZoom: ARCHIVE_MAX_ZOOM },
   overlays: [], origin: location.origin, pixelRatio: devicePixelRatio, background: lightTokens['surface-2'], theme,
 });
 

@@ -131,7 +131,7 @@ describe('app push through Expo', () => {
     assert.deepEqual(messages.map((m) => m.to), ['ExponentPushToken[admin]']);
   });
 
-  // The next three run in order on the admin's phone token; sessions 3-5 are the admin's.
+  // The next four run in order on the admin's phone token; sessions 3-5 are the admin's.
   const registerAdminPhone = (cookie) => w.request('POST', '/api/me/push-devices', { kind: 'expo', token: 'ExponentPushToken[admin]' },
     { as: null, headers: { cookie } });
   const subs = (session) => w.all('SELECT tracker_id, event FROM push_session_subscriptions WHERE session_id = ? ORDER BY tracker_id', session);
@@ -157,7 +157,7 @@ describe('app push through Expo', () => {
     assert.equal((await subs(3)).length, 2);
   });
 
-  test('two older sessions with the token: the new one gets both sets, each once; nothing turned off comes back', async () => {
+  test('two older sessions with the token: the new one gets both sets, each once', async () => {
     await w.run("INSERT INTO push_devices (session_id, kind, endpoint) VALUES (1, 'expo', 'ExponentPushToken[admin]')");
     await w.run("INSERT INTO sessions (id, user_id, token) VALUES (5, 1, 'admin-phone-4')");
     assert.equal((await registerAdminPhone('session=admin-phone-4')).status, 200);
@@ -165,13 +165,20 @@ describe('app push through Expo', () => {
     assert.deepEqual(await subs(5), [
       { tracker_id: null, event: 'gap' }, { tracker_id: 1, event: 'gap' }, { tracker_id: 2, event: 'gap' }, { tracker_id: 3, event: 'gap' },
     ]);
-    // Back on session 4: registering again doesn't bring back what was turned off since.
-    await w.run('DELETE FROM push_devices WHERE session_id = 5');
-    assert.equal((await registerAdminPhone('session=admin-phone-3')).status, 200);
-    await w.run('DELETE FROM push_session_subscriptions WHERE session_id = 4');
-    assert.equal((await registerAdminPhone('session=admin-phone-3')).status, 200);
-    assert.deepEqual(await subs(4), []);
-    await w.run('DELETE FROM sessions WHERE id IN (4, 5)');
+  });
+
+  test("a session that turned everything off isn't refilled: the older device row went at its takeover", async () => {
+    try {
+      // Session 4 takes the token back from 5 (keeping its own set), so 5's device row goes...
+      assert.equal((await registerAdminPhone('session=admin-phone-3')).status, 200);
+      assert.deepEqual(await tokenSessions(), [2, 4]);
+      // ...and once 4 turns everything off, registering again has nothing to copy from.
+      await w.run('DELETE FROM push_session_subscriptions WHERE session_id = 4');
+      assert.equal((await registerAdminPhone('session=admin-phone-3')).status, 200);
+      assert.deepEqual(await subs(4), []);
+    } finally {
+      await w.run('DELETE FROM sessions WHERE id IN (4, 5)');
+    }
   });
 });
 

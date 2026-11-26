@@ -5,7 +5,7 @@
 //
 //   nix develop path:./nix --command npm run map:theme
 //
-// Then open http://localhost:8797. PORT and ARCHIVE (a .pmtiles URL) override the defaults.
+// Then open http://localhost:8797. PORT, ARCHIVE (a .pmtiles URL) and ARCHIVE_MAX_ZOOM override the defaults.
 
 import { build } from 'esbuild';
 import { createServer } from 'node:http';
@@ -17,6 +17,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const THEME_FILE = path.join(ROOT, 'packages/core/src/map-theme.ts');
 const PORT = Number(process.env.PORT ?? 8797);
 const ARCHIVE = process.env.ARCHIVE ?? 'https://tiledata.dummthings.dev/pmtiles/north-america-basemap.pmtiles';
+// The archive's deepest zoom (the North America extract's is 14); set it along with ARCHIVE.
+const ARCHIVE_MAX_ZOOM = Number(process.env.ARCHIVE_MAX_ZOOM ?? 14);
 const BASES = ['light', 'white', 'grayscale', 'dark', 'black'];
 
 /** Bundles an entry: a file (`entryPoints`) or source text (`stdin`). */
@@ -28,7 +30,7 @@ async function bundle(options) {
 async function page() {
   const script = await bundle({
     entryPoints: [path.join(ROOT, 'scripts/map-theme-editor-page.ts')],
-    platform: 'browser', format: 'iife', define: { ARCHIVE_URL: JSON.stringify(ARCHIVE) },
+    platform: 'browser', format: 'iife', define: { ARCHIVE_URL: JSON.stringify(ARCHIVE), ARCHIVE_MAX_ZOOM: String(ARCHIVE_MAX_ZOOM) },
   });
   // The pages' own tags and tokens, so the editor draws with the same MapLibre.
   const head = await bundle({ platform: 'node', format: 'esm', stdin: { resolveDir: ROOT, loader: 'ts', contents: `
