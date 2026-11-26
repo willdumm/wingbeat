@@ -2376,6 +2376,14 @@ first release is iPhone only, and iPad support comes later in its own build. Onc
 that supports iPad is on the App Store, later builds can't drop it. OTA updates for build 8
 publish to `production`; build 7 (`preview`, `1e182fbd…`) takes none from this tree.
 
+Build 9 (2026-11-25, 1.0.0, fingerprint `dd707b9f…`): the App Store submission. Adds
+`associatedDomains` (`applinks:*.wingbeat.dummthings.dev`), so flights' web links open the
+app, and carries the per-device push subscriptions (migration 0011). The new capability made
+the App Store profile invalid, so it was built interactively with the user's Apple sign-in
+(the profile was reused, and EAS updated it) and uploaded with `eas submit --profile
+production --latest`. The signed `.ipa` has the entitlement. OTA updates for build 9 need
+this fingerprint; build 8 (`e7a47ea5…`) takes none from this tree.
+
 Step 11 (2026-11-16, `demo-tenant`): the demo feed, the demo sign-in and the app's "Try the
 Demo" (JavaScript only, so it ships as an update), the seed script, and tests
 (`test/demo-feed.test.mjs`, `test/worker-demo.test.mjs`), and the privacy policy
