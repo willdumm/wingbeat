@@ -957,11 +957,15 @@ Push comes in three steps. Each one is useful alone, and none of them waits on t
 
 ### Subscriptions and devices (shared by all three)
 
-Subscriptions are per user, and every device a user has registered gets each push:
+Subscriptions are per signed-in device (session), so two devices signed in to one account can
+be notified of different things:
 
-- `push_subscriptions`: `user_id`, `tracker_id` (NULL = all), `event` (`takeoff`, `landing`,
-  `gap`). Unlike `webhooks`, these are per user, so any user, viewers included, subscribes
-  themselves in Settings. Admins don't manage them.
+- `push_session_subscriptions`: `session_id` (FK → sessions, `ON DELETE CASCADE`),
+  `tracker_id` (NULL = all), `event` (`takeoff`, `landing`, `gap`, `alerts`). Unlike
+  `webhooks`, any user, viewers included, subscribes themselves in Settings. Admins don't
+  manage them. A new device starts with none; a phone paired again without signing out takes
+  over its older session's when it registers its token, if that session is still registered with
+  the same token (a reinstall's new token, or a token Expo reported gone, starts with none).
 - `push_devices`: `id`, `session_id` (FK → sessions, `ON DELETE CASCADE`, so signing out a
   device in Settings also stops its pushes), `kind` (`web` or `expo`), `endpoint` (the Web
   Push endpoint URL, or the Expo push token), `p256dh` and `auth` (Web Push only),
@@ -975,7 +979,14 @@ Subscriptions are per user, and every device a user has registered gets each pus
   also `alerts` (the alerts feed, `tracker_id` NULL). Routes: `POST /api/me/push-devices`
   (one token per session; a new one replaces it), `GET`/`PUT /api/me/push-subscriptions` (the
   whole set), in `@wingbeat/core/api/push` and compat level 1.
-- `dispatchNotifications()` gains a delivery path for `push_subscriptions` next to the
+- **Per device 2026-11-25:** subscriptions were per user (`push_subscriptions`) until
+  `migrations/0011_push_session_subscriptions.sql`, which gives each app session its user's.
+  The routes and responses are unchanged, so it needs no new compat level. The old table is
+  kept for the previous Worker; drop it in a later release. Run the migration before deploying
+  the Worker, and deploy straight after it: without the table, the new Worker's registration,
+  subscription and alert-send calls fail, and what the old one saves after the migration isn't
+  carried over.
+- `dispatchNotifications()` gains a delivery path for `push_session_subscriptions` next to the
   `webhooks` targets. It reuses `eventTitle`/`eventMessage`, and `subscriptionKey()` already
   maps `gap_resolved`/`gap_timeout` onto `gap`. Today the function returns early when there
   are no active webhooks, so the push path has to come before that return, not after it.
@@ -1718,6 +1729,12 @@ account whose operator is in another zone, that's the only correct reading of a 
   single-use and expires in 15 minutes, and a stolen pairing shows up in the Devices list.
   Universal Links / App Links would be exclusive, but they can't cover self-hosted domains,
   since the app's associated domains are fixed at build time. So the scanner stays primary.
+- **Links to a flight (2026-11-25).** Hosted instances do have Universal Links, for flights'
+  URLs only (`/flights/<tracker id>/<tracked start>` or `/flights/manual/<id>`,
+  core's `flight-link`), never for sign-in or invite links. Each instance and the docs site (the
+  wildcard's base domain, which the `*.` entry doesn't itself cover) serve `apple-app-site-association`, `+native-intent.ts` sends the URL to
+  `flights/link.tsx`, and `associatedDomains` in `app.config.ts` takes effect from build 9; on
+  earlier builds the link opens the web. Android (`assetlinks.json`, intent filters) isn't done.
 - **Sign in with the browser (added 2026-11-15).** Someone signed in to the web in Safari on
   the same phone has no second screen to scan from. The Add account screen's "Sign in with
   Browser" button covers that, and is the main path on a phone:
@@ -1964,7 +1981,7 @@ calls a new `DELETE /api/me`:
 
 - deletes the `users` row, which cascades to `sessions` and that user's device-link
   tokens (`invite_tokens`) through the existing `ON DELETE CASCADE` foreign keys, and from
-  sessions to `push_devices`. It also deletes `push_subscriptions` and the user's
+  sessions to `push_devices` and `push_session_subscriptions`. It also deletes the user's
   `presence_events`, and clears `users.pilot_id`;
 - leaves the operator's records alone: the linked pilot, flights, duty days and corrections
   belong to the operator (they're operational records, often required to be kept).
@@ -2358,6 +2375,14 @@ testing build 7 on an iPad, since it was universal. The iPad layouts aren't poli
 first release is iPhone only, and iPad support comes later in its own build. Once a version
 that supports iPad is on the App Store, later builds can't drop it. OTA updates for build 8
 publish to `production`; build 7 (`preview`, `1e182fbd…`) takes none from this tree.
+
+Build 9 (2026-11-25, 1.0.0, fingerprint `dd707b9f…`): the App Store submission. Adds
+`associatedDomains` (`applinks:*.wingbeat.dummthings.dev`), so flights' web links open the
+app, and carries the per-device push subscriptions (migration 0011). The new capability made
+the App Store profile invalid, so it was built interactively with the user's Apple sign-in
+(the profile was reused, and EAS updated it) and uploaded with `eas submit --profile
+production --latest`. The signed `.ipa` has the entitlement. OTA updates for build 9 need
+this fingerprint; build 8 (`e7a47ea5…`) takes none from this tree.
 
 Step 11 (2026-11-16, `demo-tenant`): the demo feed, the demo sign-in and the app's "Try the
 Demo" (JavaScript only, so it ships as an update), the seed script, and tests

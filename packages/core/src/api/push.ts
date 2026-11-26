@@ -1,6 +1,6 @@
 /**
- * The push route group: registering this device for push (its Expo push token) and the
- * signed-in user's subscriptions (per tracker, per event, and the alerts feed). The request
+ * The push route group: registering this device for push (its Expo push token) and
+ * its subscriptions (per tracker, per event, and the alerts feed). The request
  * schemas are in push-requests.ts. Response objects allow unknown keys, so an instance may
  * add fields without breaking older clients.
  */
@@ -29,12 +29,12 @@ export function registerPushDevice(client: ApiClient, body: PushDeviceRequest): 
   return client.write('POST', '/api/me/push-devices', body, PushDeviceResponse);
 }
 
-/** The signed-in user's subscriptions. */
+/** The signed-in session's subscriptions: each device has its own. */
 export function getPushSubscriptions(client: ApiClient): Promise<PushSubscriptionsResponse> {
   return client.get('/api/me/push-subscriptions', PushSubscriptionsResponse);
 }
 
-/** Replaces the signed-in user's subscriptions; answers the set now stored. */
+/** Replaces the signed-in session's subscriptions; answers the set now stored. */
 export function setPushSubscriptions(client: ApiClient, body: PushSubscriptionsRequest): Promise<PushSubscriptionsResponse> {
   return client.write('PUT', '/api/me/push-subscriptions', body, PushSubscriptionsResponse);
 }

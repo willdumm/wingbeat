@@ -17,7 +17,7 @@ const RECEIPTS_CHUNK = 1000;
 const RECEIPT_MIN_AGE_SECONDS = 15 * 60;
 const TICKET_MAX_AGE_SECONDS = 24 * 3600;
 
-/** One push to every expo device of the given users' sessions. */
+/** One push, to the expo devices it's sent with. */
 export interface AppPush {
   title: string;
   body: string;
@@ -40,15 +40,14 @@ function expoHeaders(token: string): HeadersInit {
 export interface PushDevice { id: number; endpoint: string; time_sensitive: string | null }
 
 /**
- * The expo devices whose user has a subscription matching `event` (a subscription key:
+ * The expo devices whose session has a subscription matching `event` (a subscription key:
  * takeoff/landing/gap/alerts) for `trackerId`, or for every tracker (tracker_id NULL).
  * `trackerId` null matches only every-tracker subscriptions (the alerts feed).
  */
 export async function subscribedDevices(tenant: Tenant, event: string, trackerId: number | null): Promise<PushDevice[]> {
   const { results } = await tenant.db.prepare(
     `SELECT DISTINCT d.id, d.endpoint, d.time_sensitive FROM push_devices d
-     JOIN sessions s ON s.id = d.session_id
-     JOIN push_subscriptions ps ON ps.user_id = s.user_id
+     JOIN push_session_subscriptions ps ON ps.session_id = d.session_id
      WHERE d.kind = 'expo' AND ps.event = ? AND (ps.tracker_id IS NULL OR ps.tracker_id = ?)`
   ).bind(event, trackerId).all<PushDevice>();
   return results;

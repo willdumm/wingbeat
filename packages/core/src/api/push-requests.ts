@@ -54,7 +54,7 @@ export const PushSubscription = z.object({
   event: z.enum(PUSH_EVENTS),
 });
 
-/** PUT /api/me/push-subscriptions: the user's whole set, replacing the one stored. */
+/** PUT /api/me/push-subscriptions: the session's whole set, replacing the one stored. */
 export const PushSubscriptionsRequest = z.object({ subscriptions: z.array(PushSubscription) });
 
 export type PushDeviceRequest = z.input<typeof PushDeviceRequest>;

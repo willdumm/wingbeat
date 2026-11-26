@@ -97,7 +97,7 @@ describe('alert notifications', () => {
     // A manual flight puts Pat at 7.5 of the 8 hours in 24.
     await w.run("INSERT INTO flight_corrections (start_time, end_time, pilot_id, aircraft_tail) VALUES (?, ?, 1, 'N1')", NOW - 9 * H, NOW - 1.5 * H);
     await w.run("INSERT INTO push_devices (session_id, kind, endpoint) VALUES (2, 'expo', 'ExponentPushToken[viewer]')");
-    await w.run("INSERT INTO push_subscriptions (user_id, tracker_id, event) VALUES (2, NULL, 'alerts')");
+    await w.run("INSERT INTO push_session_subscriptions (session_id, tracker_id, event) VALUES (2, NULL, 'alerts')");
     // An instance whose alerts were already checked, with none present then.
     await w.run("INSERT INTO alerts_seen (key, seen_at) VALUES ('baseline', ?)", NOW - D);
   });
@@ -158,11 +158,11 @@ describe('alert notifications', () => {
 
   test('without subscribers nothing is kept; the first check with one records without pushing', async () => {
     const before = sends.length;
-    await w.run("DELETE FROM push_subscriptions WHERE event = 'alerts'");
+    await w.run("DELETE FROM push_session_subscriptions WHERE event = 'alerts'");
     await w.scheduled({ scheduledTime: tick(7) });
     assert.deepEqual(await w.all('SELECT key FROM alerts_seen'), []);
 
-    await w.run("INSERT INTO push_subscriptions (user_id, tracker_id, event) VALUES (2, NULL, 'alerts')");
+    await w.run("INSERT INTO push_session_subscriptions (session_id, tracker_id, event) VALUES (2, NULL, 'alerts')");
     await w.scheduled({ scheduledTime: tick(8) });
     assert.equal(sends.length, before);
     const keys = (await w.all('SELECT key FROM alerts_seen')).map(r => r.key);

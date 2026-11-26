@@ -30,6 +30,8 @@ const config: ExpoConfig = {
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
     },
+    // Flights' web URLs open the app (docs/mobile-app-plan.md, "Links to a flight").
+    associatedDomains: ['applinks:*.wingbeat.dummthings.dev'],
     // Tracker alerts can be sent Time Sensitive (src/app-push.ts) so they get through Focus.
     entitlements: {
       'com.apple.developer.usernotifications.time-sensitive': true,

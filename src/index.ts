@@ -1161,11 +1161,11 @@ app.post('/api/me/ping', async (c) => {
   return c.json({ ok: true });
 });
 
-// ── Push routes (any authenticated user): this device's push token and the user's subscriptions ──
+// ── Push routes (any authenticated user): this device's push token and subscriptions ──
 
 // Registers this session's device for push. The same token again is a no-op; a session keeps
 // one token (a reinstall's new one replaces it), and a token belongs to one session of a user (the
-// newest to register it).
+// newest to register it), which takes over the older session's subscriptions unless it has its own.
 app.post('/api/me/push-devices', valid('json', PushDeviceRequest), async (c) => {
   const u = c.get('user');
   const { kind, token, time_sensitive } = c.req.valid('json');
@@ -1175,7 +1175,16 @@ app.post('/api/me/push-devices', valid('json', PushDeviceRequest), async (c) => 
   await db.batch([
     db.prepare('DELETE FROM push_devices WHERE session_id = ? AND endpoint != ?').bind(u.sessionId, token),
     // The same phone under an older session of this user (paired again without signing out):
-    // it would get every push twice.
+    // its subscriptions come along, and its device row goes, or it would get every push twice.
+    // A session with none can't be told from one that turned everything off, but the older
+    // device row is gone after the first takeover, so this only fills a new session once.
+    db.prepare(`INSERT INTO push_session_subscriptions (session_id, tracker_id, event)
+                SELECT DISTINCT ?1, ps.tracker_id, ps.event FROM push_session_subscriptions ps
+                JOIN push_devices d ON d.session_id = ps.session_id
+                JOIN sessions s ON s.id = ps.session_id
+                WHERE d.endpoint = ?2 AND s.id != ?1 AND s.user_id = ?3
+                  AND NOT EXISTS (SELECT 1 FROM push_session_subscriptions WHERE session_id = ?1)`)
+      .bind(u.sessionId, token, u.id),
     db.prepare(`DELETE FROM push_devices WHERE endpoint = ? AND session_id != ?
                 AND session_id IN (SELECT id FROM sessions WHERE user_id = ?)`).bind(token, u.sessionId, u.id),
     db.prepare(`INSERT INTO push_devices (session_id, kind, endpoint, time_sensitive) VALUES (?, ?, ?, ?)
@@ -1187,18 +1196,18 @@ app.post('/api/me/push-devices', valid('json', PushDeviceRequest), async (c) => 
   return c.json({ id: row!.id });
 });
 
-async function pushSubscriptionsOf(db: D1Database, userId: number) {
+async function pushSubscriptionsOf(db: D1Database, sessionId: number) {
   const { results } = await db.prepare(
-    'SELECT tracker_id, event FROM push_subscriptions WHERE user_id = ? ORDER BY event, tracker_id'
-  ).bind(userId).all<{ tracker_id: number | null; event: string }>();
+    'SELECT tracker_id, event FROM push_session_subscriptions WHERE session_id = ? ORDER BY event, tracker_id'
+  ).bind(sessionId).all<{ tracker_id: number | null; event: string }>();
   return { subscriptions: results };
 }
 
 app.get('/api/me/push-subscriptions', async (c) => {
-  return c.json(await pushSubscriptionsOf(c.var.db, c.get('user').id));
+  return c.json(await pushSubscriptionsOf(c.var.db, c.get('user').sessionId));
 });
 
-// Replaces the user's subscriptions. A tracker's must name one that exists; alerts are for no
+// Replaces this session's subscriptions. A tracker's must name one that exists; alerts are for no
 // tracker in particular.
 app.put('/api/me/push-subscriptions', valid('json', PushSubscriptionsRequest), async (c) => {
   const u = c.get('user');
@@ -1213,12 +1222,12 @@ app.put('/api/me/push-subscriptions', valid('json', PushSubscriptionsRequest), a
     if (trackerIds.some((id) => !known.has(id))) return c.json({ error: 'Tracker not found' }, 404);
   }
   await db.batch([
-    db.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').bind(u.id),
+    db.prepare('DELETE FROM push_session_subscriptions WHERE session_id = ?').bind(u.sessionId),
     ...subscriptions.map((s) => db.prepare(
-      'INSERT INTO push_subscriptions (user_id, tracker_id, event) VALUES (?, ?, ?) ON CONFLICT DO NOTHING'
-    ).bind(u.id, s.tracker_id, s.event)),
+      'INSERT INTO push_session_subscriptions (session_id, tracker_id, event) VALUES (?, ?, ?) ON CONFLICT DO NOTHING'
+    ).bind(u.sessionId, s.tracker_id, s.event)),
   ]);
-  return c.json(await pushSubscriptionsOf(db, u.id));
+  return c.json(await pushSubscriptionsOf(db, u.sessionId));
 });
 
 // ── User management routes (admin only) ──────────────────────────────────────

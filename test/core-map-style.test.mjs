@@ -109,6 +109,12 @@ test("a raster basemap's color correction becomes its layer's raster paint; 100%
   assert.deepEqual(style.layers[1].paint, { 'raster-saturation': -0.4 });
 });
 
+test("the heading symbols use wingbeat- image ids, so a basemap sprite's own `arrow` can't stand in", () => {
+  assert.equal(layers.planeLayer('#fff').layout['icon-image'], layers.MAP_IMAGE_IDS.plane);
+  assert.equal(layers.arrowLayer('#fff').layout['icon-image'], layers.MAP_IMAGE_IDS.arrow);
+  for (const id of Object.values(layers.MAP_IMAGE_IDS)) assert.match(id, /^wingbeat-/);
+});
+
 test('the layers over the basemap have unique ids and take the surface color', () => {
   const all = [layers.trackLayer(), layers.trailLayer(), layers.positionLayer('#fff'), layers.planeLayer('#fff'),
     layers.arrowLayer('#fff'), layers.elevationReliefLayer(300, 500, 60), layers.elevationReferenceLayer('#000', '#fff')];

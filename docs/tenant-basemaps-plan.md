@@ -34,8 +34,8 @@ agreement with the provider, the way CalTopo lets users add layers.
 - Existing production tenants don't change. The demo tenant drops the others and keeps its two
   dummthings.dev-hosted overlays (tenant rows, untouched).
 - The app gets a **Protomaps** OpenStreetMap vector basemap, **mobile only** for now. It's an
-  extract covering **Alaska only**, hosted in our own R2 (Protomaps' hosted API is free only
-  for non-commercial use; the tiles are an ODbL Produced Work and need OpenStreetMap credit).
+  extract covering **North America** (Alaska only until 2026-11-25), hosted in our own R2
+  (Protomaps' hosted API is free only for non-commercial use; the tiles are an ODbL Produced Work and need OpenStreetMap credit).
 - Mapterhorn gets credited wherever the elevation tool is on, on web and mobile.
 - As much as possible is server-side. What the app needs ships as an OTA update to build 8
   (JavaScript only: no new native modules, so the fingerprint doesn't change).
@@ -85,7 +85,8 @@ in the migration. Anything tenant-specific goes in scripts, never in migrations 
   can't carry them over. Tell operators before the deploy; an admin re-adds any they need as
   tenant basemaps.
 - **Demo tenant:** a script (or a `demo-seed.mjs` step) leaves USGS Topo, adds USGS Imagery
-  Topo and the Protomaps Alaska basemap, and removes nothing else (it has no legacy rows).
+  Topo and the Protomaps vector basemap (North America; Alaska only until 2026-11-25), and
+  removes nothing else (it has no legacy rows).
 
 ## Keyed tiles (CARTO)
 
@@ -166,13 +167,17 @@ script is served by the Worker, so this is server-side). The app sets it as the
 ## Protomaps hosting
 
 ```sh
-pmtiles extract https://build.protomaps.com/<YYYYMMDD>.pmtiles alaska.pmtiles --region=alaska.geojson
+pmtiles extract https://build.protomaps.com/<YYYYMMDD>.pmtiles north-america.pmtiles \
+  --region=scripts/north-america.geojson --maxzoom=14
 ```
 
 The region crosses the antimeridian (the western Aleutians), so it needs a GeoJSON
-MultiPolygon with one part on each side, not a single `--bbox`: `scripts/alaska.geojson` is a
-rough one (two rectangles, so it takes a little of Yukon and British Columbia too; tighten it
-if that matters). Upload it, with the
+MultiPolygon with one part on each side, not a single `--bbox`: `scripts/north-america.geojson`
+is a rough one (rectangles from 7°N, so Panama and South America's north coast, to the
+Arctic, with Hawaii, the Caribbean, Greenland and the Aleutians; about 18 GB at zoom 14,
+measured 2026-11-25). `pmtiles extract` can't resume a dropped download, and
+`wrangler r2 object put` stops at 300 MiB, so the upload is a multipart one through R2's S3
+API. Upload it, with the
 `basemaps-assets` fonts and sprites, to the R2 bucket that serves the dummthings.dev overlays.
 That bucket's CORS must allow range requests from the app. Credit:
 `© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://protomaps.com">Protomaps</a>`.
@@ -181,10 +186,16 @@ zoom 0–13) was already in the `kodiak-imagery` R2 bucket as
 `https://tiledata.dummthings.dev/pmtiles/alaska-basemap.pmtiles`, with CORS and range requests
 working, so it's reused; the `basemaps-assets` fonts (all four fontstacks, with `OFL.txt`) and
 `sprites/v4` are beside it under `pmtiles/basemaps-assets/`. That bucket is public. To refresh
-the extract, make a new one as above and upload it over the same key.
+an extract, make a new one as above and upload it over the same key.
+
+**North America (2026-11-25):** the whole-continent extract (2026-11-24 OSM data, basemap
+v4.15.2, zoom 0–14) goes under `pmtiles/north-america-basemap.pmtiles`, and
+`scripts/basemaps-north-america.sql` moves a tenant's vector row to it; upload and check the
+archive before running that or either of the other basemap scripts. Keep the Alaska archive:
+devices hold its URL until they next load their settings, and it's the way back.
 
 The app finds a vector basemap's glyphs and sprites at `basemaps-assets/` beside its archive
-(`vectorAssetsBase()` in `apps/mobile/src/lib/map-style.ts`): `<dir>/alaska.pmtiles`,
+(`vectorAssetsBase()` in `apps/mobile/src/lib/map-style.ts`): `<dir>/north-america-basemap.pmtiles`,
 `<dir>/basemaps-assets/fonts/{fontstack}/{range}.pbf` and
 `<dir>/basemaps-assets/sprites/v4/white.{json,png}` (and `white@2x`). Once it's hosted, an
 admin adds the vector row in Settings > Basemaps (or the demo script does) with the credit
@@ -196,8 +207,8 @@ Migration `0010`, `/api/basemaps`, Settings > Basemaps (`src/shared/basemap-sett
 `scripts/basemaps-legacy.sql`, `scripts/basemaps-demo.sql` (also in `demo-seed.mjs sql`), the
 showcase on USGS tiles, the Mapterhorn credit on web and app, and the app's vector basemap
 (`@protomaps/basemaps`; the Expo fingerprint is unchanged). The Protomaps archive and its
-assets are hosted, and `scripts/basemaps-demo.sql` gives the demo the Alaska vector row. Not
-done: the Alaska basemap hasn't been drawn on a device.
+assets are hosted, and `scripts/basemaps-demo.sql` gave the demo its Alaska vector row (the
+North America one since 2026-11-25; its key is still `alaska`, so saved choices keep matching).
 
 ## Rollout
 

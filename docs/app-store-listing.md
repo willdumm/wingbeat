@@ -1,6 +1,6 @@
 # App Store listing
 
-The App Store Connect text for the iOS app, version 1.0.0 (build 8). Paste each field as is.
+The App Store Connect text for the iOS app, version 1.0.0 (build 9). Paste each field as is.
 Update this file whenever the listing changes, so it stays the source.
 
 ## Rules for the copy
@@ -70,8 +70,9 @@ review objects.
 ## Screenshots
 
 The "iPhone with Dynamic Island" slot takes 6.3" screenshots at their native size (1206 × 2622 or
-2556 × 1179 from an iPhone 16 Pro), so no scaling is needed. Use demo-tenant data only, and black
-out anything in the Dynamic Island (a Live Activity like a playing podcast shows there):
+2556 × 1179 from an iPhone 16 Pro), so no scaling is needed. Use demo-tenant data only. Remove the
+alpha channel, and black out anything in the Dynamic Island (a Live Activity like a playing
+podcast shows there); when it's empty, leave out `-fill` and `-draw`:
 
 ```sh
 magick in.PNG -alpha off -colorspace sRGB -fill black -draw "rectangle 334,56 859,132" out.png
@@ -80,8 +81,10 @@ magick in.PNG -alpha off -colorspace sRGB -fill black -draw "rectangle 334,56 85
 The rectangle fits inside an expanded Live Activity pill at 1206 × 2622. Zoom in on the result to
 check that no corner pokes out past the pill's rounded ends.
 
-Build 8's set, in order: the Live map with all aircraft cards expanded, the Flights list, a flight's
-detail on satellite imagery, and a pilot's Duty view.
+Build 9's set (taken 2026-11-21, nothing drawn on it), in order: the Live map on the light-gray
+vector map with the aircraft cards collapsed, the Flights list, a flight's detail on the same
+map, and a pilot's Duty view. It replaces build 8's, which had the cards expanded and satellite
+imagery.
 
 ## App Review Information
 

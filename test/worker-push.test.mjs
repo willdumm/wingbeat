@@ -1,5 +1,5 @@
 // App push through Expo (src/app-push.ts): a cron tick's gap alert sent to the subscribed
-// users' devices, Expo's tickets kept, and their receipts checked on a later tick. Expo is
+// devices, Expo's tickets kept, and their receipts checked on a later tick. Expo is
 // mocked with Miniflare's outboundService (test/worker.mjs); every other outbound fetch
 // gets a 404.
 
@@ -41,10 +41,10 @@ describe('app push through Expo', () => {
 
   test('a gap alert goes to subscribed devices only; tickets kept, DeviceNotRegistered deleted', async () => {
     await silentTracker(w, 1);
-    // The admin: gap on every tracker and on tracker 1 (one push per device, not two). The
-    // viewer: takeoff only.
-    await w.run(`INSERT INTO push_subscriptions (user_id, tracker_id, event) VALUES
-      (1, NULL, 'gap'), (1, 1, 'gap'), (2, 1, 'takeoff')`);
+    // The admin's first device: gap on every tracker and on tracker 1 (one push, not two); the
+    // second: gap on tracker 1. The viewer: takeoff only.
+    await w.run(`INSERT INTO push_session_subscriptions (session_id, tracker_id, event) VALUES
+      (1, NULL, 'gap'), (1, 1, 'gap'), (3, 1, 'gap'), (2, 1, 'takeoff')`);
     expo.tickets = (messages) => messages.map((m) => m.to === 'ExponentPushToken[gone]'
       ? { status: 'error', message: 'not registered', details: { error: 'DeviceNotRegistered' } }
       : { status: 'ok', id: 'ticket-' + m.to });
@@ -92,7 +92,7 @@ describe('app push through Expo', () => {
 
   test('Expo refusing a send records the error on each device', async () => {
     await silentTracker(w, 2);
-    await w.run("INSERT INTO push_subscriptions (user_id, tracker_id, event) VALUES (1, 2, 'gap')");
+    await w.run("INSERT INTO push_session_subscriptions (session_id, tracker_id, event) VALUES (1, 2, 'gap')");
     const sends = expo.sends.length;
     // A ticket list that doesn't match the messages one for one.
     expo.tickets = () => [];
@@ -112,6 +112,7 @@ describe('app push through Expo', () => {
     await w.run("INSERT INTO push_devices (session_id, kind, endpoint) VALUES (3, 'expo', 'ExponentPushToken[admin-2]')");
 
     await silentTracker(w, 3);
+    await w.run("INSERT INTO push_session_subscriptions (session_id, tracker_id, event) VALUES (3, 3, 'gap')");
     expo.tickets = (messages) => messages.map((m) => ({ status: 'ok', id: 'ticket-' + m.to + '-' + Math.random() }));
     const sends = expo.sends.length;
     await w.scheduled();
@@ -122,15 +123,62 @@ describe('app push through Expo', () => {
     ]);
   });
 
-  test("a phone paired again under a new session keeps one registration per user, so one push", async () => {
-    const register = (cookie) => w.request('POST', '/api/me/push-devices', { kind: 'expo', token: 'ExponentPushToken[admin]' },
-      { as: null, headers: { cookie } });
+  test("a device's subscriptions are its own: the account's other device isn't pushed to", async () => {
+    await silentTracker(w, 4);
+    const sends = expo.sends.length;
+    await w.scheduled();
+    const messages = expo.sends.slice(sends).flatMap((s) => s.messages).filter((m) => m.data.tracker_id === 4);
+    assert.deepEqual(messages.map((m) => m.to), ['ExponentPushToken[admin]']);
+  });
+
+  // The next four run in order on the admin's phone token; sessions 3-5 are the admin's.
+  const registerAdminPhone = (cookie) => w.request('POST', '/api/me/push-devices', { kind: 'expo', token: 'ExponentPushToken[admin]' },
+    { as: null, headers: { cookie } });
+  const subs = (session) => w.all('SELECT tracker_id, event FROM push_session_subscriptions WHERE session_id = ? ORDER BY tracker_id', session);
+  const tokenSessions = async () => (await w.all("SELECT session_id FROM push_devices WHERE endpoint = 'ExponentPushToken[admin]' ORDER BY session_id"))
+    .map((r) => r.session_id);
+
+  test('a phone paired again under a new session takes the token over, one registration per user', async () => {
     // The admin's second session (3) takes the token over from session 1; the viewer on the
     // same phone (another user) keeps theirs.
     await w.run("INSERT INTO push_devices (session_id, kind, endpoint) VALUES (2, 'expo', 'ExponentPushToken[admin]')");
-    assert.equal((await register('session=admin-phone-2')).status, 200);
-    assert.deepEqual(await w.all("SELECT session_id FROM push_devices WHERE endpoint = 'ExponentPushToken[admin]' ORDER BY session_id"),
-      [{ session_id: 2 }, { session_id: 3 }]);
+    assert.equal((await registerAdminPhone('session=admin-phone-2')).status, 200);
+    assert.deepEqual(await tokenSessions(), [2, 3]);
+    // Session 3 has its own subscriptions, so it doesn't take session 1's.
+    assert.deepEqual(await subs(3), [{ tracker_id: 1, event: 'gap' }, { tracker_id: 3, event: 'gap' }]);
+  });
+
+  test("a new session with no subscriptions takes the older session's, not the other user's", async () => {
+    await w.run("INSERT INTO sessions (id, user_id, token) VALUES (4, 1, 'admin-phone-3')");
+    assert.equal((await registerAdminPhone('session=admin-phone-3')).status, 200);
+    assert.deepEqual(await subs(4), await subs(3));
+    assert.deepEqual(await tokenSessions(), [2, 4]);
+    // Session 3 keeps its own, unused without its device row.
+    assert.equal((await subs(3)).length, 2);
+  });
+
+  test('two older sessions with the token: the new one gets both sets, each once', async () => {
+    await w.run("INSERT INTO push_devices (session_id, kind, endpoint) VALUES (1, 'expo', 'ExponentPushToken[admin]')");
+    await w.run("INSERT INTO sessions (id, user_id, token) VALUES (5, 1, 'admin-phone-4')");
+    assert.equal((await registerAdminPhone('session=admin-phone-4')).status, 200);
+    // Session 1's (all trackers, 1 and 2) and session 4's (1 and 3), the shared one once.
+    assert.deepEqual(await subs(5), [
+      { tracker_id: null, event: 'gap' }, { tracker_id: 1, event: 'gap' }, { tracker_id: 2, event: 'gap' }, { tracker_id: 3, event: 'gap' },
+    ]);
+  });
+
+  test("a session that turned everything off isn't refilled: the older device row went at its takeover", async () => {
+    try {
+      // Session 4 takes the token back from 5 (keeping its own set), so 5's device row goes...
+      assert.equal((await registerAdminPhone('session=admin-phone-3')).status, 200);
+      assert.deepEqual(await tokenSessions(), [2, 4]);
+      // ...and once 4 turns everything off, registering again has nothing to copy from.
+      await w.run('DELETE FROM push_session_subscriptions WHERE session_id = 4');
+      assert.equal((await registerAdminPhone('session=admin-phone-3')).status, 200);
+      assert.deepEqual(await subs(4), []);
+    } finally {
+      await w.run('DELETE FROM sessions WHERE id IN (4, 5)');
+    }
   });
 });
 
@@ -140,7 +188,7 @@ describe('without EXPO_ACCESS_TOKEN', () => {
     try {
       await silentTracker(w, 1);
       await w.run("INSERT INTO push_devices (session_id, kind, endpoint) VALUES (1, 'expo', 'ExponentPushToken[x]')");
-      await w.run("INSERT INTO push_subscriptions (user_id, tracker_id, event) VALUES (1, NULL, 'gap')");
+      await w.run("INSERT INTO push_session_subscriptions (session_id, tracker_id, event) VALUES (1, NULL, 'gap')");
       const sends = expo.sends.length;
       await w.scheduled();
       assert.equal(expo.sends.length, sends);

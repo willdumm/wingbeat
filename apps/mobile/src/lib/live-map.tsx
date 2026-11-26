@@ -31,7 +31,7 @@ import { EndMarkers, endMarkerGroups, groupsKey, type EndMarker } from './end-ma
 import { followWait, type TrackPick } from './live';
 import { MapTools, type MapTool } from './map-tools';
 import { chosenBasemap, defaultOverlayIds, mapStyle as buildMapStyle, type MapBasemap } from '@wingbeat/core/map-style';
-import { arrowLayer, planeLayer, positionLayer, trackLayer, trailLayer } from '@wingbeat/core/map-layers';
+import { MAP_IMAGE_IDS, arrowLayer, planeLayer, positionLayer, trackLayer, trailLayer } from '@wingbeat/core/map-layers';
 import { accountPrefKey, parseMapChoice } from './prefs';
 import { useStoredState } from './stored-state';
 import { px, useTokens } from './theme';
@@ -53,8 +53,8 @@ export interface LiveMapRef {
  * and a halo-width counts halo-width / icon-size of them: at icon-size 1/3 a halo of 2 or more
  * reaches the field's end and fills the whole image square, so the halos are 1.5. */
 const IMAGES = {
-  plane: { source: require('../../assets/plane.png'), sdf: true },
-  arrow: { source: require('../../assets/arrow.png'), sdf: true },
+  [MAP_IMAGE_IDS.plane]: { source: require('../../assets/plane.png'), sdf: true },
+  [MAP_IMAGE_IDS.arrow]: { source: require('../../assets/arrow.png'), sdf: true },
 };
 
 /** Room around fitted bounds, inside the overlay and the bars: clear of the tool column on the left. */
