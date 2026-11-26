@@ -1722,8 +1722,12 @@ export function settingsModalScript(): string {
       const url = location.pathname + location.search + hash;
       const depth = history.state?.wbSettings || 0;
       // A page pushed is one a phone opened from its list (wbFromList: Back returns to it).
+      const fromList = !!history.state?.wbFromList;
       if (mode === 'push') history.pushState({ wbSettings: depth + 1, wbFromList: hash !== '#settings' }, '', url);
-      else history.replaceState(hash ? { wbSettings: depth } : null, '', url);
+      // Such a page leaving for the list steps back to the list's entry (popstate then shows
+      // it), rather than leaving a second one; another page replacing it stays one.
+      else if (fromList && hash === '#settings') { history.back(); return; }
+      else history.replaceState(hash ? { wbSettings: depth, wbFromList: fromList && !!hash } : null, '', url);
       _settingsEntry = hash ? { state: history.state, url } : null;
     }
 
@@ -3269,7 +3273,7 @@ export function settingsModalScript(): string {
       btn.disabled = true;
       try {
         await deleteSession(session.id);
-        renderSettingsDevicesList();
+        await renderSettingsDevicesList();
       } catch (_) { btn.disabled = false; }
     }
 
@@ -3531,7 +3535,7 @@ export function settingsModalScript(): string {
       btn.disabled = true;
       try {
         await deleteUser(user.id);
-        renderSettingsUsersList();
+        await renderSettingsUsersList();
       } catch (err) {
         alert(apiErrorMessage(err, 'Failed to remove user.'));
         btn.disabled = false;
@@ -3542,7 +3546,7 @@ export function settingsModalScript(): string {
       btn.disabled = true;
       try {
         await deleteInvite(invite.id);
-        renderSettingsUsersList();
+        await renderSettingsUsersList();
       } catch (_) { btn.disabled = false; }
     }
 
@@ -3839,7 +3843,7 @@ export function settingsModalScript(): string {
       btn.disabled = true;
       try {
         await updateWebhook(hook.id, { active: !hook.active });
-        renderSettingsWebhooksList();
+        await renderSettingsWebhooksList();
       } catch (_) { btn.disabled = false; }
     }
 
@@ -3848,7 +3852,7 @@ export function settingsModalScript(): string {
       btn.disabled = true;
       try {
         await deleteWebhook(hook.id);
-        renderSettingsWebhooksList();
+        await renderSettingsWebhooksList();
       } catch (_) { btn.disabled = false; }
     }
 
