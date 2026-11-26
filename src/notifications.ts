@@ -91,7 +91,7 @@ export function eventTitle(event: NotificationEvent): string {
 
 // Notifications have no browser to pick up an implicit local zone (the way the dashboard's
 // fmtTime/fmtDay do), so they render in the tenant's configured operating timezone (Settings
-// → Global Settings) via formatLocalDateTime — see shared/format.ts.
+// → General) via formatLocalDateTime — see shared/format.ts.
 function formatSpeedAlt(velocity_kmh: number | null, elevation_m: number | null): string | null {
   const parts: string[] = [];
   if (velocity_kmh != null) parts.push(toKnots(velocity_kmh));
@@ -223,7 +223,7 @@ async function sendGenericWebhook(tenant: Tenant, target: NotificationTarget, ev
 async function sendPushover(tenant: Tenant, target: NotificationTarget, event: NotificationEvent, timezone: string): Promise<void> {
   try {
     const { pushover_api_token: token } = await loadSettings(tenant);
-    if (!token) throw new Error('Pushover API token is not configured (Settings → Global Settings → Notifications)');
+    if (!token) throw new Error('Pushover API token is not configured (Settings → Notifications)');
 
     const body = new URLSearchParams({
       token,

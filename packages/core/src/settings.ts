@@ -1,5 +1,5 @@
 /**
- * The settings modal's logic: the tracker history import's month windows and default start
+ * The settings page's logic: the tracker history import's month windows and default start
  * date, in operator days, and the warning before a timezone change moves the duty log's
  * records (docs/mobile-app-plan.md, "Times and the operator's timezone"). The modal itself,
  * and its requests (api/settings.ts, api/trackers.ts, …), stay with the page.
@@ -48,7 +48,7 @@ export interface DutyRecordCounts {
 const plural = (n: number, one: string, many: string) => n.toLocaleString('en-US') + ' ' + (n === 1 ? one : many);
 
 /**
- * What Global Settings asks before saving the timezone `to` in place of `from`, or null when
+ * What Settings > General asks before saving the timezone `to` in place of `from`, or null when
  * there's nothing to warn about (the same zone, or no duty records). Duty days and default
  * duties are stored as dates and wall-clock times in the operator's timezone, so a change
  * re-reads them in the new one.

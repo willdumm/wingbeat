@@ -11,7 +11,7 @@ weight: 7
 The map's base layers, switchable from the map layer controls (bottom of the map).
 Which basemaps there are, and which of them appear in that switcher, is tenant
 configuration: an Admin adds, edits, hides, reorders and deletes them under
-Settings → Admin → Global Settings → Basemaps, the same way as overlays. A new
+Settings → Map content, the same way as overlays. A new
 Wingbeat instance starts with one, USGS Topo (public domain). An Admin can add
 any raster tile source whose terms they're entitled to use, by its
 `{z}/{x}/{y}` URL.
@@ -28,7 +28,7 @@ to the server — picking a style is a personal preference, not a tenant setting
 
 Tenant-configured extra tile layers shown on top of the basemap — a sectional
 chart, custom imagery, or any other `{z}/{x}/{y}` tile source — added by an
-Admin from Settings → Admin → Global Settings → Overlays. Unlike basemaps,
+Admin from Settings → Map content. Unlike basemaps,
 which are mutually exclusive, overlays are independently
 toggleable: any number can be on at once, and everyone sees the same list.
 
@@ -54,7 +54,7 @@ other).
 ## Regions & Named Points
 
 Both are admin-managed, tenant-wide GeoJSON data sets edited from Settings →
-Admin → Global Settings, either by importing/exporting a `.geojson` file or
+Map content, either by importing/exporting a `.geojson` file or
 using the built-in map editor.
 
 **Regions** — polygons used to group flights geographically for

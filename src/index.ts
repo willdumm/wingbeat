@@ -3269,7 +3269,7 @@ app.get('/api/settings', requireAdmin, async (c) => {
 
 // What a change of the timezone setting would move: the duty days and default duty entries,
 // stored as dates and wall-clock times in it (docs/mobile-app-plan.md, "Times and the
-// operator's timezone"). Global Settings asks before saving a new timezone when there are any.
+// operator's timezone"). Settings > General asks before saving a new timezone when there are any.
 app.get('/api/settings/duty-records', requireAdmin, async (c) => {
   const row = await c.var.db.prepare(
     'SELECT (SELECT COUNT(*) FROM duty_days) AS duty_days, (SELECT COUNT(*) FROM pilot_default_duty) AS default_duties'

@@ -59,7 +59,7 @@ export function dashboardMarkup(appName: string): string {
 
   ${pointPickerPopupMarkup()}
 
-  ${settingsModalMarkup()}
+  ${settingsModalMarkup(appName)}
 
   <div class="main">
     <aside>

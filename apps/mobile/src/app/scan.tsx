@@ -47,7 +47,7 @@ export default function ScanScreen() {
       <View style={styles.bottom}>
         {status.kind === 'idle' ? (
           <Text style={[styles.text, styles.hint, { color: t['text-primary'], backgroundColor: t['surface-float'] }]}>
-            In Wingbeat on the web, open Settings → Devices, choose Get link, and scan its code here.
+            In Wingbeat on the web, open Settings → Account, choose Get link, and scan its code here.
           </Text>
         ) : (
           <PairingStatusView status={status} onRetry={reset} retryTitle="Scan again" />

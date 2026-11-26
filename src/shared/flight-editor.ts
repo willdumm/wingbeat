@@ -48,7 +48,7 @@ export function flightEditorMarkup(): string {
 
 export function flightEditorStyles(): string {
   return `
-    /* The editor opens full screen (data-fullscreen); past 64rem it keeps a readable
+    /* The editor opens in settings' full-screen overlay; past 64rem it keeps a readable
        measure, centered, like the duty log. */
     .fe-toolbar {
       display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem 0.75rem;
@@ -156,8 +156,7 @@ export function flightEditorScript(): string {
 
     // Opens the editor, optionally filtered ({ pilotId, from, to }: YYYY-MM-DD dates).
     async function openFlightEditor({ pilotId = null, from = '', to = '' } = {}) {
-      if (document.getElementById('settings-modal').classList.contains('hidden')) openSettings();
-      _settingsNavigateTo('settings-view-flight-editor', 'Edit flights');
+      openSettingsView('settings-view-flight-editor', 'Edit flights');
       _feSelected.clear();
       document.getElementById('fe-from').value = from;
       document.getElementById('fe-to').value = to;

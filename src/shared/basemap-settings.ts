@@ -1,3 +1,5 @@
+import { icon } from './icons';
+
 /**
  * Settings' "Basemaps" section: the tenant's basemaps (the map's base layers, tenant data in
  * the `basemaps` table, docs/tenant-basemaps-plan.md), which admins add, edit, show or hide in
@@ -11,10 +13,9 @@
 
 export function basemapSettingsMarkup(): string {
   return `
-    <p class="settings-section-desc">The base layers in the map's style switcher, the same for everyone. Hidden basemaps stay configured. A vector basemap is a Protomaps basemap PMTiles archive, with Protomaps' basemaps-assets (fonts and sprites) copied to <code>basemaps-assets/</code> beside it.</p>
-    <div id="settings-basemap-list"></div>
+    <div id="settings-basemap-list" class="settings-list"></div>
     <details id="settings-add-basemap" class="settings-add-tracker">
-      <summary>Add basemap</summary>
+      <summary>${icon('plus', { size: 16 })}Add basemap</summary>
       <div class="settings-add-inner">
         <input type="text" id="settings-add-basemap-label" placeholder="Label (e.g. Imagery)" autocomplete="off" />
         <select id="settings-add-basemap-kind" aria-label="Basemap type">
@@ -66,39 +67,20 @@ export function basemapSettingsScript(): string {
     }
 
     function _buildBasemapRow(b, i) {
-      const row = document.createElement('div');
-      row.className = 'settings-aircraft-row';
-
-      const info = document.createElement('div');
-      info.className = 'settings-aircraft-info';
-      const nameEl = document.createElement('span');
-      nameEl.className = 'settings-aircraft-name';
-      nameEl.textContent = b.label;
-      info.appendChild(nameEl);
-      const sub = document.createElement('span');
-      sub.className = 'settings-aircraft-sub';
-      sub.textContent = _basemapKindNote(b) + (b.shown ? '' : ' · Hidden');
-      info.appendChild(sub);
-
-      const actions = document.createElement('div');
-      actions.className = 'settings-aircraft-actions';
-      if (_settingsUser?.role === 'admin') {
-        const mk = (text, onClick, disabled) => {
-          const btn = document.createElement('button');
-          btn.className = 'settings-action-btn';
-          btn.textContent = text;
-          btn.disabled = !!disabled;
-          btn.addEventListener('click', onClick);
-          actions.appendChild(btn);
-        };
-        mk('Up', () => settingsMoveBasemap(i, -1), i === 0);
-        mk('Down', () => settingsMoveBasemap(i, 1), i === basemapList.length - 1);
-        mk(b.shown ? 'Hide' : 'Show', () => settingsSetBasemapShown(b, !b.shown));
-        mk('Edit', () => settingsToggleBasemapEditForm(row, b));
-        mk('Delete', () => settingsDeleteBasemap(b));
-      }
-      row.appendChild(info);
-      row.appendChild(actions);
+      const row = _settingsRow(b.label, _basemapKindNote(b));
+      const admin = _settingsUser?.role === 'admin';
+      _settingsFinishRow(row, {
+        chip: b.shown ? null : 'hidden',
+        label: b.label,
+        open: admin ? () => settingsToggleBasemapEditForm(row, b) : null,
+        items: admin ? [
+          { label: 'Edit', onSelect: () => settingsToggleBasemapEditForm(row, b) },
+          { label: 'Move up', disabled: i === 0, onSelect: () => settingsMoveBasemap(i, -1) },
+          { label: 'Move down', disabled: i === basemapList.length - 1, onSelect: () => settingsMoveBasemap(i, 1) },
+          { label: b.shown ? 'Hide' : 'Show', onSelect: () => settingsSetBasemapShown(b, !b.shown) },
+          { label: 'Delete', danger: true, onSelect: () => settingsDeleteBasemap(b) },
+        ] : [],
+      });
       return row;
     }
 
@@ -150,13 +132,10 @@ export function basemapSettingsScript(): string {
     function settingsToggleBasemapEditForm(row, b) {
       const existing = row.querySelector('.settings-edit-form');
       if (existing) {
-        existing.remove();
-        row.querySelector('.settings-aircraft-actions').style.display = '';
-        row.classList.remove('editing');
+        _settingsCloseInlineForm(row, existing);
         return;
       }
-      row.querySelector('.settings-aircraft-actions').style.display = 'none';
-      row.classList.add('editing');
+      _settingsOpenInlineForm(row);
 
       const form = document.createElement('div');
       form.className = 'settings-edit-form';
@@ -224,11 +203,7 @@ export function basemapSettingsScript(): string {
         body.url = url;
         await _basemapWrite(() => updateBasemap(b.id, body), 'Failed to save basemap.');
       });
-      cancelBtn.addEventListener('click', () => {
-        form.remove();
-        row.querySelector('.settings-aircraft-actions').style.display = '';
-        row.classList.remove('editing');
-      });
+      cancelBtn.addEventListener('click', () => _settingsCloseInlineForm(row, form));
       row.appendChild(form);
     }
 

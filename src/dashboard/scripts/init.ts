@@ -21,12 +21,14 @@ export function dashboardScriptsInit(): string {
         if (editBtn) editBtn.style.display = 'none';
       }
 
+      // A #settings/<page> URL opens settings over the page.
+      const settingsFromUrl = settingsOpenFromUrl();
       const activeTrackers = trackerList.filter(t => t.active && !t.deleted);
 
       if (activeTrackers.length === 0) {
         document.getElementById('empty-msg').textContent = 'No trackers configured.';
         ensureMapView();
-        openSettings();
+        if (!settingsFromUrl) openSettings();
         return;
       }
 

@@ -67,7 +67,7 @@ export function tileUrls(template: string, origin: string, pixelRatio: number): 
 }
 
 /**
- * A raster basemap's color correction (the web's per-device Settings → Map layers sliders), in
+ * A raster basemap's color correction (the web's per-device Settings → Appearance → Map colors sliders), in
  * percent: 100 is no change. MapLibre's raster paint has saturation and contrast in -1…1 and a
  * brightness range instead of CSS's filter multipliers, so mapColorPaint() maps one to the other.
  */

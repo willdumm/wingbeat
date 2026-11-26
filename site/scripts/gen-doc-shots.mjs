@@ -58,6 +58,7 @@ async function waitForServer(url, timeoutMs = 30000) {
 
 async function captureOne(context, entry) {
   const page = await context.newPage();
+  if (entry.viewport) await page.setViewportSize(entry.viewport);
   await page.addInitScript((theme) => localStorage.setItem('ft_theme', theme), entry.theme ?? 'light');
   await page.goto(entry.route);
 

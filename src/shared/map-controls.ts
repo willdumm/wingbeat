@@ -278,7 +278,7 @@ function layerColorReadLogic(): string {
 /**
  * Runtime script for the page IIFE (called once per page, like themeRuntimeScript) —
  * defines the per-layer color-correction helpers used by createMap() (maplibre.ts) and the
- * Settings > Map layers row builder:
+ * Settings → Appearance → Map colors row builder:
  *   _ftLayerColor(id)             — read a layer's correction (see layerColorReadLogic)
  *   _ftSetLayerColor(id, ch, val) — persist + reapply if this layer is the active one
  *   _ftApplyActiveLayerColor()    — restyle the page's maps
@@ -355,20 +355,19 @@ export function mapLayerColorRuntimeScript(): string {
 }
 
 /**
- * Settings modal markup for the "Map layers" section: one row per basemap in the map's style
+ * Settings' "Map colors" list (on the Appearance page): one row per basemap in the map's style
  * switcher, each with a "Colors" disclosure for this device's color corrections. Which
- * basemaps there are is tenant data, managed in the Basemaps section (basemap-settings.ts).
+ * basemaps there are is tenant data, managed under Map content (basemap-settings.ts).
  * Populated at runtime by mapLayersSettingsScript().
  */
 export function mapLayersSettingsRowsMarkup(): string {
   return `
-    <p class="settings-section-desc">Adjust the colors of each basemap on this device. Changes apply immediately, on every map. Admins choose which basemaps are available under Basemaps.</p>
-    <div id="settings-map-layers-list"></div>
+    <div id="settings-map-layers-list" class="settings-list"></div>
   `;
 }
 
 /**
- * Runtime script wiring the "Map layers" settings section: renderMapLayersSettings()
+ * Runtime script wiring the "Map colors" settings section: renderMapLayersSettings()
  * (called from openSettings(), and after an admin changes the basemaps) builds one row per
  * basemap in `_ftPresets`, each with a "Colors" disclosure (expands _ftBuildColorSliders()).
  * Also defines _ftLookupTileMetadata(), shared by the basemap and overlay forms. Depends on
@@ -419,36 +418,33 @@ export function mapLayersSettingsScript(): string {
     }
 
     function _ftBuildLayerRow(id, label) {
-      var row = document.createElement('div');
-      row.className = 'settings-aircraft-row';
+      var row = _settingsRow(label);
 
-      var info = document.createElement('div');
-      info.className = 'settings-aircraft-info';
-      var nameEl = document.createElement('span');
-      nameEl.className = 'settings-aircraft-name';
-      nameEl.textContent = label;
-      info.appendChild(nameEl);
-
+      // The row discloses its colour sliders: a click on it, or on its chevron (a disclosure,
+      // so not _settingsFinishRow's chevron, which opens a form or view).
       var actions = document.createElement('div');
       actions.className = 'settings-aircraft-actions';
       var colorsBtn = document.createElement('button');
-      colorsBtn.className = 'settings-action-btn';
-      colorsBtn.textContent = 'Colors';
+      colorsBtn.type = 'button';
+      colorsBtn.className = 'row-menu-btn';
+      colorsBtn.setAttribute('aria-label', 'Colors for ' + label);
+      colorsBtn.setAttribute('aria-expanded', 'false');
+      colorsBtn.innerHTML = '<span class="chevron">' + ${JSON.stringify(icon('chevron-right', { size: 14 }))} + '</span>';
       var panel = document.createElement('div');
       panel.className = 'settings-edit-form';
       panel.style.display = 'none';
-      colorsBtn.addEventListener('click', function() {
-        var isOpen = panel.style.display !== 'none';
-        if (isOpen) {
-          panel.style.display = 'none';
-        } else {
-          _ftBuildColorSliders(panel, id);
-          panel.style.display = '';
-        }
-      });
+      var toggle = function() {
+        var open = panel.style.display === 'none';
+        if (open) _ftBuildColorSliders(panel, id);
+        panel.style.display = open ? '' : 'none';
+        colorsBtn.setAttribute('aria-expanded', String(open));
+        colorsBtn.querySelector('.chevron').dataset.open = String(open);
+      };
+      colorsBtn.addEventListener('click', function(e) { e.stopPropagation(); toggle(); });
       actions.appendChild(colorsBtn);
 
-      row.appendChild(info);
+      row.classList.add('settings-row-link');
+      row.addEventListener('click', toggle);
       row.appendChild(actions);
       var wrap = document.createElement('div');
       wrap.appendChild(row);

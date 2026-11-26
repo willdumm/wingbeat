@@ -213,9 +213,10 @@ export function dashboardScriptsFlightList(): string {
     }
 
     // Keeps the page's URL on the selected flight (or '/'), so it can be copied or reloaded.
+    // Settings' #settings/<page> and its history state stay as they are.
     function syncFlightUrl(flight) {
       const path = flight ? flightPath(flight) : '/';
-      if (location.pathname !== path) history.replaceState(null, '', path);
+      if (location.pathname !== path) history.replaceState(history.state, '', path + location.hash);
     }
 
     // Opens the flight the page's URL names as a click on its row does, its day expanded and

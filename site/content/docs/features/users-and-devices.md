@@ -8,11 +8,11 @@ weight: 8
 
 ## Accounts are invite-only
 
-There's no public sign-up. Admins generate an invite link (Settings → Admin →
-Users → Invite someone) for a name and a role (**Admin** or **Viewer**);
+There's no public sign-up. Admins generate an invite link (Settings → Users →
+Invite someone) for a name and a role (**Admin** or **Viewer**);
 opening the link in a browser sets up that device's session. Invite links
 expire after 7 days and can be used once. A sign-in link for adding another device
-(Settings → Devices) is single-use and expires after 15 minutes.
+(Settings → Account) is single-use and expires after 15 minutes.
 
 On an instance that sends email, the invite form also takes an email address: the
 invite is emailed there, and the address becomes the new account's first email address.
@@ -21,8 +21,8 @@ invite is emailed there, and the address becomes the new account's first email a
 
 An account can have any number of email addresses, and any of them signs in.
 Each address belongs to one account only. An address is added by emailing it a link, by
-the user (Settings → Email addresses) or by an admin (Settings → Admin → Users →
-**Email**); it's added once the link is opened, so every address on an account has been
+the user (Settings → Account) or by an admin (Settings → Users → a user's ⋯ menu →
+**Email addresses**); it's added once the link is opened, so every address on an account has been
 confirmed. Until then it shows as *not verified*. Opening the link also signs in the device
 that opened it.
 
@@ -50,18 +50,18 @@ self-hosted instances).
 - **Admin** — everything a Viewer can do, plus: edit
   Aircraft/Pilots/Trackers, edit flights (corrections, manual flights,
   assignments), manage users, and
-  everything under Global Settings (instance name, timezone, map defaults,
+  the instance-wide settings pages (instance name, timezone, map defaults,
   notifications, regions, named points).
 
 ## Users who are pilots
 
-An admin can link a user to the pilot they are (Settings → Admin → Users →
+An admin can link a user to the pilot they are (Settings → Users → a user's ⋯ menu →
 **Designate pilot**). Each pilot links to one user at most. The Wingbeat app shows a
 linked user their own duty log first.
 
-## My Devices
+## Your devices
 
-Each user can be signed into multiple devices at once. Settings → My Devices
+Each user can be signed into multiple devices at once. Settings → Account
 lists every session on the account (device name, last-seen date), and lets
 you:
 

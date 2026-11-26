@@ -1,7 +1,7 @@
 /**
  * What a pairing QR code or link says: the instance's host and the device-link or invite
  * token to redeem there (docs/mobile-app-plan.md, "Auth and pairing"). The scanner accepts
- * the URL the web already shows, `https://<host>/join/<token>` (Settings → Devices, and
+ * the URL the web already shows, `https://<host>/join/<token>` (Settings → Account, and
  * invites), and `wingbeat://pair?host=<host>&token=<token>`.
  */
 
@@ -78,6 +78,6 @@ function pairingTarget(text: string): PairingTarget | null {
 export function parseFailureMessage(reason: 'not-a-pairing-link' | 'self-hosted', text: string): string {
   if (reason === 'self-hosted') return 'Self-hosted instances aren’t supported yet.';
   return text.startsWith('http')
-    ? 'That isn’t a Wingbeat sign-in code. In Wingbeat on the web, open Settings → Devices and add a phone.'
+    ? 'That isn’t a Wingbeat sign-in code. In Wingbeat on the web, open Settings → Account and add a phone.'
     : 'That isn’t a Wingbeat sign-in code.';
 }

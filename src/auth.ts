@@ -268,7 +268,7 @@ export function appConnectSignedOutHTML(appName: string, returnTo: string, email
   return authPage(appName, `
     <p style="margin-bottom: 1rem;">This browser isn't signed in to ${escapeHtml(appName)}.</p>
     <p>Open your sign-in link in Safari first, then try again in the app. Or, on a device that's
-      signed in, open Settings → Devices, choose Get link, and scan its code with the app.</p>`);
+      signed in, open Settings → Account, choose Get link, and scan its code with the app.</p>`);
 }
 
 /** /login on an instance that sends email: an address, which POST /login emails a link and a code. */

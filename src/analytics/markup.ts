@@ -55,7 +55,7 @@ export function analyticsMarkup(appName: string): string {
     </div>
   </div>
 
-  ${settingsModalMarkup()}
+  ${settingsModalMarkup(appName)}
 
   <div id="info-popup-overlay" style="display:none">
     <div id="info-popup-card">

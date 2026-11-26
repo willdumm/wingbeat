@@ -1,6 +1,6 @@
 ---
 title: Admin Settings
-description: "Admin-only Wingbeat settings: the setup checklist, fleet management, basemaps, overlays, users, and global settings."
+description: "Admin-only Wingbeat settings: the setup checklist, fleet management, users, and the instance-wide pages."
 weight: 2
 ---
 
@@ -10,44 +10,45 @@ weight: 2
 Which §135.267 method the duty log checks is for the operator to choose.
 {{% /compliance %}}
 
-Only visible to users with the Admin role. In the main Settings panel the
-admin-only sections (Admin and Users) come last, and the add/edit controls
-appear on the fleet lists; everything tenant-wide is on the separate **Global
-Settings** screen.
+Only visible to users with the Admin role. The admin-only pages sit among the
+instance's other pages in the Settings sidebar (Viewers don't see them), and
+Admins get the add and edit controls on the Aircraft, Pilots and Trackers
+pages.
 
-## Setup checklist
+## Get started
 
 On a new instance, Settings opens with a **Get started** checklist: basics,
 aircraft and pilots, trackers, then the optional steps (regions and named
-points, history import, invites, notifications), each linking to the section
+points, history import, invites, notifications), each linking to the page
 that does it. It hides itself once the required steps are done, or with
-**Hide checklist**, and Settings → Admin → **Setup checklist** brings it back.
+**Hide checklist**, and General → **Setup checklist** brings it back.
 
 ## Fleet management
 
-In the main Settings panel, Admins get add/edit controls (Viewers see the
-lists read-only):
+On the Aircraft, Pilots and Trackers pages, Admins get add and edit controls
+(Viewers see the lists read-only); each entry's actions are in its **⋯** menu:
 
 - **Aircraft** — add, edit, or deactivate. See
   [Fleet Management](../../features/fleet-management) and
   [Maintenance Tracking](../../features/maintenance-tracking) for what an
   aircraft entry carries.
 - **Pilots** — add, edit, or deactivate. Never hard-deleted.
-- **Trackers** — add, edit, pause, soft-delete, or import history. See
+- **Trackers** — add, edit, pause, soft-delete, or import history (**Import
+  history…**). See
   [Fleet Management](../../features/fleet-management#trackers) for how to get a
   MapShare URL.
 
 ## Users
 
 Invite new users (name + role, and an email address to send the invite to), link a user
-to the pilot they are, add and remove a user's email addresses (**Email**), and manage
+to the pilot they are (**Designate pilot**), add and remove a user's email addresses
+(**Email addresses**), and manage
 existing accounts. See
 [Users & Devices](../../features/users-and-devices).
 
-## Global Settings
+## Instance-wide pages
 
-A dedicated screen (Settings → Admin → Global Settings) for tenant-wide
-configuration:
+The pages that configure the whole instance:
 
 ### General
 
@@ -56,8 +57,6 @@ configuration:
 | Instance name | Shown in the page title and header, and at the top of the app's Flights and Duty tabs |
 | Timezone | Used for all displayed times and the pilot duty log's day boundaries |
 | Map default lat/lng/zoom | Where the map opens when there's no other context. **Set from map** lets you pan and zoom to it instead of typing coordinates |
-| Gap alert (minutes) | Silence threshold before an in-flight signal-gap notification fires |
-| Stop gap alerts after (minutes) | Silence after which the flight is treated as ended and repeating gap alerts stop (default 60) |
 
 ### Duty limits (§135.267)
 
@@ -74,10 +73,19 @@ the last one is shown ("Last changed by …").
 
 ### Notifications
 
-The shared Pushover application token, plus the list of webhook/Pushover
+| Setting | Description |
+|---|---|
+| Gap alert (minutes) | Silence threshold before an in-flight signal-gap notification fires |
+| Stop gap alerts after (minutes) | Silence after which the flight is treated as ended and repeating gap alerts stop (default 60) |
+
+Then the shared Pushover application token, and the list of webhook/Pushover
 notification targets. See [Notifications](../../features/notifications).
 
-### Basemaps
+### Map content
+
+Basemaps, overlays, regions and named points, on one page.
+
+#### Basemaps
 
 Add, edit, show or hide, reorder or delete the map's basemaps, for everyone. A
 raster basemap needs a `{z}/{x}/{y}` tile URL; a vector one (mobile app only) an
@@ -85,7 +93,7 @@ raster basemap needs a `{z}/{x}/{y}` tile URL; a vector one (mobile app only) an
 always keeps at least one shown raster basemap. Add only sources you're entitled
 to use: each provider sets its own terms for tiles and for credit.
 
-### Overlays
+#### Overlays
 
 Add, edit or delete tenant tile overlays. Each overlay needs a `{z}/{x}/{y}`
 tile URL, an on/off default, and optionally a per-basemap override of that
@@ -93,12 +101,12 @@ default. Everyone sees them in the map's overlay legend; see
 [Map Tools](../../features/map-tools#overlays) for how overlays behave for
 viewers.
 
-### Regions
+#### Regions
 
 Import/export or map-edit the regions GeoJSON used by
 [Analytics](../../features/analytics)'s per-region breakdown.
 
-### Named Points
+#### Named Points
 
 Import/export or map-edit the named-points GeoJSON used for live-position
 labeling and local geocoding. See
