@@ -1718,6 +1718,12 @@ account whose operator is in another zone, that's the only correct reading of a 
   single-use and expires in 15 minutes, and a stolen pairing shows up in the Devices list.
   Universal Links / App Links would be exclusive, but they can't cover self-hosted domains,
   since the app's associated domains are fixed at build time. So the scanner stays primary.
+- **Links to a flight (2026-11-25).** Hosted instances do have Universal Links, for flights'
+  URLs only (`/flights/<tracker id>/<tracked start>` or `/flights/manual/<id>`,
+  core's `flight-link`), never for sign-in or invite links. Each instance and the docs site (the
+  wildcard's base domain) serve `apple-app-site-association`, `+native-intent.ts` sends the URL to
+  `flights/link.tsx`, and `associatedDomains` in `app.config.ts` takes effect from build 9; on
+  earlier builds the link opens the web. Android (`assetlinks.json`, intent filters) isn't done.
 - **Sign in with the browser (added 2026-11-15).** Someone signed in to the web in Safari on
   the same phone has no second screen to scan from. The Add account screen's "Sign in with
   Browser" button covers that, and is the main path on a phone:
