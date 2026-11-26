@@ -16,8 +16,12 @@ type Distribute<T> = T extends unknown ? Omit<T, 'source'> : never;
 /** A layer spec without its source. */
 export type MapLayer = Distribute<Exclude<LayerSpecification, { type: 'background' }>>;
 
-/** The plane and arrow symbols' images (signed distance fields, tinted per marker). */
-export const MAP_IMAGE_IDS = { plane: 'plane', arrow: 'arrow' } as const;
+/**
+ * The plane and arrow symbols' images (signed distance fields, tinted per marker). Prefixed: the
+ * basemap's sprite has its own `arrow` (one-way streets), and the app's MapLibre keeps a style's
+ * image over one added with the same name.
+ */
+export const MAP_IMAGE_IDS = { plane: 'wingbeat-plane', arrow: 'wingbeat-arrow' } as const;
 
 /** A flight's track, solid. */
 export function trackLayer(): MapLayer {
