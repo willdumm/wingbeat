@@ -4,6 +4,7 @@ import { mapLayersSettingsRowsMarkup, mapLayersSettingsScript } from './map-cont
 import { basemapSettingsMarkup, basemapSettingsScript } from './basemap-settings';
 import { icon } from './icons';
 import { escapeHtml } from './html';
+import { logoLockupMarkup } from './brand';
 import { darkTokens } from '@wingbeat/core/tokens';
 import { docsLinkMarkup } from './help';
 import { pilotDutyMarkup, typstLoadOverlayMarkup } from './pilot-duty';
@@ -11,6 +12,8 @@ import { flightEditorMarkup } from './flight-editor';
 import { formControlStyles } from './form-modal';
 import { aircraftInfoMarkup } from './aircraft-info';
 import { mapViewPickerMarkup, mapViewPickerStyles, mapViewPickerScript } from './map-view-picker';
+import { rowMenuStyles, rowMenuScript } from './row-menu';
+import { statusChip } from './status';
 import { setupGuideMarkup, setupGuideAdminRowMarkup, setupGuideStyles, setupGuideScript } from './setup-guide';
 
 /**
@@ -134,6 +137,53 @@ function settingsPages(): SettingsPage[] {
                 </div>`)}`,
     },
     {
+      id: 'setup', title: 'Get started', icon: 'list-checks', scope: 'instance', admin: true, hidden: true,
+      body: setupGuideMarkup(),
+    },
+    {
+      id: 'general', title: 'General', icon: 'settings-2', scope: 'instance', admin: true,
+      body: `
+              ${settingsGroup('Instance', `
+                <div class="settings-card settings-card-form">
+                  <div class="settings-form-row">
+                    <label class="settings-form-label" for="settings-tenant-name">Name</label>
+                    <input type="text" id="settings-tenant-name" autocomplete="off" />
+                  </div>
+                  <div class="settings-form-row">
+                    <label class="settings-form-label" for="settings-tenant-timezone">Timezone</label>
+                    <select id="settings-tenant-timezone"></select>
+                  </div>
+                </div>`)}
+              ${settingsGroup('Default map view', `
+                <div class="settings-card settings-card-form">
+                  <div class="settings-form-grid">
+                    <div class="settings-form-row">
+                      <label class="settings-form-label" for="settings-tenant-lat">Latitude</label>
+                      <input type="number" id="settings-tenant-lat" step="any" autocomplete="off" />
+                    </div>
+                    <div class="settings-form-row">
+                      <label class="settings-form-label" for="settings-tenant-lng">Longitude</label>
+                      <input type="number" id="settings-tenant-lng" step="any" autocomplete="off" />
+                    </div>
+                    <div class="settings-form-row">
+                      <label class="settings-form-label" for="settings-tenant-zoom">Zoom</label>
+                      <input type="number" id="settings-tenant-zoom" min="1" max="20" step="any" autocomplete="off" />
+                    </div>
+                  </div>
+                  <div class="settings-add-actions">
+                    <button id="settings-tenant-map-pick" class="btn-secondary">${icon('crosshair', { size: 16 })}Set from map</button>
+                  </div>
+                </div>`, {
+                desc: '<p class="settings-section-desc">Where the map starts for everyone, before any flights are shown.</p>',
+              })}
+              <div class="settings-page-actions">
+                <button id="settings-tenant-save" class="btn-primary">Save</button>
+                <p id="settings-tenant-status" class="settings-msg" style="display:none"></p>
+              </div>
+              ${settingsGroup('Setup checklist', `
+                <div class="settings-card">${setupGuideAdminRowMarkup()}</div>`)}`,
+    },
+    {
       id: 'aircraft', title: 'Aircraft', icon: 'plane', scope: 'instance',
       body: `
               ${settingsGroup('', `
@@ -213,24 +263,6 @@ function settingsPages(): SettingsPage[] {
               })}`,
     },
     {
-      id: 'export', title: 'Export flights', icon: 'download', scope: 'instance',
-      body: `
-              ${settingsGroup('', `
-                <div class="settings-card">
-                  <div class="settings-row">
-                    <div class="settings-row-info">
-                      <div class="settings-row-title">Export flights</div>
-                      <div class="settings-row-desc">Times, pilot, aircraft and start and end places, as CSV or JSON. No tracks.</div>
-                    </div>
-                    <button id="settings-export-flights" class="btn-secondary">Export</button>
-                  </div>
-                </div>`)}`,
-    },
-    {
-      id: 'setup', title: 'Get started', icon: 'list-checks', scope: 'instance', admin: true, hidden: true,
-      body: setupGuideMarkup(),
-    },
-    {
       id: 'users', title: 'Users', icon: 'users', scope: 'instance', admin: true,
       body: `
               ${settingsGroup('', `
@@ -252,49 +284,6 @@ function settingsPages(): SettingsPage[] {
                     </div>
                   </details>
                 </div>`, { id: 'settings-section-users' })}`,
-    },
-    {
-      id: 'general', title: 'General', icon: 'settings-2', scope: 'instance', admin: true,
-      body: `
-              ${settingsGroup('Instance', `
-                <div class="settings-card settings-card-form">
-                  <div class="settings-form-row">
-                    <label class="settings-form-label" for="settings-tenant-name">Name</label>
-                    <input type="text" id="settings-tenant-name" autocomplete="off" />
-                  </div>
-                  <div class="settings-form-row">
-                    <label class="settings-form-label" for="settings-tenant-timezone">Timezone</label>
-                    <select id="settings-tenant-timezone"></select>
-                  </div>
-                </div>`)}
-              ${settingsGroup('Default map view', `
-                <div class="settings-card settings-card-form">
-                  <div class="settings-form-grid">
-                    <div class="settings-form-row">
-                      <label class="settings-form-label" for="settings-tenant-lat">Latitude</label>
-                      <input type="number" id="settings-tenant-lat" step="any" autocomplete="off" />
-                    </div>
-                    <div class="settings-form-row">
-                      <label class="settings-form-label" for="settings-tenant-lng">Longitude</label>
-                      <input type="number" id="settings-tenant-lng" step="any" autocomplete="off" />
-                    </div>
-                    <div class="settings-form-row">
-                      <label class="settings-form-label" for="settings-tenant-zoom">Zoom</label>
-                      <input type="number" id="settings-tenant-zoom" min="1" max="20" step="any" autocomplete="off" />
-                    </div>
-                  </div>
-                  <div class="settings-add-actions">
-                    <button id="settings-tenant-map-pick" class="btn-secondary">${icon('crosshair', { size: 16 })}Set from map</button>
-                  </div>
-                </div>`, {
-                desc: '<p class="settings-section-desc">Where the map starts for everyone, before any flights are shown.</p>',
-              })}
-              <div class="settings-page-actions">
-                <button id="settings-tenant-save" class="btn-primary">Save</button>
-                <p id="settings-tenant-status" class="settings-msg" style="display:none"></p>
-              </div>
-              ${settingsGroup('Setup checklist', `
-                <div class="settings-card">${setupGuideAdminRowMarkup()}</div>`)}`,
     },
     {
       id: 'duty', title: 'Duty limits', icon: 'scale', scope: 'instance', admin: true,
@@ -451,6 +440,20 @@ function settingsPages(): SettingsPage[] {
                 desc: '<p class="settings-section-desc">GeoJSON FeatureCollection with Point features. Each feature requires a <code>name</code> property and optionally a <code>maxKm</code> radius in kilometers. Import replaces all existing named points.</p>',
               })}`,
     },
+    {
+      id: 'export', title: 'Export flights', icon: 'download', scope: 'instance',
+      body: `
+              ${settingsGroup('', `
+                <div class="settings-card">
+                  <div class="settings-row">
+                    <div class="settings-row-info">
+                      <div class="settings-row-title">Export flights</div>
+                      <div class="settings-row-desc">Times, pilot, aircraft and start and end places, as CSV or JSON. No tracks.</div>
+                    </div>
+                    <button id="settings-export-flights" class="btn-secondary">Export</button>
+                  </div>
+                </div>`)}`,
+    },
   ];
 }
 
@@ -464,16 +467,14 @@ function settingsSidebarMarkup(pages: SettingsPage[], appName: string): string {
     const label = scope === 'instance'
       ? `<span class="settings-instance-name">${escapeHtml(appName)}</span>`
       : SCOPES[scope].label;
-    const everyone = items.filter((p) => !p.admin).map(link).join('');
-    const admin = items.filter((p) => p.admin).map(link).join('');
     return `
             <div class="settings-nav-group" data-scope="${scope}">
               <div class="settings-nav-group-head">
                 <span class="settings-nav-group-label">${label}</span>
                 <span class="settings-nav-group-caption">${SCOPES[scope].caption}</span>
               </div>
-              ${everyone}
-              ${admin ? `<div class="settings-nav-subhead" data-admin>Admin</div>${admin}` : ''}
+              <div class="settings-nav-list">${items.map(link).join('')}
+              </div>
             </div>`;
   }).join('');
   return `
@@ -492,7 +493,10 @@ export function settingsModalMarkup(appName: string): string {
     <div class="settings-modal-panel">
       <div class="settings-nav">
         <button id="settings-nav-back" class="settings-nav-back hidden" aria-label="Back">${icon('chevron-left', { size: 18 })}<span id="settings-nav-back-label">Settings</span></button>
-        <h2 id="settings-nav-title" class="settings-modal-title">Settings</h2>
+        <h2 id="settings-nav-title" class="settings-modal-title">
+          <span id="settings-nav-brand" class="settings-modal-brand">${logoLockupMarkup('Wingbeat Settings', { size: 24 })}</span>
+          <span id="settings-nav-title-text" hidden></span>
+        </h2>
         <button id="settings-modal-close" class="settings-modal-close btn-icon" aria-label="Close settings">${icon('x', { size: 20 })}</button>
       </div>
       <div class="settings-views">
@@ -613,6 +617,9 @@ export function settingsModalStyles(): string {
       text-overflow: ellipsis;
     }
 
+    .settings-modal-brand { display: inline-flex; max-width: 100%; vertical-align: middle; }
+    .settings-modal-brand[hidden] { display: none; }
+
     .settings-views {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
@@ -687,11 +694,10 @@ export function settingsModalStyles(): string {
       line-height: var(--leading-snug);
     }
 
-    .settings-nav-subhead {
-      padding: var(--space-3) var(--space-3) var(--space-1);
-      font-size: var(--size-xs);
-      font-weight: var(--weight-semibold);
-      color: var(--text-muted);
+    .settings-nav-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
     }
 
     .settings-nav-item {
@@ -717,8 +723,7 @@ export function settingsModalStyles(): string {
       font-weight: var(--weight-semibold);
     }
 
-    .settings-nav-item[hidden],
-    .settings-nav-subhead[hidden] { display: none; }
+    .settings-nav-item[hidden] { display: none; }
     .settings-nav-item-label { flex: 1; min-width: 0; }
     .settings-nav-item-chevron { display: none; color: var(--text-muted); }
 
@@ -920,14 +925,10 @@ export function settingsModalStyles(): string {
         border-radius: 0;
         color: var(--text-primary);
       }
-      .settings-nav-group-head + .settings-nav-item { border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg); }
-      .settings-nav-item:has(+ .settings-nav-subhead),
-      .settings-nav-item:last-child { border-bottom-left-radius: var(--radius-lg); border-bottom-right-radius: var(--radius-lg); }
-      .settings-nav-subhead + .settings-nav-item { border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg); }
+      .settings-nav-list { gap: 0; border-radius: var(--radius-lg); overflow: hidden; }
       .settings-nav-item[aria-current="page"] { background: var(--surface-1); color: var(--text-primary); font-weight: var(--weight-medium); }
       .settings-nav-item-chevron { display: inline-flex; }
       .settings-nav-group-head { padding-left: var(--space-1); }
-      .settings-nav-subhead { padding-left: var(--space-1); }
       .settings-sidebar-foot { border-top: 0; padding: 0 var(--space-1); }
 
       .settings-page {
@@ -1000,6 +1001,12 @@ export function settingsModalStyles(): string {
       padding: 0 var(--space-3);
       font-size: var(--size-sm);
     }
+
+    /* A row that opens something (its edit form, a detail view) when clicked. */
+    .settings-row-link { cursor: pointer; }
+    .settings-row-link:not(.editing):hover .settings-aircraft-name { color: var(--accent-text); }
+    .settings-row-link.editing { cursor: auto; }
+    .settings-row-chip { flex-shrink: 0; }
 
     /* .settings-action-btn: the small buttons the script puts in list rows. */
     .settings-action-btn {
@@ -1616,6 +1623,8 @@ export function settingsModalStyles(): string {
     ${mapViewPickerStyles()}
 
     ${setupGuideStyles()}
+
+    ${rowMenuStyles()}
   `;
 }
 
@@ -1623,6 +1632,7 @@ export function settingsModalScript(): string {
   return `
     // ── Settings modal ────────────────────────────────────────────────────────
 
+    ${rowMenuScript()}
     ${mapLayersSettingsScript()}
     ${basemapSettingsScript()}
 
@@ -1650,6 +1660,7 @@ export function settingsModalScript(): string {
     let _settingsPicked = false;       // a page was asked for, so the checklist mustn't take over
     let _settingsEntry = null;         // settings' history entry, put back when Back leaves a detail view
     let _settingsClosing = false;      // closeSettings() went back past settings' entries
+    let _settingsDetailOnly = false;   // opened for a detail view from the page (openSettingsView)
     // The detail views' stack (below).
     let _settingsViewStack = [];
     let _settingsBeforeBack = null;
@@ -1695,7 +1706,7 @@ export function settingsModalScript(): string {
 
     // mode: 'push' a new history entry, 'replace' the current one, or 'none'.
     function _settingsSetHash(hash, mode) {
-      if (mode === 'none' || typeof history === 'undefined') return;
+      if (mode === 'none' || _settingsDetailOnly || typeof history === 'undefined') return;
       const url = location.pathname + location.search + hash;
       const depth = history.state?.wbSettings || 0;
       if (mode === 'push') history.pushState({ wbSettings: depth + 1 }, '', url);
@@ -1730,21 +1741,25 @@ export function settingsModalScript(): string {
     // title and Back to the list, else just "Settings".
     function _settingsSyncHeader() {
       const back = document.getElementById('settings-nav-back');
-      const title = document.getElementById('settings-nav-title');
+      const title = document.getElementById('settings-nav-title-text');
       const backLabel = document.getElementById('settings-nav-back-label');
       const top = _settingsViewStack[_settingsViewStack.length - 1];
+      let text = '';
       if (top) {
-        title.textContent = top.title;
+        text = top.title;
         backLabel.textContent = 'Back';
         back.classList.remove('hidden');
       } else if (_settingsPage && _settingsIsPhone()) {
-        title.textContent = _settingsNavLink(_settingsPage).querySelector('.settings-nav-item-label').textContent;
+        text = _settingsNavLink(_settingsPage).querySelector('.settings-nav-item-label').textContent;
         backLabel.textContent = 'Settings';
         back.classList.remove('hidden');
       } else {
-        title.textContent = 'Settings';
         back.classList.add('hidden');
       }
+      // The brand, unless there's a title to show instead.
+      title.textContent = text;
+      title.hidden = !text;
+      document.getElementById('settings-nav-brand').hidden = !!text;
     }
 
     document.querySelectorAll('.settings-nav-item').forEach((a) => {
@@ -1788,6 +1803,8 @@ export function settingsModalScript(): string {
 
     function _settingsNavigateBack() {
       if (_settingsViewStack.length === 0) return;
+      // A view opened from the page leaves settings with it.
+      if (_settingsDetailOnly && _settingsViewStack.length === 1) { closeSettings(); return; }
       const entry = _settingsViewStack.pop();
       const exitView = document.getElementById(entry.id);
       exitView.classList.remove('settings-view-active', 'settings-view-pushed');
@@ -1842,6 +1859,11 @@ export function settingsModalScript(): string {
         if (open) _settingsClose();
         return;
       }
+      if (open && _settingsDetailOnly && _settingsViewStack.length <= 1) {
+        // Back from a view opened from the page: its entry is gone, so just close.
+        _settingsClose();
+        return;
+      }
       if (open && _settingsViewStack.length > 0) {
         // Back from a detail view leaves just the view, as the header's Back does, so
         // settings' entry goes back on (it was the one Back popped).
@@ -1850,7 +1872,14 @@ export function settingsModalScript(): string {
         return;
       }
       if (page === null) { if (open) _settingsClose(); return; }
-      if (!open) { openSettings(page || null, { history: 'none' }); return; }
+      if (!open) {
+        // A link to #settings in the page made this entry, with no state: it's one past
+        // the page's (Forward back onto one of settings' keeps its own).
+        if (!history.state?.wbSettings) history.replaceState({ wbSettings: 1 }, '', location.href);
+        _settingsEntry = { state: history.state, url: location.href };
+        openSettings(page || null, { history: 'none' });
+        return;
+      }
       _settingsShowPage(page || null, { history: 'none' });
     }
 
@@ -1868,14 +1897,26 @@ export function settingsModalScript(): string {
       return true;
     }
 
-    // Opens settings at a page (or the default one). Detail views open settings with no
-    // page, then push themselves on top.
+    // Opens a detail view (the duty log, flight editor, aircraft info) over settings, or,
+    // with settings closed, on its own: its history entry keeps the page's URL, since
+    // there's no settings page to name, and its Back (or the browser's) closes settings.
+    function openSettingsView(viewId, title) {
+      if (document.getElementById('settings-modal').classList.contains('hidden')) {
+        openSettings(null, { detail: true });
+      }
+      _settingsNavigateTo(viewId, title);
+    }
+
+    // Opens settings at a page (or the default one).
     async function openSettings(page = null, opts = {}) {
       const modal = document.getElementById('settings-modal');
       const wasOpen = !modal.classList.contains('hidden');
       _settingsReset();
       modal.classList.remove('hidden');
-      if (!wasOpen && opts.history !== 'none') _settingsSetHash('#settings', 'push');
+      if (!wasOpen && opts.detail) {
+        _settingsDetailOnly = true;
+        history.pushState({ wbSettings: (history.state?.wbSettings || 0) + 1 }, '', location.href);
+      } else if (!wasOpen && opts.history !== 'none') _settingsSetHash('#settings', 'push');
       _settingsPicked = !!page;
       _syncThemeButtons();
       renderMapLayersSettings();
@@ -1889,7 +1930,7 @@ export function settingsModalScript(): string {
 
       // The admin pages, and the add forms on the pages everyone sees, by role.
       const isAdmin = _settingsUser?.role === 'admin';
-      document.querySelectorAll('.settings-nav-item[data-admin]:not([data-page="setup"]), .settings-nav-subhead[data-admin]').forEach((el) => {
+      document.querySelectorAll('.settings-nav-item[data-admin]:not([data-page="setup"])').forEach((el) => {
         el.hidden = !isAdmin;
       });
       for (const id of ['settings-add-aircraft', 'settings-add-pilot', 'settings-add-tracker', 'settings-add-basemap', 'settings-add-overlay']) {
@@ -1898,6 +1939,7 @@ export function settingsModalScript(): string {
       }
       if (!isAdmin) _settingsSetPageAvailable('setup', false);
       _settingsShowPage(page, { history: opts.history === 'none' ? 'none' : 'replace' });
+      const shown = _settingsPage;
 
       // Re-render tracker/basemap/overlay lists now that role is known (action buttons depend on it)
       renderSettingsTrackerList();
@@ -1912,8 +1954,12 @@ export function settingsModalScript(): string {
       settingsResetAddForm();
       if (isAdmin) {
         await renderSetupGuide(false);
-        // A new instance's checklist is where settings opens, unless a page was asked for.
-        if (!_settingsPicked && !_settingsIsPhone() && _settingsViewStack.length === 0 && _settingsPageAvailable('setup')) {
+        // A new instance's checklist is where settings opens, unless another page was asked
+        // for; a link to the checklist lands on it now that it's shown. (Not if settings has
+        // closed meanwhile, another page was picked since, or only a detail view was opened.)
+        const toSetup = page === 'setup' ? _settingsPage === shown : !_settingsPicked && !_settingsIsPhone();
+        if (toSetup && _settingsPage !== 'setup' && _settingsViewStack.length === 0 && !_settingsDetailOnly
+          && !modal.classList.contains('hidden') && _settingsPageAvailable('setup')) {
           _settingsShowPage('setup', { history: 'replace' });
         }
       }
@@ -1925,12 +1971,13 @@ export function settingsModalScript(): string {
       _settingsReset();
       _settingsPage = null;
       _settingsEntry = null;
+      _settingsDetailOnly = false;
     }
 
     // Closes settings, going back past its history entries so Forward can reopen it.
     async function closeSettings() {
       const depth = history.state?.wbSettings || 0;
-      if (depth > 0 && _settingsUrlPage() !== null) {
+      if (depth > 0 && (_settingsUrlPage() !== null || _settingsDetailOnly)) {
         _settingsClosing = true;
         history.go(-depth);
         return;
@@ -1941,6 +1988,52 @@ export function settingsModalScript(): string {
 
     document.getElementById('settings-btn').addEventListener('click', () => openSettings());
     document.getElementById('settings-modal-close').addEventListener('click', closeSettings);
+
+    // ── List rows ──
+    // A row's status chip (at most one), between its name and its trailing control.
+    const _SETTINGS_CHIPS = {
+      paused: ${JSON.stringify(statusChip('Paused', 'neutral', 'settings-row-chip'))},
+      hidden: ${JSON.stringify(statusChip('Hidden', 'neutral', 'settings-row-chip'))},
+      inactive: ${JSON.stringify(statusChip('Inactive', 'neutral', 'settings-row-chip'))},
+      disabled: ${JSON.stringify(statusChip('Disabled', 'neutral', 'settings-row-chip'))},
+      thisDevice: ${JSON.stringify(statusChip('This device', 'ok', 'settings-row-chip'))},
+      invited: ${JSON.stringify(statusChip('Invited', 'warn', 'settings-row-chip'))},
+      unverified: ${JSON.stringify(statusChip('Not verified', 'warn', 'settings-row-chip'))},
+    };
+    const _SETTINGS_ROW_CHEVRON = ${JSON.stringify(icon('chevron-right', { size: 18 }))};
+
+    // Finishes a row built as .settings-aircraft-row > .settings-aircraft-info: its chip
+    // (a _SETTINGS_CHIPS key) and its trailing control, a ⋯ menu of items (rowMenuButton,
+    // row-menu.ts), or a chevron for a row whose only action is open. open (its edit form
+    // or detail view) also runs on a click on the row. Returns the trailing control's
+    // .settings-aircraft-actions, which an open edit form hides.
+    function _settingsFinishRow(row, { chip = null, items = [], open = null, label = '' } = {}) {
+      if (chip) row.insertAdjacentHTML('beforeend', _SETTINGS_CHIPS[chip]);
+      const actions = document.createElement('div');
+      actions.className = 'settings-aircraft-actions';
+      items = items.filter(Boolean);
+      if (items.length > 0) {
+        actions.appendChild(rowMenuButton(items, label ? 'Actions for ' + label : 'Actions'));
+      } else if (open) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'row-menu-btn';
+        btn.setAttribute('aria-label', label ? 'Open ' + label : 'Open');
+        btn.innerHTML = _SETTINGS_ROW_CHEVRON;
+        btn.addEventListener('click', (e) => { e.stopPropagation(); open(); });
+        actions.appendChild(btn);
+      }
+      row.appendChild(actions);
+      if (open) {
+        row.classList.add('settings-row-link');
+        row.addEventListener('click', (e) => {
+          if (row.classList.contains('editing')) return;
+          if (e.target.closest('button, a, input, select, textarea, label')) return;
+          open();
+        });
+      }
+      return actions;
+    }
 
     function renderSettingsTrackerList() {
       const container = document.getElementById('settings-tracker-list');
@@ -1972,42 +2065,22 @@ export function settingsModalScript(): string {
           const pilot = pilotList.find(p => p.id === t.assigned_pilot);
           if (pilot) subParts.push(pilot.name);
         }
-        if (!t.active) subParts.push('paused');
         sub.textContent = subParts.join(' · ');
         if (sub.textContent) info.appendChild(sub);
 
-        const actions = document.createElement('div');
-        actions.className = 'settings-aircraft-actions';
-
-        if (_settingsUser?.role === 'admin') {
-          const editBtn = document.createElement('button');
-          editBtn.className = 'settings-action-btn';
-          editBtn.textContent = 'Edit';
-          editBtn.addEventListener('click', () => settingsToggleEditForm(row, t));
-
-          const toggleBtn = document.createElement('button');
-          toggleBtn.className = 'settings-action-btn';
-          toggleBtn.textContent = t.active ? 'Pause' : 'Resume';
-          toggleBtn.addEventListener('click', () => settingsToggleActive(t, toggleBtn));
-
-          const deleteBtn = document.createElement('button');
-          deleteBtn.className = 'settings-action-btn';
-          deleteBtn.textContent = 'Delete';
-          deleteBtn.addEventListener('click', () => settingsDeleteTracker(t));
-
-          const importBtn = document.createElement('button');
-          importBtn.className = 'settings-action-btn';
-          importBtn.textContent = 'Import';
-          importBtn.title = 'Import history from the feed';
-          importBtn.addEventListener('click', () => settingsToggleImportForm(row, t));
-
-          actions.appendChild(editBtn);
-          actions.appendChild(importBtn);
-          actions.appendChild(toggleBtn);
-          actions.appendChild(deleteBtn);
-        }
         row.appendChild(info);
-        row.appendChild(actions);
+        const admin = _settingsUser?.role === 'admin';
+        _settingsFinishRow(row, {
+          chip: t.active ? null : 'paused',
+          label: t.name,
+          open: admin ? () => settingsToggleEditForm(row, t) : null,
+          items: admin ? [
+            { label: 'Edit', onSelect: () => settingsToggleEditForm(row, t) },
+            { label: 'Import history…', onSelect: () => settingsToggleImportForm(row, t) },
+            { label: t.active ? 'Pause' : 'Resume', onSelect: (btn) => settingsToggleActive(t, btn) },
+            { label: 'Delete', danger: true, onSelect: () => settingsDeleteTracker(t) },
+          ] : [],
+        });
         container.appendChild(row);
       }
     }
@@ -2080,26 +2153,16 @@ export function settingsModalScript(): string {
         (overrideCount > 0 ? ' · ' + overrideCount + ' basemap override' + (overrideCount > 1 ? 's' : '') : '');
       info.appendChild(sub);
 
-      const actions = document.createElement('div');
-      actions.className = 'settings-aircraft-actions';
-
-      if (_settingsUser?.role === 'admin') {
-        const editBtn = document.createElement('button');
-        editBtn.className = 'settings-action-btn';
-        editBtn.textContent = 'Edit';
-        editBtn.addEventListener('click', () => settingsToggleOverlayEditForm(row, ov));
-
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'settings-action-btn';
-        deleteBtn.textContent = 'Delete';
-        deleteBtn.addEventListener('click', () => settingsDeleteOverlay(ov));
-
-        actions.appendChild(editBtn);
-        actions.appendChild(deleteBtn);
-      }
-
       row.appendChild(info);
-      row.appendChild(actions);
+      const admin = _settingsUser?.role === 'admin';
+      _settingsFinishRow(row, {
+        label: ov.label,
+        open: admin ? () => settingsToggleOverlayEditForm(row, ov) : null,
+        items: admin ? [
+          { label: 'Edit', onSelect: () => settingsToggleOverlayEditForm(row, ov) },
+          { label: 'Delete', danger: true, onSelect: () => settingsDeleteOverlay(ov) },
+        ] : [],
+      });
       return row;
     }
 
@@ -2899,15 +2962,8 @@ export function settingsModalScript(): string {
         nameEl.className = 'settings-aircraft-name';
         nameEl.textContent = a.tail_number + (a.name ? ' – ' + a.name : '');
         info.appendChild(nameEl);
-        const actions = document.createElement('div');
-        actions.className = 'settings-aircraft-actions';
-        const infoBtn = document.createElement('button');
-        infoBtn.className = 'settings-action-btn';
-        infoBtn.textContent = 'Info';
-        infoBtn.addEventListener('click', () => openAircraftInfo(a));
-        actions.appendChild(infoBtn);
         row.appendChild(info);
-        row.appendChild(actions);
+        _settingsFinishRow(row, { chip: a.active ? null : 'inactive', label: a.tail_number, open: () => openAircraftInfo(a) });
         container.appendChild(row);
       }
     }
@@ -2965,35 +3021,26 @@ export function settingsModalScript(): string {
           sub.textContent = 'Default duty ' + def.duty_start + '–' + def.duty_end;
           info.appendChild(sub);
         }
-        const actions = document.createElement('div');
-        actions.className = 'settings-aircraft-actions';
-        const dutyBtn = document.createElement('button');
-        dutyBtn.className = 'settings-action-btn';
-        dutyBtn.textContent = 'Duty log';
-        dutyBtn.addEventListener('click', () => openPilotDuty(p.id, p.name));
-        actions.appendChild(dutyBtn);
-        if (_settingsUser?.role === 'admin') {
-          const editBtn = document.createElement('button');
-          editBtn.className = 'settings-action-btn';
-          editBtn.textContent = 'Edit';
-          editBtn.addEventListener('click', () => settingsTogglePilotEdit(row, p));
-          const toggleBtn = document.createElement('button');
-          toggleBtn.className = 'settings-action-btn';
-          toggleBtn.textContent = p.active ? 'Hide' : 'Show';
-          toggleBtn.addEventListener('click', async () => {
-            toggleBtn.disabled = true;
-            try {
-              await updatePilot(p.id, { active: !p.active });
-              p.active = !p.active;
-              renderSettingsPilotList();
-            } catch (_) {}
-            toggleBtn.disabled = false;
-          });
-          actions.appendChild(editBtn);
-          actions.appendChild(toggleBtn);
-        }
         row.appendChild(info);
-        row.appendChild(actions);
+        const openDuty = () => openPilotDuty(p.id, p.name);
+        _settingsFinishRow(row, {
+          chip: p.active ? null : 'hidden',
+          label: p.name,
+          open: openDuty,
+          items: _settingsUser?.role === 'admin' ? [
+            { label: 'Duty log', onSelect: openDuty },
+            { label: 'Edit', onSelect: () => settingsTogglePilotEdit(row, p) },
+            { label: p.active ? 'Hide' : 'Show', onSelect: async (btn) => {
+              btn.disabled = true;
+              try {
+                await updatePilot(p.id, { active: !p.active });
+                p.active = !p.active;
+                renderSettingsPilotList();
+              } catch (_) {}
+              btn.disabled = false;
+            } },
+          ] : [],
+        });
         container.appendChild(row);
       }
     }
@@ -3176,37 +3223,25 @@ export function settingsModalScript(): string {
           const subEl = document.createElement('span');
           subEl.className = 'settings-aircraft-sub';
           subEl.textContent = 'Last seen ' + fmtTzDate(session.last_seen_at);
-          if (session.id === _settingsUser?.session_id) {
-            subEl.textContent += ' · This device';
-          }
           info.appendChild(nameEl);
           info.appendChild(subEl);
-          const actions = document.createElement('div');
-          actions.className = 'settings-aircraft-actions';
-          const renameBtn = document.createElement('button');
-          renameBtn.className = 'settings-action-btn';
-          renameBtn.textContent = 'Rename';
-          renameBtn.addEventListener('click', () => settingsToggleDeviceRename(row, session));
-          actions.appendChild(renameBtn);
-          if (session.id === _settingsUser?.session_id) {
-            const signOutBtn = document.createElement('button');
-            signOutBtn.className = 'btn-danger';
-            signOutBtn.textContent = 'Sign out';
-            signOutBtn.addEventListener('click', async () => {
-              try { await fetch('/logout', { method: 'POST' }); } finally {
-                window.location.href = '/login';
-              }
-            });
-            actions.appendChild(signOutBtn);
-          } else {
-            const revokeBtn = document.createElement('button');
-            revokeBtn.className = 'settings-action-btn';
-            revokeBtn.textContent = 'Revoke';
-            revokeBtn.addEventListener('click', () => settingsRevokeDevice(session, revokeBtn));
-            actions.appendChild(revokeBtn);
-          }
           row.appendChild(info);
-          row.appendChild(actions);
+          const current = session.id === _settingsUser?.session_id;
+          _settingsFinishRow(row, {
+            chip: current ? 'thisDevice' : null,
+            label: session.device_name ?? 'Unnamed device',
+            open: () => settingsToggleDeviceRename(row, session),
+            items: [
+              { label: 'Rename', onSelect: () => settingsToggleDeviceRename(row, session) },
+              current
+                ? { label: 'Sign out', danger: true, onSelect: async () => {
+                  try { await fetch('/logout', { method: 'POST' }); } finally {
+                    window.location.href = '/login';
+                  }
+                } }
+                : { label: 'Revoke', danger: true, onSelect: (btn) => settingsRevokeDevice(session, btn) },
+            ],
+          });
           container.appendChild(row);
         }
         // "Get device link" row
@@ -3311,7 +3346,7 @@ export function settingsModalScript(): string {
     // and remove(emailId), each followed by reload().
     function settingsRenderEmails(container, data, ops) {
       container.innerHTML = '';
-      const addRow = (text, sub, inactive, action) => {
+      const addRow = (text, sub, inactive, items, chip) => {
         const row = document.createElement('div');
         row.className = 'settings-aircraft-row' + (inactive ? ' settings-aircraft-inactive' : '');
         const info = document.createElement('div');
@@ -3325,19 +3360,11 @@ export function settingsModalScript(): string {
         info.appendChild(nameEl);
         info.appendChild(subEl);
         row.appendChild(info);
-        if (action) {
-          const actions = document.createElement('div');
-          actions.className = 'settings-aircraft-actions';
-          actions.appendChild(action);
-          row.appendChild(actions);
-        }
+        _settingsFinishRow(row, { chip, items, label: text });
         container.appendChild(row);
       };
       for (const e of data.emails) {
-        const removeBtn = document.createElement('button');
-        removeBtn.className = 'settings-action-btn';
-        removeBtn.textContent = 'Remove';
-        removeBtn.addEventListener('click', async () => {
+        const remove = async (removeBtn) => {
           if (!confirm('Remove ' + e.email + '? It will no longer sign in.')) return;
           removeBtn.disabled = true;
           try {
@@ -3347,11 +3374,11 @@ export function settingsModalScript(): string {
             alert(apiErrorMessage(err, 'Failed to remove the address.'));
             removeBtn.disabled = false;
           }
-        });
-        addRow(e.email, 'Verified', false, removeBtn);
+        };
+        addRow(e.email, 'Verified', false, [{ label: 'Remove', danger: true, onSelect: remove }], null);
       }
       for (const pending of data.pending_emails) {
-        addRow(pending.email + ' (not verified)', 'Verification link sent · Expires ' + fmtTzDate(pending.expires_at), true, null);
+        addRow(pending.email, 'Verification link sent · Expires ' + fmtTzDate(pending.expires_at), true, [], 'unverified');
       }
       if (data.emails.length === 0 && data.pending_emails.length === 0) {
         const none = document.createElement('p');
@@ -3447,31 +3474,16 @@ export function settingsModalScript(): string {
             for (const e of user.pending_emails ?? []) subEl.textContent += ' · ' + e.email + ' (not verified)';
             info.appendChild(nameEl);
             info.appendChild(subEl);
-            const actions = document.createElement('div');
-            actions.className = 'settings-aircraft-actions';
-            if (!user.is_env_admin && pilotList.length > 0) {
-              const pilotBtn = document.createElement('button');
-              pilotBtn.className = 'settings-action-btn';
-              pilotBtn.textContent = 'Designate pilot';
-              pilotBtn.addEventListener('click', () => settingsToggleUserPilot(row, user, userList));
-              actions.appendChild(pilotBtn);
-            }
-            if (!user.is_env_admin && window.APP_SETTINGS.email) {
-              const emailBtn = document.createElement('button');
-              emailBtn.className = 'settings-action-btn';
-              emailBtn.textContent = 'Email';
-              emailBtn.addEventListener('click', () => settingsToggleUserEmails(row, user));
-              actions.appendChild(emailBtn);
-            }
-            if (!user.is_env_admin && user.id !== _settingsUser?.id) {
-              const deleteBtn = document.createElement('button');
-              deleteBtn.className = 'btn-danger';
-              deleteBtn.textContent = 'Delete';
-              deleteBtn.addEventListener('click', () => settingsRevokeUser(user, deleteBtn));
-              actions.appendChild(deleteBtn);
-            }
             row.appendChild(info);
-            row.appendChild(actions);
+            const editable = !user.is_env_admin;
+            _settingsFinishRow(row, {
+              label: user.name,
+              items: [
+                editable && pilotList.length > 0 && { label: 'Designate pilot', onSelect: () => settingsToggleUserPilot(row, user, userList) },
+                editable && window.APP_SETTINGS.email && { label: 'Email addresses', onSelect: () => settingsToggleUserEmails(row, user) },
+                editable && user.id !== _settingsUser?.id && { label: 'Delete', danger: true, onSelect: (btn) => settingsRevokeUser(user, btn) },
+              ],
+            });
             container.appendChild(row);
           }
         }
@@ -3483,19 +3495,15 @@ export function settingsModalScript(): string {
             info.className = 'settings-aircraft-info';
             const nameEl = document.createElement('span');
             nameEl.className = 'settings-aircraft-name';
-            nameEl.textContent = invite.invited_name + ' (invite pending)';
+            nameEl.textContent = invite.invited_name;
             const subEl = document.createElement('span');
             subEl.className = 'settings-aircraft-sub';
             subEl.textContent = (invite.invited_role === 'admin' ? 'Admin' : 'Viewer') +
               (invite.email ? ' · Emailed to ' + invite.email : '') + ' · Expires ' + fmtTzDate(invite.expires_at);
             info.appendChild(nameEl);
             info.appendChild(subEl);
-            const actions = document.createElement('div');
-            actions.className = 'settings-aircraft-actions';
-            const copyBtn = document.createElement('button');
-            copyBtn.className = 'settings-action-btn';
-            copyBtn.textContent = 'Show link';
-            copyBtn.addEventListener('click', () => {
+            row.appendChild(info);
+            const showLink = () => {
               const url = window.location.origin + '/join/' + invite.token;
               const actions = row.querySelector('.settings-aircraft-actions');
               actions.style.display = 'none';
@@ -3506,15 +3514,16 @@ export function settingsModalScript(): string {
                 row.classList.remove('editing');
               });
               row.appendChild(panel);
+            };
+            _settingsFinishRow(row, {
+              chip: 'invited',
+              label: invite.invited_name,
+              open: showLink,
+              items: [
+                { label: 'Show invite link', onSelect: showLink },
+                { label: 'Revoke', danger: true, onSelect: (btn) => settingsRevokeInvite(invite, btn) },
+              ],
             });
-            const revokeBtn = document.createElement('button');
-            revokeBtn.className = 'settings-action-btn';
-            revokeBtn.textContent = 'Revoke';
-            revokeBtn.addEventListener('click', () => settingsRevokeInvite(invite, revokeBtn));
-            actions.appendChild(copyBtn);
-            actions.appendChild(revokeBtn);
-            row.appendChild(info);
-            row.appendChild(actions);
             container.appendChild(row);
           }
         }
@@ -3915,20 +3924,15 @@ export function settingsModalScript(): string {
           if (hook.last_error) subEl.title = hook.last_error;
           info.appendChild(nameEl);
           info.appendChild(subEl);
-          const actions = document.createElement('div');
-          actions.className = 'settings-aircraft-actions';
-          const toggleBtn = document.createElement('button');
-          toggleBtn.className = 'settings-action-btn';
-          toggleBtn.textContent = hook.active ? 'Disable' : 'Enable';
-          toggleBtn.addEventListener('click', () => settingsToggleWebhook(hook, toggleBtn));
-          const deleteBtn = document.createElement('button');
-          deleteBtn.className = 'btn-danger';
-          deleteBtn.textContent = 'Delete';
-          deleteBtn.addEventListener('click', () => settingsDeleteWebhook(hook, deleteBtn));
-          actions.appendChild(toggleBtn);
-          actions.appendChild(deleteBtn);
           row.appendChild(info);
-          row.appendChild(actions);
+          _settingsFinishRow(row, {
+            chip: hook.active ? null : 'disabled',
+            label: nameEl.textContent,
+            items: [
+              { label: hook.active ? 'Disable' : 'Enable', onSelect: (btn) => settingsToggleWebhook(hook, btn) },
+              { label: 'Delete', danger: true, onSelect: (btn) => settingsDeleteWebhook(hook, btn) },
+            ],
+          });
           container.appendChild(row);
         }
       } catch (_) {

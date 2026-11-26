@@ -156,8 +156,7 @@ export function flightEditorScript(): string {
 
     // Opens the editor, optionally filtered ({ pilotId, from, to }: YYYY-MM-DD dates).
     async function openFlightEditor({ pilotId = null, from = '', to = '' } = {}) {
-      if (document.getElementById('settings-modal').classList.contains('hidden')) openSettings();
-      _settingsNavigateTo('settings-view-flight-editor', 'Edit flights');
+      openSettingsView('settings-view-flight-editor', 'Edit flights');
       _feSelected.clear();
       document.getElementById('fe-from').value = from;
       document.getElementById('fe-to').value = to;

@@ -557,8 +557,7 @@ export function pilotDutyScript(): string {
 
       [_dutyYear, _dutyMonth] = currentDutyMonth();
 
-      if (document.getElementById('settings-modal').classList.contains('hidden')) { openSettings(); }
-      _settingsNavigateTo('settings-view-pilot-duty', pilotName + ' — Duty Log');
+      openSettingsView('settings-view-pilot-duty', pilotName + ' — Duty Log');
       document.getElementById('pilot-duty-period').textContent = dutyPeriodLabel({ year: _dutyYear, month: _dutyMonth });
       document.getElementById('pilot-duty-content').innerHTML = '<div class="pilot-duty-loading">Loading…</div>';
       document.getElementById('pilot-duty-totals').innerHTML = '';

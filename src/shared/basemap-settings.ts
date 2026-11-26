@@ -78,28 +78,23 @@ export function basemapSettingsScript(): string {
       info.appendChild(nameEl);
       const sub = document.createElement('span');
       sub.className = 'settings-aircraft-sub';
-      sub.textContent = _basemapKindNote(b) + (b.shown ? '' : ' · Hidden');
+      sub.textContent = _basemapKindNote(b);
       info.appendChild(sub);
 
-      const actions = document.createElement('div');
-      actions.className = 'settings-aircraft-actions';
-      if (_settingsUser?.role === 'admin') {
-        const mk = (text, onClick, disabled) => {
-          const btn = document.createElement('button');
-          btn.className = 'settings-action-btn';
-          btn.textContent = text;
-          btn.disabled = !!disabled;
-          btn.addEventListener('click', onClick);
-          actions.appendChild(btn);
-        };
-        mk('Up', () => settingsMoveBasemap(i, -1), i === 0);
-        mk('Down', () => settingsMoveBasemap(i, 1), i === basemapList.length - 1);
-        mk(b.shown ? 'Hide' : 'Show', () => settingsSetBasemapShown(b, !b.shown));
-        mk('Edit', () => settingsToggleBasemapEditForm(row, b));
-        mk('Delete', () => settingsDeleteBasemap(b));
-      }
       row.appendChild(info);
-      row.appendChild(actions);
+      const admin = _settingsUser?.role === 'admin';
+      _settingsFinishRow(row, {
+        chip: b.shown ? null : 'hidden',
+        label: b.label,
+        open: admin ? () => settingsToggleBasemapEditForm(row, b) : null,
+        items: admin ? [
+          { label: 'Edit', onSelect: () => settingsToggleBasemapEditForm(row, b) },
+          { label: 'Move up', disabled: i === 0, onSelect: () => settingsMoveBasemap(i, -1) },
+          { label: 'Move down', disabled: i === basemapList.length - 1, onSelect: () => settingsMoveBasemap(i, 1) },
+          { label: b.shown ? 'Hide' : 'Show', onSelect: () => settingsSetBasemapShown(b, !b.shown) },
+          { label: 'Delete', danger: true, onSelect: () => settingsDeleteBasemap(b) },
+        ] : [],
+      });
       return row;
     }
 

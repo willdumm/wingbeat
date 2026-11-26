@@ -428,25 +428,30 @@ export function mapLayersSettingsScript(): string {
       nameEl.textContent = label;
       info.appendChild(nameEl);
 
+      // The row discloses its colour sliders: a click on it, or on its chevron.
       var actions = document.createElement('div');
       actions.className = 'settings-aircraft-actions';
       var colorsBtn = document.createElement('button');
-      colorsBtn.className = 'settings-action-btn';
-      colorsBtn.textContent = 'Colors';
+      colorsBtn.type = 'button';
+      colorsBtn.className = 'row-menu-btn';
+      colorsBtn.setAttribute('aria-label', 'Colors for ' + label);
+      colorsBtn.setAttribute('aria-expanded', 'false');
+      colorsBtn.innerHTML = '<span class="chevron">' + ${JSON.stringify(icon('chevron-right', { size: 14 }))} + '</span>';
       var panel = document.createElement('div');
       panel.className = 'settings-edit-form';
       panel.style.display = 'none';
-      colorsBtn.addEventListener('click', function() {
-        var isOpen = panel.style.display !== 'none';
-        if (isOpen) {
-          panel.style.display = 'none';
-        } else {
-          _ftBuildColorSliders(panel, id);
-          panel.style.display = '';
-        }
-      });
+      var toggle = function() {
+        var open = panel.style.display === 'none';
+        if (open) _ftBuildColorSliders(panel, id);
+        panel.style.display = open ? '' : 'none';
+        colorsBtn.setAttribute('aria-expanded', String(open));
+        colorsBtn.querySelector('.chevron').dataset.open = String(open);
+      };
+      colorsBtn.addEventListener('click', function(e) { e.stopPropagation(); toggle(); });
       actions.appendChild(colorsBtn);
 
+      row.classList.add('settings-row-link');
+      row.addEventListener('click', toggle);
       row.appendChild(info);
       row.appendChild(actions);
       var wrap = document.createElement('div');

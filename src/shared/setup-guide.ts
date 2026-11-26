@@ -146,7 +146,7 @@ export function setupGuideScript(): string {
           desc: 'Import GeoJSON (draw it at geojson.io) or use the map editors. Named points label flight origins and destinations; a region named "… (Base)" is a home base.',
           action: 'Open', go: () => _sgGo('map-content') },
         { title: 'Import history', state: 'optional',
-          desc: 'New trackers start with the last two days. Use Import on a tracker to bring in older flights.',
+          desc: 'New trackers start with the last two days. Use Import history in a tracker\\'s ⋯ menu to bring in older flights.',
           action: 'Show', go: () => _sgGo('trackers') },
         { title: 'Invite people', state: peopleDone ? 'done' : 'optional',
           desc: 'Create a sign-in link for each person, as a viewer or an admin.',

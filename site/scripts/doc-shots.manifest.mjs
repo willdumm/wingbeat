@@ -10,8 +10,7 @@
 export const manifest = [
   {
     slug: 'settings.add-tracker-dialog',
-    route: '/',
-    setup: ['settings.settings-button'],
+    route: '/#settings/trackers',
     theme: 'light',
     output: 'settings/add-tracker-dialog',
   },

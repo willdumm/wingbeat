@@ -591,8 +591,7 @@ export function aircraftInfoScript(): string {
 
     function openAircraftInfo(aircraft) {
       _acInfoAircraft = aircraft;
-      if (document.getElementById('settings-modal').classList.contains('hidden')) { openSettings(); }
-      _settingsNavigateTo('settings-view-aircraft-info',
+      openSettingsView('settings-view-aircraft-info',
         aircraft.tail_number + (aircraft.name ? ' – ' + aircraft.name : ''));
       _acInfoRender();
     }
