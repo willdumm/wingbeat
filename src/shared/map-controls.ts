@@ -278,7 +278,7 @@ function layerColorReadLogic(): string {
 /**
  * Runtime script for the page IIFE (called once per page, like themeRuntimeScript) —
  * defines the per-layer color-correction helpers used by createMap() (maplibre.ts) and the
- * Settings > Map layers row builder:
+ * Settings → Appearance → Map colors row builder:
  *   _ftLayerColor(id)             — read a layer's correction (see layerColorReadLogic)
  *   _ftSetLayerColor(id, ch, val) — persist + reapply if this layer is the active one
  *   _ftApplyActiveLayerColor()    — restyle the page's maps
@@ -367,7 +367,7 @@ export function mapLayersSettingsRowsMarkup(): string {
 }
 
 /**
- * Runtime script wiring the "Map layers" settings section: renderMapLayersSettings()
+ * Runtime script wiring the "Map colors" settings section: renderMapLayersSettings()
  * (called from openSettings(), and after an admin changes the basemaps) builds one row per
  * basemap in `_ftPresets`, each with a "Colors" disclosure (expands _ftBuildColorSliders()).
  * Also defines _ftLookupTileMetadata(), shared by the basemap and overlay forms. Depends on
@@ -418,17 +418,10 @@ export function mapLayersSettingsScript(): string {
     }
 
     function _ftBuildLayerRow(id, label) {
-      var row = document.createElement('div');
-      row.className = 'settings-aircraft-row';
+      var row = _settingsRow(label);
 
-      var info = document.createElement('div');
-      info.className = 'settings-aircraft-info';
-      var nameEl = document.createElement('span');
-      nameEl.className = 'settings-aircraft-name';
-      nameEl.textContent = label;
-      info.appendChild(nameEl);
-
-      // The row discloses its colour sliders: a click on it, or on its chevron.
+      // The row discloses its colour sliders: a click on it, or on its chevron (a disclosure,
+      // so not _settingsFinishRow's chevron, which opens a form or view).
       var actions = document.createElement('div');
       actions.className = 'settings-aircraft-actions';
       var colorsBtn = document.createElement('button');
@@ -452,7 +445,6 @@ export function mapLayersSettingsScript(): string {
 
       row.classList.add('settings-row-link');
       row.addEventListener('click', toggle);
-      row.appendChild(info);
       row.appendChild(actions);
       var wrap = document.createElement('div');
       wrap.appendChild(row);

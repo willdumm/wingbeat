@@ -57,8 +57,6 @@ The pages that configure the whole instance:
 | Instance name | Shown in the page title and header, and at the top of the app's Flights and Duty tabs |
 | Timezone | Used for all displayed times and the pilot duty log's day boundaries |
 | Map default lat/lng/zoom | Where the map opens when there's no other context. **Set from map** lets you pan and zoom to it instead of typing coordinates |
-| Gap alert (minutes) | Silence threshold before an in-flight signal-gap notification fires |
-| Stop gap alerts after (minutes) | Silence after which the flight is treated as ended and repeating gap alerts stop (default 60) |
 
 ### Duty limits (§135.267)
 
@@ -75,7 +73,12 @@ the last one is shown ("Last changed by …").
 
 ### Notifications
 
-The shared Pushover application token, plus the list of webhook/Pushover
+| Setting | Description |
+|---|---|
+| Gap alert (minutes) | Silence threshold before an in-flight signal-gap notification fires |
+| Stop gap alerts after (minutes) | Silence after which the flight is treated as ended and repeating gap alerts stop (default 60) |
+
+Then the shared Pushover application token, and the list of webhook/Pushover
 notification targets. See [Notifications](../../features/notifications).
 
 ### Map content

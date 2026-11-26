@@ -698,8 +698,7 @@ export function aircraftInfoScript(): string {
           var ok = await _acSaveAircraft({ name: val });
           if (ok) {
             var a = _acInfoAircraft;
-            document.getElementById('settings-nav-title').textContent =
-              a.tail_number + (a.name ? ' – ' + a.name : '');
+            _settingsSetViewTitle(a.tail_number + (a.name ? ' – ' + a.name : ''));
             msg.textContent = 'Saved';
             msg.className = 'ac-field-msg ac-msg-ok';
             setTimeout(function() { msg.textContent = ''; msg.className = 'ac-field-msg'; }, 2000);

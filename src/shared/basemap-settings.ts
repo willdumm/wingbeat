@@ -132,13 +132,10 @@ export function basemapSettingsScript(): string {
     function settingsToggleBasemapEditForm(row, b) {
       const existing = row.querySelector('.settings-edit-form');
       if (existing) {
-        existing.remove();
-        row.querySelector('.settings-aircraft-actions').style.display = '';
-        row.classList.remove('editing');
+        _settingsCloseInlineForm(row, existing);
         return;
       }
-      row.querySelector('.settings-aircraft-actions').style.display = 'none';
-      row.classList.add('editing');
+      _settingsOpenInlineForm(row);
 
       const form = document.createElement('div');
       form.className = 'settings-edit-form';
@@ -206,11 +203,7 @@ export function basemapSettingsScript(): string {
         body.url = url;
         await _basemapWrite(() => updateBasemap(b.id, body), 'Failed to save basemap.');
       });
-      cancelBtn.addEventListener('click', () => {
-        form.remove();
-        row.querySelector('.settings-aircraft-actions').style.display = '';
-        row.classList.remove('editing');
-      });
+      cancelBtn.addEventListener('click', () => _settingsCloseInlineForm(row, form));
       row.appendChild(form);
     }
 

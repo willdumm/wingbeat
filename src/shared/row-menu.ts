@@ -116,11 +116,17 @@ export function rowMenuScript(): string {
         el.setAttribute('role', 'menuitem');
         el.textContent = item.label;
         el.disabled = !!item.disabled;
-        el.addEventListener('click', (e) => {
+        el.addEventListener('click', async (e) => {
           e.stopPropagation();
           // Focus goes back to the button first, so an action that opens a form can take it.
           _rowMenuClose(true);
-          item.onSelect(btn);
+          await item.onSelect(btn);
+          // A request's re-render replaced the row (and dropped focus): its new button has
+          // the same label.
+          if (!btn.isConnected && (!document.activeElement || document.activeElement === document.body)) {
+            const label = btn.getAttribute('aria-label');
+            [...document.querySelectorAll('.row-menu-btn')].find((b) => b.getAttribute('aria-label') === label)?.focus();
+          }
         });
         menu.appendChild(el);
       }
@@ -133,7 +139,8 @@ export function rowMenuScript(): string {
         else if (e.key === 'Home') { e.preventDefault(); enabled[0]?.focus(); }
         else if (e.key === 'End') { e.preventDefault(); enabled[enabled.length - 1]?.focus(); }
       });
-      document.body.appendChild(menu);
+      // Inside the button's dialog, if any, so it's part of the modal for screen readers.
+      (btn.closest('[role="dialog"]') ?? document.body).appendChild(menu);
       // Under the button, its right edge on the button's; above it when there's no room below.
       const r = btn.getBoundingClientRect();
       const m = menu.getBoundingClientRect();

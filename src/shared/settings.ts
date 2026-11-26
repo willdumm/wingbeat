@@ -36,11 +36,11 @@ import { setupGuideMarkup, setupGuideAdminRowMarkup, setupGuideStyles, setupGuid
  *   settingsOnClearCache(result) — e.g. re-render the flight list
  */
 
-// What "Delete my account" leaves behind, in its row and its confirm.
 // Up to this width settings is a phone's drill-down (the stylesheet's media query and the
 // script's matchMedia).
 const SETTINGS_PHONE_MAX_PX = 719;
 
+// What "Delete my account" leaves behind, in its row and its confirm.
 const DELETE_ACCOUNT_KEEPS = 'Flights, duty days and edit history stay with the operator.';
 
 // Who a settings page's changes reach: the sidebar groups its pages by this, and each
@@ -521,10 +521,10 @@ export function settingsModalMarkup(appName: string): string {
             </div>
           </div>
         </div>
-        <div class="settings-view settings-view-detail" id="settings-view-pilot-duty" data-fullscreen>
+        <div class="settings-view settings-view-detail" id="settings-view-pilot-duty">
           ${pilotDutyMarkup()}
         </div>
-        <div class="settings-view settings-view-detail" id="settings-view-flight-editor" data-fullscreen data-doc-shot="flight-editor.view">
+        <div class="settings-view settings-view-detail" id="settings-view-flight-editor" data-doc-shot="flight-editor.view">
           ${flightEditorMarkup()}
         </div>
         <div class="settings-view settings-view-detail" id="settings-view-aircraft-info">
@@ -1003,11 +1003,6 @@ export function settingsModalStyles(): string {
       flex-shrink: 0;
     }
 
-    .settings-aircraft-actions .btn-danger {
-      min-height: var(--control-h-sm);
-      padding: 0 var(--space-3);
-      font-size: var(--size-sm);
-    }
 
     /* A row that opens something (its edit form, a detail view) when clicked. */
     .settings-row-link { cursor: pointer; }
@@ -1670,7 +1665,8 @@ export function settingsModalScript(): string {
     // open page, #settings/<page> (#settings alone: a phone's list of pages), so a reload
     // keeps it, a link opens it and Back steps out. An entry settings pushes carries
     // history.state.wbSettings, how many such entries lead back to the page underneath:
-    // 1 for opening settings, 2 for a page a phone opened from its list.
+    // 1 for opening settings, 2 for a page a phone opened from its list (or 0 and 1, when the
+    // page was loaded at #settings), and wbFromList marks such a page's entry.
     const _SETTINGS_PHONE_QUERY = '(max-width: ${SETTINGS_PHONE_MAX_PX}px)';
     let _settingsPage = null;          // the page shown; null for a phone's list
     let _settingsPicked = false;       // a page was asked for, so the checklist mustn't take over
@@ -1725,7 +1721,8 @@ export function settingsModalScript(): string {
       if (mode === 'none' || _settingsDetailOnly || typeof history === 'undefined') return;
       const url = location.pathname + location.search + hash;
       const depth = history.state?.wbSettings || 0;
-      if (mode === 'push') history.pushState({ wbSettings: depth + 1 }, '', url);
+      // A page pushed is one a phone opened from its list (wbFromList: Back returns to it).
+      if (mode === 'push') history.pushState({ wbSettings: depth + 1, wbFromList: hash !== '#settings' }, '', url);
       else history.replaceState(hash ? { wbSettings: depth } : null, '', url);
       _settingsEntry = hash ? { state: history.state, url } : null;
     }
@@ -1778,13 +1775,21 @@ export function settingsModalScript(): string {
       document.getElementById('settings-nav-brand').hidden = !!text;
     }
 
+    // Retitles the detail view shown (an aircraft renamed in its info view).
+    function _settingsSetViewTitle(title) {
+      const top = _settingsViewStack[_settingsViewStack.length - 1];
+      if (top) top.title = title;
+      _settingsSyncHeader();
+    }
+
     document.querySelectorAll('.settings-nav-item').forEach((a) => {
       a.addEventListener('click', (e) => {
         // A modified click opens the page's link in a new tab, as for any link.
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
         _settingsPicked = true;
-        _settingsShowPage(a.dataset.page);
+        // The page shown already: reloading its form would drop unsaved edits.
+        if (a.dataset.page !== _settingsPage) _settingsShowPage(a.dataset.page);
       });
     });
 
@@ -1859,7 +1864,7 @@ export function settingsModalScript(): string {
         _settingsNavigateBack();
       } else if (_settingsPage && _settingsIsPhone()) {
         // The list's entry is the one before, when the phone opened this page from it.
-        if ((history.state?.wbSettings || 0) >= 2) history.back();
+        if (history.state?.wbFromList) history.back();
         else _settingsShowPage(null, { history: 'replace' });
       }
     }
@@ -1873,6 +1878,8 @@ export function settingsModalScript(): string {
       if (_settingsClosing) {
         _settingsClosing = false;
         if (open) _settingsClose();
+        // Back stopped on an entry of settings' own (it was loaded from its URL): drop its hash.
+        if (page !== null) _settingsSetHash('', 'replace');
         return;
       }
       if (open && _settingsDetailOnly && _settingsViewStack.length <= 1) {
@@ -3920,10 +3927,10 @@ export function settingsModalScript(): string {
         await write(JSON.parse(await file.text()));
         statusEl.textContent = 'Imported.';
       } catch (err) {
-        statusEl.textContent = apiErrorMessage(err, 'Import failed.');
+        _settingsFlashStatus(statusEl, apiErrorMessage(err, 'Import failed.'));
+        return;
       }
-      statusEl.style.display = '';
-      setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+      _settingsFlashStatus(statusEl, 'Imported.');
     }
 
     ${namedPointsEditorScript()}

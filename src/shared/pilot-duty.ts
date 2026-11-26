@@ -39,7 +39,7 @@ export function typstLoadOverlayMarkup(): string {
 
 export function pilotDutyStyles(): string {
   return `
-    /* The view opens full screen (data-fullscreen in settings.ts); past 64rem the toolbar
+    /* The view opens in settings' full-screen overlay; past 64rem the toolbar
        and body keep a readable measure, centered. */
     .pilot-duty-toolbar {
       display: flex;
