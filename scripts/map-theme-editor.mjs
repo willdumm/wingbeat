@@ -16,7 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const THEME_FILE = path.join(ROOT, 'packages/core/src/map-theme.ts');
 const PORT = Number(process.env.PORT ?? 8797);
-const ARCHIVE = process.env.ARCHIVE ?? 'https://tiledata.dummthings.dev/pmtiles/alaska-basemap.pmtiles';
+const ARCHIVE = process.env.ARCHIVE ?? 'https://tiledata.dummthings.dev/pmtiles/north-america-basemap.pmtiles';
 const BASES = ['light', 'white', 'grayscale', 'dark', 'black'];
 
 /** Bundles an entry: a file (`entryPoints`) or source text (`stdin`). */

@@ -166,13 +166,16 @@ script is served by the Worker, so this is server-side). The app sets it as the
 ## Protomaps hosting
 
 ```sh
-pmtiles extract https://build.protomaps.com/<YYYYMMDD>.pmtiles alaska.pmtiles --region=alaska.geojson
+pmtiles extract https://build.protomaps.com/<YYYYMMDD>.pmtiles north-america.pmtiles \
+  --region=scripts/north-america.geojson --maxzoom=14
 ```
 
 The region crosses the antimeridian (the western Aleutians), so it needs a GeoJSON
-MultiPolygon with one part on each side, not a single `--bbox`: `scripts/alaska.geojson` is a
-rough one (two rectangles, so it takes a little of Yukon and British Columbia too; tighten it
-if that matters). Upload it, with the
+MultiPolygon with one part on each side, not a single `--bbox`: `scripts/north-america.geojson`
+is a rough one (rectangles: Panama to the Arctic, with Hawaii, the Caribbean, Greenland and
+the Aleutians; about 18 GB at zoom 14, measured 2026-11-25). `pmtiles extract` can't resume a
+dropped download, and `wrangler r2 object put` stops at 300 MiB, so the upload is a multipart
+one through R2's S3 API. Upload it, with the
 `basemaps-assets` fonts and sprites, to the R2 bucket that serves the dummthings.dev overlays.
 That bucket's CORS must allow range requests from the app. Credit:
 `© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://protomaps.com">Protomaps</a>`.
@@ -181,7 +184,12 @@ zoom 0–13) was already in the `kodiak-imagery` R2 bucket as
 `https://tiledata.dummthings.dev/pmtiles/alaska-basemap.pmtiles`, with CORS and range requests
 working, so it's reused; the `basemaps-assets` fonts (all four fontstacks, with `OFL.txt`) and
 `sprites/v4` are beside it under `pmtiles/basemaps-assets/`. That bucket is public. To refresh
-the extract, make a new one as above and upload it over the same key.
+an extract, make a new one as above and upload it over the same key.
+
+**North America (2026-11-25):** the whole-continent extract (2026-11-24 OSM data, basemap
+v4.15.2, zoom 0–14) goes under `pmtiles/north-america-basemap.pmtiles`, and
+`scripts/basemaps-north-america.sql` moves a tenant's vector row to it. Keep the Alaska archive:
+devices hold its URL until they next load their settings, and it's the way back.
 
 The app finds a vector basemap's glyphs and sprites at `basemaps-assets/` beside its archive
 (`vectorAssetsBase()` in `apps/mobile/src/lib/map-style.ts`): `<dir>/alaska.pmtiles`,
