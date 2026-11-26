@@ -3,6 +3,7 @@ import { regionsEditorMarkup, regionsEditorScript } from './regions-editor';
 import { mapLayersSettingsRowsMarkup, mapLayersSettingsScript } from './map-controls';
 import { basemapSettingsMarkup, basemapSettingsScript } from './basemap-settings';
 import { icon } from './icons';
+import { escapeHtml } from './html';
 import { darkTokens } from '@wingbeat/core/tokens';
 import { docsLinkMarkup } from './help';
 import { pilotDutyMarkup, typstLoadOverlayMarkup } from './pilot-duty';
@@ -13,10 +14,15 @@ import { mapViewPickerMarkup, mapViewPickerStyles, mapViewPickerScript } from '.
 import { setupGuideMarkup, setupGuideAdminRowMarkup, setupGuideStyles, setupGuideScript } from './setup-guide';
 
 /**
- * Settings modal — shared between dashboard and analytics pages.
+ * Settings — shared between dashboard and analytics pages: a full-screen overlay with a
+ * sidebar of pages, grouped by whom a change reaches (this browser, your account, everyone
+ * on the instance), at #settings/<page>. Under 720px wide the sidebar is a list that each
+ * page slides in over. The duty log, flight editor, aircraft info and map editors are
+ * detail views that slide over the pages (_settingsNavigateTo).
  *
- * Each page includes settingsModalMarkup() in its HTML, settingsModalStyles()
- * in its <style>, and settingsModalScript() inside its IIFE.
+ * Each page includes settingsModalMarkup(appName) in its HTML, settingsModalStyles()
+ * in its <style>, and settingsModalScript() inside its IIFE, and calls
+ * settingsOpenFromUrl() once its trackers are loaded.
  *
  * The modal references these page-level variables (must be declared in scope):
  *   trackerList  — Array of tracker objects from /api/trackers
@@ -30,174 +36,478 @@ import { setupGuideMarkup, setupGuideAdminRowMarkup, setupGuideStyles, setupGuid
 // What "Delete my account" leaves behind, in its row and its confirm.
 const DELETE_ACCOUNT_KEEPS = 'Flights, duty days and edit history stay with the operator.';
 
-export function settingsModalMarkup(): string {
+// Who a settings page's changes reach: the sidebar groups its pages by this, and each
+// page repeats it as a tag under its title, so it's clear on a page opened from a link too.
+type SettingsScope = 'browser' | 'account' | 'instance';
+
+const SCOPES: Record<SettingsScope, { label: string; caption: string; icon: string }> = {
+  browser: { label: 'This browser', caption: 'Saved on this device only', icon: 'monitor' },
+  account: { label: 'Your account', caption: 'Follows you to every device', icon: 'circle-user-round' },
+  // The instance's group is labelled with its name (filled in by the script after a rename).
+  instance: { label: '', caption: 'Shared by everyone here; admins make changes', icon: 'building-2' },
+};
+
+interface SettingsPage {
+  id: string;
+  title: string;
+  icon: string;
+  scope: SettingsScope;
+  /** Only admins see it (the script hides its link and page otherwise). */
+  admin?: boolean;
+  /** Starts hidden whatever the role: the setup checklist, until it has steps to show. */
+  hidden?: boolean;
+  body: string;
+}
+
+function scopeTag(scope: SettingsScope, appName: string): string {
+  const s = SCOPES[scope];
+  const label = scope === 'instance'
+    ? `Everyone on <span class="settings-instance-name">${escapeHtml(appName)}</span>`
+    : s.label;
+  return `<span class="settings-scope-tag" data-scope="${scope}">${icon(s.icon, { size: 14 })}${label}</span>`;
+}
+
+/** A titled group of settings on a page: its heading and description, then its card. */
+function settingsGroup(title: string, body: string, opts: { desc?: string; id?: string; attrs?: string } = {}): string {
   return `
-  <div id="settings-modal" class="settings-modal hidden" role="dialog" aria-modal="true">
-    <div class="settings-modal-backdrop" id="settings-modal-backdrop"></div>
+              <section class="settings-section"${opts.id ? ` id="${opts.id}"` : ''}${opts.attrs ? ' ' + opts.attrs : ''}>
+                ${title ? `<h3 class="settings-section-label">${title}</h3>` : ''}
+                ${opts.desc ?? ''}
+                ${body}
+              </section>`;
+}
+
+function settingsPages(): SettingsPage[] {
+  return [
+    {
+      id: 'appearance', title: 'Appearance', icon: 'palette', scope: 'browser',
+      body: `
+              ${settingsGroup('', `
+                <div class="settings-card">
+                  <div class="settings-row">
+                    <div class="settings-row-info">
+                      <span class="settings-row-title">Theme</span>
+                      <span class="settings-row-desc">System follows this device&rsquo;s light or dark setting.</span>
+                    </div>
+                    <div class="settings-theme-row" id="settings-theme-row">
+                      <button class="settings-theme-btn" data-theme-val="light">Light</button>
+                      <button class="settings-theme-btn" data-theme-val="dark">Dark</button>
+                      <button class="settings-theme-btn" data-theme-val="system">System</button>
+                    </div>
+                  </div>
+                </div>`)}
+              ${settingsGroup('Map colors', `
+                <div class="settings-card">${mapLayersSettingsRowsMarkup()}</div>`, {
+                desc: '<p class="settings-section-desc">Adjust the colors of each basemap. Changes apply immediately, on every map. Admins choose which basemaps there are under Map content.</p>',
+              })}`,
+    },
+    {
+      id: 'storage', title: 'Storage', icon: 'hard-drive', scope: 'browser',
+      body: `
+              ${settingsGroup('', `
+                <div class="settings-card">
+                  <div class="settings-row">
+                    <div class="settings-row-info">
+                      <div class="settings-row-title">Clear local cache</div>
+                      <div class="settings-row-desc">This browser keeps a copy of the flight data. Clearing it downloads everything again from the server.</div>
+                    </div>
+                    <button id="settings-clear-cache" class="btn-danger">Clear</button>
+                  </div>
+                </div>`)}`,
+    },
+    {
+      id: 'account', title: 'Account', icon: 'circle-user-round', scope: 'account',
+      body: `
+              ${settingsGroup('Devices', `
+                <div class="settings-card" id="settings-devices-list"></div>`, { id: 'settings-section-devices' })}
+              ${settingsGroup('Email addresses', `
+                <div class="settings-card" id="settings-emails-list"></div>`, { id: 'settings-section-emails', attrs: 'style="display:none"' })}
+              ${settingsGroup('Delete account', `
+                <div class="settings-card">
+                  <div class="settings-row">
+                    <div class="settings-row-info">
+                      <div class="settings-row-title">Delete my account</div>
+                      <div class="settings-row-desc">Signs out all your devices. ${DELETE_ACCOUNT_KEEPS}</div>
+                    </div>
+                    <button id="settings-delete-account" class="btn-danger">Delete</button>
+                  </div>
+                </div>`)}`,
+    },
+    {
+      id: 'aircraft', title: 'Aircraft', icon: 'plane', scope: 'instance',
+      body: `
+              ${settingsGroup('', `
+                <div class="settings-card">
+                  <div id="settings-aircraft-list" class="settings-list"></div>
+                  <details id="settings-add-aircraft" class="settings-add-tracker">
+                    <summary>${icon('plus', { size: 16 })}Add aircraft</summary>
+                    <div class="settings-add-inner">
+                      <input type="text" id="settings-add-aircraft-tail" placeholder="Tail number (e.g. N12345)" autocomplete="off" />
+                      <input type="text" id="settings-add-aircraft-name" placeholder="Display name (optional)" autocomplete="off" />
+                      <div class="settings-add-actions">
+                        <button id="settings-add-aircraft-submit" class="btn-primary">Add</button>
+                        <button id="settings-add-aircraft-cancel" class="btn-secondary">Cancel</button>
+                      </div>
+                    </div>
+                  </details>
+                </div>`)}`,
+    },
+    {
+      id: 'pilots', title: 'Pilots', icon: 'id-card', scope: 'instance',
+      body: `
+              ${settingsGroup('', `
+                <div class="settings-card">
+                  <div id="settings-pilots-list" class="settings-list"></div>
+                  <details id="settings-add-pilot" class="settings-add-tracker">
+                    <summary>${icon('plus', { size: 16 })}Add pilot</summary>
+                    <div class="settings-add-inner">
+                      <input type="text" id="settings-add-pilot-name" placeholder="Pilot name" autocomplete="off" />
+                      <div class="settings-add-actions">
+                        <button id="settings-add-pilot-submit" class="btn-primary">Add</button>
+                        <button id="settings-add-pilot-cancel" class="btn-secondary">Cancel</button>
+                      </div>
+                    </div>
+                  </details>
+                </div>`)}`,
+    },
+    {
+      id: 'trackers', title: 'Trackers', icon: 'radio-tower', scope: 'instance',
+      body: `
+              ${settingsGroup('', `
+                <div class="settings-card">
+                  <div id="settings-tracker-list" class="settings-list"></div>
+                  <details id="settings-add-tracker" class="settings-add-tracker">
+                    <summary>${icon('plus', { size: 16 })}Add tracker</summary>
+                    <div class="settings-add-inner">
+                      <div>
+                        <div class="settings-form-label">Display name</div>
+                        <input type="text" id="settings-add-name" autocomplete="off" />
+                      </div>
+                      <div>
+                        <div class="settings-form-label">Tracker type</div>
+                        <div class="settings-tracker-type-row">
+                          <select id="settings-add-type">
+                            <option value="inreach">InReach</option>
+                          </select>
+                          <button type="button" id="settings-add-type-help" class="settings-type-help-btn" aria-label="How to get this URL">?</button>
+                        </div>
+                      </div>
+                      <div id="settings-add-tracker-instructions" class="tracker-instructions"></div>
+                      <div>
+                        <div class="settings-form-label">MapShare URL</div>
+                        <input type="text" id="settings-add-source-url" autocomplete="off" />
+                      </div>
+                      <div id="settings-add-tracker-credentials"></div>
+                      <div id="settings-add-tracker-assignments"></div>
+                      <p id="settings-add-test-status" class="settings-msg" aria-live="polite"></p>
+                      <div class="settings-add-actions">
+                        <button id="settings-add-submit" class="btn-primary">Add</button>
+                        <button id="settings-add-test" class="btn-secondary">Test feed</button>
+                        <button id="settings-add-cancel" class="btn-secondary">Cancel</button>
+                      </div>
+                    </div>
+                  </details>
+                </div>`, {
+                desc: '<p class="settings-section-desc">Add aircraft and pilots before trackers, so new flights are assigned automatically.</p>',
+                attrs: 'data-doc-shot="settings.add-tracker-dialog"',
+              })}`,
+    },
+    {
+      id: 'export', title: 'Export flights', icon: 'download', scope: 'instance',
+      body: `
+              ${settingsGroup('', `
+                <div class="settings-card">
+                  <div class="settings-row">
+                    <div class="settings-row-info">
+                      <div class="settings-row-title">Export flights</div>
+                      <div class="settings-row-desc">Times, pilot, aircraft and start and end places, as CSV or JSON. No tracks.</div>
+                    </div>
+                    <button id="settings-export-flights" class="btn-secondary">Export</button>
+                  </div>
+                </div>`)}`,
+    },
+    {
+      id: 'setup', title: 'Get started', icon: 'list-checks', scope: 'instance', admin: true, hidden: true,
+      body: setupGuideMarkup(),
+    },
+    {
+      id: 'users', title: 'Users', icon: 'users', scope: 'instance', admin: true,
+      body: `
+              ${settingsGroup('', `
+                <div class="settings-card">
+                  <div id="settings-users-list" class="settings-list"></div>
+                  <details id="settings-invite-form" class="settings-add-tracker">
+                    <summary>${icon('plus', { size: 16 })}Invite someone</summary>
+                    <div class="settings-add-inner">
+                      <input type="text" id="settings-invite-name" placeholder="Name" autocomplete="off" />
+                      <input type="email" id="settings-invite-email" placeholder="Email (optional: we'll send the invite)" aria-label="Email (optional)" autocomplete="off" style="display:none" />
+                      <select id="settings-invite-role">
+                        <option value="viewer">Viewer</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      <div class="settings-add-actions">
+                        <button id="settings-invite-submit" class="btn-primary">Create link</button>
+                        <button id="settings-invite-cancel" class="btn-secondary">Cancel</button>
+                      </div>
+                    </div>
+                  </details>
+                </div>`, { id: 'settings-section-users' })}`,
+    },
+    {
+      id: 'general', title: 'General', icon: 'settings-2', scope: 'instance', admin: true,
+      body: `
+              ${settingsGroup('Instance', `
+                <div class="settings-card settings-card-form">
+                  <div class="settings-form-row">
+                    <label class="settings-form-label" for="settings-tenant-name">Name</label>
+                    <input type="text" id="settings-tenant-name" autocomplete="off" />
+                  </div>
+                  <div class="settings-form-row">
+                    <label class="settings-form-label" for="settings-tenant-timezone">Timezone</label>
+                    <select id="settings-tenant-timezone"></select>
+                  </div>
+                </div>`)}
+              ${settingsGroup('Default map view', `
+                <div class="settings-card settings-card-form">
+                  <div class="settings-form-grid">
+                    <div class="settings-form-row">
+                      <label class="settings-form-label" for="settings-tenant-lat">Latitude</label>
+                      <input type="number" id="settings-tenant-lat" step="any" autocomplete="off" />
+                    </div>
+                    <div class="settings-form-row">
+                      <label class="settings-form-label" for="settings-tenant-lng">Longitude</label>
+                      <input type="number" id="settings-tenant-lng" step="any" autocomplete="off" />
+                    </div>
+                    <div class="settings-form-row">
+                      <label class="settings-form-label" for="settings-tenant-zoom">Zoom</label>
+                      <input type="number" id="settings-tenant-zoom" min="1" max="20" step="any" autocomplete="off" />
+                    </div>
+                  </div>
+                  <div class="settings-add-actions">
+                    <button id="settings-tenant-map-pick" class="btn-secondary">${icon('crosshair', { size: 16 })}Set from map</button>
+                  </div>
+                </div>`, {
+                desc: '<p class="settings-section-desc">Where the map starts for everyone, before any flights are shown.</p>',
+              })}
+              <div class="settings-page-actions">
+                <button id="settings-tenant-save" class="btn-primary">Save</button>
+                <p id="settings-tenant-status" class="settings-msg" style="display:none"></p>
+              </div>
+              ${settingsGroup('Setup checklist', `
+                <div class="settings-card">${setupGuideAdminRowMarkup()}</div>`)}`,
+    },
+    {
+      id: 'duty', title: 'Duty limits', icon: 'scale', scope: 'instance', admin: true,
+      body: `
+              ${settingsGroup('§135.267 method', `
+                <div class="settings-card settings-card-form">
+                  <div id="settings-duty-methods"></div>
+                  <div class="settings-form-grid">
+                    <div class="settings-form-row">
+                      <label class="settings-form-label" for="settings-tenant-duty-method">Method</label>
+                      <select id="settings-tenant-duty-method">
+                        <option value="b">(b) Flight time in any 24 hours</option>
+                        <option value="c">(c) Regularly assigned duty period</option>
+                      </select>
+                    </div>
+                    <div class="settings-form-row">
+                      <label class="settings-form-label" for="settings-duty-method-from">Effective from</label>
+                      <input type="date" id="settings-duty-method-from" />
+                    </div>
+                  </div>
+                  <div class="settings-add-actions">
+                    <button id="settings-duty-method-save" class="btn-secondary">Save method</button>
+                    <button id="settings-duty-method-cancel" class="btn-secondary" hidden>Cancel edit</button>
+                  </div>
+                  <p id="settings-duty-method-error" class="settings-msg" role="alert"></p>
+                  <p id="settings-duty-method-last-edit" class="settings-section-desc"></p>
+                </div>`, {
+                desc: `<p class="settings-section-desc">Which method the pilot duty log checks. A change applies from its date
+                on: past months keep the method that was in force then. To correct a mistake, edit the entry.
+                ${docsLinkMarkup('features/pilot-duty-log/#limits-b-or-c', 'How the two methods differ')}</p>`,
+              })}`,
+    },
+    {
+      id: 'notifications', title: 'Notifications', icon: 'bell', scope: 'instance', admin: true,
+      body: `
+              ${settingsGroup('Signal-gap alerts', `
+                <div class="settings-card settings-card-form">
+                  <div class="settings-form-grid">
+                    <div class="settings-form-row">
+                      <label class="settings-form-label" for="settings-tenant-gap-minutes">Alert after (minutes)</label>
+                      <input type="number" id="settings-tenant-gap-minutes" min="1" step="1" autocomplete="off" />
+                    </div>
+                    <div class="settings-form-row">
+                      <label class="settings-form-label" for="settings-tenant-gap-stop-minutes">Stop alerts after (minutes)</label>
+                      <input type="number" id="settings-tenant-gap-stop-minutes" min="1" step="1" placeholder="60" autocomplete="off" />
+                    </div>
+                  </div>
+                  <div class="settings-add-actions">
+                    <button id="settings-gap-save" class="btn-secondary">Save</button>
+                  </div>
+                  <p id="settings-gap-status" class="settings-msg" style="display:none"></p>
+                </div>`, {
+                desc: `<p class="settings-section-desc">A flight in the air whose tracker goes quiet this long raises a signal-gap alert, repeated about once a minute until updates resume (a final &ldquo;signal restored&rdquo;). If the silence outlasts the stop time, the flight is treated as ended and a final &ldquo;gap alerts stopped&rdquo; ends the repeats.</p>`,
+              })}
+              ${settingsGroup('Pushover', `
+                <div class="settings-card settings-card-form">
+                  <div class="settings-form-row">
+                    <label class="settings-form-label" for="settings-tenant-pushover-token">Application token (shared)</label>
+                    <input type="text" id="settings-tenant-pushover-token" autocomplete="off" placeholder="from pushover.net/apps/build" />
+                  </div>
+                  <div class="settings-add-actions">
+                    <button id="settings-pushover-token-save" class="btn-secondary">Save token</button>
+                  </div>
+                  <p id="settings-pushover-token-status" class="settings-msg" style="display:none"></p>
+                </div>`, {
+                desc: `<p class="settings-section-desc">Pushover setup is two steps. <strong>First</strong>, register one free application at <code>pushover.net/apps/build</code> and paste its token here: every Pushover target on this instance shares it. <strong>Then</strong>, add a target below for each person who should get alerts, using <em>their own</em> Pushover user key (from their pushover.net dashboard), not the token.</p>`,
+              })}
+              ${settingsGroup('Targets', `
+                <div class="settings-card">
+                  <div id="settings-webhooks-list" class="settings-list"></div>
+                  <details id="settings-add-webhook" class="settings-add-tracker">
+                    <summary>${icon('plus', { size: 16 })}Add notification target</summary>
+                    <div class="settings-add-inner">
+                      <div class="settings-webhook-events" id="settings-add-webhook-type">
+                        <label><input type="radio" name="settings-add-webhook-type-radio" value="webhook" checked /> Webhook</label>
+                        <label><input type="radio" name="settings-add-webhook-type-radio" value="pushover" /> Pushover</label>
+                      </div>
+                      <input type="text" id="settings-add-webhook-url" placeholder="https://example.com/hook" autocomplete="off" />
+                      <input type="text" id="settings-add-webhook-pushover-key" placeholder="Recipient's Pushover user key (not the app token)" autocomplete="off" style="display:none" />
+                      <input type="text" id="settings-add-webhook-label" placeholder="Label (optional)" autocomplete="off" />
+                      <div class="settings-webhook-events" id="settings-add-webhook-events">
+                        <label><input type="checkbox" value="takeoff" checked /> Takeoff</label>
+                        <label><input type="checkbox" value="landing" checked /> Landing</label>
+                        <label><input type="checkbox" value="gap" checked /> Signal gap</label>
+                      </div>
+                      <div class="settings-add-actions">
+                        <button id="settings-add-webhook-submit" class="btn-primary">Add</button>
+                        <button id="settings-add-webhook-cancel" class="btn-secondary">Cancel</button>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+                <p id="settings-webhooks-status" class="settings-msg" style="display:none"></p>`, {
+                desc: '<p class="settings-section-desc">Each target gets takeoff, landing and signal-gap events, as a JSON webhook POST or a Pushover notification.</p>',
+              })}`,
+    },
+    {
+      id: 'map-content', title: 'Map content', icon: 'map', scope: 'instance', admin: true,
+      body: `
+              ${settingsGroup('Basemaps', `<div class="settings-card">${basemapSettingsMarkup()}</div>`, {
+                desc: '<p class="settings-section-desc">The base layers in the map&rsquo;s style switcher. Hidden basemaps stay configured. A vector basemap is a Protomaps basemap PMTiles archive, with Protomaps&rsquo; basemaps-assets (fonts and sprites) copied to <code>basemaps-assets/</code> beside it.</p>',
+              })}
+              ${settingsGroup('Overlays', `
+                <div class="settings-card">
+                  <div id="settings-overlay-list" class="settings-list"></div>
+                  <details id="settings-add-overlay" class="settings-add-tracker">
+                    <summary>${icon('plus', { size: 16 })}Add overlay</summary>
+                    <div class="settings-add-inner">
+                      <input type="text" id="settings-add-overlay-label" placeholder="Label (e.g. Sectional chart)" autocomplete="off" />
+                      <input type="text" id="settings-add-overlay-url" placeholder="Tile URL, e.g. https://example.com/{z}/{x}/{y}.png" autocomplete="off" />
+                      <input type="text" id="settings-add-overlay-attribution" placeholder="Attribution (optional)" autocomplete="off" />
+                      <input type="number" id="settings-add-overlay-maxzoom" placeholder="Max native zoom (optional)" min="1" max="22" step="1" autocomplete="off" />
+                      <label class="settings-check"><input type="checkbox" id="settings-add-overlay-default" /> On by default (fallback for basemaps not set below)</label>
+                      <div class="settings-form-label">Default per basemap (optional)</div>
+                      <div id="settings-add-overlay-basemap-defaults" class="settings-basemap-defaults"></div>
+                      <p id="settings-add-overlay-lookup-status" class="settings-msg" aria-live="polite"></p>
+                      <div class="settings-add-actions">
+                        <button id="settings-add-overlay-submit" class="btn-primary">Add</button>
+                        <button id="settings-add-overlay-lookup" class="btn-secondary">Look up details</button>
+                        <button id="settings-add-overlay-cancel" class="btn-secondary">Cancel</button>
+                      </div>
+                    </div>
+                  </details>
+                </div>`, {
+                desc: '<p class="settings-section-desc">Extra tile layers (e.g. a sectional chart or custom imagery) shown on top of the basemap. Listed for everyone in the map&rsquo;s overlay legend; each has a default on/off state a viewer can override there.</p>',
+              })}
+              ${settingsGroup('Regions', `
+                <div class="settings-card settings-card-form">
+                  <div class="settings-add-actions">
+                    <button id="settings-regions-editor-btn" class="btn-secondary">${icon('pencil', { size: 16 })}Map editor</button>
+                    <button id="settings-regions-export" class="btn-secondary">Export</button>
+                    <label id="settings-regions-import-label" class="btn-secondary">
+                      Import
+                      <input type="file" id="settings-regions-import" accept=".json,.geojson" />
+                    </label>
+                  </div>
+                  <p id="settings-regions-status" class="settings-msg" style="display:none"></p>
+                </div>`, {
+                desc: `<p class="settings-section-desc">GeoJSON FeatureCollection with Polygon or MultiPolygon features. Each feature requires a <code>Name</code> property. Import replaces all existing regions.</p>
+                <p class="settings-section-desc">End a region&rsquo;s name with <code>(Base)</code>, e.g. <code>Kodiak (Base)</code>, to make it a home base: analytics leaves out time spent flying to and from it, and lists its stops separately.</p>`,
+              })}
+              ${settingsGroup('Named points', `
+                <div class="settings-card settings-card-form">
+                  <div class="settings-add-actions">
+                    <button id="settings-named-points-editor-btn" class="btn-secondary">${icon('pencil', { size: 16 })}Map editor</button>
+                    <button id="settings-named-points-export" class="btn-secondary">Export</button>
+                    <label id="settings-named-points-import-label" class="btn-secondary">
+                      Import
+                      <input type="file" id="settings-named-points-import" accept=".json,.geojson" />
+                    </label>
+                  </div>
+                  <p id="settings-named-points-status" class="settings-msg" style="display:none"></p>
+                </div>`, {
+                desc: '<p class="settings-section-desc">GeoJSON FeatureCollection with Point features. Each feature requires a <code>name</code> property and optionally a <code>maxKm</code> radius in kilometers. Import replaces all existing named points.</p>',
+              })}`,
+    },
+  ];
+}
+
+function settingsSidebarMarkup(pages: SettingsPage[], appName: string): string {
+  const groups = (['browser', 'account', 'instance'] as const).map((scope) => {
+    const items = pages.filter((p) => p.scope === scope);
+    const link = (p: SettingsPage) => `
+              <a class="settings-nav-item" href="#settings/${p.id}" data-page="${p.id}"${p.admin ? ' data-admin' : ''}${p.hidden ? ' hidden' : ''}>
+                ${icon(p.icon, { size: 18 })}<span class="settings-nav-item-label">${p.title}</span>${icon('chevron-right', { size: 16, className: 'settings-nav-item-chevron' })}
+              </a>`;
+    const label = scope === 'instance'
+      ? `<span class="settings-instance-name">${escapeHtml(appName)}</span>`
+      : SCOPES[scope].label;
+    const everyone = items.filter((p) => !p.admin).map(link).join('');
+    const admin = items.filter((p) => p.admin).map(link).join('');
+    return `
+            <div class="settings-nav-group" data-scope="${scope}">
+              <div class="settings-nav-group-head">
+                <span class="settings-nav-group-label">${label}</span>
+                <span class="settings-nav-group-caption">${SCOPES[scope].caption}</span>
+              </div>
+              ${everyone}
+              ${admin ? `<div class="settings-nav-subhead" data-admin>Admin</div>${admin}` : ''}
+            </div>`;
+  }).join('');
+  return `
+          <nav class="settings-sidebar" aria-label="Settings sections">
+            ${groups}
+            <div class="settings-sidebar-foot">
+              ${docsLinkMarkup('', 'Documentation')}
+            </div>
+          </nav>`;
+}
+
+export function settingsModalMarkup(appName: string): string {
+  const pages = settingsPages();
+  return `
+  <div id="settings-modal" class="settings-modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-nav-title">
     <div class="settings-modal-panel">
       <div class="settings-nav">
-        <button id="settings-nav-back" class="settings-nav-back hidden" aria-label="Back">${icon('chevron-left', { size: 14 })} Back</button>
-        <span id="settings-nav-title" class="settings-modal-title">Settings</span>
-        <button id="settings-modal-close" class="settings-modal-close btn-icon" aria-label="Close">${icon('x', { size: 18 })}</button>
+        <button id="settings-nav-back" class="settings-nav-back hidden" aria-label="Back">${icon('chevron-left', { size: 18 })}<span id="settings-nav-back-label">Settings</span></button>
+        <h2 id="settings-nav-title" class="settings-modal-title">Settings</h2>
+        <button id="settings-modal-close" class="settings-modal-close btn-icon" aria-label="Close settings">${icon('x', { size: 20 })}</button>
       </div>
       <div class="settings-views">
         <div class="settings-view" id="settings-view-main">
-          <div class="settings-modal-body">
-            <div class="settings-section">
-              <div class="settings-section-label">Help</div>
-              <div class="settings-row">
-                <div class="settings-row-info">
-                  <span class="settings-row-title">Documentation</span>
-                  <span class="settings-row-desc">How tracking, flight editing, the duty log and settings work</span>
+          <div class="settings-shell" id="settings-shell">
+            ${settingsSidebarMarkup(pages, appName)}
+            <div class="settings-content" id="settings-content">
+              ${pages.map((p) => `
+              <div class="settings-page" id="settings-page-${p.id}" data-page="${p.id}"${p.admin ? ' data-admin' : ''} hidden>
+                <div class="settings-page-head">
+                  <h2 class="settings-page-title">${p.title}</h2>
+                  ${scopeTag(p.scope, appName)}
                 </div>
-                ${docsLinkMarkup('', 'Open docs')}
-              </div>
-            </div>
-            ${setupGuideMarkup()}
-            <div class="settings-section">
-              <div class="settings-section-label">Aircraft</div>
-              <div id="settings-aircraft-list"></div>
-              <details id="settings-add-aircraft" class="settings-add-tracker">
-                <summary>Add aircraft</summary>
-                <div class="settings-add-inner">
-                  <input type="text" id="settings-add-aircraft-tail" placeholder="Tail number (e.g. N12345)" autocomplete="off" />
-                  <input type="text" id="settings-add-aircraft-name" placeholder="Display name (optional)" autocomplete="off" />
-                  <div class="settings-add-actions">
-                    <button id="settings-add-aircraft-submit" class="btn-primary">Add</button>
-                    <button id="settings-add-aircraft-cancel" class="btn-secondary">Cancel</button>
-                  </div>
-                </div>
-              </details>
-            </div>
-            <div class="settings-section">
-              <div class="settings-section-label">Pilots</div>
-              <div id="settings-pilots-list"></div>
-              <details id="settings-add-pilot" class="settings-add-tracker">
-                <summary>Add pilot</summary>
-                <div class="settings-add-inner">
-                  <input type="text" id="settings-add-pilot-name" placeholder="Pilot name" autocomplete="off" />
-                  <div class="settings-add-actions">
-                    <button id="settings-add-pilot-submit" class="btn-primary">Add</button>
-                    <button id="settings-add-pilot-cancel" class="btn-secondary">Cancel</button>
-                  </div>
-                </div>
-              </details>
-            </div>
-            <div class="settings-section" data-doc-shot="settings.add-tracker-dialog">
-              <div class="settings-section-label">Trackers</div>
-              <p class="settings-section-desc">Tip: add any active aircraft and pilots before adding trackers, so new flights are automatically assigned.</p>
-              <div id="settings-tracker-list"></div>
-              <details id="settings-add-tracker" class="settings-add-tracker">
-                <summary>Add tracker</summary>
-                <div class="settings-add-inner">
-                  <div>
-                    <div class="settings-form-label">Display name</div>
-                    <input type="text" id="settings-add-name" autocomplete="off" />
-                  </div>
-                  <div>
-                    <div class="settings-form-label">Tracker type</div>
-                    <div class="settings-tracker-type-row">
-                      <select id="settings-add-type">
-                        <option value="inreach">InReach</option>
-                      </select>
-                      <button type="button" id="settings-add-type-help" class="settings-type-help-btn" aria-label="How to get this URL">?</button>
-                    </div>
-                  </div>
-                  <div id="settings-add-tracker-instructions" class="tracker-instructions"></div>
-                  <div>
-                    <div class="settings-form-label">MapShare URL</div>
-                    <input type="text" id="settings-add-source-url" autocomplete="off" />
-                  </div>
-                  <div id="settings-add-tracker-credentials"></div>
-                  <div id="settings-add-tracker-assignments"></div>
-                  <p id="settings-add-test-status" class="settings-msg" aria-live="polite"></p>
-                  <div class="settings-add-actions">
-                    <button id="settings-add-submit" class="btn-primary">Add</button>
-                    <button id="settings-add-test" class="btn-secondary">Test feed</button>
-                    <button id="settings-add-cancel" class="btn-secondary">Cancel</button>
-                  </div>
-                </div>
-              </details>
-            </div>
-            <div class="settings-section">
-              <div class="settings-section-label">Appearance</div>
-              <div class="settings-row">
-                <span class="settings-row-title">Theme</span>
-                <div class="settings-theme-row" id="settings-theme-row">
-                  <button class="settings-theme-btn" data-theme-val="light">Light</button>
-                  <button class="settings-theme-btn" data-theme-val="dark">Dark</button>
-                  <button class="settings-theme-btn" data-theme-val="system">System</button>
-                </div>
-              </div>
-            </div>
-            <div class="settings-section">
-              <div class="settings-section-label">Map layers</div>
-              ${mapLayersSettingsRowsMarkup()}
-            </div>
-            <div class="settings-section" id="settings-section-devices">
-              <div class="settings-section-label">My Devices</div>
-              <div id="settings-devices-list"></div>
-            </div>
-            <div class="settings-section" id="settings-section-emails" style="display:none">
-              <div class="settings-section-label">Email addresses</div>
-              <div id="settings-emails-list"></div>
-            </div>
-            <div class="settings-section">
-              <div class="settings-section-label">Data</div>
-              <div class="settings-row">
-                <div class="settings-row-info">
-                  <div class="settings-row-title">Export flights</div>
-                  <div class="settings-row-desc">Times, pilot, aircraft and start and end places, as CSV or JSON. No tracks.</div>
-                </div>
-                <button id="settings-export-flights" class="settings-action-btn">Export</button>
-              </div>
-              <div class="settings-row">
-                <div class="settings-row-info">
-                  <div class="settings-row-title">Clear local cache</div>
-                  <div class="settings-row-desc">Re-downloads all flight data from the server.</div>
-                </div>
-                <button id="settings-clear-cache" class="btn-danger">Clear</button>
-              </div>
-            </div>
-            <div class="settings-section">
-              <div class="settings-section-label">Account</div>
-              <div class="settings-row">
-                <div class="settings-row-info">
-                  <div class="settings-row-title">Delete my account</div>
-                  <div class="settings-row-desc">Signs out all your devices. ${DELETE_ACCOUNT_KEEPS}</div>
-                </div>
-                <button id="settings-delete-account" class="btn-danger">Delete</button>
-              </div>
-            </div>
-            <div class="settings-section" id="settings-section-app" style="display:none">
-              <div class="settings-section-label">Admin</div>
-              <div class="settings-row">
-                <div class="settings-row-info">
-                  <span class="settings-row-title">Global Settings</span>
-                  <span class="settings-row-desc">Timezone, duty limits, notifications, overlays, regions and named points</span>
-                </div>
-                <button class="settings-action-btn" id="settings-tenant-open-btn" aria-label="Open global settings">${icon('chevron-right', { size: 14 })}</button>
-              </div>
-              ${setupGuideAdminRowMarkup()}
-            </div>
-            <div class="settings-section" id="settings-section-users" style="display:none">
-              <div class="settings-section-label">Users</div>
-              <div id="settings-users-list"></div>
-              <details id="settings-invite-form" class="settings-add-tracker">
-                <summary>Invite someone</summary>
-                <div class="settings-add-inner">
-                  <input type="text" id="settings-invite-name" placeholder="Name" autocomplete="off" />
-                  <input type="email" id="settings-invite-email" placeholder="Email (optional: we'll send the invite)" aria-label="Email (optional)" autocomplete="off" style="display:none" />
-                  <select id="settings-invite-role">
-                    <option value="viewer">Viewer</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                  <div class="settings-add-actions">
-                    <button id="settings-invite-submit" class="btn-primary">Create link</button>
-                    <button id="settings-invite-cancel" class="btn-secondary">Cancel</button>
-                  </div>
-                </div>
-              </details>
+                ${p.body}
+              </div>`).join('')}
             </div>
           </div>
         </div>
@@ -209,162 +519,6 @@ export function settingsModalMarkup(): string {
         </div>
         <div class="settings-view settings-view-detail" id="settings-view-aircraft-info">
           ${aircraftInfoMarkup()}
-        </div>
-        <div class="settings-view settings-view-detail" id="settings-view-tenant">
-          <div class="settings-modal-body">
-            <div class="settings-section">
-              <div class="settings-section-label">General</div>
-              <div class="settings-form-row">
-                <div class="settings-form-label">Instance name</div>
-                <input type="text" id="settings-tenant-name" autocomplete="off" />
-              </div>
-              <div class="settings-form-row">
-                <div class="settings-form-label">Timezone</div>
-                <select id="settings-tenant-timezone"></select>
-              </div>
-              <div class="settings-form-row">
-                <div class="settings-form-label">Map default lat</div>
-                <input type="number" id="settings-tenant-lat" step="any" autocomplete="off" />
-              </div>
-              <div class="settings-form-row">
-                <div class="settings-form-label">Map default lng</div>
-                <input type="number" id="settings-tenant-lng" step="any" autocomplete="off" />
-              </div>
-              <div class="settings-form-row">
-                <div class="settings-form-label">Map default zoom</div>
-                <input type="number" id="settings-tenant-zoom" min="1" max="20" step="any" autocomplete="off" />
-              </div>
-              <div class="settings-add-actions">
-                <button id="settings-tenant-map-pick" class="btn-secondary">Set from map</button>
-              </div>
-              <div class="settings-form-row">
-                <div class="settings-form-label">Gap alert (minutes)</div>
-                <input type="number" id="settings-tenant-gap-minutes" min="1" step="1" autocomplete="off" />
-              </div>
-              <div class="settings-form-row">
-                <div class="settings-form-label">Stop gap alerts after (minutes)</div>
-                <input type="number" id="settings-tenant-gap-stop-minutes" min="1" step="1" placeholder="60" autocomplete="off" />
-              </div>
-              <div class="settings-add-actions">
-                <button id="settings-tenant-save" class="btn-primary">Save</button>
-              </div>
-              <p id="settings-tenant-status" class="settings-msg" style="display:none"></p>
-            </div>
-            <div class="settings-section">
-              <div class="settings-section-label">Duty limits (§135.267)</div>
-              <p class="settings-section-desc">Which method the pilot duty log checks. A change applies from its date
-                on: past months keep the method that was in force then. To correct a mistake, edit the entry.
-                ${docsLinkMarkup('features/pilot-duty-log/#limits-b-or-c', 'How the two methods differ')}</p>
-              <div id="settings-duty-methods"></div>
-              <div class="settings-form-row">
-                <div class="settings-form-label">Method</div>
-                <select id="settings-tenant-duty-method">
-                  <option value="b">(b) Flight time in any 24 hours</option>
-                  <option value="c">(c) Regularly assigned duty period</option>
-                </select>
-              </div>
-              <div class="settings-form-row">
-                <div class="settings-form-label">Effective from</div>
-                <input type="date" id="settings-duty-method-from" />
-              </div>
-              <div class="settings-add-actions">
-                <button id="settings-duty-method-save" class="btn-secondary">Save method</button>
-                <button id="settings-duty-method-cancel" class="btn-secondary" hidden>Cancel edit</button>
-              </div>
-              <p id="settings-duty-method-error" class="settings-msg" role="alert"></p>
-              <p id="settings-duty-method-last-edit" class="settings-section-desc"></p>
-            </div>
-            <div class="settings-section">
-              <div class="settings-section-label">Notifications</div>
-              <p class="settings-section-desc">Notification targets receive takeoff, landing, and in-flight signal-gap events (see the gap alert threshold above), delivered either as a JSON webhook POST or natively via Pushover. Signal-gap alerts repeat about once a minute while the silence continues, followed by a final &ldquo;signal restored&rdquo; notification when updates resume. If the silence outlasts the stop threshold above, the flight is treated as ended and a final &ldquo;gap alerts stopped&rdquo; notification ends the repeats.</p>
-              <p class="settings-section-desc">Pushover setup is two steps. <strong>First</strong>, register one free application at <code>pushover.net/apps/build</code> and paste its token below — this single token is shared by every Pushover target on this instance. <strong>Then</strong>, add a target below for each person who should get alerts, using <em>their own</em> Pushover user key (from their pushover.net dashboard) — not the token.</p>
-              <div class="settings-form-row">
-                <div class="settings-form-label">Pushover application token (shared)</div>
-                <input type="text" id="settings-tenant-pushover-token" autocomplete="off" placeholder="from pushover.net/apps/build" />
-              </div>
-              <div class="settings-add-actions">
-                <button id="settings-pushover-token-save" class="btn-secondary">Save token</button>
-              </div>
-              <p id="settings-pushover-token-status" class="settings-msg" style="display:none"></p>
-              <div id="settings-webhooks-list"></div>
-              <details id="settings-add-webhook" class="settings-add-tracker">
-                <summary>Add notification target</summary>
-                <div class="settings-add-inner">
-                  <div class="settings-webhook-events" id="settings-add-webhook-type">
-                    <label><input type="radio" name="settings-add-webhook-type-radio" value="webhook" checked /> Webhook</label>
-                    <label><input type="radio" name="settings-add-webhook-type-radio" value="pushover" /> Pushover</label>
-                  </div>
-                  <input type="text" id="settings-add-webhook-url" placeholder="https://example.com/hook" autocomplete="off" />
-                  <input type="text" id="settings-add-webhook-pushover-key" placeholder="Recipient's Pushover user key (not the app token)" autocomplete="off" style="display:none" />
-                  <input type="text" id="settings-add-webhook-label" placeholder="Label (optional)" autocomplete="off" />
-                  <div class="settings-webhook-events" id="settings-add-webhook-events">
-                    <label><input type="checkbox" value="takeoff" checked /> Takeoff</label>
-                    <label><input type="checkbox" value="landing" checked /> Landing</label>
-                    <label><input type="checkbox" value="gap" checked /> Signal gap</label>
-                  </div>
-                  <div class="settings-add-actions">
-                    <button id="settings-add-webhook-submit" class="btn-primary">Add</button>
-                    <button id="settings-add-webhook-cancel" class="btn-secondary">Cancel</button>
-                  </div>
-                </div>
-              </details>
-              <p id="settings-webhooks-status" class="settings-msg" style="display:none"></p>
-            </div>
-            <div class="settings-section">
-              <div class="settings-section-label">Basemaps</div>
-              ${basemapSettingsMarkup()}
-            </div>
-            <div class="settings-section">
-              <div class="settings-section-label">Overlays</div>
-              <p class="settings-section-desc">Extra tile layers (e.g. a sectional chart or custom imagery) shown on top of the basemap. Listed for everyone in the map's overlay legend; each has a default on/off state a viewer can override there.</p>
-              <div id="settings-overlay-list"></div>
-              <details id="settings-add-overlay" class="settings-add-tracker">
-                <summary>Add overlay</summary>
-                <div class="settings-add-inner">
-                  <input type="text" id="settings-add-overlay-label" placeholder="Label (e.g. Sectional chart)" autocomplete="off" />
-                  <input type="text" id="settings-add-overlay-url" placeholder="Tile URL, e.g. https://example.com/{z}/{x}/{y}.png" autocomplete="off" />
-                  <input type="text" id="settings-add-overlay-attribution" placeholder="Attribution (optional)" autocomplete="off" />
-                  <input type="number" id="settings-add-overlay-maxzoom" placeholder="Max native zoom (optional)" min="1" max="22" step="1" autocomplete="off" />
-                  <label><input type="checkbox" id="settings-add-overlay-default" /> On by default (fallback for basemaps not set below)</label>
-                  <div class="settings-form-label">Default per basemap (optional)</div>
-                  <div id="settings-add-overlay-basemap-defaults" class="settings-basemap-defaults"></div>
-                  <p id="settings-add-overlay-lookup-status" class="settings-msg" aria-live="polite"></p>
-                  <div class="settings-add-actions">
-                    <button id="settings-add-overlay-submit" class="btn-primary">Add</button>
-                    <button id="settings-add-overlay-lookup" class="btn-secondary">Look up details</button>
-                    <button id="settings-add-overlay-cancel" class="btn-secondary">Cancel</button>
-                  </div>
-                </div>
-              </details>
-            </div>
-            <div class="settings-section">
-              <div class="settings-section-label">Regions</div>
-              <p class="settings-section-desc">GeoJSON FeatureCollection with Polygon or MultiPolygon features. Each feature requires a <code>Name</code> property. Import replaces all existing regions.</p>
-              <p class="settings-section-desc">End a region&rsquo;s name with <code>(Base)</code>, e.g. <code>Kodiak (Base)</code>, to make it a home base: analytics leaves out time spent flying to and from it, and lists its stops separately.</p>
-              <div class="settings-add-actions">
-                <button id="settings-regions-export" class="btn-secondary">Export</button>
-                <label id="settings-regions-import-label" class="btn-secondary">
-                  Import
-                  <input type="file" id="settings-regions-import" accept=".json,.geojson" />
-                </label>
-                <button id="settings-regions-editor-btn" class="btn-secondary">Map Editor</button>
-              </div>
-              <p id="settings-regions-status" class="settings-msg" style="display:none"></p>
-            </div>
-            <div class="settings-section">
-              <div class="settings-section-label">Named Points</div>
-              <p class="settings-section-desc">GeoJSON FeatureCollection with Point features. Each feature requires a <code>name</code> property and optionally a <code>maxKm</code> radius in kilometers. Import replaces all existing named points.</p>
-              <div class="settings-add-actions">
-                <button id="settings-named-points-export" class="btn-secondary">Export</button>
-                <label id="settings-named-points-import-label" class="btn-secondary">
-                  Import
-                  <input type="file" id="settings-named-points-import" accept=".json,.geojson" />
-                </label>
-                <button id="settings-named-points-editor-btn" class="btn-secondary">Map Editor</button>
-              </div>
-              <p id="settings-named-points-status" class="settings-msg" style="display:none"></p>
-            </div>
-          </div>
         </div>
         ${namedPointsEditorMarkup()}
         ${regionsEditorMarkup()}
@@ -386,77 +540,83 @@ export function settingsModalMarkup(): string {
 
 export function settingsModalStyles(): string {
   return `
+    /* ── Layout ───────────────────────────────────────────────────────────────
+       Full screen, over the page: a header bar, then the view stack. The main view is
+       the sidebar of pages beside the open page; the duty log, flight editor, aircraft
+       info and map editors slide over it as detail views. Under 720px wide the sidebar is
+       the first screen and a page slides in over it (.settings-shell[data-page-open]).
+       Spacing (design system, 4px base): page padding 32 (20 on a phone), 40 between
+       groups, 12 from a group's heading to its card, cards padded 20 with 56px rows. */
     .settings-modal {
       position: fixed;
       inset: 0;
       z-index: 2000;
       display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1rem;
+      background: var(--bg-base);
     }
 
     .settings-modal.hidden { display: none; }
 
-    .settings-modal-backdrop {
-      position: absolute;
-      inset: 0;
-      background: var(--scrim);
-    }
-
     .settings-modal-panel {
       position: relative;
-      background: var(--surface-1);
-      border-radius: var(--radius-lg);
-      width: 100%;
-      max-width: 520px;
-      max-height: min(88vh, 760px);
+      flex: 1;
+      min-width: 0;
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      box-shadow: var(--shadow-lg);
     }
 
     .settings-nav {
       display: flex;
       align-items: center;
-      gap: 0.25rem;
-      padding: 0 0.75rem;
-      min-height: 3rem;
+      gap: var(--space-2);
+      min-height: 3.5rem;
+      padding: env(safe-area-inset-top) var(--space-4) 0;
       flex-shrink: 0;
-      border-bottom: 1px solid var(--border);
+      background: var(--surface-1);
+      border-bottom: 1px solid var(--border-subtle);
     }
 
     .settings-nav-back {
       background: none;
       border: none;
       color: var(--accent-text);
-      font-size: 0.875rem;
+      font-family: var(--font-ui);
+      font-size: var(--size-md);
+      font-weight: var(--weight-medium);
       cursor: pointer;
-      padding: 0.3rem 0.5rem 0.3rem 0;
+      min-height: var(--control-h-md);
+      padding: 0 var(--space-2) 0 0;
       border-radius: var(--radius-md);
       white-space: nowrap;
       display: inline-flex;
       align-items: center;
-      gap: 0.25rem;
+      gap: var(--space-1);
       transition: opacity var(--duration-fast) var(--ease-standard);
     }
 
     .settings-nav-back.hidden { display: none; }
     .settings-nav-back:hover { opacity: 0.7; }
+    .settings-nav-back:focus-visible { outline: none; box-shadow: var(--ring-focus); }
 
     .settings-modal-title {
       flex: 1;
-      text-align: center;
-      font-size: 0.95rem;
-      font-weight: 600;
+      min-width: 0;
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--size-lg);
+      font-weight: var(--weight-bold);
+      letter-spacing: var(--tracking-heading);
       color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .settings-views {
       display: grid;
-      grid-template-columns: 1fr;
-      grid-template-rows: 1fr;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
       flex: 1;
       min-height: 0;
       overflow: hidden;
@@ -468,98 +628,334 @@ export function settingsModalStyles(): string {
       min-height: 0;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
-      transition: transform 0.22s cubic-bezier(0.4,0,0.2,1);
+      background: var(--bg-base);
+      transition: transform var(--duration-normal) var(--ease-standard);
     }
 
-    #settings-view-main { transform: translateX(0); }
+    #settings-view-main { transform: translateX(0); overflow: hidden; }
     #settings-view-main.settings-view-pushed { transform: translateX(-100%); }
     .settings-view-detail { transform: translateX(100%); }
     .settings-view-detail.settings-view-active { transform: translateX(0); }
     .settings-view-detail.settings-view-pushed { transform: translateX(-100%); }
 
-    @media (max-width: 640px) {
-      .settings-modal { padding: 0; align-items: stretch; }
-      .settings-modal-panel { max-width: none; max-height: none; border-radius: 0; flex: 1; height: 100%; }
-    }
-
-    .settings-modal.settings-modal-fullscreen {
-      padding: 0;
-      align-items: stretch;
-    }
-    .settings-modal.settings-modal-fullscreen .settings-modal-panel {
-      max-width: none;
-      max-height: none;
-      border-radius: 0;
-      flex: 1;
+    /* ── Sidebar ── */
+    .settings-shell {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr);
       height: 100%;
     }
 
-    .settings-modal-body {
-      padding: 0.75rem;
+    .settings-sidebar {
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
+      gap: var(--space-6);
+      min-height: 0;
+      overflow-y: auto;
+      padding: var(--space-6) var(--space-3);
+      background: var(--surface-1);
+      border-right: 1px solid var(--border-subtle);
     }
 
+    .settings-nav-group {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .settings-nav-group-head {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 0 var(--space-3) var(--space-2);
+    }
+
+    .settings-nav-group-label {
+      font-family: var(--font-ui);
+      font-size: var(--size-2xs);
+      font-weight: var(--weight-bold);
+      text-transform: uppercase;
+      letter-spacing: var(--tracking-caps);
+      color: var(--text-secondary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .settings-nav-group-caption {
+      font-size: var(--size-xs);
+      color: var(--text-muted);
+      line-height: var(--leading-snug);
+    }
+
+    .settings-nav-subhead {
+      padding: var(--space-3) var(--space-3) var(--space-1);
+      font-size: var(--size-xs);
+      font-weight: var(--weight-semibold);
+      color: var(--text-muted);
+    }
+
+    .settings-nav-item {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      min-height: var(--control-h-md);
+      padding: 0 var(--space-3);
+      border-radius: var(--radius-md);
+      color: var(--text-secondary);
+      font-family: var(--font-ui);
+      font-size: var(--size-md);
+      font-weight: var(--weight-medium);
+      text-decoration: none;
+      transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+    }
+
+    .settings-nav-item:hover { background: var(--surface-hover); color: var(--text-primary); }
+    .settings-nav-item:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+    .settings-nav-item[aria-current="page"] {
+      background: var(--surface-2);
+      color: var(--accent-text);
+      font-weight: var(--weight-semibold);
+    }
+
+    .settings-nav-item[hidden],
+    .settings-nav-subhead[hidden] { display: none; }
+    .settings-nav-item-label { flex: 1; min-width: 0; }
+    .settings-nav-item-chevron { display: none; color: var(--text-muted); }
+
+    .settings-sidebar-foot {
+      margin-top: auto;
+      padding: var(--space-4) var(--space-3) 0;
+      border-top: 1px solid var(--border-subtle);
+      font-size: var(--size-sm);
+    }
+
+    /* ── Pages ── */
+    .settings-content {
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .settings-page {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-10);
+      max-width: 720px;
+      padding: var(--space-8) var(--space-8) calc(var(--space-16) + env(safe-area-inset-bottom));
+    }
+
+    @media (min-width: 1100px) {
+      .settings-page { padding-left: var(--space-12); padding-right: var(--space-12); }
+    }
+
+    .settings-page[hidden] { display: none; }
+
+    /* Title, then the scope tag; 24px to the first group (the page's gap less 16). */
+    .settings-page-head {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--space-2);
+      margin-bottom: calc(var(--space-6) - var(--space-10));
+    }
+
+    .settings-page-title {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: var(--size-2xl);
+      font-weight: var(--weight-bold);
+      line-height: var(--leading-snug);
+      letter-spacing: var(--tracking-heading);
+      color: var(--text-primary);
+    }
+
+    /* Who a page's changes reach. */
+    .settings-scope-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px var(--space-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill);
+      font-family: var(--font-ui);
+      font-size: var(--size-xs);
+      font-weight: var(--weight-medium);
+      color: var(--text-secondary);
+    }
+
+    .settings-scope-tag[data-scope="instance"] { color: var(--accent-text); }
+
+    /* A group: heading, description, card. */
     .settings-section {
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
-      background: var(--surface-0);
-      border-radius: var(--radius-lg);
-      padding: 0.65rem 0.75rem;
-    }
-
-    [data-theme="light"] .settings-section {
-      background: var(--surface-2);
+      gap: var(--space-3);
+      min-width: 0;
     }
 
     .settings-section-label {
-      font-size: 0.7rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--text-muted);
+      margin: 0;
+      font-family: var(--font-ui);
+      font-size: var(--size-base);
+      font-weight: var(--weight-semibold);
+      line-height: var(--leading-snug);
+      color: var(--text-primary);
     }
 
     .settings-section-desc {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-      line-height: 1.4;
+      margin: 0;
+      max-width: var(--prose-max);
+      font-size: var(--size-sm);
+      line-height: var(--leading-normal);
+      color: var(--text-secondary);
     }
+
+    .settings-section-label + .settings-section-desc,
+    .settings-section-desc + .settings-section-desc { margin-top: calc(-1 * var(--space-1)); }
+
+    /* The save button under a page's form cards: 16px below the last one. */
+    .settings-page-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      margin-top: calc(var(--space-4) - var(--space-10));
+    }
+
+    .settings-section .settings-page-actions { margin-top: 0; }
+
+    .settings-card {
+      background: var(--surface-1);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      padding: 0 var(--space-5);
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    /* A card of rows: a hairline between rows. Each row draws it on its top edge, pulled up
+       1px so the first one's falls outside the card and is clipped. */
+    .settings-card:not(.settings-card-form) > :not(.settings-list),
+    .settings-list > * {
+      border-top: 1px solid var(--border-subtle);
+      margin-top: -1px;
+    }
+
+    .settings-list > .settings-msg { padding: var(--space-4) 0; margin-bottom: 0; }
+
+    /* A card of fields: stacked 16px apart. */
+    .settings-card-form {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4);
+      padding: var(--space-5);
+      overflow: visible;
+    }
+
+    .settings-card-form > .settings-msg:empty { display: none; }
 
     .settings-row {
       display: flex;
       align-items: center;
-      gap: 1rem;
       justify-content: space-between;
+      gap: var(--space-4);
+      min-height: 3.5rem;
+      padding: var(--space-3) 0;
+      box-sizing: border-box;
     }
 
-    .settings-row-info { flex: 1; min-width: 0; }
+    .settings-row-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
 
     .settings-row-title {
-      font-size: 0.875rem;
+      font-size: var(--size-md);
+      font-weight: var(--weight-semibold);
       color: var(--text-primary);
-      display: block;
     }
 
     .settings-row-desc {
-      font-size: 0.75rem;
+      font-size: var(--size-sm);
       color: var(--text-muted);
-      margin-top: 0.15rem;
-      line-height: 1.4;
-      display: block;
+      line-height: var(--leading-normal);
     }
 
+    /* ── Phone: the sidebar is the first screen, and a page slides over it ── */
+    @media (max-width: 719px) {
+      .settings-nav {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        padding-left: var(--space-3);
+        padding-right: var(--space-2);
+      }
+      .settings-nav-back { grid-column: 1; justify-self: start; max-width: 100%; }
+      .settings-nav-back > span { overflow: hidden; text-overflow: ellipsis; }
+      .settings-modal-title { grid-column: 2; text-align: center; font-size: var(--size-base); }
+      .settings-modal-close { grid-column: 3; justify-self: end; }
+
+      .settings-shell { grid-template-columns: minmax(0, 1fr); }
+      .settings-sidebar,
+      .settings-content {
+        grid-row: 1;
+        grid-column: 1;
+        transition: transform var(--duration-normal) var(--ease-standard), visibility 0s linear var(--duration-normal);
+      }
+      .settings-sidebar {
+        padding: var(--space-5) var(--space-5) calc(var(--space-8) + env(safe-area-inset-bottom));
+        background: var(--bg-base);
+        border-right: 0;
+      }
+      .settings-content { transform: translateX(100%); visibility: hidden; }
+      .settings-shell[data-page-open] .settings-sidebar { transform: translateX(-100%); visibility: hidden; }
+      .settings-shell[data-page-open] .settings-content { transform: none; visibility: visible; transition-delay: 0s; }
+      .settings-shell:not([data-page-open]) .settings-sidebar { transition-delay: 0s; }
+
+      .settings-nav-item {
+        min-height: 3rem;
+        background: var(--surface-1);
+        border-radius: 0;
+        color: var(--text-primary);
+      }
+      .settings-nav-group-head + .settings-nav-item { border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg); }
+      .settings-nav-item:has(+ .settings-nav-subhead),
+      .settings-nav-item:last-child { border-bottom-left-radius: var(--radius-lg); border-bottom-right-radius: var(--radius-lg); }
+      .settings-nav-subhead + .settings-nav-item { border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg); }
+      .settings-nav-item[aria-current="page"] { background: var(--surface-1); color: var(--text-primary); font-weight: var(--weight-medium); }
+      .settings-nav-item-chevron { display: inline-flex; }
+      .settings-nav-group-head { padding-left: var(--space-1); }
+      .settings-nav-subhead { padding-left: var(--space-1); }
+      .settings-sidebar-foot { border-top: 0; padding: 0 var(--space-1); }
+
+      .settings-page {
+        gap: var(--space-8);
+        padding: var(--space-5) var(--space-5) calc(var(--space-12) + env(safe-area-inset-bottom));
+      }
+      /* The header bar has the page's title. */
+      .settings-page-title { display: none; }
+      .settings-page-head { margin-bottom: calc(var(--space-2) - var(--space-8)); }
+      .settings-page-actions { margin-top: calc(var(--space-4) - var(--space-8)); }
+      .settings-card { padding-left: var(--space-4); padding-right: var(--space-4); }
+      .settings-card-form { padding: var(--space-4); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .settings-view, .settings-sidebar, .settings-content { transition: none; }
+    }
+
+    /* A list row (aircraft, pilots, trackers, devices, users, targets, basemaps,
+       overlays): name and detail on the left, its actions on the right. */
     .settings-aircraft-row {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
-      padding: 0.35rem 0;
-      border-bottom: 1px solid var(--border-structural);
+      gap: var(--space-3);
+      min-height: 3.5rem;
+      padding: var(--space-3) 0;
+      box-sizing: border-box;
     }
-
-    .settings-aircraft-row:last-child { border-bottom: none; }
 
     .settings-aircraft-row.editing {
       flex-direction: column;
@@ -571,10 +967,12 @@ export function settingsModalStyles(): string {
       min-width: 0;
       display: flex;
       flex-direction: column;
+      gap: 2px;
     }
 
     .settings-aircraft-name {
-      font-size: 0.85rem;
+      font-size: var(--size-md);
+      font-weight: var(--weight-semibold);
       color: var(--text-primary);
       white-space: nowrap;
       overflow: hidden;
@@ -584,83 +982,106 @@ export function settingsModalStyles(): string {
     .settings-aircraft-inactive .settings-aircraft-name { color: var(--text-muted); }
 
     .settings-aircraft-sub {
-      font-size: 0.75rem;
+      font-size: var(--size-sm);
       color: var(--text-muted);
+      line-height: var(--leading-snug);
     }
 
     .settings-aircraft-actions {
       display: flex;
-      gap: 0.3rem;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: var(--space-2);
       flex-shrink: 0;
     }
 
-    /* .settings-action-btn: JS-generated small buttons in tracker/aircraft/pilot rows */
+    .settings-aircraft-actions .btn-danger {
+      min-height: var(--control-h-sm);
+      padding: 0 var(--space-3);
+      font-size: var(--size-sm);
+    }
+
+    /* .settings-action-btn: the small buttons the script puts in list rows. */
     .settings-action-btn {
-      background: var(--surface-2);
-      border: 1.5px solid var(--border);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-1);
+      min-height: var(--control-h-sm);
+      padding: 0 var(--space-3);
+      background: var(--surface-1);
+      border: 1px solid var(--border);
       border-radius: var(--radius-md);
-      color: var(--text-muted);
+      color: var(--text-secondary);
+      font-family: var(--font-ui);
+      font-size: var(--size-sm);
+      font-weight: var(--weight-medium);
       cursor: pointer;
-      transition: background 0.15s, color 0.15s, border-color 0.15s;
-      padding: 0.25rem 0.55rem;
-      font-size: 0.75rem;
+      transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard);
     }
     .settings-action-btn:hover {
       background: var(--surface-hover);
-      color: var(--text-secondary);
+      color: var(--text-primary);
       border-color: var(--border-strong);
     }
+    .settings-action-btn:focus-visible { outline: none; box-shadow: var(--ring-focus); }
     .settings-action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    /* .settings-btn: visual props come from .btn-secondary on those elements */
 
+    /* A row's inline edit form, under its name. */
     .settings-edit-form {
       display: flex;
       flex-direction: column;
-      gap: 0.3rem;
-      padding: 0.4rem 0 0.2rem;
+      gap: var(--space-3);
+      max-width: 400px;
+      padding: var(--space-2) 0 var(--space-2);
     }
 
-    .settings-edit-form-actions { display: flex; gap: 0.3rem; }
-    .settings-edit-form-label { font-size: var(--size-2xs); color: var(--text-muted); }
+    .settings-edit-form-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+    .settings-edit-form-label { font-size: var(--size-xs); font-weight: var(--weight-semibold); color: var(--text-secondary); }
 
     .settings-import-warning {
       background: var(--warning-surface);
       color: var(--warning-fg);
       border-radius: var(--radius-sm);
-      padding: 0.35rem 0.5rem;
+      padding: var(--space-2) var(--space-3);
     }
 
     /* Color-only override; size comes from .settings-action-btn */
     .save-edit-btn {
       background: var(--accent-solid);
       border-color: transparent;
-      border-radius: var(--radius-pill);
       color: var(--accent-fg);
     }
 
     .save-edit-btn:hover { background: var(--accent-solid-hover); color: var(--accent-fg); border-color: transparent; }
 
-    .settings-add-tracker {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-    }
-
+    /* "Add …": a list card's last row, a disclosure that opens its form in place. */
     .settings-add-tracker summary {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      min-height: 3rem;
       cursor: pointer;
-      padding: 0.3rem 0;
-      color: var(--text-muted);
-      font-size: 0.8rem;
       list-style: none;
       user-select: none;
+      color: var(--accent-text);
+      font-family: var(--font-ui);
+      font-size: var(--size-md);
+      font-weight: var(--weight-semibold);
     }
 
-    .settings-add-tracker summary::before { content: '+ '; }
+    .settings-add-tracker summary::-webkit-details-marker { display: none; }
+    .settings-add-tracker summary:hover { opacity: 0.8; }
+    .settings-add-tracker summary:focus-visible { outline: none; box-shadow: var(--ring-focus); border-radius: var(--radius-sm); }
 
     .settings-add-inner {
       display: flex;
       flex-direction: column;
-      gap: 0.3rem;
-      padding-top: 0.5rem;
+      gap: var(--space-3);
+      max-width: 400px;
+      padding: var(--space-1) 0 var(--space-5);
+      font-size: var(--size-sm);
+      color: var(--text-secondary);
     }
 
     ${formControlStyles(
@@ -723,13 +1144,25 @@ export function settingsModalStyles(): string {
 
     .settings-add-actions {
       display: flex;
-      gap: 0.4rem;
+      flex-wrap: wrap;
+      gap: var(--space-2);
     }
     .settings-add-actions [hidden] { display: none; }
 
-    /* Buttons inside .settings-add-actions get .btn-md sizing (buttons.ts) without the
+    /* Buttons in a form's or a page's actions get .btn-md sizing (buttons.ts) without the
        class. Appearance comes from .btn-primary / .btn-secondary / .btn-danger. */
-    .settings-add-actions :is(.btn-primary, .btn-secondary, .btn-danger) {
+    :is(.settings-add-actions, .settings-page-actions) :is(.btn-primary, .btn-secondary, .btn-danger) {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+      min-height: var(--control-h-md);
+      padding: 0 var(--space-4);
+      font-size: var(--size-md);
+    }
+
+    /* A row's own button (Clear, Delete, Export) at the same size. */
+    .settings-row > :is(.btn-primary, .btn-secondary, .btn-danger) {
+      flex-shrink: 0;
       min-height: var(--control-h-md);
       padding: 0 var(--space-4);
       font-size: var(--size-md);
@@ -747,34 +1180,35 @@ export function settingsModalStyles(): string {
     }
 
     .settings-msg {
-      font-size: 0.8rem;
+      margin: 0;
+      font-size: var(--size-sm);
       color: var(--text-muted);
     }
 
+    /* The Devices card's first row: who's signed in. */
     .settings-devices-account {
       display: flex;
       flex-direction: column;
-      gap: 0.1rem;
-      padding-bottom: 0.5rem;
-      border-bottom: 1px solid var(--border-structural);
+      gap: 2px;
+      padding: var(--space-4) 0;
     }
 
     .settings-devices-account-label {
-      font-size: 0.65rem;
-      font-weight: 700;
+      font-size: var(--size-2xs);
+      font-weight: var(--weight-bold);
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: var(--tracking-caps);
       color: var(--text-muted);
     }
 
     .settings-devices-account-name {
-      font-size: 0.9rem;
-      font-weight: 600;
+      font-size: var(--size-base);
+      font-weight: var(--weight-semibold);
       color: var(--text-primary);
     }
 
     .settings-devices-account-role {
-      font-size: 0.75rem;
+      font-size: var(--size-sm);
       color: var(--text-muted);
     }
 
@@ -863,18 +1297,39 @@ export function settingsModalStyles(): string {
 
     /* ── Tracker form: labels + type row + instructions + credentials ─────── */
     .settings-form-label {
-      font-size: 0.7rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      margin-bottom: 0.1rem;
       display: block;
+      margin-bottom: 6px;
+      font-family: var(--font-ui);
+      font-size: var(--size-sm);
+      font-weight: var(--weight-semibold);
+      color: var(--text-secondary);
     }
 
     .settings-form-row {
       display: flex;
       flex-direction: column;
-      gap: 0.1rem;
+      max-width: 400px;
     }
+
+    /* Short fields side by side, each on its own line once there's no room. */
+    .settings-form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+      gap: var(--space-4);
+      max-width: 560px;
+    }
+
+    .settings-form-grid > .settings-form-row { max-width: none; }
+
+    /* A checkbox and its label, in an add form. */
+    .settings-check {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      cursor: pointer;
+    }
+
+    .settings-check input { margin: 0; accent-color: var(--accent); }
 
     .settings-section-desc code {
       font-family: var(--font-mono);
@@ -1184,8 +1639,136 @@ export function settingsModalScript(): string {
       return _settingsUser;
     }
 
+    // ── Pages ──
+    // The main view is a sidebar of pages (settingsPages(), settings.ts). The URL names the
+    // open page, #settings/<page> (#settings alone: a phone's list of pages), so a reload
+    // keeps it, a link opens it and Back steps out. An entry settings pushes carries
+    // history.state.wbSettings, how many such entries lead back to the page underneath:
+    // 1 for opening settings, 2 for a page a phone opened from its list.
+    const _SETTINGS_PHONE_QUERY = '(max-width: 719px)';
+    let _settingsPage = null;          // the page shown; null for a phone's list
+    let _settingsPicked = false;       // a page was asked for, so the checklist mustn't take over
+    let _settingsEntry = null;         // settings' history entry, put back when Back leaves a detail view
+    let _settingsClosing = false;      // closeSettings() went back past settings' entries
+    // The detail views' stack (below).
     let _settingsViewStack = [];
     let _settingsBeforeBack = null;
+
+    // What a page loads when it's shown (the rest render when settings opens).
+    const _settingsPageLoaders = {
+      account: () => { renderSettingsDevicesList(); renderSettingsEmails(); },
+      users: () => renderSettingsUsersList(),
+      general: async () => { _populateTenantTimezoneSelect(); await _loadTenantSettingsForm(); },
+      duty: () => _loadDutyMethods(),
+      notifications: async () => { await _loadTenantSettingsForm(); await renderSettingsWebhooksList(); },
+    };
+
+    function _settingsIsPhone() {
+      return !!window.matchMedia && window.matchMedia(_SETTINGS_PHONE_QUERY).matches;
+    }
+
+    function _settingsNavLink(id) {
+      return document.querySelector('.settings-nav-item[data-page="' + id + '"]');
+    }
+
+    function _settingsPageAvailable(id) {
+      const link = _settingsNavLink(id);
+      return !!link && !link.hidden;
+    }
+
+    // Shows or hides a page's sidebar link (the setup checklist; the admin pages by role),
+    // leaving the page if it's the one shown.
+    function _settingsSetPageAvailable(id, available) {
+      const link = _settingsNavLink(id);
+      if (link) link.hidden = !available;
+      if (!available && _settingsPage === id) _settingsShowPage(null, { history: 'replace' });
+    }
+
+    function _settingsDefaultPage() {
+      return _settingsPageAvailable('setup') ? 'setup' : 'appearance';
+    }
+
+    function _settingsUrlPage() {
+      const m = /^#settings(?:\\/([a-z-]+))?$/.exec(location.hash);
+      return m ? (m[1] || '') : null;
+    }
+
+    // mode: 'push' a new history entry, 'replace' the current one, or 'none'.
+    function _settingsSetHash(hash, mode) {
+      if (mode === 'none' || typeof history === 'undefined') return;
+      const url = location.pathname + location.search + hash;
+      const depth = history.state?.wbSettings || 0;
+      if (mode === 'push') history.pushState({ wbSettings: depth + 1 }, '', url);
+      else history.replaceState(hash ? { wbSettings: depth } : null, '', url);
+      _settingsEntry = hash ? { state: history.state, url } : null;
+    }
+
+    // Shows a page (null: a phone's list, or the default page on a wider screen) and
+    // runs its loader. A phone pushes a history entry for a page it opens from its list.
+    function _settingsShowPage(id, opts = {}) {
+      const phone = _settingsIsPhone();
+      if (id && !_settingsPageAvailable(id)) id = null;
+      if (!id && !phone) id = _settingsDefaultPage();
+      const prev = _settingsPage;
+      _settingsPage = id;
+      document.querySelectorAll('.settings-page').forEach((p) => { p.hidden = p.dataset.page !== id; });
+      document.querySelectorAll('.settings-nav-item').forEach((a) => {
+        if (a.dataset.page === id) a.setAttribute('aria-current', 'page');
+        else a.removeAttribute('aria-current');
+      });
+      const shell = document.getElementById('settings-shell');
+      if (id) shell.setAttribute('data-page-open', '');
+      else shell.removeAttribute('data-page-open');
+      if (id !== prev) document.getElementById('settings-content').scrollTop = 0;
+      _settingsSyncHeader();
+      _settingsSetHash(id ? '#settings/' + id : '#settings', opts.history ?? (phone && !prev && id ? 'push' : 'replace'));
+      const load = id && _settingsPageLoaders[id];
+      return load ? load() : undefined;
+    }
+
+    // The header bar: a detail view's title and Back, else on a phone the open page's
+    // title and Back to the list, else just "Settings".
+    function _settingsSyncHeader() {
+      const back = document.getElementById('settings-nav-back');
+      const title = document.getElementById('settings-nav-title');
+      const backLabel = document.getElementById('settings-nav-back-label');
+      const top = _settingsViewStack[_settingsViewStack.length - 1];
+      if (top) {
+        title.textContent = top.title;
+        backLabel.textContent = 'Back';
+        back.classList.remove('hidden');
+      } else if (_settingsPage && _settingsIsPhone()) {
+        title.textContent = _settingsNavLink(_settingsPage).querySelector('.settings-nav-item-label').textContent;
+        backLabel.textContent = 'Settings';
+        back.classList.remove('hidden');
+      } else {
+        title.textContent = 'Settings';
+        back.classList.add('hidden');
+      }
+    }
+
+    document.querySelectorAll('.settings-nav-item').forEach((a) => {
+      a.addEventListener('click', (e) => {
+        // A modified click opens the page's link in a new tab, as for any link.
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        _settingsPicked = true;
+        _settingsShowPage(a.dataset.page);
+      });
+    });
+
+    if (window.matchMedia) {
+      // Crossing the breakpoint: a wider screen always shows a page, a phone its header.
+      window.matchMedia(_SETTINGS_PHONE_QUERY).addEventListener('change', () => {
+        if (document.getElementById('settings-modal').classList.contains('hidden')) return;
+        if (!_settingsPage && !_settingsIsPhone()) _settingsShowPage(null);
+        else _settingsSyncHeader();
+      });
+    }
+
+    // ── Detail views ──
+    // The duty log, flight editor, aircraft info and map editors: a stack of views that
+    // slides over the pages, with the header's Back to leave each.
 
     function _settingsNavigateTo(viewId, title) {
       if (_settingsViewStack.length === 0) {
@@ -1199,20 +1782,8 @@ export function settingsModalScript(): string {
       const view = document.getElementById(viewId);
       view.classList.add('settings-view-active');
       view.scrollTop = 0;
-      document.getElementById('settings-nav-title').textContent = title;
-      document.getElementById('settings-nav-back').classList.remove('hidden');
       _settingsViewStack.push({ id: viewId, title });
-      _settingsSyncFullscreen();
-    }
-
-    // The modal fills the screen while the top view asks for it: data-fullscreen (the duty
-    // log's wide table) or data-fullscreen-editor (the map editors, which also get a
-    // non-scrolling flex layout).
-    function _settingsSyncFullscreen() {
-      const top = _settingsViewStack[_settingsViewStack.length - 1];
-      const view = top && document.getElementById(top.id);
-      const full = !!view && (view.dataset.fullscreen !== undefined || view.dataset.fullscreenEditor !== undefined);
-      document.getElementById('settings-modal').classList.toggle('settings-modal-fullscreen', full);
+      _settingsSyncHeader();
     }
 
     function _settingsNavigateBack() {
@@ -1220,18 +1791,15 @@ export function settingsModalScript(): string {
       const entry = _settingsViewStack.pop();
       const exitView = document.getElementById(entry.id);
       exitView.classList.remove('settings-view-active', 'settings-view-pushed');
-      _settingsSyncFullscreen();
       if (_settingsViewStack.length === 0) {
         document.getElementById('settings-view-main').classList.remove('settings-view-pushed');
-        document.getElementById('settings-nav-title').textContent = 'Settings';
-        document.getElementById('settings-nav-back').classList.add('hidden');
       } else {
         const prev = _settingsViewStack[_settingsViewStack.length - 1];
         const prevView = document.getElementById(prev.id);
         prevView.classList.remove('settings-view-pushed');
         prevView.classList.add('settings-view-active');
-        document.getElementById('settings-nav-title').textContent = prev.title;
       }
+      _settingsSyncHeader();
     }
 
     function _settingsReset() {
@@ -1240,25 +1808,75 @@ export function settingsModalScript(): string {
         const v = document.getElementById(entry.id);
         v.classList.remove('settings-view-active', 'settings-view-pushed');
       }
-      document.getElementById('settings-modal').classList.remove('settings-modal-fullscreen');
       document.getElementById('settings-view-main').classList.remove('settings-view-pushed');
-      document.getElementById('settings-nav-title').textContent = 'Settings';
-      document.getElementById('settings-nav-back').classList.add('hidden');
+      _settingsSyncHeader();
     }
 
-    document.getElementById('settings-nav-back').addEventListener('click', async () => {
-      if (_settingsBeforeBack) {
-        const fn = _settingsBeforeBack;
-        _settingsBeforeBack = null;
-        try { await fn(); } catch (_) {}
-      }
-      _settingsNavigateBack();
-    });
-    document.getElementById('settings-modal-backdrop').addEventListener('click', closeSettings);
+    async function _settingsRunBeforeBack() {
+      if (!_settingsBeforeBack) return;
+      const fn = _settingsBeforeBack;
+      _settingsBeforeBack = null;
+      try { await fn(); } catch (_) {}
+    }
 
-    async function openSettings() {
+    // The header's Back: out of a detail view, or on a phone from a page to the list.
+    async function _settingsBack() {
+      if (_settingsViewStack.length > 0) {
+        await _settingsRunBeforeBack();
+        _settingsNavigateBack();
+      } else if (_settingsPage && _settingsIsPhone()) {
+        // The list's entry is the one before, when the phone opened this page from it.
+        if ((history.state?.wbSettings || 0) >= 2) history.back();
+        else _settingsShowPage(null, { history: 'replace' });
+      }
+    }
+
+    document.getElementById('settings-nav-back').addEventListener('click', _settingsBack);
+
+    // The browser's Back and Forward, and links to #settings/<page>.
+    function _settingsFollowUrl() {
+      const page = _settingsUrlPage();
+      const open = !document.getElementById('settings-modal').classList.contains('hidden');
+      if (_settingsClosing) {
+        _settingsClosing = false;
+        if (open) _settingsClose();
+        return;
+      }
+      if (open && _settingsViewStack.length > 0) {
+        // Back from a detail view leaves just the view, as the header's Back does, so
+        // settings' entry goes back on (it was the one Back popped).
+        _settingsBack();
+        if (_settingsEntry) history.pushState(_settingsEntry.state, '', _settingsEntry.url);
+        return;
+      }
+      if (page === null) { if (open) _settingsClose(); return; }
+      if (!open) { openSettings(page || null, { history: 'none' }); return; }
+      _settingsShowPage(page || null, { history: 'none' });
+    }
+
+    window.addEventListener('popstate', _settingsFollowUrl);
+
+    // Opens settings when the page was loaded with #settings in its URL; each page's init
+    // calls this once its data is in. Its entry then counts as the page's own (depth 0),
+    // since what Back leads to was another load of the page.
+    function settingsOpenFromUrl() {
+      const page = _settingsUrlPage();
+      if (page === null) return false;
+      history.replaceState({ wbSettings: 0 }, '', location.href);
+      _settingsEntry = { state: history.state, url: location.href };
+      openSettings(page || null, { history: 'none' });
+      return true;
+    }
+
+    // Opens settings at a page (or the default one). Detail views open settings with no
+    // page, then push themselves on top.
+    async function openSettings(page = null, opts = {}) {
+      const modal = document.getElementById('settings-modal');
+      const wasOpen = !modal.classList.contains('hidden');
       _settingsReset();
-      document.getElementById('settings-modal').classList.remove('hidden');
+      modal.classList.remove('hidden');
+      if (!wasOpen && opts.history !== 'none') _settingsSetHash('#settings', 'push');
+      _settingsPicked = !!page;
       _syncThemeButtons();
       renderMapLayersSettings();
       renderSettingsBasemapsList();
@@ -1269,48 +1887,59 @@ export function settingsModalScript(): string {
 
       await _loadSettingsUser();
 
-      // Show/hide admin-only sections
+      // The admin pages, and the add forms on the pages everyone sees, by role.
       const isAdmin = _settingsUser?.role === 'admin';
-      const usersSection = document.getElementById('settings-section-users');
-      if (usersSection) usersSection.style.display = isAdmin ? '' : 'none';
-      const appSection = document.getElementById('settings-section-app');
-      if (appSection) appSection.style.display = isAdmin ? '' : 'none';
-
+      document.querySelectorAll('.settings-nav-item[data-admin]:not([data-page="setup"]), .settings-nav-subhead[data-admin]').forEach((el) => {
+        el.hidden = !isAdmin;
+      });
       for (const id of ['settings-add-aircraft', 'settings-add-pilot', 'settings-add-tracker', 'settings-add-basemap', 'settings-add-overlay']) {
         const el = document.getElementById(id);
         if (el) el.style.display = isAdmin ? '' : 'none';
       }
+      if (!isAdmin) _settingsSetPageAvailable('setup', false);
+      _settingsShowPage(page, { history: opts.history === 'none' ? 'none' : 'replace' });
+
       // Re-render tracker/basemap/overlay lists now that role is known (action buttons depend on it)
       renderSettingsTrackerList();
       renderSettingsBasemapsList();
       renderSettingsOverlaysList();
       loadSettingsBasemaps();
 
-      // Load devices (all users) and users list (admin only)
-      renderSettingsDevicesList();
-      renderSettingsEmails();
-      if (isAdmin) renderSettingsUsersList();
-
       // Refresh lists in case they changed since last load.
       const [ar, pr] = await Promise.allSettled([fetchAircraft(), fetchPilots()]);
       if (ar.status === 'fulfilled') { aircraftList = ar.value.aircraft; renderSettingsAircraftList(); }
       if (pr.status === 'fulfilled') { pilotList = pr.value.pilots; flightStore.setPilots(pilotList); renderSettingsPilotList(); }
       settingsResetAddForm();
-      if (isAdmin) renderSetupGuide(false);
-      else document.getElementById('settings-section-setup').style.display = 'none';
+      if (isAdmin) {
+        await renderSetupGuide(false);
+        // A new instance's checklist is where settings opens, unless a page was asked for.
+        if (!_settingsPicked && !_settingsIsPhone() && _settingsViewStack.length === 0 && _settingsPageAvailable('setup')) {
+          _settingsShowPage('setup', { history: 'replace' });
+        }
+      }
     }
 
-    async function closeSettings() {
-      if (_settingsBeforeBack) {
-        const fn = _settingsBeforeBack;
-        _settingsBeforeBack = null;
-        try { await fn(); } catch (_) {}
-      }
+    async function _settingsClose() {
+      await _settingsRunBeforeBack();
       document.getElementById('settings-modal').classList.add('hidden');
       _settingsReset();
+      _settingsPage = null;
+      _settingsEntry = null;
     }
 
-    document.getElementById('settings-btn').addEventListener('click', openSettings);
+    // Closes settings, going back past its history entries so Forward can reopen it.
+    async function closeSettings() {
+      const depth = history.state?.wbSettings || 0;
+      if (depth > 0 && _settingsUrlPage() !== null) {
+        _settingsClosing = true;
+        history.go(-depth);
+        return;
+      }
+      await _settingsClose();
+      if (_settingsUrlPage() !== null) _settingsSetHash('', 'replace');
+    }
+
+    document.getElementById('settings-btn').addEventListener('click', () => openSettings());
     document.getElementById('settings-modal-close').addEventListener('click', closeSettings);
 
     function renderSettingsTrackerList() {
@@ -3044,7 +3673,7 @@ export function settingsModalScript(): string {
       document.getElementById('settings-invite-form').open = false;
     });
 
-    // ── Global settings (admin only) ──────────────────────────────────────────
+    // ── Instance settings (admin only): the General and Notifications pages ─────
 
     let _tenantTzPopulated = false;
 
@@ -3078,16 +3707,14 @@ export function settingsModalScript(): string {
       } catch (_) {}
     }
 
-    async function _openTenantSettings() {
-      _settingsNavigateTo('settings-view-tenant', 'Global Settings');
-      _populateTenantTimezoneSelect();
-      await _loadTenantSettingsForm();
-      await _loadDutyMethods();
-      await renderSettingsWebhooksList();
+    // A form's status line: shown for 3 seconds.
+    function _settingsFlashStatus(statusEl, text) {
+      statusEl.style.display = '';
+      statusEl.textContent = text;
+      setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
     }
 
-    document.getElementById('settings-tenant-open-btn').addEventListener('click', _openTenantSettings);
-
+    // The General page: name, timezone and the default map view.
     document.getElementById('settings-tenant-save').addEventListener('click', async () => {
       const statusEl = document.getElementById('settings-tenant-status');
       const body = {
@@ -3096,18 +3723,9 @@ export function settingsModalScript(): string {
         map_default_lat: parseFloat(document.getElementById('settings-tenant-lat').value),
         map_default_lng: parseFloat(document.getElementById('settings-tenant-lng').value),
         map_default_zoom: parseFloat(document.getElementById('settings-tenant-zoom').value),
-        gap_alert_minutes: parseInt(document.getElementById('settings-tenant-gap-minutes').value, 10),
-        gap_alert_stop_minutes: parseInt(document.getElementById('settings-tenant-gap-stop-minutes').value, 10),
       };
-      // Not seeded by the initial migration, so it's blank until first saved — leave the
-      // server default (shown as the placeholder) in place rather than sending null.
-      if (Number.isNaN(body.gap_alert_stop_minutes)) delete body.gap_alert_stop_minutes;
       if (!body.app_name || !body.timezone) return;
-      const showStatus = (text) => {
-        statusEl.style.display = '';
-        statusEl.textContent = text;
-        setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
-      };
+      const showStatus = (text) => _settingsFlashStatus(statusEl, text);
       // Without the timezone as loaded, a save can't tell whether it changes it, so it can't
       // warn about the duty log below: refuse rather than save unwarned.
       if (!_tenantTimezone) {
@@ -3132,9 +3750,29 @@ export function settingsModalScript(): string {
           mapDefaultLng: body.map_default_lng,
           mapDefaultZoom: body.map_default_zoom,
         });
+        document.querySelectorAll('.settings-instance-name').forEach((el) => { el.textContent = body.app_name; });
         showStatus('Saved.');
       } catch (_) {
         showStatus('Failed to save.');
+      }
+    });
+
+    // The Notifications page's signal-gap thresholds.
+    document.getElementById('settings-gap-save').addEventListener('click', async () => {
+      const statusEl = document.getElementById('settings-gap-status');
+      const body = {
+        gap_alert_minutes: parseInt(document.getElementById('settings-tenant-gap-minutes').value, 10),
+        gap_alert_stop_minutes: parseInt(document.getElementById('settings-tenant-gap-stop-minutes').value, 10),
+      };
+      if (Number.isNaN(body.gap_alert_minutes)) return;
+      // Not seeded by the initial migration, so it's blank until first saved — leave the
+      // server default (shown as the placeholder) in place rather than sending null.
+      if (Number.isNaN(body.gap_alert_stop_minutes)) delete body.gap_alert_stop_minutes;
+      try {
+        await patchSettings(body);
+        _settingsFlashStatus(statusEl, 'Saved.');
+      } catch (_) {
+        _settingsFlashStatus(statusEl, 'Failed to save.');
       }
     });
 
@@ -3157,7 +3795,7 @@ export function settingsModalScript(): string {
         _dutyMethods = await fetchDutyMethods();
         errorEl.textContent = '';
       } catch (_) {
-        errorEl.textContent = 'Couldn’t load the duty method. Reopen Global Settings to try again.';
+        errorEl.textContent = 'Couldn’t load the duty method. Open the page again to try again.';
       }
       _editDutyMethod(null);
     }

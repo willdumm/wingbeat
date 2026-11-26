@@ -205,6 +205,8 @@ export function analyticsScriptsMap(): string {
         refreshFilterDropdowns();
       }, () => {});
       const bothLoaded = Promise.all([regionsLoaded, trackersLoaded]).then(savePageCache);
+      // A #settings/<page> URL opens settings over the page, once it has the trackers.
+      trackersLoaded.then(() => settingsOpenFromUrl());
 
       // Phase 1: paint from cache; without the regions and tracker ids cached, wait for them.
       const cached = await loadPageCache();

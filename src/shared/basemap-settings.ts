@@ -1,3 +1,5 @@
+import { icon } from './icons';
+
 /**
  * Settings' "Basemaps" section: the tenant's basemaps (the map's base layers, tenant data in
  * the `basemaps` table, docs/tenant-basemaps-plan.md), which admins add, edit, show or hide in
@@ -11,10 +13,9 @@
 
 export function basemapSettingsMarkup(): string {
   return `
-    <p class="settings-section-desc">The base layers in the map's style switcher, the same for everyone. Hidden basemaps stay configured. A vector basemap is a Protomaps basemap PMTiles archive, with Protomaps' basemaps-assets (fonts and sprites) copied to <code>basemaps-assets/</code> beside it.</p>
-    <div id="settings-basemap-list"></div>
+    <div id="settings-basemap-list" class="settings-list"></div>
     <details id="settings-add-basemap" class="settings-add-tracker">
-      <summary>Add basemap</summary>
+      <summary>${icon('plus', { size: 16 })}Add basemap</summary>
       <div class="settings-add-inner">
         <input type="text" id="settings-add-basemap-label" placeholder="Label (e.g. Imagery)" autocomplete="off" />
         <select id="settings-add-basemap-kind" aria-label="Basemap type">

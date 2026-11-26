@@ -77,7 +77,7 @@ export function pilotDutyStyles(): string {
     .duty-upcoming-what { flex: 1; color: var(--text-secondary); display: flex; flex-direction: column; }
 
     /* A dated list's entries, newest first, each with Edit and Remove: the default-duty
-       form's (_dutyOpenDefaultForm) and Global Settings' duty method (settings.ts). */
+       form's (_dutyOpenDefaultForm) and settings' Duty limits page (settings.ts). */
     .duty-dated-list { list-style: none; margin: 0; padding: 0; font-size: var(--size-sm); }
     .duty-dated-list li {
       display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.75rem;
@@ -768,7 +768,7 @@ export function pilotDutyScript(): string {
 
     // A dated list (newest first) with Edit and Remove on each entry (data-edit /
     // data-remove: its index), what(entry) its value. The entry being edited is left out.
-    // Shared with Global Settings' duty method (settings.ts).
+    // Shared with settings' Duty limits page (settings.ts).
     function _dutyDatedListHtml(entries, what, editing = null) {
       return '<ul class="duty-dated-list">' + entries.map((e, i) => e === editing ? '' :
         '<li><span class="duty-dated-when">' + escHtml(_dutyDatedWhen(entries, e)) + '</span>' +

@@ -1,30 +1,30 @@
 import { statusChip } from './status';
 
 /**
- * First-run setup checklist (#4), shown to admins at the top of the settings modal while
- * a required step (basics, aircraft/pilots, trackers) is left and it hasn't been dismissed
- * (tenant setting `setup_dismissed`); re-openable from the Admin section.
+ * First-run setup checklist (#4), shown to admins as settings' "Get started" page (and the
+ * page settings opens on) while a required step (basics, aircraft/pilots, trackers) is left
+ * and it hasn't been dismissed (tenant setting `setup_dismissed`); re-openable from the
+ * General page.
  * The dashboard already opens settings when there are no trackers, so a new instance's
- * first admin lands on it. Each step only links to the existing settings section or view
+ * first admin lands on it. Each step only links to the existing settings page or view
  * that does the work, in the order that matters (aircraft/pilots before trackers, trackers
  * assigned before importing history), with a done/optional chip computed from live data.
  *
- * Include setupGuideMarkup() at the top of the main settings view, setupGuideAdminRowMarkup()
- * in the Admin section, setupGuideStyles() with the settings styles, and setupGuideScript()
- * inside settingsModalScript() (it uses _openTenantSettings, trackerList, aircraftList and
- * pilotList from there).
+ * Include setupGuideMarkup() as the "setup" settings page's body, setupGuideAdminRowMarkup()
+ * on the General page, setupGuideStyles() with the settings styles, and setupGuideScript()
+ * inside settingsModalScript() (it uses _settingsShowPage, _settingsSetPageAvailable,
+ * trackerList, aircraftList and pilotList from there).
  */
 
 export function setupGuideMarkup(): string {
   return `
-            <div class="settings-section setup-guide" id="settings-section-setup" style="display:none">
-              <div class="settings-section-label">Get started</div>
+            <section class="settings-section setup-guide" id="settings-section-setup">
               <p class="settings-section-desc">Set things up in this order: flights are tagged with a tracker&rsquo;s aircraft and pilot as they arrive.</p>
-              <ol class="setup-guide-steps" id="settings-setup-steps"></ol>
-              <div class="settings-add-actions">
+              <ol class="settings-card setup-guide-steps" id="settings-setup-steps"></ol>
+              <div class="settings-page-actions">
                 <button id="settings-setup-dismiss" class="btn-secondary">Hide checklist</button>
               </div>
-            </div>`;
+            </section>`;
 }
 
 export function setupGuideAdminRowMarkup(): string {
@@ -43,17 +43,16 @@ export function setupGuideStyles(): string {
     .setup-guide-steps {
       list-style: none;
       margin: 0;
-      padding: 0;
       counter-reset: setup-step;
     }
 
+    /* A row of its .settings-card: the card draws the hairline between steps. */
     .setup-guide-step {
       counter-increment: setup-step;
       display: flex;
       align-items: flex-start;
-      gap: 0.6rem;
-      padding: 0.45rem 0;
-      border-bottom: 1px solid var(--border-structural);
+      gap: var(--space-3);
+      padding: var(--space-4) 0;
     }
 
     .setup-guide-step::before {
@@ -73,7 +72,7 @@ export function setupGuideStyles(): string {
 
     .setup-guide-step-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
     .setup-guide-step-head { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
-    .setup-guide-step-title { font-size: 0.85rem; font-weight: var(--weight-bold); color: var(--text-primary); }
+    .setup-guide-step-title { font-size: var(--size-md); font-weight: var(--weight-semibold); color: var(--text-primary); }
     .setup-guide-step .settings-action-btn { flex: none; align-self: center; }
   `;
 }
@@ -89,21 +88,23 @@ export function setupGuideScript(): string {
 
     const _sgChips = ${JSON.stringify(chips)};
 
-    function _sgScrollTo(sectionEl, detailsId) {
+    // A step's button: the settings page that does the work, with its add form open when
+    // there's nothing there yet.
+    function _sgGo(page, detailsId) {
+      _settingsShowPage(page);
       if (detailsId) {
         const d = document.getElementById(detailsId);
-        if (d) d.open = true;
+        if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
       }
-      sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
-    function _sgSection(id) {
-      return document.getElementById(id).closest('.settings-section');
+    // Shows or hides the checklist's page (and its sidebar link).
+    function _sgShow(show) {
+      _settingsSetPageAvailable('setup', show);
     }
 
     async function renderSetupGuide(force) {
-      const section = document.getElementById('settings-section-setup');
-      if (_settingsUser?.role !== 'admin') { section.style.display = 'none'; return; }
+      if (_settingsUser?.role !== 'admin') { _sgShow(false); return; }
 
       // Each read on its own: one that fails counts as nothing there.
       const orNull = (p) => p.catch(() => null);
@@ -115,7 +116,7 @@ export function setupGuideScript(): string {
         orNull(fetchInvites()),
         orNull(fetchWebhooks()),
       ]);
-      if (!force && settings?.setup_dismissed === '1') { section.style.display = 'none'; return; }
+      if (!force && settings?.setup_dismissed === '1') { _sgShow(false); return; }
 
       const trackers = (trackerList || []).filter(t => !t.deleted);
       const basicsDone = !!settings && settings.app_name !== 'Wingbeat'
@@ -125,33 +126,34 @@ export function setupGuideScript(): string {
         (aircraftList.length === 0 || t.assigned_aircraft) && (pilotList.length === 0 || t.assigned_pilot != null));
       const placesDone = (regions?.features?.length ?? 0) > 0 || (namedPoints?.features?.length ?? 0) > 0;
       // Unprompted, it only shows while a required step is left (so established instances
-      // never see it); "Show" in the Admin section brings it back with the optional steps.
-      if (!force && basicsDone && fleetDone && trackersDone) { section.style.display = 'none'; return; }
+      // never see it); "Show" on the General page brings it back with the optional steps.
+      if (!force && basicsDone && fleetDone && trackersDone) { _sgShow(false); return; }
       const peopleDone = (users?.users?.length ?? 0) > 1 || (invites?.invites?.length ?? 0) > 0;
       const notifyDone = (webhooks?.webhooks?.length ?? 0) > 0;
 
       const steps = [
         { title: 'Organization basics', state: basicsDone ? 'done' : 'todo',
           desc: 'Instance name, timezone, and the map view everyone starts from (Set from map).',
-          action: 'Open', go: () => _openTenantSettings() },
+          action: 'Open', go: () => _sgGo('general') },
         { title: 'Aircraft and pilots', state: fleetDone ? 'done' : 'todo',
           desc: 'Add them before trackers, so new flights are assigned automatically.',
-          action: 'Show', go: () => _sgScrollTo(_sgSection('settings-aircraft-list'), aircraftList.length === 0 ? 'settings-add-aircraft' : null) },
+          action: 'Show', go: () => _sgGo(aircraftList.length > 0 && pilotList.length === 0 ? 'pilots' : 'aircraft',
+            aircraftList.length === 0 ? 'settings-add-aircraft' : pilotList.length === 0 ? 'settings-add-pilot' : null) },
         { title: 'Trackers', state: trackersDone ? 'done' : 'todo',
           desc: 'Paste each device\\'s MapShare feed URL (and password, if set), assign its aircraft and pilot, and use Test feed to check it.',
-          action: 'Show', go: () => _sgScrollTo(_sgSection('settings-tracker-list'), trackers.length === 0 ? 'settings-add-tracker' : null) },
+          action: 'Show', go: () => _sgGo('trackers', trackers.length === 0 ? 'settings-add-tracker' : null) },
         { title: 'Regions and named points', state: placesDone ? 'done' : 'optional',
           desc: 'Import GeoJSON (draw it at geojson.io) or use the map editors. Named points label flight origins and destinations; a region named "… (Base)" is a home base.',
-          action: 'Open', go: () => _openTenantSettings() },
+          action: 'Open', go: () => _sgGo('map-content') },
         { title: 'Import history', state: 'optional',
           desc: 'New trackers start with the last two days. Use Import on a tracker to bring in older flights.',
-          action: 'Show', go: () => _sgScrollTo(_sgSection('settings-tracker-list'), null) },
+          action: 'Show', go: () => _sgGo('trackers') },
         { title: 'Invite people', state: peopleDone ? 'done' : 'optional',
           desc: 'Create a sign-in link for each person, as a viewer or an admin.',
-          action: 'Show', go: () => _sgScrollTo(document.getElementById('settings-section-users'), 'settings-invite-form') },
+          action: 'Show', go: () => _sgGo('users', 'settings-invite-form') },
         { title: 'Notifications', state: notifyDone ? 'done' : 'optional',
           desc: 'Takeoff, landing and signal-gap alerts by webhook or Pushover.',
-          action: 'Open', go: () => _openTenantSettings() },
+          action: 'Open', go: () => _sgGo('notifications') },
       ];
 
       const list = document.getElementById('settings-setup-steps');
@@ -181,7 +183,7 @@ export function setupGuideScript(): string {
         li.appendChild(btn);
         list.appendChild(li);
       }
-      section.style.display = '';
+      _sgShow(true);
     }
 
     async function _sgSetDismissed(value) {
@@ -189,14 +191,14 @@ export function setupGuideScript(): string {
     }
 
     document.getElementById('settings-setup-dismiss').addEventListener('click', async () => {
-      document.getElementById('settings-section-setup').style.display = 'none';
+      _sgShow(false);
       await _sgSetDismissed('1');
     });
 
     document.getElementById('settings-setup-show').addEventListener('click', async () => {
       await _sgSetDismissed('0');
       await renderSetupGuide(true);
-      document.getElementById('settings-view-main').scrollTop = 0;
+      _settingsShowPage('setup');
     });
   `;
 }

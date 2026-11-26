@@ -355,15 +355,14 @@ export function mapLayerColorRuntimeScript(): string {
 }
 
 /**
- * Settings modal markup for the "Map layers" section: one row per basemap in the map's style
+ * Settings' "Map colors" list (on the Appearance page): one row per basemap in the map's style
  * switcher, each with a "Colors" disclosure for this device's color corrections. Which
- * basemaps there are is tenant data, managed in the Basemaps section (basemap-settings.ts).
+ * basemaps there are is tenant data, managed under Map content (basemap-settings.ts).
  * Populated at runtime by mapLayersSettingsScript().
  */
 export function mapLayersSettingsRowsMarkup(): string {
   return `
-    <p class="settings-section-desc">Adjust the colors of each basemap on this device. Changes apply immediately, on every map. Admins choose which basemaps are available under Basemaps.</p>
-    <div id="settings-map-layers-list"></div>
+    <div id="settings-map-layers-list" class="settings-list"></div>
   `;
 }
 

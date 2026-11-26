@@ -1,4 +1,4 @@
-// Global Settings' Save (settingsModalScript(), src/shared/settings.ts), run on a stub DOM
+// The General page's Save (settingsModalScript(), src/shared/settings.ts), run on a stub DOM
 // with the shipped core bundle: the timezone-change warning can't be skipped, and a saved
 // timezone reaches core's page globals without a reload (src/client/core-entry.ts reads
 // APP_SETTINGS.timezone on every call).
@@ -12,7 +12,7 @@ import { TZ } from './core.mjs';
 /** An element that accepts anything the script does to it and keeps its listeners. */
 function stubElement() {
   const el = {
-    value: '', textContent: '', innerHTML: '', style: {}, dataset: {}, listeners: {},
+    value: '', textContent: '', innerHTML: '', hidden: false, style: {}, dataset: {}, listeners: {},
     classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
     addEventListener(type, fn) { (el.listeners[type] ??= []).push(fn); },
   };
@@ -57,13 +57,13 @@ function loadSettings({ loaded, counts = { duty_days: 3, default_duties: 0 }, co
 const settings = { app_name: 'Test', timezone: TZ, map_default_lat: 61.2, map_default_lng: -149.9, map_default_zoom: 8 };
 
 async function openAndSave(page, timezone) {
-  for (const fn of page.byId('settings-tenant-open-btn').listeners.click) await fn();
+  await vm.runInContext("_settingsShowPage('general')", page.context);
   page.byId('settings-tenant-name').value ||= 'Test';
   page.byId('settings-tenant-timezone').value = timezone;
   for (const fn of page.byId('settings-tenant-save').listeners.click) await fn();
 }
 
-describe('Global Settings save', () => {
+describe('General settings save', () => {
   test('a new timezone asks first, then reaches core without a reload', async () => {
     const page = loadSettings({ loaded: settings });
     await openAndSave(page, 'UTC');

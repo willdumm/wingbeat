@@ -5,7 +5,7 @@ import { icon } from './icons';
  * "Set from map" picker for the tenant's default map view (#1): a full-screen settings
  * view (same shell as the named-points / regions editors) where the admin pans and zooms
  * to the view everyone should land on, then confirms to copy the center and zoom into
- * the lat / lng / zoom fields of the Global Settings form. Saving still goes through that
+ * the lat / lng / zoom fields of settings' General page. Saving still goes through that
  * form's Save button, so the numeric fields stay the source of truth.
  *
  * Include mapViewPickerMarkup() inside `.settings-views`, mapViewPickerStyles() with the
