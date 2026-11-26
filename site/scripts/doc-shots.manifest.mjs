@@ -4,14 +4,17 @@
 // route  — page to load
 // setup  — ordered data-doc-shot slugs to click first, to reach the target state
 // theme  — 'light' | 'dark' (optional, defaults to 'light')
+// viewport — { width, height } (optional, defaults to Playwright's 1280×720): taller for a
+//          target inside a scrolling panel (settings), which clips it to the panel
 // output — path (no extension) under site/static/img/generated/
 
-/** @type {Array<{ slug: string, route: string, setup?: string[], theme?: 'light' | 'dark', output: string }>} */
+/** @type {Array<{ slug: string, route: string, setup?: string[], theme?: 'light' | 'dark', viewport?: { width: number, height: number }, output: string }>} */
 export const manifest = [
   {
     slug: 'settings.add-tracker-dialog',
     route: '/#settings/trackers',
     theme: 'light',
+    viewport: { width: 1280, height: 1100 },
     output: 'settings/add-tracker-dialog',
   },
   {

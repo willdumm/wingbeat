@@ -6,8 +6,8 @@ weight: 4
 
 # Pilot Duty Log
 
-Per-pilot flight and duty log, opened with **Duty log** on a pilot's entry in
-Settings. It shows one month at a time, through today in the current month;
+Per-pilot flight and duty log, opened by clicking a pilot in
+Settings → Pilots. It shows one month at a time, through today in the current month;
 use the arrows to move back through the pilot's history. It's built from the
 pilot's flights, with any [corrections](../editing-flights) applied, and admins
 can record duty times and plan rest days before it's exported as a record.
@@ -284,7 +284,7 @@ the one-pilot limits.
 
 §135.267 lets an operator apply its daily limits in one of two ways, and the
 operator picks one. Set yours under **Duty limits (§135.267)** in
-[Global Settings](../../settings/admin-settings#duty-limits-135267); the default is (b).
+Settings (an Admin's [Duty limits](../../settings/admin-settings#duty-limits-135267) page); the default is (b).
 The method is shown above the totals, e.g. "Limits:
 §135.267(b), flight time in any 24 hours · one-pilot crew".
 

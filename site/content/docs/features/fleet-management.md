@@ -31,7 +31,7 @@ carries:
 
 ## Pilots
 
-A name (**Edit** on the pilot), an active flag, and an optional default duty
+A name (**Edit** in the pilot's ⋯ menu), an active flag, and an optional default duty
 period, set by date in the pilot's
 [duty log](../pilot-duty-log#default-duty) — pilots are never hard-deleted, so historical flights keep a valid
 reference even after someone stops flying. See
@@ -69,7 +69,7 @@ tracker reference).
 ### Importing history
 
 A new tracker starts with the last two days of its feed. To bring in older
-flights, use **Import** on the tracker, pick a start date, and leave the form
+flights, use **Import history…** in the tracker's ⋯ menu, pick a start date, and leave the form
 open: it imports a month at a time, then labels the new flights' origins and
 destinations (slowly, since the public place-lookup service is rate-limited).
 Positions already stored are skipped, and an import never sends

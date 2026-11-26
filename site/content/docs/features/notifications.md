@@ -6,8 +6,8 @@ weight: 6
 
 # Notifications
 
-Admins can register notification targets (Settings → Admin → Global Settings
-→ Notifications) to get notified when a tracker:
+Admins can register notification targets (Settings → Notifications) to get
+notified when a tracker:
 
 - **takes off** — velocity crosses above the flight-speed threshold (~20 kt)
 - **lands** — velocity drops back below it
