@@ -126,7 +126,7 @@ export function eventMessage(event: NotificationEvent, timezone: string, { links
 
 /**
  * Sends each event to every active target subscribed to its type, and as an app push to
- * every subscribed user's devices. Takes the whole batch so the webhooks table is read once
+ * every subscribed device. Takes the whole batch so the webhooks table is read once
  * per poll, not once per event (a short flight can produce takeoff+landing in a single
  * batch). Best-effort per-target: failures are recorded, never thrown, and neither delivery
  * path can hold up or fail the other.

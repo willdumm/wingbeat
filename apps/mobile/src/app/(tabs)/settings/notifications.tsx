@@ -1,5 +1,5 @@
 /**
- * Settings → Notifications: the active account's push subscriptions. Turning the first one on
+ * Settings → Notifications: the active account's push subscriptions on this phone. Turning the first one on
  * asks for permission and registers this phone (push.ts); each change saves the whole set.
  * The Time Sensitive events are this phone's: a change is stored here and registered again
  * with every signed-in account.

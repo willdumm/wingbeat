@@ -957,11 +957,14 @@ Push comes in three steps. Each one is useful alone, and none of them waits on t
 
 ### Subscriptions and devices (shared by all three)
 
-Subscriptions are per user, and every device a user has registered gets each push:
+Subscriptions are per signed-in device (session), so two devices signed in to one account can
+be notified of different things:
 
-- `push_subscriptions`: `user_id`, `tracker_id` (NULL = all), `event` (`takeoff`, `landing`,
-  `gap`). Unlike `webhooks`, these are per user, so any user, viewers included, subscribes
-  themselves in Settings. Admins don't manage them.
+- `push_session_subscriptions`: `session_id` (FK → sessions, `ON DELETE CASCADE`),
+  `tracker_id` (NULL = all), `event` (`takeoff`, `landing`, `gap`, `alerts`). Unlike
+  `webhooks`, any user, viewers included, subscribes themselves in Settings. Admins don't
+  manage them. A new device starts with none; a phone paired again without signing out takes
+  over its older session's when it registers its token.
 - `push_devices`: `id`, `session_id` (FK → sessions, `ON DELETE CASCADE`, so signing out a
   device in Settings also stops its pushes), `kind` (`web` or `expo`), `endpoint` (the Web
   Push endpoint URL, or the Expo push token), `p256dh` and `auth` (Web Push only),
@@ -975,6 +978,11 @@ Subscriptions are per user, and every device a user has registered gets each pus
   also `alerts` (the alerts feed, `tracker_id` NULL). Routes: `POST /api/me/push-devices`
   (one token per session; a new one replaces it), `GET`/`PUT /api/me/push-subscriptions` (the
   whole set), in `@wingbeat/core/api/push` and compat level 1.
+- **Per device 2026-11-25:** subscriptions were per user (`push_subscriptions`) until
+  `migrations/0011_push_session_subscriptions.sql`, which gives each app session its user's.
+  The routes and responses are unchanged, so it needs no new compat level. The old table is
+  kept for the previous Worker; drop it in a later release. Run the migration before deploying
+  the Worker: the new one fails to send pushes without the table.
 - `dispatchNotifications()` gains a delivery path for `push_subscriptions` next to the
   `webhooks` targets. It reuses `eventTitle`/`eventMessage`, and `subscriptionKey()` already
   maps `gap_resolved`/`gap_timeout` onto `gap`. Today the function returns early when there
@@ -1970,7 +1978,7 @@ calls a new `DELETE /api/me`:
 
 - deletes the `users` row, which cascades to `sessions` and that user's device-link
   tokens (`invite_tokens`) through the existing `ON DELETE CASCADE` foreign keys, and from
-  sessions to `push_devices`. It also deletes `push_subscriptions` and the user's
+  sessions to `push_devices` and `push_session_subscriptions`. It also deletes the user's
   `presence_events`, and clears `users.pilot_id`;
 - leaves the operator's records alone: the linked pilot, flights, duty days and corrections
   belong to the operator (they're operational records, often required to be kept).

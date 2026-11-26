@@ -33,7 +33,7 @@ export function NotificationSettings({ trackers, subscriptions, timeSensitive, b
   return (
     <Host style={{ flex: 1 }}>
       <Form modifiers={[disabled(busy)]}>
-        <Section footer={<Text>Maintenance coming due and duty limits being approached, as in the Flights tab’s alerts.</Text>}>
+        <Section footer={<Text>Maintenance coming due and duty limits being approached, as in the Flights tab’s alerts. Other devices signed in to this account have their own notification settings.</Text>}>
           {row({ tracker_id: null, event: 'alerts' }, 'Alerts')}
         </Section>
         <Section title="All Trackers" footer={<Text>Signal gap: a tracker in flight stops reporting, then when it resumes or the alerts stop.</Text>}>

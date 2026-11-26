@@ -1329,7 +1329,7 @@ describe('the app’s requests, through the core client', async () => {
   });
 });
 
-// App push (migration 0006): a session's device and the user's subscriptions, through core's
+// App push (migration 0006): a session's device and subscriptions (0011), through core's
 // client as the app calls them.
 describe('push devices and subscriptions, through the core client', async () => {
   const { createApiClient, ApiHttpError } = await importCore('api/client');
@@ -1369,6 +1369,39 @@ describe('push devices and subscriptions, through the core client', async () => 
     assert.deepEqual(await push.setPushSubscriptions(client, { subscriptions: [] }), { subscriptions: [] });
   });
 
+  test("each of a user's devices has its own subscriptions, gone when it's signed out", async () => {
+    const [one, two] = [await paired(), await paired()];
+    const gap = { subscriptions: [{ tracker_id: null, event: 'gap' }] };
+    const landing = { subscriptions: [{ tracker_id: 2, event: 'landing' }] };
+    await push.setPushSubscriptions(one.client, gap);
+    assert.deepEqual(await push.getPushSubscriptions(two.client), { subscriptions: [] });
+    await push.setPushSubscriptions(two.client, landing);
+    assert.deepEqual(await push.getPushSubscriptions(one.client), gap);
+    await me.deleteSession(one.client, one.session_id);
+    assert.deepEqual(await w.all('SELECT * FROM push_session_subscriptions WHERE session_id = ?', one.session_id), []);
+    assert.deepEqual(await push.getPushSubscriptions(two.client), landing);
+  });
+
+  test("migration 0011 gives each app session its user's subscriptions, and web ones none", async () => {
+    const copy = splitSql(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/0011_push_session_subscriptions.sql'), 'utf8'))
+      .filter((s) => /^INSERT/.test(s.trim()));
+    assert.equal(copy.length, 1);
+    await w.run("INSERT INTO users (id, name, role) VALUES (9001, 'Office', 'viewer'), (9002, 'Other', 'viewer')");
+    await w.run(`INSERT INTO sessions (id, user_id, token, app_version) VALUES
+      (9001, 9001, 't1', 'level=1; runtime=r'), (9002, 9001, 't2', NULL), (9003, 9001, 't3', NULL), (9004, 9002, 't4', 'level=1; runtime=r')`);
+    await w.run("INSERT INTO push_devices (session_id, kind, endpoint) VALUES (9002, 'expo', 'ExponentPushToken[backfill]')");
+    await w.run("INSERT INTO push_subscriptions (user_id, tracker_id, event) VALUES (9001, NULL, 'alerts'), (9001, 2, 'gap')");
+    try {
+      await w.run(copy[0]);
+      assert.deepEqual(await w.all('SELECT session_id, tracker_id, event FROM push_session_subscriptions WHERE session_id > 9000 ORDER BY session_id, event'), [
+        { session_id: 9001, tracker_id: null, event: 'alerts' }, { session_id: 9001, tracker_id: 2, event: 'gap' },
+        { session_id: 9002, tracker_id: null, event: 'alerts' }, { session_id: 9002, tracker_id: 2, event: 'gap' },
+      ]);
+    } finally {
+      await w.run('DELETE FROM users WHERE id IN (9001, 9002)');
+    }
+  });
+
   test('request validation', async () => {
     for (const [method, url, body] of [
       ['POST', '/api/me/push-devices', { kind: 'web', token: 'x' }],
@@ -1385,7 +1418,7 @@ describe('push devices and subscriptions, through the core client', async () => 
     await push.registerPushDevice(client, { kind: 'expo', token: 'ExponentPushToken[gone]' });
     await push.setPushSubscriptions(client, { subscriptions: [{ tracker_id: null, event: 'gap' }] });
     await me.deleteMe(client);
-    assert.deepEqual([await devices(session_id), await w.all('SELECT * FROM push_subscriptions WHERE user_id = ?', id)], [[], []]);
+    assert.deepEqual([await devices(session_id), await w.all('SELECT * FROM push_session_subscriptions WHERE session_id = ?', session_id)], [[], []]);
   });
 });
 
