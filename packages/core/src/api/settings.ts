@@ -1,5 +1,5 @@
 /**
- * The settings route group (admins only): Global Settings' key/value settings (GET and
+ * The settings route group (admins only): the instance pages' key/value settings (GET and
  * PATCH /api/settings, which the setup guide also reads and writes), and what the duty log
  * holds that a timezone change would move (GET /api/settings/duty-records, for the warning
  * before one: docs/mobile-app-plan.md, "Times and the operator's timezone"). The request

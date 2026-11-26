@@ -147,7 +147,7 @@ Currently supports **Garmin inReach** trackers via the MapShare KML polling inte
 
 ## Notifications
 
-Admins can register notification targets (Settings → Global Settings → Notifications) to get
+Admins can register notification targets (Settings → Notifications) to get
 notified whenever a tracker:
 
 - **takes off** — velocity crosses above the flight speed threshold (~20 kt)

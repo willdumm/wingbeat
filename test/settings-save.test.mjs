@@ -39,6 +39,7 @@ function loadSettings({ loaded, counts = { duty_days: 3, default_duties: 0 }, co
     fetch: () => Promise.reject(new Error('no fetch here')),
     confirm: (text) => { asked.push(text); return confirmAnswer; },
     setTimeout: () => 0,
+    clearTimeout: () => {},
     // The map controls' (map-controls.ts), which every page that has the modal also loads.
     _ftActiveLayerDefs: () => [],
     Intl,

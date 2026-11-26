@@ -49,7 +49,7 @@ export default function AddAccountScreen() {
           <Button label="Sign in with Browser" systemImage="safari" onPress={signIn}
             modifiers={[disabled(pairing || !address.trim())]} />
         </Section>
-        <Section footer={<Text>In Wingbeat on the web, open Settings → Devices and choose Get link to show a code.</Text>}>
+        <Section footer={<Text>In Wingbeat on the web, open Settings → Account and choose Get link to show a code.</Text>}>
           <Button label="Scan a Code" systemImage="qrcode.viewfinder" onPress={() => router.push('/scan')}
             modifiers={[disabled(pairing)]} />
         </Section>

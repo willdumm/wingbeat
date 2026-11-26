@@ -67,21 +67,7 @@ export function basemapSettingsScript(): string {
     }
 
     function _buildBasemapRow(b, i) {
-      const row = document.createElement('div');
-      row.className = 'settings-aircraft-row';
-
-      const info = document.createElement('div');
-      info.className = 'settings-aircraft-info';
-      const nameEl = document.createElement('span');
-      nameEl.className = 'settings-aircraft-name';
-      nameEl.textContent = b.label;
-      info.appendChild(nameEl);
-      const sub = document.createElement('span');
-      sub.className = 'settings-aircraft-sub';
-      sub.textContent = _basemapKindNote(b);
-      info.appendChild(sub);
-
-      row.appendChild(info);
+      const row = _settingsRow(b.label, _basemapKindNote(b));
       const admin = _settingsUser?.role === 'admin';
       _settingsFinishRow(row, {
         chip: b.shown ? null : 'hidden',

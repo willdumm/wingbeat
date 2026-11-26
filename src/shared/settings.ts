@@ -37,18 +37,30 @@ import { setupGuideMarkup, setupGuideAdminRowMarkup, setupGuideStyles, setupGuid
  */
 
 // What "Delete my account" leaves behind, in its row and its confirm.
+// Up to this width settings is a phone's drill-down (the stylesheet's media query and the
+// script's matchMedia).
+const SETTINGS_PHONE_MAX_PX = 719;
+
 const DELETE_ACCOUNT_KEEPS = 'Flights, duty days and edit history stay with the operator.';
 
 // Who a settings page's changes reach: the sidebar groups its pages by this, and each
 // page repeats it as a tag under its title, so it's clear on a page opened from a link too.
 type SettingsScope = 'browser' | 'account' | 'instance';
 
-const SCOPES: Record<SettingsScope, { label: string; caption: string; icon: string }> = {
+const SCOPES: Record<SettingsScope, { label?: string; caption: string; icon: string }> = {
   browser: { label: 'This browser', caption: 'Saved on this device only', icon: 'monitor' },
   account: { label: 'Your account', caption: 'Follows you to every device', icon: 'circle-user-round' },
-  // The instance's group is labelled with its name (filled in by the script after a rename).
-  instance: { label: '', caption: 'Shared by everyone here; admins make changes', icon: 'building-2' },
+  // The instance's is labelled with its name (scopeLabel).
+  instance: { caption: 'Shared by everyone here; admins make changes', icon: 'building-2' },
 };
+
+/** A scope's label as HTML. The instance's is its name, in a span the script renames after a
+ * save; its page tag reads "Everyone on <name>". */
+function scopeLabel(scope: SettingsScope, appName: string, opts: { tag?: boolean } = {}): string {
+  if (scope !== 'instance') return SCOPES[scope].label!;
+  const name = `<span class="settings-instance-name">${escapeHtml(appName)}</span>`;
+  return opts.tag ? `Everyone on ${name}` : name;
+}
 
 interface SettingsPage {
   id: string;
@@ -63,11 +75,7 @@ interface SettingsPage {
 }
 
 function scopeTag(scope: SettingsScope, appName: string): string {
-  const s = SCOPES[scope];
-  const label = scope === 'instance'
-    ? `Everyone on <span class="settings-instance-name">${escapeHtml(appName)}</span>`
-    : s.label;
-  return `<span class="settings-scope-tag" data-scope="${scope}">${icon(s.icon, { size: 14 })}${label}</span>`;
+  return `<span class="settings-scope-tag" data-scope="${scope}">${icon(SCOPES[scope].icon, { size: 14 })}${scopeLabel(scope, appName, { tag: true })}</span>`;
 }
 
 /** A titled group of settings on a page: its heading and description, then its card. */
@@ -461,16 +469,13 @@ function settingsSidebarMarkup(pages: SettingsPage[], appName: string): string {
   const groups = (['browser', 'account', 'instance'] as const).map((scope) => {
     const items = pages.filter((p) => p.scope === scope);
     const link = (p: SettingsPage) => `
-              <a class="settings-nav-item" href="#settings/${p.id}" data-page="${p.id}"${p.admin ? ' data-admin' : ''}${p.hidden ? ' hidden' : ''}>
+              <a class="settings-nav-item" href="#settings/${p.id}" data-page="${p.id}"${p.admin ? ' data-admin' : ''}${p.admin || p.hidden ? ' hidden' : ''}>
                 ${icon(p.icon, { size: 18 })}<span class="settings-nav-item-label">${p.title}</span>${icon('chevron-right', { size: 16, className: 'settings-nav-item-chevron' })}
               </a>`;
-    const label = scope === 'instance'
-      ? `<span class="settings-instance-name">${escapeHtml(appName)}</span>`
-      : SCOPES[scope].label;
     return `
             <div class="settings-nav-group" data-scope="${scope}">
               <div class="settings-nav-group-head">
-                <span class="settings-nav-group-label">${label}</span>
+                <span class="settings-nav-group-label">${scopeLabel(scope, appName)}</span>
                 <span class="settings-nav-group-caption">${SCOPES[scope].caption}</span>
               </div>
               <div class="settings-nav-list">${items.map(link).join('')}
@@ -494,6 +499,7 @@ export function settingsModalMarkup(appName: string): string {
       <div class="settings-nav">
         <button id="settings-nav-back" class="settings-nav-back hidden" aria-label="Back">${icon('chevron-left', { size: 18 })}<span id="settings-nav-back-label">Settings</span></button>
         <h2 id="settings-nav-title" class="settings-modal-title">
+          <!-- The product's name, not the instance's: the instance names its own group below. -->
           <span id="settings-nav-brand" class="settings-modal-brand">${logoLockupMarkup('Wingbeat Settings', { size: 24 })}</span>
           <span id="settings-nav-title-text" hidden></span>
         </h2>
@@ -552,6 +558,7 @@ export function settingsModalStyles(): string {
        Spacing (design system, 4px base): page padding 32 (20 on a phone), 40 between
        groups, 12 from a group's heading to its card, cards padded 20 with 56px rows. */
     .settings-modal {
+      --settings-row-h: 3.5rem;
       position: fixed;
       inset: 0;
       z-index: 2000;
@@ -574,7 +581,7 @@ export function settingsModalStyles(): string {
       display: flex;
       align-items: center;
       gap: var(--space-2);
-      min-height: 3.5rem;
+      min-height: var(--settings-row-h);
       padding: env(safe-area-inset-top) var(--space-4) 0;
       flex-shrink: 0;
       background: var(--surface-1);
@@ -864,7 +871,7 @@ export function settingsModalStyles(): string {
       align-items: center;
       justify-content: space-between;
       gap: var(--space-4);
-      min-height: 3.5rem;
+      min-height: var(--settings-row-h);
       padding: var(--space-3) 0;
       box-sizing: border-box;
     }
@@ -890,7 +897,7 @@ export function settingsModalStyles(): string {
     }
 
     /* ── Phone: the sidebar is the first screen, and a page slides over it ── */
-    @media (max-width: 719px) {
+    @media (max-width: ${SETTINGS_PHONE_MAX_PX}px) {
       .settings-nav {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -953,7 +960,7 @@ export function settingsModalStyles(): string {
       display: flex;
       align-items: center;
       gap: var(--space-3);
-      min-height: 3.5rem;
+      min-height: var(--settings-row-h);
       padding: var(--space-3) 0;
       box-sizing: border-box;
     }
@@ -1090,6 +1097,15 @@ export function settingsModalStyles(): string {
       font-size: var(--size-sm);
       color: var(--text-secondary);
     }
+
+    /* The add-tracker form's Aircraft and Pilot fields, which the script fills, spaced like
+       the form's others. */
+    #settings-add-tracker-assignments {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+    }
+    #settings-add-tracker-assignments:empty { display: none; }
 
     ${formControlStyles(
       '.settings-add-inner input:not([type="radio"]):not([type="checkbox"]), .settings-add-inner select, ' +
@@ -1655,7 +1671,7 @@ export function settingsModalScript(): string {
     // keeps it, a link opens it and Back steps out. An entry settings pushes carries
     // history.state.wbSettings, how many such entries lead back to the page underneath:
     // 1 for opening settings, 2 for a page a phone opened from its list.
-    const _SETTINGS_PHONE_QUERY = '(max-width: 719px)';
+    const _SETTINGS_PHONE_QUERY = '(max-width: ${SETTINGS_PHONE_MAX_PX}px)';
     let _settingsPage = null;          // the page shown; null for a phone's list
     let _settingsPicked = false;       // a page was asked for, so the checklist mustn't take over
     let _settingsEntry = null;         // settings' history entry, put back when Back leaves a detail view
@@ -1942,6 +1958,7 @@ export function settingsModalScript(): string {
       const shown = _settingsPage;
 
       // Re-render tracker/basemap/overlay lists now that role is known (action buttons depend on it)
+      _rowMenuClose(false);
       renderSettingsTrackerList();
       renderSettingsBasemapsList();
       renderSettingsOverlaysList();
@@ -1949,6 +1966,7 @@ export function settingsModalScript(): string {
 
       // Refresh lists in case they changed since last load.
       const [ar, pr] = await Promise.allSettled([fetchAircraft(), fetchPilots()]);
+      _rowMenuClose(false);
       if (ar.status === 'fulfilled') { aircraftList = ar.value.aircraft; renderSettingsAircraftList(); }
       if (pr.status === 'fulfilled') { pilotList = pr.value.pilots; flightStore.setPilots(pilotList); renderSettingsPilotList(); }
       settingsResetAddForm();
@@ -1980,6 +1998,7 @@ export function settingsModalScript(): string {
       if (depth > 0 && (_settingsUrlPage() !== null || _settingsDetailOnly)) {
         _settingsClosing = true;
         history.go(-depth);
+        setTimeout(() => { if (_settingsClosing) { _settingsClosing = false; _settingsClose(); } }, 1000);
         return;
       }
       await _settingsClose();
@@ -2002,11 +2021,31 @@ export function settingsModalScript(): string {
     };
     const _SETTINGS_ROW_CHEVRON = ${JSON.stringify(icon('chevron-right', { size: 18 }))};
 
+    // A list row: its name, and its detail line under it when sub isn't empty. Finished
+    // with _settingsFinishRow.
+    function _settingsRow(name, sub = '', { inactive = false } = {}) {
+      const row = document.createElement('div');
+      row.className = 'settings-aircraft-row' + (inactive ? ' settings-aircraft-inactive' : '');
+      const info = document.createElement('div');
+      info.className = 'settings-aircraft-info';
+      const nameEl = document.createElement('span');
+      nameEl.className = 'settings-aircraft-name';
+      nameEl.textContent = name;
+      info.appendChild(nameEl);
+      if (sub) {
+        const subEl = document.createElement('span');
+        subEl.className = 'settings-aircraft-sub';
+        subEl.textContent = sub;
+        info.appendChild(subEl);
+      }
+      row.appendChild(info);
+      return row;
+    }
+
     // Finishes a row built as .settings-aircraft-row > .settings-aircraft-info: its chip
     // (a _SETTINGS_CHIPS key) and its trailing control, a ⋯ menu of items (rowMenuButton,
     // row-menu.ts), or a chevron for a row whose only action is open. open (its edit form
-    // or detail view) also runs on a click on the row. Returns the trailing control's
-    // .settings-aircraft-actions, which an open edit form hides.
+    // or detail view) also runs on a click on the row.
     function _settingsFinishRow(row, { chip = null, items = [], open = null, label = '' } = {}) {
       if (chip) row.insertAdjacentHTML('beforeend', _SETTINGS_CHIPS[chip]);
       const actions = document.createElement('div');
@@ -2032,7 +2071,18 @@ export function settingsModalScript(): string {
           open();
         });
       }
-      return actions;
+    }
+
+    // An edit form or panel opened under a row: the row's trailing control hides meanwhile.
+    function _settingsOpenInlineForm(row) {
+      row.querySelector('.settings-aircraft-actions').style.display = 'none';
+      row.classList.add('editing');
+    }
+
+    function _settingsCloseInlineForm(row, form) {
+      form.remove();
+      row.querySelector('.settings-aircraft-actions').style.display = '';
+      row.classList.remove('editing');
     }
 
     function renderSettingsTrackerList() {
@@ -2048,27 +2098,13 @@ export function settingsModalScript(): string {
       }
 
       for (const t of trackerList.filter(t => !t.deleted)) {
-        const row = document.createElement('div');
-        row.className = 'settings-aircraft-row' + (t.active ? '' : ' settings-aircraft-inactive');
-
-        const info = document.createElement('div');
-        info.className = 'settings-aircraft-info';
-        const nameEl = document.createElement('span');
-        nameEl.className = 'settings-aircraft-name';
-        nameEl.textContent = t.name;
-        info.appendChild(nameEl);
-        const sub = document.createElement('span');
-        sub.className = 'settings-aircraft-sub';
         const subParts = [t.type];
         if (t.assigned_aircraft) subParts.push(t.assigned_aircraft);
         if (t.assigned_pilot != null) {
           const pilot = pilotList.find(p => p.id === t.assigned_pilot);
           if (pilot) subParts.push(pilot.name);
         }
-        sub.textContent = subParts.join(' · ');
-        if (sub.textContent) info.appendChild(sub);
-
-        row.appendChild(info);
+        const row = _settingsRow(t.name, subParts.join(' · '), { inactive: !t.active });
         const admin = _settingsUser?.role === 'admin';
         _settingsFinishRow(row, {
           chip: t.active ? null : 'paused',
@@ -2137,23 +2173,9 @@ export function settingsModalScript(): string {
     }
 
     function _buildOverlayRow(ov) {
-      const row = document.createElement('div');
-      row.className = 'settings-aircraft-row';
-
-      const info = document.createElement('div');
-      info.className = 'settings-aircraft-info';
-      const nameEl = document.createElement('span');
-      nameEl.className = 'settings-aircraft-name';
-      nameEl.textContent = ov.label;
-      info.appendChild(nameEl);
-      const sub = document.createElement('span');
-      sub.className = 'settings-aircraft-sub';
       const overrideCount = ov.default_enabled_by_basemap ? Object.keys(ov.default_enabled_by_basemap).length : 0;
-      sub.textContent = (ov.default_enabled ? 'On by default' : 'Off by default') +
-        (overrideCount > 0 ? ' · ' + overrideCount + ' basemap override' + (overrideCount > 1 ? 's' : '') : '');
-      info.appendChild(sub);
-
-      row.appendChild(info);
+      const row = _settingsRow(ov.label, (ov.default_enabled ? 'On by default' : 'Off by default') +
+        (overrideCount > 0 ? ' · ' + overrideCount + ' basemap override' + (overrideCount > 1 ? 's' : '') : ''));
       const admin = _settingsUser?.role === 'admin';
       _settingsFinishRow(row, {
         label: ov.label,
@@ -2185,14 +2207,11 @@ export function settingsModalScript(): string {
     function settingsToggleOverlayEditForm(row, ov) {
       const existing = row.querySelector('.settings-edit-form');
       if (existing) {
-        existing.remove();
-        row.querySelector('.settings-aircraft-actions').style.display = '';
-        row.classList.remove('editing');
+        _settingsCloseInlineForm(row, existing);
         return;
       }
 
-      row.querySelector('.settings-aircraft-actions').style.display = 'none';
-      row.classList.add('editing');
+      _settingsOpenInlineForm(row);
 
       const form = document.createElement('div');
       form.className = 'settings-edit-form';
@@ -2282,9 +2301,7 @@ export function settingsModalScript(): string {
       });
 
       cancelBtn.addEventListener('click', () => {
-        form.remove();
-        row.querySelector('.settings-aircraft-actions').style.display = '';
-        row.classList.remove('editing');
+        _settingsCloseInlineForm(row, form);
       });
       row.appendChild(form);
     }
@@ -2439,14 +2456,11 @@ export function settingsModalScript(): string {
     function settingsToggleEditForm(row, tracker) {
       const existing = row.querySelector('.settings-edit-form');
       if (existing) {
-        existing.remove();
-        row.querySelector('.settings-aircraft-actions').style.display = '';
-        row.classList.remove('editing');
+        _settingsCloseInlineForm(row, existing);
         return;
       }
 
-      row.querySelector('.settings-aircraft-actions').style.display = 'none';
-      row.classList.add('editing');
+      _settingsOpenInlineForm(row);
 
       const form = document.createElement('div');
       form.className = 'settings-edit-form';
@@ -2572,9 +2586,7 @@ export function settingsModalScript(): string {
       });
 
       cancelBtn.addEventListener('click', () => {
-        form.remove();
-        row.querySelector('.settings-aircraft-actions').style.display = '';
-        row.classList.remove('editing');
+        _settingsCloseInlineForm(row, form);
       });
       row.appendChild(form);
     }
@@ -2587,16 +2599,11 @@ export function settingsModalScript(): string {
     // The dates are operator days (trackerImportWindows, core settings).
 
     function settingsToggleImportForm(row, tracker) {
-      const close = (el) => {
-        el.remove();
-        row.querySelector('.settings-aircraft-actions').style.display = '';
-        row.classList.remove('editing');
-      };
+      const close = (el) => _settingsCloseInlineForm(row, el);
       const existing = row.querySelector('.settings-edit-form');
       if (existing) { close(existing); return; }
 
-      row.querySelector('.settings-aircraft-actions').style.display = 'none';
-      row.classList.add('editing');
+      _settingsOpenInlineForm(row);
 
       const form = document.createElement('div');
       form.className = 'settings-edit-form';
@@ -2954,15 +2961,7 @@ export function settingsModalScript(): string {
         return;
       }
       for (const a of aircraftList) {
-        const row = document.createElement('div');
-        row.className = 'settings-aircraft-row' + (a.active ? '' : ' settings-aircraft-inactive');
-        const info = document.createElement('div');
-        info.className = 'settings-aircraft-info';
-        const nameEl = document.createElement('span');
-        nameEl.className = 'settings-aircraft-name';
-        nameEl.textContent = a.tail_number + (a.name ? ' – ' + a.name : '');
-        info.appendChild(nameEl);
-        row.appendChild(info);
+        const row = _settingsRow(a.tail_number + (a.name ? ' – ' + a.name : ''), '', { inactive: !a.active });
         _settingsFinishRow(row, { chip: a.active ? null : 'inactive', label: a.tail_number, open: () => openAircraftInfo(a) });
         container.appendChild(row);
       }
@@ -3004,24 +3003,10 @@ export function settingsModalScript(): string {
         return;
       }
       for (const p of pilotList) {
-        const row = document.createElement('div');
-        row.className = 'settings-aircraft-row' + (p.active ? '' : ' settings-aircraft-inactive');
-        const info = document.createElement('div');
-        info.className = 'settings-aircraft-info';
-        const nameEl = document.createElement('span');
-        nameEl.className = 'settings-aircraft-name';
-        nameEl.textContent = p.name;
-        info.appendChild(nameEl);
         // The default in force today (dutyDefaultOn, pilot-duty.ts); its dated list is
         // edited from the duty log.
         const def = dutyDefaultOn(p.default_duties, unixToTzDateStr(Math.floor(Date.now() / 1000)));
-        if (def) {
-          const sub = document.createElement('span');
-          sub.className = 'settings-aircraft-sub';
-          sub.textContent = 'Default duty ' + def.duty_start + '–' + def.duty_end;
-          info.appendChild(sub);
-        }
-        row.appendChild(info);
+        const row = _settingsRow(p.name, def ? 'Default duty ' + def.duty_start + '–' + def.duty_end : '', { inactive: !p.active });
         const openDuty = () => openPilotDuty(p.id, p.name);
         _settingsFinishRow(row, {
           chip: p.active ? null : 'hidden',
@@ -3048,13 +3033,10 @@ export function settingsModalScript(): string {
     function settingsTogglePilotEdit(row, pilot) {
       const existing = row.querySelector('.settings-edit-form');
       if (existing) {
-        existing.remove();
-        row.querySelector('.settings-aircraft-actions').style.display = '';
-        row.classList.remove('editing');
+        _settingsCloseInlineForm(row, existing);
         return;
       }
-      row.querySelector('.settings-aircraft-actions').style.display = 'none';
-      row.classList.add('editing');
+      _settingsOpenInlineForm(row);
       const form = document.createElement('div');
       form.className = 'settings-edit-form';
       form.innerHTML =
@@ -3081,9 +3063,7 @@ export function settingsModalScript(): string {
         }
       });
       form.querySelector('.settings-cancel-btn').addEventListener('click', () => {
-        form.remove();
-        row.querySelector('.settings-aircraft-actions').style.display = '';
-        row.classList.remove('editing');
+        _settingsCloseInlineForm(row, form);
       });
       row.appendChild(form);
     }
@@ -3213,19 +3193,7 @@ export function settingsModalScript(): string {
         container.appendChild(acctHeader);
 
         for (const session of data.sessions) {
-          const row = document.createElement('div');
-          row.className = 'settings-aircraft-row';
-          const info = document.createElement('div');
-          info.className = 'settings-aircraft-info';
-          const nameEl = document.createElement('span');
-          nameEl.className = 'settings-aircraft-name';
-          nameEl.textContent = session.device_name ?? 'Unnamed device';
-          const subEl = document.createElement('span');
-          subEl.className = 'settings-aircraft-sub';
-          subEl.textContent = 'Last seen ' + fmtTzDate(session.last_seen_at);
-          info.appendChild(nameEl);
-          info.appendChild(subEl);
-          row.appendChild(info);
+          const row = _settingsRow(session.device_name ?? 'Unnamed device', 'Last seen ' + fmtTzDate(session.last_seen_at));
           const current = session.id === _settingsUser?.session_id;
           _settingsFinishRow(row, {
             chip: current ? 'thisDevice' : null,
@@ -3245,18 +3213,7 @@ export function settingsModalScript(): string {
           container.appendChild(row);
         }
         // "Get device link" row
-        const linkRow = document.createElement('div');
-        linkRow.className = 'settings-aircraft-row';
-        const linkInfo = document.createElement('div');
-        linkInfo.className = 'settings-aircraft-info';
-        const linkTitle = document.createElement('span');
-        linkTitle.className = 'settings-aircraft-name';
-        linkTitle.textContent = 'Add another device';
-        const linkDesc = document.createElement('span');
-        linkDesc.className = 'settings-aircraft-sub';
-        linkDesc.textContent = 'Get a sign-in link valid for 15 minutes to add another device.';
-        linkInfo.appendChild(linkTitle);
-        linkInfo.appendChild(linkDesc);
+        const linkRow = _settingsRow('Add another device', 'Get a sign-in link valid for 15 minutes to add another device.');
         const linkActions = document.createElement('div');
         linkActions.className = 'settings-aircraft-actions';
         const linkBtn = document.createElement('button');
@@ -3264,7 +3221,6 @@ export function settingsModalScript(): string {
         linkBtn.textContent = 'Get link';
         linkBtn.addEventListener('click', () => settingsGenerateDeviceLink(linkBtn));
         linkActions.appendChild(linkBtn);
-        linkRow.appendChild(linkInfo);
         linkRow.appendChild(linkActions);
         container.appendChild(linkRow);
       } catch (_) {
@@ -3275,13 +3231,10 @@ export function settingsModalScript(): string {
     function settingsToggleDeviceRename(row, session) {
       const existing = row.querySelector('.settings-edit-form');
       if (existing) {
-        existing.remove();
-        row.querySelector('.settings-aircraft-actions').style.display = '';
-        row.classList.remove('editing');
+        _settingsCloseInlineForm(row, existing);
         return;
       }
-      row.querySelector('.settings-aircraft-actions').style.display = 'none';
-      row.classList.add('editing');
+      _settingsOpenInlineForm(row);
       const form = document.createElement('div');
       form.className = 'settings-edit-form';
       form.innerHTML =
@@ -3299,9 +3252,7 @@ export function settingsModalScript(): string {
         } catch (_) {}
       });
       form.querySelector('.settings-cancel-btn').addEventListener('click', () => {
-        form.remove();
-        row.querySelector('.settings-aircraft-actions').style.display = '';
-        row.classList.remove('editing');
+        _settingsCloseInlineForm(row, form);
       });
       row.appendChild(form);
     }
@@ -3322,13 +3273,9 @@ export function settingsModalScript(): string {
         const data = await createDeviceLink();
         const url = window.location.origin + data.url;
         const row = btn.closest('.settings-aircraft-row');
-        const actions = row.querySelector('.settings-aircraft-actions');
-        actions.style.display = 'none';
-        row.classList.add('editing');
+        _settingsOpenInlineForm(row);
         const card = settingsCreateLinkPanel(url, 'Sign-in link — valid for 15 minutes', () => {
-          card.remove();
-          actions.style.display = '';
-          row.classList.remove('editing');
+          _settingsCloseInlineForm(row, card);
           btn.textContent = 'Get link';
           btn.disabled = false;
         }, settingsAppPairLink(data.url));
@@ -3347,19 +3294,7 @@ export function settingsModalScript(): string {
     function settingsRenderEmails(container, data, ops) {
       container.innerHTML = '';
       const addRow = (text, sub, inactive, items, chip) => {
-        const row = document.createElement('div');
-        row.className = 'settings-aircraft-row' + (inactive ? ' settings-aircraft-inactive' : '');
-        const info = document.createElement('div');
-        info.className = 'settings-aircraft-info';
-        const nameEl = document.createElement('span');
-        nameEl.className = 'settings-aircraft-name';
-        nameEl.textContent = text;
-        const subEl = document.createElement('span');
-        subEl.className = 'settings-aircraft-sub';
-        subEl.textContent = sub;
-        info.appendChild(nameEl);
-        info.appendChild(subEl);
-        row.appendChild(info);
+        const row = _settingsRow(text, sub, { inactive });
         _settingsFinishRow(row, { chip, items, label: text });
         container.appendChild(row);
       };
@@ -3456,25 +3391,14 @@ export function settingsModalScript(): string {
         if (usersRes.status === 'fulfilled') {
           const userList = usersRes.value.users;
           for (const user of userList) {
-            const row = document.createElement('div');
-            row.className = 'settings-aircraft-row';
-            const info = document.createElement('div');
-            info.className = 'settings-aircraft-info';
-            const nameEl = document.createElement('span');
-            nameEl.className = 'settings-aircraft-name';
-            nameEl.textContent = user.name;
-            const subEl = document.createElement('span');
-            subEl.className = 'settings-aircraft-sub';
-            subEl.textContent = (user.role === 'admin' ? 'Admin' : 'Viewer') +
-              (user.is_env_admin ? ' · Shared account' : '') +
-              ' · ' + user.device_count + ' device' + (user.device_count !== 1 ? 's' : '');
             const pilot = user.pilot_id != null ? pilotList.find(p => p.id === user.pilot_id) : null;
-            if (pilot) subEl.textContent += ' · Pilot ' + pilot.name;
-            for (const e of user.emails ?? []) subEl.textContent += ' · ' + e.email;
-            for (const e of user.pending_emails ?? []) subEl.textContent += ' · ' + e.email + ' (not verified)';
-            info.appendChild(nameEl);
-            info.appendChild(subEl);
-            row.appendChild(info);
+            const subParts = [user.role === 'admin' ? 'Admin' : 'Viewer'];
+            if (user.is_env_admin) subParts.push('Shared account');
+            subParts.push(user.device_count + ' device' + (user.device_count !== 1 ? 's' : ''));
+            if (pilot) subParts.push('Pilot ' + pilot.name);
+            for (const e of user.emails ?? []) subParts.push(e.email);
+            for (const e of user.pending_emails ?? []) subParts.push(e.email + ' (not verified)');
+            const row = _settingsRow(user.name, subParts.join(' · '));
             const editable = !user.is_env_admin;
             _settingsFinishRow(row, {
               label: user.name,
@@ -3489,29 +3413,13 @@ export function settingsModalScript(): string {
         }
         if (invitesRes.status === 'fulfilled') {
           for (const invite of invitesRes.value.invites) {
-            const row = document.createElement('div');
-            row.className = 'settings-aircraft-row settings-aircraft-inactive';
-            const info = document.createElement('div');
-            info.className = 'settings-aircraft-info';
-            const nameEl = document.createElement('span');
-            nameEl.className = 'settings-aircraft-name';
-            nameEl.textContent = invite.invited_name;
-            const subEl = document.createElement('span');
-            subEl.className = 'settings-aircraft-sub';
-            subEl.textContent = (invite.invited_role === 'admin' ? 'Admin' : 'Viewer') +
-              (invite.email ? ' · Emailed to ' + invite.email : '') + ' · Expires ' + fmtTzDate(invite.expires_at);
-            info.appendChild(nameEl);
-            info.appendChild(subEl);
-            row.appendChild(info);
+            const row = _settingsRow(invite.invited_name, (invite.invited_role === 'admin' ? 'Admin' : 'Viewer') +
+              (invite.email ? ' · Emailed to ' + invite.email : '') + ' · Expires ' + fmtTzDate(invite.expires_at), { inactive: true });
             const showLink = () => {
               const url = window.location.origin + '/join/' + invite.token;
-              const actions = row.querySelector('.settings-aircraft-actions');
-              actions.style.display = 'none';
-              row.classList.add('editing');
+              _settingsOpenInlineForm(row);
               const panel = settingsCreateLinkPanel(url, 'Invite link for ' + invite.invited_name, () => {
-                panel.remove();
-                actions.style.display = '';
-                row.classList.remove('editing');
+                _settingsCloseInlineForm(row, panel);
               });
               row.appendChild(panel);
             };
@@ -3535,16 +3443,12 @@ export function settingsModalScript(): string {
     // Links a user to the pilot they are, which the app's duty log opens on. A pilot linked
     // to another user isn't offered (the server refuses a second link).
     function settingsToggleUserPilot(row, user, userList) {
-      const actions = row.querySelector('.settings-aircraft-actions');
       const existing = row.querySelector('.settings-edit-form');
       if (existing) {
-        existing.remove();
-        actions.style.display = '';
-        row.classList.remove('editing');
+        _settingsCloseInlineForm(row, existing);
         return;
       }
-      actions.style.display = 'none';
-      row.classList.add('editing');
+      _settingsOpenInlineForm(row);
 
       const form = document.createElement('div');
       form.className = 'settings-edit-form';
@@ -3592,16 +3496,12 @@ export function settingsModalScript(): string {
 
     // A user's addresses, which an admin adds (each is emailed a link that confirms it) and removes.
     function settingsToggleUserEmails(row, user) {
-      const actions = row.querySelector('.settings-aircraft-actions');
       const existing = row.querySelector('.settings-user-emails');
       if (existing) {
-        existing.remove();
-        actions.style.display = '';
-        row.classList.remove('editing');
+        _settingsCloseInlineForm(row, existing);
         return;
       }
-      actions.style.display = 'none';
-      row.classList.add('editing');
+      _settingsOpenInlineForm(row);
       const panel = document.createElement('div');
       panel.className = 'settings-user-emails';
       const list = document.createElement('div');
@@ -3720,7 +3620,8 @@ export function settingsModalScript(): string {
     function _settingsFlashStatus(statusEl, text) {
       statusEl.style.display = '';
       statusEl.textContent = text;
-      setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+      clearTimeout(statusEl._flashTimer);
+      statusEl._flashTimer = setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
     }
 
     // The General page: name, timezone and the default map view.
@@ -3875,9 +3776,7 @@ export function settingsModalScript(): string {
       const value = document.getElementById('settings-tenant-pushover-token').value.trim();
       let saved = true;
       try { await patchSettings({ pushover_api_token: value }); } catch (_) { saved = false; }
-      statusEl.style.display = '';
-      statusEl.textContent = saved ? 'Saved.' : 'Failed to save.';
-      setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+      _settingsFlashStatus(statusEl, saved ? 'Saved.' : 'Failed to save.');
     });
 
     // ── Webhooks (admin only) ─────────────────────────────────────────────────
@@ -3904,15 +3803,6 @@ export function settingsModalScript(): string {
           return;
         }
         for (const hook of data.webhooks) {
-          const row = document.createElement('div');
-          row.className = 'settings-aircraft-row' + (hook.active ? '' : ' settings-aircraft-inactive');
-          const info = document.createElement('div');
-          info.className = 'settings-aircraft-info';
-          const nameEl = document.createElement('span');
-          nameEl.className = 'settings-aircraft-name';
-          nameEl.textContent = hook.label || (hook.type === 'pushover' ? 'Pushover' : hook.url);
-          const subEl = document.createElement('span');
-          subEl.className = 'settings-aircraft-sub';
           let events = [];
           try { events = JSON.parse(hook.events); } catch (_) {}
           const eventsText = events.map((e) => WEBHOOK_EVENT_LABELS[e] || e).join(', ');
@@ -3920,14 +3810,12 @@ export function settingsModalScript(): string {
           let statusText = hook.last_triggered_at
             ? 'Last: ' + (hook.last_status != null ? 'HTTP ' + hook.last_status : 'failed') + ' at ' + fmtTzDateTime(hook.last_triggered_at)
             : 'Never triggered';
-          subEl.textContent = typeText + ' · ' + eventsText + ' · ' + statusText;
-          if (hook.last_error) subEl.title = hook.last_error;
-          info.appendChild(nameEl);
-          info.appendChild(subEl);
-          row.appendChild(info);
+          const name = hook.label || (hook.type === 'pushover' ? 'Pushover' : hook.url);
+          const row = _settingsRow(name, typeText + ' · ' + eventsText + ' · ' + statusText, { inactive: !hook.active });
+          if (hook.last_error) row.querySelector('.settings-aircraft-sub').title = hook.last_error;
           _settingsFinishRow(row, {
             chip: hook.active ? null : 'disabled',
-            label: nameEl.textContent,
+            label: name,
             items: [
               { label: hook.active ? 'Disable' : 'Enable', onSelect: (btn) => settingsToggleWebhook(hook, btn) },
               { label: 'Delete', danger: true, onSelect: (btn) => settingsDeleteWebhook(hook, btn) },
@@ -3982,9 +3870,7 @@ export function settingsModalScript(): string {
         document.getElementById('settings-add-webhook').open = false;
         renderSettingsWebhooksList();
       } catch (err) {
-        statusEl.style.display = '';
-        statusEl.textContent = err.serverError ?? 'Failed to add notification target.';
-        setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+        _settingsFlashStatus(statusEl, err.serverError ?? 'Failed to add notification target.');
       }
     });
 

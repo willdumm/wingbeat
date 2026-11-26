@@ -1,5 +1,5 @@
 // @wingbeat/core/settings, imported directly: the tracker history import's month windows
-// and default start in operator days, and the warning Global Settings shows before a
+// and default start in operator days, and the warning Settings > General shows before a
 // timezone change moves the duty log's records. The modal and its requests stay on the page
 // (checked through the shipped bundle at the end).
 

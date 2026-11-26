@@ -1,7 +1,7 @@
 /**
  * The duty route group: the reads, GET /api/duty-days (one pilot's duty log records) and
  * GET /api/duty-methods (the operator's dated §135.267 method), and the duty log's and
- * Global Settings' writes (duty days, default duty, the method). Response objects allow unknown keys, so an instance may add fields without breaking
+ * Settings' and the duty log's writes (duty days, default duty, the method). Response objects allow unknown keys, so an instance may add fields without breaking
  * older clients.
  */
 import * as z from 'zod/mini';

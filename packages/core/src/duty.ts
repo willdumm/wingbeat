@@ -158,7 +158,7 @@ export const DUTY_LIMITS = {
   ],
 };
 
-// The operator's choice of daily limits under §135.267 (Global Settings; dated, see
+// The operator's choice of daily limits under §135.267 (Settings > Duty limits; dated, see
 // dutyMethodOn).
 const DUTY_METHODS: Record<DutyMethod, string> = {
   b: 'Limits: §135.267(b), flight time in any 24 hours · one-pilot crew',

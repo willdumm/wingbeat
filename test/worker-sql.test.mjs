@@ -851,7 +851,7 @@ describe('the requests the web sends, through the core client', async () => {
     assert.ok(!after.default_duties.some(d => d.effective_date.startsWith('2027-06')));
   });
 
-  test('Global Settings’ duty method: an entry, moved, and removed', async () => {
+  test('Duty limits’ duty method: an entry, moved, and removed', async () => {
     await dapi.putDutyMethod(client, { effective_date: '2027-07-01', method: 'c', base_history_id: await mark() });
     const moved = await dapi.putDutyMethod(client, { effective_date: '2027-07-02', method: 'b', base_history_id: await mark(), replaces: '2027-07-01' });
     assert.deepEqual(moved.methods.filter(m => m.effective_date.startsWith('2027-07')), [{ effective_date: '2027-07-02', method: 'b' }]);
@@ -1087,7 +1087,7 @@ describe('the settings modal’s requests, through the core client', async () =>
     assert.equal((await w.request('POST', '/api/basemaps', { label: 'V', url: 'https://example.com/{z}/{x}/{y}' }, { as: 'viewer' })).status, 403);
   });
 
-  test('settings: read, Global Settings’ save and the setup guide’s, and the duty records a timezone change would move', async () => {
+  test('settings: read, General’s save and the setup guide’s, and the duty records a timezone change would move', async () => {
     assert.deepEqual(await settings.patchSettings(client, { app_name: 'Seahawk', timezone: 'America/Anchorage', map_default_lat: 57.8,
       map_default_lng: -152.4, map_default_zoom: 9, gap_alert_minutes: 30 }), { ok: true });
     await settings.patchSettings(client, { setup_dismissed: '1' });

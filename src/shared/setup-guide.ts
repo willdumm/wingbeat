@@ -34,7 +34,7 @@ export function setupGuideAdminRowMarkup(): string {
                   <span class="settings-row-title">Setup checklist</span>
                   <span class="settings-row-desc">The first-run steps for a new instance</span>
                 </div>
-                <button class="settings-action-btn" id="settings-setup-show">Show</button>
+                <button class="btn-secondary" id="settings-setup-show">Show</button>
               </div>`;
 }
 

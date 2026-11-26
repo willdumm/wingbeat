@@ -82,7 +82,7 @@ export function rowMenuScript(): string {
       _rowMenuOpen = null;
       menu.remove();
       btn.setAttribute('aria-expanded', 'false');
-      if (refocus) btn.focus();
+      if (refocus && btn.isConnected) btn.focus();
     }
 
     // A "⋯" button whose menu lists items, each { label, onSelect, danger, disabled }
@@ -118,7 +118,8 @@ export function rowMenuScript(): string {
         el.disabled = !!item.disabled;
         el.addEventListener('click', (e) => {
           e.stopPropagation();
-          _rowMenuClose(false);
+          // Focus goes back to the button first, so an action that opens a form can take it.
+          _rowMenuClose(true);
           item.onSelect(btn);
         });
         menu.appendChild(el);
@@ -129,6 +130,8 @@ export function rowMenuScript(): string {
         if (e.key === 'Escape' || e.key === 'Tab') { e.preventDefault(); _rowMenuClose(true); }
         else if (e.key === 'ArrowDown') { e.preventDefault(); enabled[(i + 1) % enabled.length]?.focus(); }
         else if (e.key === 'ArrowUp') { e.preventDefault(); enabled[(i - 1 + enabled.length) % enabled.length]?.focus(); }
+        else if (e.key === 'Home') { e.preventDefault(); enabled[0]?.focus(); }
+        else if (e.key === 'End') { e.preventDefault(); enabled[enabled.length - 1]?.focus(); }
       });
       document.body.appendChild(menu);
       // Under the button, its right edge on the button's; above it when there's no room below.
